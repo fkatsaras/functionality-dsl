@@ -1,0 +1,21 @@
+import types
+import datasource
+
+Entity: BackendEntity ;
+
+BackendEntity:
+    'entity' name=ID 'backend'
+        (Attribute | Relation)*
+        'datasource' ':' datasource=[Datasource]
+    'end'
+;
+
+Attribute:
+    'attribute' name=ID ':' type=PrimitiveType
+    ('primaryKey' | 'required' | 'unique')*
+;
+
+Relation:
+    'relation' name=ID '->' target=[BackendEntity]
+    ('multiplicity' ':' multiplicity=MultiplicityEnum)?
+;

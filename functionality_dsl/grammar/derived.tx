@@ -1,0 +1,11 @@
+import types
+import entity
+
+DerivedEntity:
+    'entity' name=ID 'derived'
+        (Attribute)*
+        'steps'    ':' steps=STRING
+        ('schedule' ':' schedule=ScheduleEnum)?
+        ('cacheTTL' ':' INT)?
+    'end'
+;

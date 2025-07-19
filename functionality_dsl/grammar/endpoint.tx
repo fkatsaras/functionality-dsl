@@ -1,0 +1,11 @@
+import types
+import entity
+import derived
+
+Endpoint:
+    'endpoint' path=STRING
+        'transport' ':' transport=TransportEnum
+        'entity'    ':' entity=[Entity]        // BackendEntity | DerivedEntity
+        'operations' ':' '[' operations+=OperationEnum (',' operations+=OperationEnum)* ']'
+    'end'
+;

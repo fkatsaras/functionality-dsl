@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "functionality-dsl"
+version = "0.1.0"
+description = "Low-code backend DSL"
+authors = [{ name = "Fotis Katsaras" }]
+requires-python = ">=3.9"
+dependencies = [
+    "textX>=4.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+fdsl = "functionality_dsl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["functionality_dsl*"]

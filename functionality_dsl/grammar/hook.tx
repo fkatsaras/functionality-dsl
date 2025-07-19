@@ -1,0 +1,10 @@
+import types
+import entity
+
+Hook:
+    'hook' name=ID
+        'inputs'  ':' '[' inputs+=[BackendEntity] (',' inputs+=[BackendEntity])* ']'
+        'trigger' ':' trigger=TriggerEnum
+        'steps'   ':' steps=STRING
+    'end'
+;
