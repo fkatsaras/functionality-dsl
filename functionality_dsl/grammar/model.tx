@@ -1,17 +1,20 @@
 import utils
-import types
 import datasource
 import entity
+import pipeline
 import endpoint
 
 Model:
-    (imports+=Import)*
+    (imports+=Import)?                        // optional single import block
+
     (
-        datasources      += Datasource
-      | backendEntities  += BackendEntity
-      | frontendEntities += FrontendEntity
-      | endpoints        += Endpoint
-    )*
+        ('datasources:'      '-' datasources+=Datasource['-']      )?
+        ('backendEntities:'  '-' backendEntities+=BackendEntity['-'])?
+        ('frontendEntities:' '-' frontendEntities+=FrontendEntity['-'])?
+        ('pipelines:'        '-' pipelines+=DataPipeline['-']      )?
+        ('endpoints:'        '-' endpoints+=Endpoint['-']          )?
+    )
+
+'end'
 ;
 
-Import: 'import' imported+=STRING ;

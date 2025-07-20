@@ -1,11 +1,12 @@
 import types
-import entity
 import pipeline
+import utils
 
 Endpoint:
     'endpoint' path=STRING
-        'transport' ':' transport=TransportEnum
-        'entity'    ':' pipeline=[DataPipeline]
-        'operations' ':' '[' operations+=OperationEnum (',' operations+=OperationEnum)* ']'
-    'end'
+        'transport:' transport=TransportEnum
+        'pipeline:'  pipeline=[DataPipeline]
+        'operations:'
+            '-' operations+=OperationEnum['-']
+    )# 'end'
 ;

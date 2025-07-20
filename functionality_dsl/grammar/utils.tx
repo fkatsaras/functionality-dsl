@@ -1,3 +1,8 @@
-// utils.tx
+FQN[noskipws]: /\s*/- ID ('.' ID)* ;
+FQID[noskipws]: /\s*/- ID+['.'] ;
+
+Import: 'import' importURI=FQN ('as' name=ID)?;
+
+NUMBER: /-?\d+(\.\d+)?/ ;
 WS      : /\s+/ ;
 Comment : /\/\/.*$/ ;

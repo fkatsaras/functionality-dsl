@@ -1,11 +1,14 @@
 import types
+import utils
 
 Datasource:
     'datasource' name=ID
-        'kind' ':' kind=KindEnum
-        'uri'  ':' uri=STRING
-        ('options' ':' keyValues+=KeyValuePair)* 
-    'end'
+        'kind:' KindEnum
+        'uri:'  STRING
+        ('options:' '-' options+=KeyValuePair['-'] )*
+    )# 'end'
 ;
 
-KeyValuePair: key=ID '=' value=STRING ;
+KeyValuePair:
+    key=ID '=' value=STRING
+;

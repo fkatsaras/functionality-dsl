@@ -1,17 +1,20 @@
-// -----------------------------------------------------------------------------
-// DataPipeline and all TransformationStep sub-classes
-// -----------------------------------------------------------------------------
 import types
-import entity             // BackendEntity & Attribute
+import entity
+import condition
+import utils
 
 DataPipeline:
     'pipeline' name=ID
-        'entity' ':' entity=[BackendEntity]
-        (steps+=TransformationStep)*
-    'end'
+        'entity:' entity=[BackendEntity]
+        ('steps:'
+            '-' steps+=TransformationStep['-']
+        )*
+    )# 'end'
 ;
 
-// --- STEP UNION --------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   UNION
+// ---------------------------------------------------------------------------
 TransformationStep:
       FilterStep
     | SelectStep
@@ -20,52 +23,58 @@ TransformationStep:
     | PaginateStep
 ;
 
-// --- FILTER ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   FILTER
+// ---------------------------------------------------------------------------
 FilterStep:
     'filter'
-        'condition' ':' condition=ConditionExpression
+        'condition:' condition=ConditionExpression
     'end'
 ;
 
-// --- SELECT ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   SELECT
+// ---------------------------------------------------------------------------
 SelectStep:
     'select'
-        'fields' ':' '[' fields+=[Attribute] (',' fields+=[Attribute])* ']'
+        'fields:' '[' fields+=[Attribute] (',' fields+=[Attribute])* ']'
     'end'
 ;
 
-// --- COMPUTE -----------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   COMPUTE
+// ---------------------------------------------------------------------------
 ComputeStep:
     'compute' name=ID
-        'expression' ':' expression=ComputeExpression
+        'expression:' expression=ComputeExpression
     'end'
 ;
 
-// --- SORT --------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   SORT
+// ---------------------------------------------------------------------------
 SortStep:
     'sort'
-        'keys' ':' '[' sortKeys+=SortKey (',' sortKeys+=SortKey)* ']'
+        'keys:' '[' sortKeys+=SortKey (',' sortKeys+=SortKey)* ']'
     'end'
 ;
 
 SortKey:
     field=[Attribute]
-    ('order' ':' order=SortOrderEnum)?
+    ('order:' order=SortOrderEnum)?
 ;
 
-// --- PAGINATE ----------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//   PAGINATE
+// ---------------------------------------------------------------------------
 PaginateStep:
     'paginate'
-        'pageSize' ':' pageSize=INT
-        ('pageNumber' ':' pageNumber=INT)?
+        'pageSize:' pageSize=INT
+        ('pageNumber:' pageNumber=INT)?
     'end'
 ;
 
-// --- EXPRESSIONS -------------------------------------------------------------
-ConditionExpression:
-    expr=STRING
-;
-
+// ---------------------------------------------------------------------------
 ComputeExpression:
     expr=STRING
 ;
