@@ -1,7 +1,7 @@
 import types
 import datasource
 
-Entity: BackendEntity ;
+Entity: BackendEntity | FrontendEntity;
 
 BackendEntity:
     'entity' name=ID 'backend'
@@ -18,4 +18,17 @@ Attribute:
 Relation:
     'relation' name=ID '->' target=[BackendEntity]
     ('multiplicity' ':' multiplicity=MultiplicityEnum)?
+;
+
+
+FrontendEntity:
+    'entity' name=ID 'frontend'
+        'source' ':' source=[BackendEntity]
+        ('viewName' ':' viewName=ID)?
+        ('fields' ':' '[' fields+=FieldMap (',' fields+=FieldMap)* ']')?
+    'end'
+;
+
+FieldMap:
+    alias=ID '->' target=[Attribute]
 ;

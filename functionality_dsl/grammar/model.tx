@@ -2,19 +2,14 @@ import utils
 import types
 import datasource
 import entity
-import dto
-import hook
-import derived
 import endpoint
 
 Model:
     (imports+=Import)*
     (
         datasources      += Datasource
-      | entities         += BackendEntity
+      | backendEntities  += BackendEntity
       | frontendEntities += FrontendEntity
-      | hooks            += Hook
-      | derivedEntities  += DerivedEntity
       | endpoints        += Endpoint
     )*
 ;

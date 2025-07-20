@@ -1,11 +1,11 @@
 import types
 import entity
-import derived
+import pipeline
 
 Endpoint:
     'endpoint' path=STRING
         'transport' ':' transport=TransportEnum
-        'entity'    ':' entity=[Entity]        // BackendEntity | DerivedEntity
+        'entity'    ':' pipeline=[DataPipeline]
         'operations' ':' '[' operations+=OperationEnum (',' operations+=OperationEnum)* ']'
     'end'
 ;

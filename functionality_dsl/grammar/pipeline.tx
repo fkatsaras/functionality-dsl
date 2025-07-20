@@ -1,0 +1,71 @@
+// -----------------------------------------------------------------------------
+// DataPipeline and all TransformationStep sub-classes
+// -----------------------------------------------------------------------------
+import types
+import entity             // BackendEntity & Attribute
+
+DataPipeline:
+    'pipeline' name=ID
+        'entity' ':' entity=[BackendEntity]
+        (steps+=TransformationStep)*
+    'end'
+;
+
+// --- STEP UNION --------------------------------------------------------------
+TransformationStep:
+      FilterStep
+    | SelectStep
+    | ComputeStep
+    | SortStep
+    | PaginateStep
+;
+
+// --- FILTER ------------------------------------------------------------------
+FilterStep:
+    'filter'
+        'condition' ':' condition=ConditionExpression
+    'end'
+;
+
+// --- SELECT ------------------------------------------------------------------
+SelectStep:
+    'select'
+        'fields' ':' '[' fields+=[Attribute] (',' fields+=[Attribute])* ']'
+    'end'
+;
+
+// --- COMPUTE -----------------------------------------------------------------
+ComputeStep:
+    'compute' name=ID
+        'expression' ':' expression=ComputeExpression
+    'end'
+;
+
+// --- SORT --------------------------------------------------------------------
+SortStep:
+    'sort'
+        'keys' ':' '[' sortKeys+=SortKey (',' sortKeys+=SortKey)* ']'
+    'end'
+;
+
+SortKey:
+    field=[Attribute]
+    ('order' ':' order=SortOrderEnum)?
+;
+
+// --- PAGINATE ----------------------------------------------------------------
+PaginateStep:
+    'paginate'
+        'pageSize' ':' pageSize=INT
+        ('pageNumber' ':' pageNumber=INT)?
+    'end'
+;
+
+// --- EXPRESSIONS -------------------------------------------------------------
+ConditionExpression:
+    expr=STRING
+;
+
+ComputeExpression:
+    expr=STRING
+;

@@ -6,5 +6,4 @@ KindEnum           : 'SQL' | 'NOSQL' ;
 TransportEnum      : 'REST' | 'WS' ;
 OperationEnum      : 'LIST' | 'RETRIEVE' | 'CREATE' | 'UPDATE' | 'DELETE' ;
 MultiplicityEnum   : 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_MANY' ;
-TriggerEnum        : 'BEFORE_CREATE' | 'AFTER_UPDATE' | 'SCHEDULED' ;
-ScheduleEnum       : 'ON_DEMAND' | 'INTERVAL' | 'STREAMING' ;
+SortOrderEnum      : 'ASC' | 'DESC' ;
