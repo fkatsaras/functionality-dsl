@@ -1,0 +1,31 @@
+import types
+import utils
+
+Expression:
+    AddExpr
+;
+
+AddExpr:
+    left=MulExpr ((op='+' | op='-') right=MulExpr)*
+;
+
+MulExpr:
+    left=Atom ((op='*' | op='/') right=Atom)*
+;
+
+Atom:
+    function=FunctionCall |
+    number=NUMBER |
+    boolean=BOOL |
+    string=STRING |
+    id=FQN |
+    '(' expr=Expression ')'
+;
+
+FunctionCall:
+    name=FunctionName '(' (args+=Expression[','])? ')'
+;
+
+FunctionName:
+    'hash' | 'sum' | 'mean' | 'max' | 'min' | 'round' | 'sortasc' | 'sortdesc' | 'reverse' | 'length' | 'slice'
+;

@@ -1,80 +1,111 @@
+import computed 
 import types
 import entity
-import condition
 import utils
+import condition
 
-DataPipeline:
-    'pipeline' name=ID
-        'entity:' entity=[BackendEntity]
-        ('steps:'
-            '-' steps+=TransformationStep['-']
-        )*
-    )# 'end'
+// === Pipeline ===
+
+Pipeline:
+    'Pipeline' name=ID
+        ('description:' description=STRING)?
+        ('tags:' tags+=STRING[','])?
+        'interface:'
+            'input:' input=[Entity:FQN]
+            'output:' output=[Entity:FQN]
+            // ('error:' errorOutput=PayloadUnion)?
+        'steps:'
+            (steps+=PipelineStep)*
+    'end'
 ;
 
-// ---------------------------------------------------------------------------
-//   UNION
-// ---------------------------------------------------------------------------
-TransformationStep:
-      FilterStep
-    | SelectStep
+PipelineStep:
+      StepReference
+    | InlineValidationStep
+    | InlineComputeStep
+    | InlinePersistStep
+    | InlineRespondStep
+;
+
+StepReference:
+    'use' step=[StepDefinition]
+;
+
+// === Inline Steps ===
+InlineValidationStep:
+    'validate:'
+        (rules+=ValidationRule)+
+    'end'
+;
+
+InlineComputeStep:
+    'compute:'
+        (computations+=ComputeMapping)+
+    'end'
+;
+
+InlinePersistStep:
+    'persist:' entity=[Entity]
+        (mappings+=PersistMapping)+
+    'end'
+;
+
+InlineRespondStep:
+    'respond:'
+        (mappings+=ResponseMapping)+
+    'end'
+;
+
+// === External Step Definitions ===
+StepDefinition:
+      ValidationStep
     | ComputeStep
-    | SortStep
-    | PaginateStep
+    | PersistStep
+    | RespondStep
 ;
 
-// ---------------------------------------------------------------------------
-//   FILTER
-// ---------------------------------------------------------------------------
-FilterStep:
-    'filter'
-        'condition:' condition=ConditionExpression
+ValidationStep:
+    'ValidationStep' name=ID
+    'rules:'
+        (rules+=ValidationRule)+
     'end'
 ;
 
-// ---------------------------------------------------------------------------
-//   SELECT
-// ---------------------------------------------------------------------------
-SelectStep:
-    'select'
-        'fields:' '[' fields+=[Attribute] (',' fields+=[Attribute])* ']'
-    'end'
-;
-
-// ---------------------------------------------------------------------------
-//   COMPUTE
-// ---------------------------------------------------------------------------
 ComputeStep:
-    'compute' name=ID
-        'expression:' expression=ComputeExpression
+    'ComputeStep' name=ID
+    'computations:'
+        (computations+=ComputeMapping)+
     'end'
 ;
 
-// ---------------------------------------------------------------------------
-//   SORT
-// ---------------------------------------------------------------------------
-SortStep:
-    'sort'
-        'keys:' '[' sortKeys+=SortKey (',' sortKeys+=SortKey)* ']'
+PersistStep:
+    'PersistStep' name=ID
+    'entity:' entity=[Entity]
+    'mappings:'
+        (mappings+=PersistMapping)+
     'end'
 ;
 
-SortKey:
-    field=[Attribute]
-    ('order:' order=SortOrderEnum)?
-;
-
-// ---------------------------------------------------------------------------
-//   PAGINATE
-// ---------------------------------------------------------------------------
-PaginateStep:
-    'paginate'
-        'pageSize:' pageSize=INT
-        ('pageNumber:' pageNumber=INT)?
+RespondStep:
+    'RespondStep' name=ID
+    'mappings:'
+        (mappings+=ResponseMapping)+
     'end'
 ;
 
-// ---------------------------------------------------------------------------
-ComputeExpression:
-    expr=STRING
+ValidationRule:
+    condition=Condition ('=>' errorEntity=[Entity])?
+;
+
+// === Mappings and Expressions ===
+ComputeMapping:
+    target=ID '=' expression=Expression
+;
+
+PersistMapping:
+    target=ID '=' expression=Expression
+;
+
+ResponseMapping:
+    target=ID '=' source=Expression
 ;

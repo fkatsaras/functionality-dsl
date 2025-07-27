@@ -1,20 +1,19 @@
+import entity
 import utils
 import datasource
-import entity
+import condition
+import computed
 import pipeline
 import endpoint
+import types
 
 Model:
-    (imports+=Import)?                        // optional single import block
-
+    (imports+=Import)? // optional single import block
     (
-        ('datasources:'      '-' datasources+=Datasource['-']      )?
-        ('backendEntities:'  '-' backendEntities+=BackendEntity['-'])?
-        ('frontendEntities:' '-' frontendEntities+=FrontendEntity['-'])?
-        ('pipelines:'        '-' pipelines+=DataPipeline['-']      )?
-        ('endpoints:'        '-' endpoints+=Endpoint['-']          )?
-    )
-
-'end'
+        (datasources+=Datasource)
+        (entities+=Entity)
+        (stepDefs+=StepDefinition)
+        (pipelines+=Pipeline)
+        (endpoints+=Endpoint)
+    )#
 ;
-

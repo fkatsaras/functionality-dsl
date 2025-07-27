@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # --------------------------------------------------------------------------- #
-# 1) connection string – default to Postgres                                  #
+# 1) connection string - default to Postgres                                  #
 #    Users can still export DATABASE_URL=postgresql+psycopg://user:pass@host/db
 # --------------------------------------------------------------------------- #
 DATABASE_URL = os.getenv(

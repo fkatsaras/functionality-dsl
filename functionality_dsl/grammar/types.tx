@@ -1,6 +1,6 @@
 import utils
 
-PrimitiveType      : 'Int' | 'Float' | 'String' | 'Bool' | 'UUID' | 'DateTime' ;
+PrimitiveType      : 'Int' | 'Float' | 'String' | 'Bool' | 'UUID' | 'DateTime' | 'JSON';
 
 KindEnum           : 'SQL' | 'NOSQL' ;
 TransportEnum      : 'REST' | 'WS' ;

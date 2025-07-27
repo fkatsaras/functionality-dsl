@@ -2,32 +2,24 @@ import types
 import datasource
 import utils
 
-Entity: BackendEntity | FrontendEntity ;
-
-BackendEntity:
-    'entity' name=ID 'backend'
-    (
-        ('attributes:' '-' attributes+=Attribute['-'])?
-        ('relations:'  '-' relations+=Relation['-'])?
-        ('datasource:' datasource=[Datasource])?
-        ('description:' description=STRING)?
-    )#
+Entity:
+    'Entity' '<' kind=EntityKind '>' name=ID
+    ('datasource:' datasource=[Datasource])?                 // Only for kind == 'model'
+    ('description:' description=STRING)?                     // Optional for all
+    'attributes:' ('-' attributes+=Attribute['-'])+
+    ('relations:' '-' relations+=Relation['-'])?             // Only for kind == 'model'
     'end'
 ;
 
-
-FrontendEntity:
-    'entity' name=ID 'frontend'
-    (
-        ('source:' source=[BackendEntity])
-        ('viewName:' viewName=ID)?
-        ('fields:' '-' fields+=FieldMap['-'])?
-        ('description:' description=STRING)?
-    )#
-    'end'
+EntityKind:
+    'model'       |  // DB-persisted entities (was 'backend')
+    'request'     |  // DTO for inbound API payloads
+    'response'    |  // DTO for outbound API payloads
+    'viewmodel'   |  // Display-only data
+    'error'       |  // Error response entity
+    'internal'    |  // Transient pipeline-only state
+    'event'          // Pub/Sub or async event messages
 ;
-
-
 
 Attribute:
     name=ID ':' type=PrimitiveType
@@ -35,10 +27,6 @@ Attribute:
 ;
 
 Relation:
-    name=ID '->' target=[BackendEntity]
+    name=ID '->' target=[Entity]
     ('multiplicity:' multiplicity=MultiplicityEnum)?
-;
-
-FieldMap:
-    alias=ID '->' target=[Attribute]
 ;

@@ -3,6 +3,7 @@ import utils
 
 Datasource:
     'datasource' name=ID
+    (
         'kind:' KindEnum
         'uri:'  STRING
         ('options:' '-' options+=KeyValuePair['-'] )*
