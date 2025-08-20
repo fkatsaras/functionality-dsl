@@ -1,109 +1,118 @@
-"""
-Very small wrapper around textX to
+import pathlib
+from textx import metamodel_from_file, language, TextXSemanticError, get_location
+import textx.scoping.providers as scoping_providers
 
-1. load the grammar bundle (model.tx + its imports)
-2. expose `build_model(path)` for the CLI
-"""
+from .lib.datasource import Datasource
+from .lib.entity     import Entity, Attribute, Relation
+from .lib.condition  import (
+    Condition,
+    ConditionGroup,
+    PrimitiveCondition,
+    NumericCondition,
+    StringCondition,
+    BoolCondition,
+    ListCondition,
+    DictCondition,
+    TimeCondition,
+    DSLList,
+    DSLDict,
+    KeyValuePair,
+    TermPool,
+)
+from .lib.computed   import ComputedAttribute, Atom
+from .lib.pipeline   import (
+    Pipeline,
+    PipelineStep,
+    StepDefinition,
+    StepReference,
+    ValidationRule,
+    ComputeMapping,
+    PersistMapping,
+    ResponseMapping,
+    InlineValidationStep,
+    InlineComputeStep,
+    InlinePersistStep,
+    InlineRespondStep,
+    ValidationStep,
+    ComputeStep,
+    PersistStep,
+    RespondStep,
+)
+from .lib.endpoint   import Endpoint, EndpointMethod, PathParam
+HERE = pathlib.Path(__file__).parent
 
-from __future__ import annotations
-from pathlib import Path
-from textx import metamodel_from_file
-from textx.scoping.providers import FQNImportURI, PlainName
-from textx.scoping.tools import get_model
+CUSTOM_CLASSES = {
+    cls.__name__: cls
+    for cls in [
+        Datasource, Entity, Attribute, Relation, BoolCondition, DSLList, DSLDict, KeyValuePair, TermPool,
+        Condition, PrimitiveCondition, NumericCondition, StringCondition, ListCondition, DictCondition, TimeCondition, ConditionGroup,
+        ComputedAttribute, Atom,
+        Pipeline, PipelineStep, StepDefinition, ValidationStep, ComputeStep, PersistStep, RespondStep, ValidationRule, ComputeMapping, PersistMapping, ResponseMapping,
+        InlineValidationStep, InlineComputeStep, InlinePersistStep, InlineRespondStep, StepReference,
+        Endpoint, EndpointMethod, PathParam,
+    ]
+}
 
-# ------------------------------------------------------------------------------
-# Grammar path
-# ------------------------------------------------------------------------------
+def class_provider(class_name: str):
+    return CUSTOM_CLASSES.get(class_name)
+        
+def verify_unique_pipelines(model):
+    seen = set()
+    for p in model.pipelines:
+        if p.name in seen:
+            raise TextXSemanticError(f"Pipeline {p.name!r} redefined", **get_location(p))
+        seen.add(p.name)
+        
+def verify_unique_entity_attrs(entity):
+    seen = set()
+    for attr in entity.attributes:
+        if attr in seen:
+            raise TextXSemanticError(f"Attribute {attr} of entity {entity.name} already exists.", **get_location(attr))
+        seen.add(attr.name)
 
-GRAMMAR_DIR = Path(__file__).with_suffix("").parent / "grammar"
-MODEL_TX = GRAMMAR_DIR / "model.tx"
+def verify_unique_entities(model):
+    seen = set()
+    for e in model.entities:
+        if e.name in seen:
+            raise TextXSemanticError(f"Entity {e.name!r} redefined", **get_location(e))
+        seen.add(e.name)
+        verify_unique_entity_attrs(e)
+        
 
-# ------------------------------------------------------------------------------
-# Attribute scope resolver (for conditions etc.)
-# ------------------------------------------------------------------------------
+def model_processor(model, metamodel):
+    verify_unique_entities(model)
+    verify_unique_pipelines(model)
 
-def _attr_scope(obj, attr_name, attr_value):
-    """
-    Resolve an unqualified attribute name against:
-
-      1) The entity referenced by the surrounding Pipeline (if any).
-      2) All model entities (kind == 'model') as fallback.
-
-    Allows writing: `username != ""` instead of `UserCreateRequest.username != ""`
-    """
-    ctx = obj
-    while ctx and ctx.__class__.__name__ != "Pipeline":
-        ctx = ctx._tx_parent
-
-    candidates = []
-
-    if ctx and getattr(ctx, "input", None):
-        candidates.extend(ctx.input.attributes)
-
-    model = get_model(obj)
-    for entity in getattr(model, "entities", []):
-        if getattr(entity, "kind", None) == "model":
-            candidates.extend(entity.attributes)
-
-    return {a.name: a for a in candidates}
-
-# ------------------------------------------------------------------------------
-# Metamodel factory
-# ------------------------------------------------------------------------------
-
-def _create_metamodel(debug: bool = False):
+def get_metamodel(debug=False, use_global_repo=True):
     mm = metamodel_from_file(
-        MODEL_TX,
-        auto_init_attributes=True,
-        global_repository=True,
+        HERE / "grammar" / "model.tx",
+        classes=class_provider,
+        auto_init_attributes=False,
+        textx_tools_support=True,
+        global_repository=use_global_repo,
         debug=debug,
     )
-
+    
     mm.register_scope_providers({
-        "Entity.datasource"              : FQNImportURI(),
-        "Relation.target"                : FQNImportURI(),
-        "StepReference.step"             : PlainName(),
-        "SimpleAttributeRef.attribute"   : _attr_scope,
-        "*.*"                            : PlainName(),  # fallback
+        "Entity.datasource":          scoping_providers.FQNImportURI(),
+        "AttributeRef.attribute":     scoping_providers.FQNImportURI(),
+        "ValidationRule.errorEntity": scoping_providers.FQNImportURI(),
+        "StepReference.step":         scoping_providers.FQNImportURI(),
+        "InlinePersistStep.entity":   scoping_providers.FQNImportURI(),
+        "EndpointMethod.pipeline":    scoping_providers.FQNImportURI(),
     })
-
-    # --------------------------------------------------------------------------
-    # Model processor
-    # --------------------------------------------------------------------------
-    def _process(model, metamodel):
-        # Slice entities by kind
-        model.model_entities     = [e for e in model.entities if e.kind == "model"]
-        model.request_entities   = [e for e in model.entities if e.kind == "request"]
-        model.response_entities  = [e for e in model.entities if e.kind == "response"]
-        model.viewmodel_entities = [e for e in model.entities if e.kind == "viewmodel"]
-        model.error_entities     = [e for e in model.entities if e.kind == "error"]
-        model.internal_entities  = [e for e in model.entities if e.kind == "internal"]
-        model.event_entities     = [e for e in model.entities if e.kind == "event"]
-
-        model.pipelines          = list(getattr(model, "pipelines", []))
-        model.endpoints          = list(getattr(model, "endpoints", []))
-
-        # Semantic check: endpoint must have defined methods or operations
-        for ep in model.endpoints:
-            if not getattr(ep, "methods", None) and not getattr(ep, "operations", None):
-                raise ValueError(f"Endpoint {ep.path} has no methods or operations.")
-
-    mm.register_model_processor(_process)
+    mm.register_model_processor(model_processor)
     return mm
 
-# ------------------------------------------------------------------------------
-# Global metamodel access
-# ------------------------------------------------------------------------------
-
-_METAMODEL = _create_metamodel(debug=False)
-
-def get_metamodel():
-    return _METAMODEL
+@language("functionality_dsl", "*.tx")
+def functionality_dsl_language():
+    return get_metamodel()
 
 def build_model(model_path: str):
-    """
-    Parse & semantically validate one .fdsl file.
-    Raises exceptions upstream for CLI to display.
-    """
-    mm = get_metamodel()
-    return mm.model_from_file(model_path)
+    """Builds a model from an .fdsl file."""
+    print(f"Attempting to build model from: {model_path}")
+    mm = get_metamodel(debug=False)
+    model = mm.model_from_file(model_path)
+
+    # validate_model(model, model_path)  # .validate.py must  be created first
+    return model  # Return the built model

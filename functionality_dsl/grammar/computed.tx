@@ -19,6 +19,7 @@ Atom:
     boolean=BOOL |
     string=STRING |
     id=FQN |
+    var=ID |
     '(' expr=Expression ')'
 ;
 

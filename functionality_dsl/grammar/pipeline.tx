@@ -58,10 +58,7 @@ InlineRespondStep:
 
 // === External Step Definitions ===
 StepDefinition:
-      ValidationStep
-    | ComputeStep
-    | PersistStep
-    | RespondStep
+    ValidationStep | ComputeStep | PersistStep | RespondStep
 ;
 
 ValidationStep:
@@ -73,7 +70,7 @@ ValidationStep:
 
 ComputeStep:
     'ComputeStep' name=ID
-    'computations:'
+    'computations:' 
         (computations+=ComputeMapping)+
     'end'
 ;

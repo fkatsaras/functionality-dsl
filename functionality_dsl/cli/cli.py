@@ -23,7 +23,7 @@ pretty.install()
 console = Console()
 
 # ---- CLI root ----
-@click.group(help="fcdsl :  validate model files and generate FastAPI code.")
+@click.group(help="fdsl :  validate model files and generate FastAPI code.")
 @click.version_option(message="functionality DSL %(version)s")
 def cli() -> None:
     pass
