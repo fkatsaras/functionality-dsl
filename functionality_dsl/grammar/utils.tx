@@ -1,8 +1,10 @@
-FQN[noskipws]: /\s*/- ID ('.' ID)* ;
-FQID[noskipws]: /\s*/- ID+['.'] ;
+Comment:
+  /\/\/.*$/
+;
 
-Import: 'import' importURI=FQN ('as' name=ID)?;
+Import:
+  'import' importURI=FQN
+;
 
-NUMBER: /-?\d+(\.\d+)?/ ;
-WS      : /\s+/ ;
-Comment : /\/\/.*$/ ;
+FQN: ID('.'ID)*
+;

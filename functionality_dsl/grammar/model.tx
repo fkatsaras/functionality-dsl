@@ -1,19 +1,17 @@
+import server
+import database
 import entity
+import endpoints
+import queries
 import utils
-import datasource
-import condition
-import computed
-import pipeline
-import endpoint
-import types
 
 Model:
-    (imports+=Import)? // optional single import block
+    (imports+=Import)?
     (
-        (datasources+=Datasource)
-        (entities+=Entity)
-        (stepDefs+=StepDefinition)
-        (pipelines+=Pipeline)
-        (endpoints+=Endpoint)
+        (server+=Server)*
+        (databases+=Database)*
+        (entities+=Entity)*
+        (endpoints+=Endpoint)*
+        (queries+=SQLQuery)*
     )#
 ;

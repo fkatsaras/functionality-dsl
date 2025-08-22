@@ -1,0 +1,20 @@
+import server
+import entity
+
+MethodName:
+    'list' | 'create' | 'get' | 'update' | 'delete' | 'replace'
+;
+
+// Binds HTTP base to an Entity with a set of methods.
+// Defaults: JSON in/out, RFC7807 errors, no pagination unless set.
+Endpoint:
+    'Endpoint' name=ID
+    (
+        ('base:' base=STRING)
+        ('entity:' entity=[Entity])
+        ('server:' server=[Server])?
+        ('methods:' methods+=MethodName[','])?
+        ('pagination:' 'limit=' limit=INT)?
+    )#
+    'end'
+;

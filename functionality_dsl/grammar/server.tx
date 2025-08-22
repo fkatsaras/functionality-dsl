@@ -1,0 +1,9 @@
+Server:
+    'Server<HTTP>' name=ID
+    (
+        ('host:' host=STRING)
+        ('port:' port=INT)
+        ('base:' base=STRING)?
+    )#
+    'end'
+;

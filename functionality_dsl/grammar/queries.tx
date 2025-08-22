@@ -1,0 +1,12 @@
+import database
+
+// Read-only SQL, exposed as GET at 'path'.
+SQLQuery:
+    'SQLQuery' name=ID
+    (
+        ('store:' store=[Database])
+        ('path:' path=STRING)
+        ('query:' query=STRING)
+    )#
+    'end'
+;

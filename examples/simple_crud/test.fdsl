@@ -1,0 +1,38 @@
+Server<HTTP> Main
+  host: "0.0.0.0"
+  port: 8080
+  base: "/api"
+end
+
+Database<Postgres> DB
+  host: "localhost"
+  port: 5432
+  database: "warehouse"
+  auth:
+    username: "appuser"
+    password: "secret"
+  ssl: false
+end
+
+Database<SQLite> LocalDB
+  file: "./local.db"
+end
+
+Entity Product
+  database: DB
+  table: "products"
+  attributes:
+    - id: uuid pk
+    - name: string required
+    - category: string
+    - description: string
+    - price: number
+end
+
+Endpoint Products
+  base: "/products"
+  entity: Product
+  server: Main
+  methods: list, create, get, update, delete
+  pagination: limit=50
+end

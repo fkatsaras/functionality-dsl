@@ -1,68 +1,34 @@
-"""
-CLI entry-point for the functionality-dsl project.
-
-Run `pip install -e .` in the repo root, then:
-
-    funcdsl validate examples/app.fdsl
-    funcdsl generate examples/app.fdsl ./generated
-"""
-from __future__ import annotations
-
-# from pathlib import Path
-
+import sys
 import click
-from rich.console import Console
-from rich import pretty
+import os
+from rich import print, pretty
 
-
-# ---- local imports ----
-from functionality_dsl.language import build_model  # type: ignore
-# from functionality_dsl.generate import run_codegen  # type: ignore
+from functionality_dsl.language import build_model
 
 pretty.install()
-console = Console()
 
-# ---- CLI root ----
-@click.group(help="fdsl :  validate model files and generate FastAPI code.")
-@click.version_option(message="functionality DSL %(version)s")
-def cli() -> None:
-    pass
-
-# ---- validate ----
-@cli.command(short_help="Validate a .fdsl model")
-@click.argument("model_path", type=click.Path(exists=True, dir_okay=False))
-def validate(model_path: str) -> None:
-    """ Parse and semantically validate a .fdsl file"""
+def make_executable(path: str):
+    mode = os.stat(path).st_mode
+    mode |= (mode & 0o444) >> 2
+    os.chmod(path, mode)
+    
+@click.group()
+@click.pass_context
+def cli(context):
+    context.ensure_object(dict)
+    
+@cli.command("validate", help="Model Validation")
+@click.pass_context
+@click.argument("model_path")
+def validate(context, model_path):
     try:
-        build_model(model_path)
-        click.echo("Model OK ✔ ")
+        _ = build_model(model_path)
+        print("[*] Model validation success!!")
     except Exception as e:
-        click.echo(f"Validation failed: {e}", err=True)
-        raise SystemExit(1) from e
-    
-    
-
-# # ---- generate ----
-# @cli.command(short_help="Generate FastAPI project from model")
-# @click.argument("model_path", type=click.Path(exists=True, dir_okay=False))
-# @click.argument(
-#     "output_dir",
-#     default="generated",
-#     required=False,
-#     type=click.Path(file_okay=False),
-# )
-# def generate(model_path: str, output_dir: str) -> None:
-#     """Generate backend boilerplate from an .fdsl model."""
-#     outdir = Path(output_dir).resolve()
-#     outdir.mkdir(parents=True, exist_ok=True)
-
-#     try:
-#         run_codegen(model_path, outdir)
-#         click.echo(f"Code generated in {outdir}")
-#     except Exception as e:
-#         click.echo(f"Generation error: {e}", err=True)
-#         raise SystemExit(1) from e
-
-
-def main() -> None:
+        print(f"[*] Validation failed with error(s): {e}")
+        context.exit(1)
+    else:
+        context.exit(0)
+        
+def main():
     cli(prog_name="fdsl")

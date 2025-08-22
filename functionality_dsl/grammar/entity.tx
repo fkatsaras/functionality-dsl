@@ -1,32 +1,38 @@
-import types
-import datasource
-import utils
+import database
 
+// Primitive 
+AttrType:
+    'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid'
+;
+
+// Literal for defaults
+AttrValue:
+    STRING | INT | FLOAT | BOOL
+;
+
+// Optional attribute modifiers after type 
+AttrModifier:
+    'pk' | 'required'
+;
+
+// Entities define storage + shape in a tight form:
+// - database/table are required
+// - attributes list with inline type and modifiers (e.g., "pk", "required")
 Entity:
-    'Entity' '<' kind=EntityKind '>' name=ID
-    ('datasource:' datasource=[Datasource])?                 // Only for kind == 'model'
-    ('description:' description=STRING)?                     // Optional for all
-    'attributes:' ('-' attributes+=Attribute['-'])+
-    ('relations:' '-' relations+=Relation['-'])?             // Only for kind == 'model'
+    'Entity' name=ID
+    (
+        'database:' database=[Database]
+        'table:' table=STRING
+        'attributes:' '-' attributes*=Attribute['-']
+    )#
     'end'
 ;
 
-EntityKind:
-    'model'       |  // DB-persisted entities (was 'backend')
-    'request'     |  // DTO for inbound API payloads
-    'response'    |  // DTO for outbound API payloads
-    'viewmodel'   |  // Display-only data
-    'error'       |  // Error response entity
-    'internal'    |  // Transient pipeline-only state
-    'event'          // Pub/Sub or async event messages
-;
+// Attribute line:
+//   <name> ':' <type> (modifiers...)? ('default:' <value>)?
 
 Attribute:
-    name=ID ':' type=PrimitiveType
-    ('primaryKey' | 'required' | 'unique')*
-;
-
-Relation:
-    name=ID '->' target=[Entity]
-    ('multiplicity:' multiplicity=MultiplicityEnum)?
+    name=ID ':' type=AttrType
+    (modifiers+=AttrModifier)*
+    ('default=' default=AttrValue)?
 ;
