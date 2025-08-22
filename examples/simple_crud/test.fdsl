@@ -34,7 +34,6 @@ Endpoint Products
   entity: Product
   server: Main
   methods: list, create, get, update, delete
-  pagination: limit=50
 end
 
 Subscription ProductStream
