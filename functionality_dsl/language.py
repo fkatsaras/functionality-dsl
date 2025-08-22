@@ -73,14 +73,6 @@ def endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
-    # TODO Pagination limit (if present) must be positive
-    if getattr(ep, "limit", None) is not None and int(ep.limit) <= 0:
-        raise TextXSemanticError(
-            f"Endpoint '{ep.name}' pagination limit must be > 0.",
-            **get_location(ep),
-        )
-
-
 def postgres_obj_processor(db):
     """
     Connection rules:

@@ -14,7 +14,6 @@ Endpoint:
         ('entity:' entity=[Entity])
         ('server:' server=[Server])?
         ('methods:' methods+=MethodName[','])?
-        ('pagination:' 'limit=' limit=INT)?
     )#
     'end'
 ;
