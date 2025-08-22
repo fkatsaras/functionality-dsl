@@ -36,3 +36,9 @@ Endpoint Products
   methods: list, create, get, update, delete
   pagination: limit=50
 end
+
+Subscription ProductStream
+  path: "/ws/products"
+  entity: Product
+  events: created, updated, deleted
+end

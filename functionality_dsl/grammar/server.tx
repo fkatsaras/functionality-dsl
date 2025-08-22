@@ -1,5 +1,5 @@
 Server:
-    'Server<HTTP>' name=ID
+    'Server' name=ID
     (
         ('host:' host=STRING)
         ('port:' port=INT)

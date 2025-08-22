@@ -56,9 +56,13 @@ def get_model_endpoints(model):
 def get_model_queries(model):
     return get_children_of_type("SQLQuery", model)
 
+def get_model_subscriptions(model):
+    return get_children_of_type("Subscription", model)
 # ------------------------------------------------------------------------------
 # Object processors (light defaults)
 DEFAULT_METHODS = ["list", "create", "get", "update", "delete"]
+DEFAULT_WS_EVENTS = ["created", "updated", "deleted"]  # tiny default set
+ALLOWED_WS_EVENTS = set(["created", "updated", "deleted", "any"])
 
 
 def endpoint_obj_processor(ep):
@@ -119,6 +123,24 @@ def entity_obj_processor(ent):
     # Nothing to set by default;
     return
 
+def subscription_obj_processor(sub):
+    # Default to the common change events if not specified.
+    if not getattr(sub, "events", None) or len(sub.events) == 0:
+        sub.events = list(DEFAULT_WS_EVENTS)
+    # Path sanity
+    if not getattr(sub, "path", None) or not str(sub.path).startswith("/"):
+        raise TextXSemanticError(
+            f"Subscription '{sub.name}' must have a path starting with '/'.",
+            **get_location(sub),
+        )
+    # Validate event names (grammar constrains, but keep defensive)
+    for ev in sub.events:
+        if ev not in ALLOWED_WS_EVENTS:
+            raise TextXSemanticError(
+                f"Subscription '{sub.name}' has invalid event '{ev}'.",
+                **get_location(sub),
+            )
+
 # Model-wide validation
 # ------------------------------------------------------------------------------
 def model_processor(model, metamodel=None):
@@ -129,6 +151,7 @@ def model_processor(model, metamodel=None):
     verify_entities(model)
     verify_endpoints(model)
     verify_databases(model)
+    verify_subscriptions(model) 
     logger.info("Model processed successfully.")
     
     
@@ -147,6 +170,7 @@ def verify_unique_names(model):
     ensure_unique(get_model_entities(model), "Entity")
     ensure_unique(get_model_endpoints(model), "Endpoint")
     ensure_unique(get_model_queries(model), "SQLQuery")
+    ensure_unique(get_model_subscriptions(model), "Subscription") 
 
 
 def verify_entities(model):
@@ -280,6 +304,22 @@ def verify_databases(model):
             "At least one Database must be declared when Entities exist."
         )
         
+def verify_subscriptions(model):
+    subs = get_model_subscriptions(model)
+    entities = {e.name: e for e in get_model_entities(model)}
+
+    for sub in subs:
+        if not getattr(sub, "entity", None):
+            raise TextXSemanticError(
+                f"Subscription '{sub.name}' must reference an entity.",
+                **get_location(sub),
+            )
+        if sub.entity.name not in entities:
+            raise TextXSemanticError(
+                f"Subscription '{sub.name}' references unknown entity '{sub.entity.name}'.",
+                **get_location(sub),
+            )
+        
 # Metamodel creation
 def get_scope_providers():
     """
@@ -307,6 +347,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
             "Postgres": postgres_obj_processor,
             "SQLite": sqlite_obj_processor,
             "Entity": entity_obj_processor,
+            "Subscription": subscription_obj_processor,
         }
     )
     return mm

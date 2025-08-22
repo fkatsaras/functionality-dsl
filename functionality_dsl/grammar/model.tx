@@ -3,6 +3,7 @@ import database
 import entity
 import endpoints
 import queries
+import websockets
 import utils
 
 Model:
@@ -13,5 +14,6 @@ Model:
         (entities+=Entity)*
         (endpoints+=Endpoint)*
         (queries+=SQLQuery)*
+        (subscriptions+=Subscription)* 
     )#
 ;
