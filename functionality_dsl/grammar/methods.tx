@@ -1,0 +1,44 @@
+import entity
+import security
+import utils
+
+HttpMethod:
+    'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+;
+
+ParamLocation:
+    'path' | 'query' | 'header'
+;
+
+Method:
+    'Method' name=ID
+    (
+        ('type:' method=HttpMethod)
+        ('description:' description=STRING)?
+        ('security:' security=[Security])?
+        ('parameters:' '-' parameters+=Parameter['-'])?
+        ('requestBody:' requestBody=RequestBody)?
+        ('responses:' '-' responses+=Response['-'])?
+    )#
+    'end'
+;
+
+// Parameter: name : type (location, modifiers...)
+Parameter:
+    name=ID ':' type=AttrType
+    '(' location=ParamLocation (',' 'required')? (',' 'default=' default=AttrValue)? ')'
+;
+
+RequestBody:
+    'content:' (contentEntity=[Entity] | type=AttrType)
+    ('required')?
+;
+
+// Response: status : description , content
+Response:
+    status=INT ':' 
+    '{' 
+        'description:' description=STRING 
+        (',' 'content:' (contentEntity=[Entity] | list='[' contentEntityList+=[Entity] ']'))?
+    '}'
+;

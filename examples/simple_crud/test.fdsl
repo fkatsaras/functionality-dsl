@@ -1,7 +1,12 @@
-Server<HTTP> Main
+Server Main
   host: "0.0.0.0"
   port: 8080
   base: "/api"
+end
+
+Security JWTAuth
+  auth: JWT
+  roles: admin, user
 end
 
 Database<Postgres> DB
@@ -12,10 +17,6 @@ Database<Postgres> DB
     username: "appuser"
     password: "secret"
   ssl: false
-end
-
-Database<SQLite> LocalDB
-  file: "./local.db"
 end
 
 Entity Product
@@ -29,11 +30,66 @@ Entity Product
     - price: number
 end
 
+Method ProductList
+  type: GET
+  description: "Retrieve all products"
+  responses:
+    - 200: { description: "List of products", content: [Product] }
+end
+
+Method ProductCreate
+  type: POST
+  description: "Create a new product"
+  requestBody:
+    content: Product
+    required
+  responses:
+    - 201: { description: "Product created", content: Product }
+end
+
+Method ProductGet
+  type: GET
+  description: "Retrieve a product by ID"
+  parameters:
+    - id: uuid (path, required)
+  responses:
+    - 200: { description: "Product found", content: Product }
+    - 404: { description: "Not found" }
+end
+
+Method ProductUpdate
+  type: PUT
+  description: "Update a product by ID"
+  parameters:
+    - id: uuid (path, required)
+  requestBody:
+    content: Product
+  responses:
+    - 200: { description: "Product updated", content: Product }
+    - 404: { description: "Not found" }
+end
+
+Method ProductDelete
+  type: DELETE
+  description: "Delete a product by ID"
+  parameters:
+    - id: uuid (path, required)
+  responses:
+    - 204: { description: "Deleted" }
+    - 404: { description: "Not found" }
+end
+
+
 Endpoint Products
   base: "/products"
   entity: Product
   server: Main
-  methods: list, create, get, update, delete
+  methods:
+    - ProductList
+    - ProductCreate
+    - ProductGet
+    - ProductUpdate
+    - ProductDelete
 end
 
 Subscription ProductStream

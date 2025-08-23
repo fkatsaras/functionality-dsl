@@ -35,29 +35,32 @@ def build_model_str(model_str):
     model = FunctionalityDSLMetaModel.model_from_str(model_str)
     return model
 
-
 def get_model_servers(model):
     return get_children_of_type("Server", model)
-
 
 def get_model_databases(model):
     # Polymorphic: concrete instances are Postgres or SQLite
     return get_children_of_type("Postgres", model) + get_children_of_type("SQLite", model)
 
-
 def get_model_entities(model):
     return get_children_of_type("Entity", model)
 
-
 def get_model_endpoints(model):
     return get_children_of_type("Endpoint", model)
-
 
 def get_model_queries(model):
     return get_children_of_type("SQLQuery", model)
 
 def get_model_subscriptions(model):
     return get_children_of_type("Subscription", model)
+
+def get_model_methods(model):
+    return get_children_of_type("Method", model)
+
+def get_model_security(model):
+    return get_children_of_type("Security", model)
+
+
 # ------------------------------------------------------------------------------
 # Object processors (light defaults)
 DEFAULT_METHODS = ["list", "create", "get", "update", "delete"]
@@ -140,6 +143,36 @@ def subscription_obj_processor(sub):
                 f"Subscription '{sub.name}' has invalid event '{ev}'.",
                 **get_location(sub),
             )
+            
+def method_obj_processor(m):
+    # Require at least one response
+    if not getattr(m, "responses", None) or len(m.responses) == 0:
+        raise TextXSemanticError(
+            f"Method '{m.name}' must define at least one response.",
+            **get_location(m),
+        )
+
+    # If requestBody exists but no content, error
+    if hasattr(m, "requestBody") and m.requestBody and not getattr(m.requestBody, "contentEntity", None) and not getattr(m.requestBody, "type", None):
+        raise TextXSemanticError(
+            f"Method '{m.name}' requestBody must specify 'content'.",
+            **get_location(m),
+        )
+        
+def security_obj_processor(sec):
+    if not getattr(sec, "auth", None):
+        raise TextXSemanticError(
+            f"Security '{sec.name}' must define 'auth:'.",
+            **get_location(sec),
+        )
+    # Roles can be optional, but if given, must be non-empty
+    if hasattr(sec, "roles") and sec.roles is not None:
+        if len(sec.roles) == 0:
+            raise TextXSemanticError(
+                f"Security '{sec.name}' defines empty roles list.",
+                **get_location(sec),
+            )
+
 
 # Model-wide validation
 # ------------------------------------------------------------------------------
@@ -151,7 +184,9 @@ def model_processor(model, metamodel=None):
     verify_entities(model)
     verify_endpoints(model)
     verify_databases(model)
-    verify_subscriptions(model) 
+    verify_subscriptions(model)
+    verify_methods(model)
+    verify_security(model)
     logger.info("Model processed successfully.")
     
     
@@ -171,6 +206,8 @@ def verify_unique_names(model):
     ensure_unique(get_model_endpoints(model), "Endpoint")
     ensure_unique(get_model_queries(model), "SQLQuery")
     ensure_unique(get_model_subscriptions(model), "Subscription") 
+    ensure_unique(get_model_security(model), "Security")
+    ensure_unique(get_model_security(model), "Methods")
 
 
 def verify_entities(model):
@@ -319,6 +356,36 @@ def verify_subscriptions(model):
                 f"Subscription '{sub.name}' references unknown entity '{sub.entity.name}'.",
                 **get_location(sub),
             )
+            
+def verify_methods(model):
+    methods = {m.name: m for m in get_model_methods(model)}
+
+    # Endpoint → Method linkage
+    for ep in get_model_endpoints(model):
+        for mref in getattr(ep, "methods", []):
+            if isinstance(mref, str):
+                # legacy default like 'list', 'create'
+                if mref not in methods:
+                    raise TextXSemanticError(
+                        f"Endpoint '{ep.name}' references unknown method '{mref}'.",
+                        **get_location(ep),
+                    )
+            else:
+                if mref.name not in methods:
+                    raise TextXSemanticError(
+                        f"Endpoint '{ep.name}' references undefined method '{mref.name}'.",
+                        **get_location(ep),
+                    )
+                    
+def verify_security(model):
+    securities = get_model_security(model)
+    for sec in securities:
+        if not getattr(sec, "auth", None):
+            raise TextXSemanticError(
+                f"Security '{sec.name}' must have an 'auth' field.",
+                **get_location(sec),
+            )
+
         
 # Metamodel creation
 def get_scope_providers():
@@ -348,6 +415,8 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
             "SQLite": sqlite_obj_processor,
             "Entity": entity_obj_processor,
             "Subscription": subscription_obj_processor,
+            "Method": method_obj_processor,
+            "Security": security_obj_processor,
         }
     )
     return mm

@@ -4,6 +4,8 @@ import entity
 import endpoints
 import queries
 import websockets
+import methods
+import security
 import utils
 
 Model:
@@ -14,6 +16,8 @@ Model:
         (entities+=Entity)*
         (endpoints+=Endpoint)*
         (queries+=SQLQuery)*
-        (subscriptions+=Subscription)* 
+        (subscriptions+=Subscription)*
+        (methods+=Method)* 
+        (security+=Security)*
     )#
 ;
