@@ -17,7 +17,7 @@ Method:
         ('description:' description=STRING)?
         ('security:' security=[Security])?
         ('parameters:' '-' parameters+=Parameter['-'])?
-        ('requestBody:' requestBody=RequestBody)?
+        ('request:' request=request)?
         ('responses:' '-' responses+=Response['-'])?
     )#
     'end'
@@ -29,7 +29,7 @@ Parameter:
     '(' location=ParamLocation (',' 'required')? (',' 'default=' default=AttrValue)? ')'
 ;
 
-RequestBody:
+request:
     'content:' (contentEntity=[Entity] | type=AttrType)
     ('required')?
 ;

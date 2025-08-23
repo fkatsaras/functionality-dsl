@@ -40,7 +40,7 @@ end
 Method ProductCreate
   type: POST
   description: "Create a new product"
-  requestBody:
+  request:
     content: Product
     required
   responses:
@@ -62,7 +62,7 @@ Method ProductUpdate
   description: "Update a product by ID"
   parameters:
     - id: uuid (path, required)
-  requestBody:
+  request:
     content: Product
   responses:
     - 200: { description: "Product updated", content: Product }

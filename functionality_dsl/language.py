@@ -152,10 +152,10 @@ def method_obj_processor(m):
             **get_location(m),
         )
 
-    # If requestBody exists but no content, error
-    if hasattr(m, "requestBody") and m.requestBody and not getattr(m.requestBody, "contentEntity", None) and not getattr(m.requestBody, "type", None):
+    # If request exists but no content, error
+    if hasattr(m, "request") and m.request and not getattr(m.request, "contentEntity", None) and not getattr(m.request, "type", None):
         raise TextXSemanticError(
-            f"Method '{m.name}' requestBody must specify 'content'.",
+            f"Method '{m.name}' request must specify 'content'.",
             **get_location(m),
         )
         
