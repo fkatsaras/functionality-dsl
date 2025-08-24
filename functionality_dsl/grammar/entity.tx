@@ -1,36 +1,70 @@
 import database
+import client
+import endpoints
 
-// Primitive 
+// Primitive
 AttrType:
-    'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid'
+    'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict'
 ;
+
+Bool: 'true' | 'false';
 
 // Literal for defaults
 AttrValue:
-    STRING | INT | FLOAT | BOOL
+    STRING | FLOAT | INT | Bool
 ;
 
-// Optional attribute modifiers after type 
+// Optional attribute modifiers after type
 AttrModifier:
     'pk' | 'required'
 ;
 
-// Entities define storage + shape in a tight form:
-// - database/table are required
-// - attributes list with inline type and modifiers (e.g., "pk", "required")
-Entity:
-    'Entity' name=ID
+// Polymorphic source for entities (frontend client, REST/WS endpoint, or database)
+Source:
+      Client
+    | RESTEndpoint
+    | WebSocketEndpoint
+    | Database
+;
+
+// Entities define shape (and optionally storage/source/uri)
+Model:
+    'Model' name=ID
     (
-        'database:' database=[Database]
-        'table:' table=STRING
-        'attributes:' '-' attributes*=Attribute['-']
+        ('source:' source=[Source])?       // 0..1 source (e.g., Database, Client, Endpoint)
+        ('table:'  table=STRING)?          // DB-oriented models can set a table
+        'attributes:' '-' attributes+=Attribute['-']
     )#
     'end'
 ;
 
-// Attribute line:
-//   <name> ':' <type> (modifiers...)? ('default:' <value>)?
+Request:
+    'Request' name=ID
+    (
+        ('base:' base=[Entity])?           //  projection/base model
+        'attributes:' '-' attributes+=Attribute['-']
+    )#
+    'end'
+;
 
+Response:
+    'Response' name=ID
+    (
+        ('base:' base=[Entity])?           //  projection/base model
+        'attributes:' '-' attributes+=Attribute['-']
+    )#
+    'end'
+;
+
+Entity:
+      Model
+    | Request
+    | Response
+;
+
+
+// Attribute line:
+//   <name> ':' <type> (modifiers...)? ('default=' <value>)?
 Attribute:
     name=ID ':' type=AttrType
     (modifiers+=AttrModifier)*

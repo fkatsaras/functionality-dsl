@@ -1,17 +1,28 @@
 import server
-import entity
-import methods
-import security
 
-// Binds HTTP base to an Entity with a set of methods.
-Endpoint:
-    'Endpoint' name=ID
+HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+RESTEndpoint:
+    'RESTEndpoint' name=ID
     (
-        ('base:' base=STRING)
-        ('entity:' entity=[Entity])
-        ('server:' server=[Server])?
-        ('methods:' '-' methods+=[Method]['-'])?
-        ('security' ':' security=[Security])?
+        ('verb:' verb=HttpVerb)?          // default = GET (set in processor/model)
+        ('server:' server=[Server])       // <-- 1..1
+        ('path:' path=STRING)
     )#
     'end'
 ;
+
+Protocol: ID | STRING;
+
+WebSocketEndpoint:
+    'WebSocketEndpoint' name=ID
+    (
+        ('server:' server=[Server])       // <-- 1..1 server per Ecore
+        ('path:' path=STRING)
+        ('protocol:' protocol=Protocol)?
+    )#
+    'end'
+;
+
+Endpoint:
+    RESTEndpoint | WebSocketEndpoint;

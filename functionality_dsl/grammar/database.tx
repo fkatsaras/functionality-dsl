@@ -1,32 +1,9 @@
-import auth
-import utils
-
-// add more kinds later (e.g., MySQL, MongoDB) using the same pattern.
-Database: Postgres | SQLite
-;
-
-Postgres:
-    'Database<Postgres>' name=ID
+Database:
+    'Database' name=ID
     (
-        // EITHER provide a full DSN URL...
-        ('url:' url=STRING)?
-        // ...OR discrete fields. (Both may be present; tooling can validate one strategy.)
-        ('host:' host=STRING)?
-        ('port:' port=INT)?
-        ('database:' database=STRING)?
-        ('auth:' auth=AuthPlain)?
-        ('ssl:' ssl=BOOL)?
-    )#
-    'end'
-;
-
-SQLite:
-    'Database<SQLite>' name=ID
-    (
-        // Typical file-based DB
-        ('file:' file=STRING)?
-        // Optionally a URI form for SQLite (e.g., "file:app.db?mode=rwc")
-        ('uri:' uri=STRING)?
+        ('host:' host=STRING)
+        ('port:' port=INT)
+        ('schema:' schema=STRING)?
     )#
     'end'
 ;

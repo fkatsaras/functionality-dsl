@@ -35,27 +35,43 @@ def build_model_str(model_str):
     model = FunctionalityDSLMetaModel.model_from_str(model_str)
     return model
 
+# ----- Getters ------
+def get_model_clients(model):
+    return get_children_of_type("Client", model)
+
 def get_model_servers(model):
     return get_children_of_type("Server", model)
 
 def get_model_databases(model):
-    # Polymorphic: concrete instances are Postgres or SQLite
-    return get_children_of_type("Postgres", model) + get_children_of_type("SQLite", model)
+    return get_children_of_type("Database", model)
 
-def get_model_entities(model):
-    return get_children_of_type("Entity", model)
+def get_entity_models(model):
+    return get_children_of_type("Model", model)  # entity.tx Model
 
-def get_model_endpoints(model):
-    return get_children_of_type("Endpoint", model)
+def get_entity_requests(model):
+    return get_children_of_type("Request", model)
+
+def get_entity_responses(model):
+    return get_children_of_type("Response", model)
+
+def get_all_entities(model):
+    return (
+        list(get_entity_models(model))
+        + list(get_entity_requests(model))
+        + list(get_entity_responses(model))
+    )
+
+def get_model_rest_endpoints(model):
+    return get_children_of_type("RESTEndpoint", model)
+
+def get_model_ws_endpoints(model):
+    return get_children_of_type("WebSocketEndpoint", model)
 
 def get_model_queries(model):
     return get_children_of_type("SQLQuery", model)
 
-def get_model_subscriptions(model):
-    return get_children_of_type("Subscription", model)
-
-def get_model_methods(model):
-    return get_children_of_type("Method", model)
+def get_model_actions(model):
+    return get_children_of_type("Action", model)
 
 def get_model_security(model):
     return get_children_of_type("Security", model)
@@ -63,102 +79,74 @@ def get_model_security(model):
 
 # ------------------------------------------------------------------------------
 # Object processors (light defaults)
-DEFAULT_METHODS = ["list", "create", "get", "update", "delete"]
 DEFAULT_WS_EVENTS = ["created", "updated", "deleted"]  # tiny default set
 ALLOWED_WS_EVENTS = set(["created", "updated", "deleted", "any"])
 
 
-def endpoint_obj_processor(ep):
-    # Default methods if none provided
-    if not getattr(ep, "methods", None) or len(ep.methods) == 0:
-        ep.methods = list(DEFAULT_METHODS)
-
-    # base path begins with '/'
-    if not getattr(ep, "base", None) or not str(ep.base).startswith("/"):
+def rest_endpoint_obj_processor(ep):
+    """
+    RESTEndpoint:
+      - Default verb to GET if omitted
+      - Must have server ref
+      - path must start with '/'
+    """
+    if not getattr(ep, "verb", None):
+        ep.verb = "GET"
+    if not getattr(ep, "server", None):
         raise TextXSemanticError(
-            f"Endpoint '{ep.name}' must have a base path starting with '/'.",
+            f"RESTEndpoint '{ep.name}' must define 'server:'.", **get_location(ep)
+        )
+    if not getattr(ep, "path", None) or not str(ep.path).startswith("/"):
+        raise TextXSemanticError(
+            f"RESTEndpoint '{ep.name}' must have a path starting with '/'.",
+            **get_location(ep),
+        )
+        
+def ws_endpoint_obj_processor(ep):
+    """
+    WebSocketEndpoint:
+      - Must have server ref
+      - path must start with '/'
+    """
+    if not getattr(ep, "server", None):
+        raise TextXSemanticError(
+            f"WebSocketEndpoint '{ep.name}' must define 'server:'.", **get_location(ep)
+        )
+    if not getattr(ep, "path", None) or not str(ep.path).startswith("/"):
+        raise TextXSemanticError(
+            f"WebSocketEndpoint '{ep.name}' must have a path starting with '/'.",
             **get_location(ep),
         )
 
-def postgres_obj_processor(db):
-    """
-    Connection rules:
-      - Either url is provided, OR (host AND database) are provided.
-      - If host is provided but port is missing, assume 5432.
-    """
-    url = getattr(db, "url", None)
-    host = getattr(db, "host", None)
-    database = getattr(db, "database", None)
 
-    if not url and not (host and database):
+def database_obj_processor(db):
+    """
+    Database:
+      - host required
+      - port required
+      - schema optional
+    """
+    if not getattr(db, "host", None):
         raise TextXSemanticError(
-            f"Database<Postgres> '{db.name}' must define either 'url' "
-            f"or both 'host' and 'database'.",
-            **get_location(db),
+            f"Database '{db.name}' must define 'host:'.", **get_location(db)
         )
-
-    # Provide a default port when using discrete fields.
-    if host and getattr(db, "port", None) is None:
-        db.port = 5432
-
-
-def sqlite_obj_processor(db):
-    """
-    Connection rules:
-      - At least one of {file, uri, inMemory=true} must be present.
-      - If inMemory is true, file/uri are optional.
-    """
-    file_ = getattr(db, "file", None)
-    uri = getattr(db, "uri", None)
-
-    if not (file_ or uri ):
+    if getattr(db, "port", None) is None:
         raise TextXSemanticError(
-            f"Database<SQLite> '{db.name}' requires one of 'file', 'uri'.",
-            **get_location(db),
+            f"Database '{db.name}' must define 'port:'.", **get_location(db)
         )
+    if not getattr(db, "schema", None):
+        logger.info(f"Database '{db.name}' has no 'schema:' defined.")
 
-
-def entity_obj_processor(ent):
-    """
-    Entity defaults/sanity happen here if we ever add any.
-    For now we keep it minimal and let model_processor do the heavy checks.
-    """
-    # Nothing to set by default;
+def entity_like_obj_processor(_ent):
+    # Reserved for future defaults on Model/Request/Response.
     return
 
-def subscription_obj_processor(sub):
-    # Default to the common change events if not specified.
-    if not getattr(sub, "events", None) or len(sub.events) == 0:
-        sub.events = list(DEFAULT_WS_EVENTS)
-    # Path sanity
-    if not getattr(sub, "path", None) or not str(sub.path).startswith("/"):
-        raise TextXSemanticError(
-            f"Subscription '{sub.name}' must have a path starting with '/'.",
-            **get_location(sub),
-        )
-    # Validate event names (grammar constrains, but keep defensive)
-    for ev in sub.events:
-        if ev not in ALLOWED_WS_EVENTS:
-            raise TextXSemanticError(
-                f"Subscription '{sub.name}' has invalid event '{ev}'.",
-                **get_location(sub),
-            )
-            
-def method_obj_processor(m):
-    # Require at least one response
-    if not getattr(m, "responses", None) or len(m.responses) == 0:
-        raise TextXSemanticError(
-            f"Method '{m.name}' must define at least one response.",
-            **get_location(m),
-        )
-
-    # If request exists but no content, error
-    if hasattr(m, "request") and m.request and not getattr(m.request, "contentEntity", None) and not getattr(m.request, "type", None):
-        raise TextXSemanticError(
-            f"Method '{m.name}' request must specify 'content'.",
-            **get_location(m),
-        )
+def action_obj_processor(act):
+    # Default mode to 'request' if omitted (grammar allows optional)
+    if not getattr(act, "mode", None):
+        act.mode = "request"
         
+
 def security_obj_processor(sec):
     if not getattr(sec, "auth", None):
         raise TextXSemanticError(
@@ -182,14 +170,13 @@ def model_processor(model, metamodel=None):
     """
     verify_unique_names(model)
     verify_entities(model)
-    verify_endpoints(model)
     verify_databases(model)
-    verify_subscriptions(model)
-    verify_methods(model)
-    verify_security(model)
-    logger.info("Model processed successfully.")
+    verify_rest_endpoints(model)
+    verify_ws_endpoints(model)
+    verify_actions(model)
+    logger.info("Model processed successfully.")   
     
-    
+
 def verify_unique_names(model):
     def ensure_unique(objs, kind):
         seen = set()
@@ -200,56 +187,65 @@ def verify_unique_names(model):
                 )
             seen.add(o.name)
 
-    ensure_unique(get_model_servers(model), "Server")
+    ensure_unique(get_model_clients(model), "Client")
     ensure_unique(get_model_databases(model), "Database")
-    ensure_unique(get_model_entities(model), "Entity")
-    ensure_unique(get_model_endpoints(model), "Endpoint")
-    ensure_unique(get_model_queries(model), "SQLQuery")
-    ensure_unique(get_model_subscriptions(model), "Subscription") 
+    ensure_unique(get_all_entities(model), "Entity")
+    ensure_unique(get_model_rest_endpoints(model), "RESTEndpoint")
+    ensure_unique(get_model_ws_endpoints(model), "WebSocketEndpoint")
+    ensure_unique(get_model_actions(model), "Action")
     ensure_unique(get_model_security(model), "Security")
-    ensure_unique(get_model_security(model), "Methods")
 
 
 def verify_entities(model):
-    entities = get_model_entities(model)
+    """
+    Validate Model/Request/Response attributes and PK constraints.
+    """
+    entities = get_all_entities(model)
+
     for ent in entities:
-        # Required fields in our tight syntax
-        if not getattr(ent, "database", None):
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' is missing 'database:' reference.", **get_location(ent)
-            )
-        if not getattr(ent, "table", None):
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' is missing 'table:' name.", **get_location(ent)
-            )
+        # Must have attributes
         if not getattr(ent, "attributes", None) or len(ent.attributes) == 0:
             raise TextXSemanticError(
-                f"Entity '{ent.name}' must declare at least one attribute.", **get_location(ent)
+                f"Entity '{ent.name}' must declare at least one attribute.",
+                **get_location(ent),
             )
 
-        # Attribute uniqueness
+        # Attribute name uniqueness
         seen = set()
         for a in ent.attributes:
             if a.name in seen:
                 raise TextXSemanticError(
-                    f"Entity '{ent.name}' attribute <{a.name}> already exists.", **get_location(a)
+                    f"Entity '{ent.name}' attribute <{a.name}> already exists.",
+                    **get_location(a),
                 )
             seen.add(a.name)
 
-        # Exactly one primary key
-        pk_attrs = [a for a in ent.attributes if "pk" in (a.modifiers or [])]
-        if len(pk_attrs) == 0:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' must define exactly one primary key (use 'pk' modifier).",
-                **get_location(ent),
-            )
-        if len(pk_attrs) > 1:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' has multiple primary keys ({', '.join([a.name for a in pk_attrs])}).",
-                **get_location(ent),
-            )
+        # PK rule depends on concrete kind
+        kind = type(ent).__name__  # 'Model' | 'Request' | 'Response'
+        pk_attrs = [a for a in ent.attributes if (getattr(a, "modifiers", None) and "pk" in a.modifiers)]
 
-        # Check defaults' type compatibility (lightweight)
+        if kind in ("Request", "Response"):
+            if len(pk_attrs) > 1:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' has multiple primary keys "
+                    f"({', '.join([a.name for a in pk_attrs])}).",
+                    **get_location(ent),
+                )
+        else:
+            # Model (persisted-like): require exactly one pk
+            if len(pk_attrs) == 0:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' must define exactly one primary key (use 'pk' modifier).",
+                    **get_location(ent),
+                )
+            if len(pk_attrs) > 1:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' has multiple primary keys "
+                    f"({', '.join([a.name for a in pk_attrs])}).",
+                    **get_location(ent),
+                )
+
+        # Lightweight default-type compatibility
         for a in ent.attributes:
             if getattr(a, "default", None) is not None:
                 _assert_default_type_compat(ent, a)
@@ -291,91 +287,114 @@ def _assert_default_type_compat(entity, attr):
         # Grammar restricts to known AttrType values; this path shouldn't occur.
         err()
         
-def verify_single_server(model):
-    """
-    Enforce exactly one Server<HTTP> in the model.
-    """
-    servers = get_model_servers(model)  # returns a list
-    if len(servers) == 0:
-        raise TextXSemanticError("You must declare exactly one Server<HTTP>, found 0.")
-    if len(servers) > 1:
-        names = ", ".join(s.name for s in servers)
-        raise TextXSemanticError(
-            f"Expected exactly one Server<HTTP>, found {len(servers)}: {names}."
-        )
-    return servers[0]
           
-def verify_endpoints(model):
-    endpoints = get_model_endpoints(model)
-    entities = {e.name: e for e in get_model_entities(model)}
+def verify_rest_endpoints(model):
+    for ep in get_model_rest_endpoints(model):
+        # rest_endpoint_obj_processor already checks presence/format
+        # Additional cross-object checks could go here if needed
+        pass
 
-    server = verify_single_server(model)
 
-    for ep in endpoints:
-        # entity is required and must exist
-        if not getattr(ep, "entity", None):
-            raise TextXSemanticError(
-                f"Endpoint '{ep.name}' must reference an entity.", **get_location(ep)
-            )
-        if ep.entity.name not in entities:
-            raise TextXSemanticError(
-                f"Endpoint '{ep.name}' references unknown entity '{ep.entity.name}'.",
-                **get_location(ep),
-            )
-
-        # bind the single server to the endpoint
-        ep.server = server
-
-        # default methods if missing
-        if not getattr(ep, "methods", None) or len(ep.methods) == 0:
-            ep.methods = list(DEFAULT_METHODS)
+def verify_ws_endpoints(model):
+    for ep in get_model_ws_endpoints(model):
+        # ws_endpoint_obj_processor already checks presence/format
+        pass
             
 def verify_databases(model):
     """
-    Nothing cross-db to check beyond object processors,
-    but we ensure there is at least one Database when Entities exist.
+    If any entity Model binds its 'source:' to a Database, ensure there is one declared.
     """
     dbs = get_model_databases(model)
-    if len(dbs) == 0 and len(get_model_entities(model)) > 0:
+    models = get_entity_models(model)
+    any_model_binds_db = any(
+        getattr(m, "source", None) and type(getattr(m, "source")).__name__ == "Database"
+        for m in models
+    )
+    if any_model_binds_db and len(dbs) == 0:
         raise TextXSemanticError(
-            "At least one Database must be declared when Entities exist."
+            "At least one Database must be declared when a Model uses source: Database."
         )
-        
-def verify_subscriptions(model):
-    subs = get_model_subscriptions(model)
-    entities = {e.name: e for e in get_model_entities(model)}
-
-    for sub in subs:
-        if not getattr(sub, "entity", None):
-            raise TextXSemanticError(
-                f"Subscription '{sub.name}' must reference an entity.",
-                **get_location(sub),
-            )
-        if sub.entity.name not in entities:
-            raise TextXSemanticError(
-                f"Subscription '{sub.name}' references unknown entity '{sub.entity.name}'.",
-                **get_location(sub),
-            )
             
-def verify_methods(model):
-    methods = {m.name: m for m in get_model_methods(model)}
+def verify_actions(model):
+    """
+    Validate new Action shape:
 
-    # Endpoint → Method linkage
-    for ep in get_model_endpoints(model):
-        for mref in getattr(ep, "methods", []):
-            if isinstance(mref, str):
-                # legacy default like 'list', 'create'
-                if mref not in methods:
+      Action <Name>
+        using: <RESTEndpoint|WebSocketEndpoint>    (required)
+        request: <Request>                         (required)
+        validates: <Model|Request|Response>        (optional)
+        response:
+          - <status>: <Response|None>              (>=1 required, status unique)
+    """
+    for act in get_model_actions(model):
+        # using: required, must be REST or WS endpoint
+        if not getattr(act, "using", None):
+            raise TextXSemanticError(
+                f"Action '{act.name}' must define 'using: <Endpoint>'.",
+                **get_location(act),
+            )
+        using_kind = type(act.using).__name__
+        if using_kind not in ("RESTEndpoint", "WebSocketEndpoint"):
+            raise TextXSemanticError(
+                f"Action '{act.name}' 'using:' must reference a RESTEndpoint or WebSocketEndpoint.",
+                **get_location(act),
+            )
+
+        # request: required, must be Request
+        if not getattr(act, "request", None):
+            raise TextXSemanticError(
+                f"Action '{act.name}' must define 'request: <Request>'.",
+                **get_location(act),
+            )
+        if type(act.request).__name__ != "Request":
+            raise TextXSemanticError(
+                f"Action '{act.name}' 'request:' must reference a Request.",
+                **get_location(act),
+            )
+
+        # validates: optional, if present must be Model/Request/Response
+        if getattr(act, "validates", None) is not None:
+            if type(act.validates).__name__ not in ("Model", "Request", "Response"):
+                raise TextXSemanticError(
+                    f"Action '{act.name}' 'validates:' must reference an EntityKind (Model/Request/Response).",
+                    **get_location(act),
+                )
+
+        # response: required, at least one mapping, unique and sensible status codes
+        if not hasattr(act, "responses") or act.responses is None or len(act.responses) == 0:
+            raise TextXSemanticError(
+                f"Action '{act.name}' must define at least one response mapping.",
+                **get_location(act),
+            )
+
+        for r in act.responses:
+            # shape is present ONLY if the [Response] branch matched.
+            raw = getattr(r, "shape", None)
+            is_null = (
+                raw is None
+                or (isinstance(raw, str) and raw.lower() in ("none", "null"))
+            )
+
+            if is_null:
+                # 204 must be None
+                if r.status != 204:
                     raise TextXSemanticError(
-                        f"Endpoint '{ep.name}' references unknown method '{mref}'.",
-                        **get_location(ep),
+                        f"Action '{act.name}' status {r.status} must not be None",
+                        **get_location(r),
                     )
-            else:
-                if mref.name not in methods:
-                    raise TextXSemanticError(
-                        f"Endpoint '{ep.name}' references undefined method '{mref.name}'.",
-                        **get_location(ep),
-                    )
+                continue
+
+            if type(raw).__name__ != "Response":
+                raise TextXSemanticError(
+                    f"Action '{act.name}' status {r.status}: value must be a Response or None/null.",
+                    **get_location(r),
+                )
+
+            if r.status == 204:
+                raise TextXSemanticError(
+                    f"Action '{act.name}' status 204 must map to None/null.",
+                    **get_location(r),
+                )
                     
 def verify_security(model):
     securities = get_model_security(model)
@@ -387,7 +406,7 @@ def verify_security(model):
             )
 
         
-# Metamodel creation
+# ------ Metamodel creation -------
 def get_scope_providers():
     """
     Minimal FQN import provider.
@@ -410,12 +429,12 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(model_processor)
     mm.register_obj_processors(
         {
-            "Endpoint": endpoint_obj_processor,
-            "Postgres": postgres_obj_processor,
-            "SQLite": sqlite_obj_processor,
-            "Entity": entity_obj_processor,
-            "Subscription": subscription_obj_processor,
-            "Method": method_obj_processor,
+            "RESTEndpoint": rest_endpoint_obj_processor,
+            "WebSocketEndpoint": ws_endpoint_obj_processor,
+            "Database": database_obj_processor,
+            "Model": entity_like_obj_processor,     # entity.tx Model
+            "Request": entity_like_obj_processor,
+            "Response": entity_like_obj_processor,
             "Security": security_obj_processor,
         }
     )

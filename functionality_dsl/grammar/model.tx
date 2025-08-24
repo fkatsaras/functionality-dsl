@@ -1,23 +1,26 @@
 import server
+import client
 import database
 import entity
 import endpoints
 import queries
-import websockets
-import methods
 import security
+import actions
 import utils
 
-Model:
-    (imports+=Import)?
+FDSLModel:
+    (imports+=Import)*
     (
         (server+=Server)*
+        (client+=Client)*
         (databases+=Database)*
-        (entities+=Entity)*
-        (endpoints+=Endpoint)*
+        (models+=Model)*
+        (requests+=Request)*
+        (responses+=Response)*
+        (endpoints+=RESTEndpoint)*
         (queries+=SQLQuery)*
-        (subscriptions+=Subscription)*
-        (methods+=Method)* 
+        (websockets+=WebSocketEndpoint)*
+        (actions+=Action)*
         (security+=Security)*
     )#
 ;

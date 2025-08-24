@@ -1,99 +1,162 @@
-Server Main
-  host: "0.0.0.0"
+Client WebApp
+  host: "localhost"
+  port: 3000
+end
+
+Server BookAPI
+  host: 'localhost'
   port: 8080
-  base: "/api"
 end
 
-Security JWTAuth
-  auth: JWT
-  roles: admin, user
-end
-
-Database<Postgres> DB
+Database PostgresDB
   host: "localhost"
   port: 5432
-  database: "warehouse"
-  auth:
-    username: "appuser"
-    password: "secret"
-  ssl: false
+  schema: "bookstore"
 end
 
-Entity Product
-  database: DB
-  table: "products"
+// --- Endpoints ---
+RESTEndpoint BooksList
+  verb: GET
+  host: "api.myapp.com"
+  port: 8080
+  path: "/books"
+end
+
+RESTEndpoint BooksCreate
+  verb: POST
+  host: "api.myapp.com"
+  port: 8080
+  path: "/books"
+end
+
+RESTEndpoint AuthorGet
+  verb: GET
+  host: "api.myapp.com"
+  port: 8080
+  path: "/authors/{id}"
+end
+
+RESTEndpoint BookUpdate
+  verb: PUT
+  host: "api.myapp.com"
+  port: 8080
+  path: "/books/{id}"
+end
+
+RESTEndpoint BookDelete
+  verb: DELETE
+  host: "api.myapp.com"
+  port: 8080
+  path: "/books/{id}"
+end
+
+// --- DB entities (models) ---
+Entity Author
+  type: model
+  source: PostgresDB
+  table: "authors"
   attributes:
-    - id: uuid pk
+    - id: int pk
     - name: string required
-    - category: string
-    - description: string
+end
+
+Entity Book
+  type: model
+  source: PostgresDB
+  table: "books"
+  attributes:
+    - id: int pk
+    - isbn: string required
+    - title: string required
+    - author_id: int required
+    - price: number
+    - published_at: datetime
+end
+
+// --- Frontend DTOs (payloads) ---
+Entity AuthorRequest
+  type: payload
+  source: WebApp
+  attributes:
+    - name: string
+end
+
+Entity BookDeleteRequest
+  type: payload
+  source: WebApp
+  attributes:
+    - name: string
+end
+
+Entity BookCreateRequest
+  type: payload
+  source: WebApp
+  attributes:
+    - isbn: string required
+    - title: string required
+    - author_id: int required
+    - price: number
+    - published_at: datetime
+end
+
+Entity BookUpdateInput
+  type: payload
+  source: WebApp
+  attributes:
+    - title: string
+    - price: number
+    - published_at: datetime
+end
+
+Entity BookFilter
+  type: payload
+  source: WebApp
+  attributes:
+    - title: string
+    - author_id: int
+end
+
+// --- Backend payloads (response shapes/messages) ---
+Entity BookView
+  type: payload
+  source: BooksList
+  attributes:
+    - id: int
+    - isbn: string
+    - title: string
+    - author_id: int
     - price: number
 end
 
-Method ProductList
-  type: GET
-  description: "Retrieve all products"
-  responses:
-    - 200: { description: "List of products", content: [Product] }
+// --- Actions (wire DTOs <-> models via endpoints) ---
+Action ListBooks
+  from: BookFilter
+  to: BookView
+  using: BooksList
 end
 
-Method ProductCreate
-  type: POST
-  description: "Create a new product"
-  request:
-    content: Product
-    required
-  responses:
-    - 201: { description: "Product created", content: Product }
+Action CreateBook
+  from: BookCreateRequest
+  to: Book
+  using: BooksCreate
+  validates: Book
 end
 
-Method ProductGet
-  type: GET
-  description: "Retrieve a product by ID"
-  parameters:
-    - id: uuid (path, required)
-  responses:
-    - 200: { description: "Product found", content: Product }
-    - 404: { description: "Not found" }
+Action UpdateBook
+  from: BookUpdateInput
+  to: Book
+  using: BookUpdate
+  validates: Book
 end
 
-Method ProductUpdate
-  type: PUT
-  description: "Update a product by ID"
-  parameters:
-    - id: uuid (path, required)
-  request:
-    content: Product
-  responses:
-    - 200: { description: "Product updated", content: Product }
-    - 404: { description: "Not found" }
+Action DeleteBook
+  from: BookDeleteRequest
+  to: Book
+  using: BookDelete
 end
 
-Method ProductDelete
-  type: DELETE
-  description: "Delete a product by ID"
-  parameters:
-    - id: uuid (path, required)
-  responses:
-    - 204: { description: "Deleted" }
-    - 404: { description: "Not found" }
-end
-
-
-Endpoint Products
-  base: "/products"
-  entity: Product
-  server: Main
-  methods:
-    - ProductList
-    - ProductCreate
-    - ProductGet
-    - ProductUpdate
-    - ProductDelete
-end
-
-Subscription ProductStream
-  path: "/ws/products"
-  entity: Product
-  events: created, updated, deleted
+Action GetAuthor
+  from: AuthorRequest
+  to: Author
+  using: AuthorGet
 end
