@@ -4,6 +4,7 @@ import os
 from rich import print, pretty
 
 from functionality_dsl.language import build_model
+from functionality_dsl.utils import print_model_debug
 
 pretty.install()
 
@@ -26,6 +27,20 @@ def validate(context, model_path):
         print("[*] Model validation success!!")
     except Exception as e:
         print(f"[*] Validation failed with error(s): {e}")
+        context.exit(1)
+    else:
+        context.exit(0)
+        
+@cli.command("inspect", help="Parse and print a summary of the model (routes, actions, shapes).")
+@click.pass_context
+@click.argument("model_path")
+def inspect_cmd(context, model_path):
+    try:
+        model = build_model(model_path)
+        print("[*] Model validation success!!")
+        print_model_debug(model)
+    except Exception as e:
+        print(f"[*] Inspect failed with error(s): {e}")
         context.exit(1)
     else:
         context.exit(0)

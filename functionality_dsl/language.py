@@ -1,5 +1,6 @@
 import logging
 from os.path import join, dirname, abspath
+import re
 from textx import (
     metamodel_from_file,
     get_children_of_type,
@@ -76,10 +77,67 @@ def get_model_actions(model):
 def get_model_security(model):
     return get_children_of_type("Security", model)
 
+# ------------------------------------------------------------------------------
+# Helpers #
+def _norm_base(s: str | None) -> str:
+    if not s or s.strip() == "":
+        return "/"
+    s = s.strip()
+    if not s.startswith("/"):
+        s = s + "/"
+    if len(s) > 1 and s.endswith("/"):
+        s = s[:-1]
+    return s
+
+def _join_base_path(base: str, path: str) -> str:
+    base = _norm_base(base)
+    if not path.startswith("/"):
+        path = "/" + path
+    # Avoid double //
+    if base == "/":
+        return path
+    return base + path
+
+_PATH_PARAM_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+def _extract_path_params(path: str) -> list[str]:
+    return _PATH_PARAM_RE.findall(path or "")
+
+def _attr_to_dict(a):
+    return {
+        "name": a.name,
+        "type": a.type,
+        "modifiers": list(getattr(a, "modifiers", []) or []),
+        "required": ("required" in (getattr(a, "modifiers", []) or [])),
+        "pk": ("pk" in (getattr(a, "modifiers", []) or [])),
+        "default": getattr(a, "default", None),
+    }
+    
+def _resolve_attrs_for(entity_like):
+    """
+    Returns a list[dict] of attributes for Request/Response, including base overlay.
+    Child attributes override base by name.
+    """
+    attrs = {}
+    base = getattr(entity_like, "base", None)
+    if base is not None:
+        # Prefer base.resolved_attributes if already computed, else fall back to base.attributes
+        base_resolved = getattr(base, "resolved_attributes", None)
+        if base_resolved is None:
+            base_resolved = [_attr_to_dict(a) for a in getattr(base, "attributes", []) or []]
+        for d in base_resolved:
+            attrs[d["name"]] = d
+
+    # Overlay child attrs
+    for a in getattr(entity_like, "attributes", []) or []:
+        attrs[a.name] = _attr_to_dict(a)
+
+    # Preserve input order as much as reasonably possible: base first, then child overrides appended
+    return list(attrs.values())
 
 # ------------------------------------------------------------------------------
 # Object processors (light defaults)
-DEFAULT_WS_EVENTS = ["created", "updated", "deleted"]  # tiny default set
+DEFAULT_WS_EVENTS = ["created", "updated", "deleted"]  #  default set
 ALLOWED_WS_EVENTS = set(["created", "updated", "deleted", "any"])
 
 
@@ -101,6 +159,11 @@ def rest_endpoint_obj_processor(ep):
             f"RESTEndpoint '{ep.name}' must have a path starting with '/'.",
             **get_location(ep),
         )
+
+    ep.server_name = ep.server.name
+    base = getattr(ep.server, "base", "/")
+    ep.full_path = _join_base_path(base, ep.path)
+    ep.path_params = _extract_path_params(ep.path)
         
 def ws_endpoint_obj_processor(ep):
     """
@@ -117,6 +180,11 @@ def ws_endpoint_obj_processor(ep):
             f"WebSocketEndpoint '{ep.name}' must have a path starting with '/'.",
             **get_location(ep),
         )
+        
+    ep.server_name = ep.server.name
+    base = getattr(ep.server, "base", "/")
+    ep.full_path = _join_base_path(base, ep.path)
+    ep.path_params = _extract_path_params(ep.path)
 
 
 def database_obj_processor(db):
@@ -142,9 +210,8 @@ def entity_like_obj_processor(_ent):
     return
 
 def action_obj_processor(act):
-    # Default mode to 'request' if omitted (grammar allows optional)
-    if not getattr(act, "mode", None):
-        act.mode = "request"
+    # Future defaults as well
+    return
         
 
 def security_obj_processor(sec):
@@ -174,7 +241,33 @@ def model_processor(model, metamodel=None):
     verify_rest_endpoints(model)
     verify_ws_endpoints(model)
     verify_actions(model)
-    logger.info("Model processed successfully.")   
+    
+    # Enrich root with aggregated collections
+    _populate_aggregates(model)
+
+    # Normalize server base
+    for s in model.aggregated_servers:
+        s.base = _norm_base(getattr(s, "base", "/"))
+        s.base_norm = s.base  # alias for clarity in templates
+
+    # Ensure endpoint enrichment uses normalized server base (processors already set fields)
+    for ep in model.aggregated_restendpoints:
+        ep.full_path = _join_base_path(ep.server.base, ep.path)
+        ep.path_params = _extract_path_params(ep.path)
+    for ep in model.aggregated_websockets:
+        ep.full_path = _join_base_path(ep.server.base, ep.path)
+        ep.path_params = _extract_path_params(ep.path)
+
+    # Compute resolved attributes for Requests/Responses
+    for req in model.aggregated_requests:
+        req.resolved_attributes = _resolve_attrs_for(req)
+    for rsp in model.aggregated_responses:
+        rsp.resolved_attributes = _resolve_attrs_for(rsp)
+
+    # Enrich actions + codegen-facing checks
+    _enrich_and_check_actions(model)
+
+    logger.info("Model processed successfully.")  
     
 
 def verify_unique_names(model):
@@ -404,6 +497,87 @@ def verify_security(model):
                 f"Security '{sec.name}' must have an 'auth' field.",
                 **get_location(sec),
             )
+            
+# Model enrichment ---------------------------------------------------
+def _populate_aggregates(model):
+    model.aggregated_clients = list(get_model_clients(model))
+    model.aggregated_servers = list(get_model_servers(model))
+    model.aggregated_databases = list(get_model_databases(model))
+    model.aggregated_models = list(get_entity_models(model))
+    model.aggregated_requests = list(get_entity_requests(model))
+    model.aggregated_responses = list(get_entity_responses(model))
+    model.aggregated_restendpoints = list(get_model_rest_endpoints(model))
+    model.aggregated_websockets = list(get_model_ws_endpoints(model))
+    model.aggregated_actions = list(get_model_actions(model))
+
+def _enrich_and_check_actions(model):
+    """
+    Adds derived fields on actions and performs codegen-facing checks:
+      - route uniqueness (server, verb, full_path)
+      - path placeholder coverage by request attrs
+    """
+    seen_routes = set()
+
+    # Quick name -> Request/Response maps
+    request_map = {r.name: r for r in model.aggregated_requests}
+    response_map = {r.name: r for r in model.aggregated_responses}
+
+    for act in model.aggregated_actions:
+        ep = act.using
+        act.endpoint_name = ep.name
+        act.server = ep.server
+        act.server_name = ep.server.name
+        act.verb = getattr(ep, "verb", "GET")
+        act.full_path = ep.full_path
+        act.path_params = list(getattr(ep, "path_params", []) or [])
+
+        # Normalize responses for templates
+        responses_list = []
+        has_204_null = False
+        for r in act.responses:
+            raw = getattr(r, "shape", None)
+            is_null = (raw is None) or (isinstance(raw, str) and raw.lower() in ("none", "null"))
+            shape_name = None
+            if not is_null:
+                shape_name = getattr(raw, "name", None)
+                if shape_name and shape_name not in response_map:
+                    # Defensive; textX should have resolved already
+                    raise TextXSemanticError(
+                        f"Action '{act.name}' status {r.status}: unknown Response '{shape_name}'.",
+                        **get_location(r),
+                    )
+            if r.status == 204 and is_null:
+                has_204_null = True
+            responses_list.append(
+                {"status": r.status, "shape": shape_name, "is_null": is_null}
+            )
+        act.responses_list = responses_list
+        act.has_204_null = has_204_null
+
+        # Request attrs (resolved)
+        req = act.request
+        req_resolved = getattr(req, "resolved_attributes", None)
+        if req_resolved is None:
+            req_resolved = _resolve_attrs_for(req)
+            req.resolved_attributes = req_resolved
+        act.request_attr_names = {a["name"] for a in req_resolved}
+
+        # Path param coverage
+        missing = [p for p in act.path_params if p not in act.request_attr_names]
+        if missing:
+            raise TextXSemanticError(
+                f"Action '{act.name}' request '{req.name}' is missing path params: {', '.join(missing)}.",
+                **get_location(act),
+            )
+
+        # Route uniqueness (server, verb, full_path)
+        key = (act.server_name, act.verb.upper(), act.full_path)
+        if key in seen_routes:
+            raise TextXSemanticError(
+                f"Duplicate route (server={act.server_name}, verb={act.verb}, path={act.full_path}).",
+                **get_location(act),
+            )
+        seen_routes.add(key)
 
         
 # ------ Metamodel creation -------
