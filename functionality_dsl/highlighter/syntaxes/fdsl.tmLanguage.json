@@ -1,0 +1,121 @@
+{
+  "scopeName": "source.fdsl",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#component-kind" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#http-verbs" },
+    { "include": "#literals" },
+    { "include": "#operators" },
+    { "include": "#identifiers" },
+    { "include": "#angles" },
+    { "include": "#props-keys" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.fdsl",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.fdsl",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.fdsl", "match": "\\\\." }]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.float.fdsl", "match": "\\b\\d+\\.\\d+\\b" },
+        { "name": "constant.numeric.int.fdsl",   "match": "\\b\\d+\\b" }
+      ]
+    },
+    "component-kind": {
+      "patterns": [
+        {
+          "name": "support.class.componentkind.fdsl",
+          "match": "\\b(Stat|Gauge|LineChart|LiveTable|Image|Page)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.fdsl",
+          "match": "\\b(Server|RESTEndpoint|WSEndpoint|Entity|Component|Import|inputs|attributes|props|source|entity|strict|host|port|base|cors|url|verb|headers|protocol|end)\\b"
+        },
+        {
+          "name": "keyword.control.conditional.fdsl",
+          "match": "\\b(if|then|else)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.fdsl",
+          "match": "\\b(and|or|not)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.fdsl",
+          "match": "\\b(string|int|float|number|bool|datetime|uuid|dict|list)\\b"
+        }
+      ]
+    },
+    "http-verbs": {
+      "patterns": [
+        { "name": "constant.language.httpverb.fdsl", "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b" }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        { "name": "constant.language.boolean.fdsl", "match": "\\b(true|false|null)\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.comparison.fdsl", "match": "(==|!=|>=|<=|>|<)" },
+        { "name": "keyword.operator.arithmetic.fdsl", "match": "(\\+|\\-|\\*|/|%)" },
+        { "name": "keyword.operator.pipeline.fdsl", "match": "\\|>" },
+        { "name": "punctuation.separator.keyvalue.fdsl", "match": ":" },
+        { "name": "punctuation.separator.comma.fdsl", "match": "," },
+        { "name": "punctuation.separator.dash.fdsl", "match": "^\\s*-" }
+      ]
+    },
+    "angles": {
+      "patterns": [
+        { "name": "punctuation.definition.generic.begin.fdsl", "match": "<" },
+        { "name": "punctuation.definition.generic.end.fdsl",   "match": ">" }
+      ]
+    },
+    "props-keys": {
+      "patterns": [
+        {
+          "name": "variable.other.property.fdsl",
+          "match": "(?<=-\\s|\\n\\s*)[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.type.fdsl",
+          "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+        },
+        {
+          "name": "variable.other.readwrite.fdsl",
+          "match": "\\b([a-z_][A-Za-z0-9_]*)\\b"
+        }
+      ]
+    }
+  }
+}
