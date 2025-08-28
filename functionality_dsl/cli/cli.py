@@ -1,4 +1,3 @@
-import sys
 import click
 import os
 from rich import print, pretty

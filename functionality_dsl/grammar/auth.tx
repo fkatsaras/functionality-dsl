@@ -1,6 +1,0 @@
-Authentication: AuthPlain;
-
-AuthPlain:
-    'username' ':' username=STRING
-    'password' ':' password=STRING
-;

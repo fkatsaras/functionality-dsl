@@ -1,9 +1,0 @@
-Database:
-    'Database' name=ID
-    (
-        ('host:' host=STRING)
-        ('port:' port=INT)
-        ('schema:' schema=STRING)?
-    )#
-    'end'
-;

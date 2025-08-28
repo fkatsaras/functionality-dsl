@@ -1,8 +1,0 @@
-Security:
-    'Security' name=ID
-    (
-        ('auth' ':' auth=ID)?
-        ('roles' ':' roles+=ID[','])?
-    )#
-    'end'
-;

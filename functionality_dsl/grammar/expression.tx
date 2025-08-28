@@ -1,0 +1,59 @@
+import utils
+
+// Expressions with standard precedence.
+// Fix: pipeline is postfix, not left-recursive.
+
+Expr: OrExpr ;
+
+OrExpr: AndExpr ( 'or' AndExpr )* ;
+AndExpr: CmpExpr ( 'and' CmpExpr )* ;
+
+CmpOp: '==' | '!=' | '>' | '>=' | '<' | '<=' ;
+CmpExpr: AddExpr ( CmpOp AddExpr )* ;
+
+AddExpr: MulExpr ( ('+' | '-') MulExpr )* ;
+MulExpr: UnaryExpr ( ('*' | '/' | '%') UnaryExpr )* ;
+
+UnaryExpr: ('not' | '-')* Postfix ;
+
+// Postfix handles pipelines like: <atom> |> foo(a) |> bar()
+Postfix:
+    Atom ( PipeSuffix )*
+;
+
+// One suffix step of a pipeline
+PipeSuffix:
+    '|>' func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
+;
+
+// Atoms (no left recursion here)
+Atom:
+      literal=Literal
+    | ref=Ref
+    | call=Call
+    | ifx=IfThenElse
+    | '(' inner=Expr ')'
+;
+
+IfThenElse:
+  'if' cond=Expr 'then' thenExpr=Expr 'else' elseExpr=Expr
+;
+
+// Function call: name(args...)
+Call:
+  func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
+;
+
+// Reference to attributes/entities: data.attr | this.attr | alias.attr
+Ref:
+    (('data' ) '.' attr=ID) | (alias=ID '.' attr=ID)
+;
+
+// Literals
+Literal:
+      STRING
+    | FLOAT
+    | INT
+    | Bool
+    | 'null'
+;

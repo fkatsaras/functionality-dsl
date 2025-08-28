@@ -1,0 +1,24 @@
+import utils
+import expression
+import entity
+
+ComponentKind:
+  'Stat' | 'Gauge' | 'LineChart' | 'LiveTable' | 'Image' | 'Page'
+;
+
+ExprList:
+  items+=Expr (',' items+=Expr)*
+;
+
+Prop:
+  key=ID ':' value=ExprList
+;
+
+Component:
+  'Component' '<' kind=ComponentKind '>' name=ID
+  (
+    'entity:' entity=[Entity]
+    ('props:' '-' props+=Prop ('-' props+=Prop)*)?
+  )#
+  'end'
+;

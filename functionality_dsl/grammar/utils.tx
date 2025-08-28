@@ -1,10 +1,9 @@
-Comment:
-  /\/\/.*$/
-;
+Comment: /\/\/[^\n]*/ ;
 
 Import:
   'import' importURI=FQN
 ;
 
-FQN: ID('.'ID)*
-;
+FQN: ID('.'ID)* ;
+
+Bool: 'true' | 'false' ;

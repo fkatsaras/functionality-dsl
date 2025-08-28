@@ -1,9 +1,12 @@
+import utils
+
 Server:
     'Server' name=ID
     (
         ('host:' host=STRING)
         ('port:' port=INT)
         ('base:' base=STRING)?
+        ('cors:' cors+=STRING (',' cors+=STRING)*)?
     )#
     'end'
 ;

@@ -1,162 +1,121 @@
-Client WebApp
+// ----------- Server (optional config) -----------
+Server SimpleAPI
   host: "localhost"
-  port: 3000
-end
-
-Server BookAPI
-  host: 'localhost'
   port: 8080
+  cors: "http://localhost:3000"
 end
 
-Database PostgresDB
-  host: "localhost"
-  port: 5432
-  schema: "bookstore"
-end
 
-// --- Endpoints ---
-RESTEndpoint BooksList
+// ----------- Sources (REST + WS endpoints) -----------
+RESTEndpoint SoilMoistureZone1
+  url: "http://localhost:8080/api/soil/moisture/z1"
   verb: GET
-  host: "api.myapp.com"
-  port: 8080
-  path: "/books"
 end
 
-RESTEndpoint BooksCreate
-  verb: POST
-  host: "api.myapp.com"
-  port: 8080
-  path: "/books"
-end
-
-RESTEndpoint AuthorGet
+RESTEndpoint SoilMoistureZone2
+  url: "http://localhost:8080/api/soil/moisture/z2"
   verb: GET
-  host: "api.myapp.com"
-  port: 8080
-  path: "/authors/{id}"
 end
 
-RESTEndpoint BookUpdate
-  verb: PUT
-  host: "api.myapp.com"
-  port: 8080
-  path: "/books/{id}"
+RESTEndpoint AverageMoisturePerZone
+  url: "http://localhost:8080/api/soil/avgMoisture"
+  verb: GET
 end
 
-RESTEndpoint BookDelete
-  verb: DELETE
-  host: "api.myapp.com"
-  port: 8080
-  path: "/books/{id}"
+WSEndpoint FieldCamera
+  url: "ws://localhost:8080/ws/camera"
+  protocol: "json"
 end
 
-// --- DB entities (models) ---
-Entity Author
-  type: model
-  source: PostgresDB
-  table: "authors"
+
+// ----------- Entities (data) -----------
+
+// Base entity: direct REST source
+Entity MoistureZone1
+  source: SoilMoistureZone1
   attributes:
-    - id: int pk
-    - name: string required
+    - timestamp: datetime
+    - moisture_percent: float
 end
 
-Entity Book
-  type: model
-  source: PostgresDB
-  table: "books"
+Entity MoistureZone2
+  source: SoilMoistureZone2
   attributes:
-    - id: int pk
-    - isbn: string required
-    - title: string required
-    - author_id: int required
-    - price: number
-    - published_at: datetime
+    - timestamp: datetime
+    - moisture_percent: float
 end
 
-// --- Frontend DTOs (payloads) ---
-Entity AuthorRequest
-  type: payload
-  source: WebApp
+// Derived entity: joins zone1 & zone2
+Entity ZoneDelta
+  inputs:
+    - z1: MoistureZone1
+    - z2: MoistureZone2
   attributes:
-    - name: string
+    - timestamp = z1.timestamp
+    - delta     = z1.moisture_percent - z2.moisture_percent
 end
 
-Entity BookDeleteRequest
-  type: payload
-  source: WebApp
+// Aggregated data
+Entity AverageMoisture
+  source: AverageMoisturePerZone
   attributes:
-    - name: string
+    - zone: string
+    - avg_moisture: float
 end
 
-Entity BookCreateRequest
-  type: payload
-  source: WebApp
+// Derived: computed status labels
+Entity MoistureWithStatus
+  inputs:
+    - z: MoistureZone1
   attributes:
-    - isbn: string required
-    - title: string required
-    - author_id: int required
-    - price: number
-    - published_at: datetime
+    - timestamp = z.timestamp
+    - moisture  = z.moisture_percent
+    - status    = if z.moisture_percent < 20 then "critical"
+                  else if z.moisture_percent < 40 then "low"
+                  else "ok"
 end
 
-Entity BookUpdateInput
-  type: payload
-  source: WebApp
+// WebSocket data entity
+Entity FieldCameraData
+  source: FieldCamera
   attributes:
-    - title: string
-    - price: number
-    - published_at: datetime
+    - frame: string
+    - motion: bool
 end
 
-Entity BookFilter
-  type: payload
-  source: WebApp
-  attributes:
-    - title: string
-    - author_id: int
+
+// ----------- Components (UI bindings) -----------
+
+Component<LineChart> MoistureChart
+  entity: MoistureWithStatus
+  props:
+    - description: "Soil Moisture Zone 1"
+    - xLabel: "Time"
+    - yLabel: "Moisture (%)"
+    - xValue: data.timestamp
+    - yValues: data.moisture
 end
 
-// --- Backend payloads (response shapes/messages) ---
-Entity BookView
-  type: payload
-  source: BooksList
-  attributes:
-    - id: int
-    - isbn: string
-    - title: string
-    - author_id: int
-    - price: number
+Component<LineChart> DeltaChart
+  entity: ZoneDelta 
+  props:
+    - description: "Moisture Delta Z1 vs Z2"
+    - xLabel: "Time"
+    - yLabel: "Delta (%)"
+    - xValue: data.timestamp
+    - yValues: data.delta
 end
 
-// --- Actions (wire DTOs <-> models via endpoints) ---
-Action ListBooks
-  from: BookFilter
-  to: BookView
-  using: BooksList
+Component<LiveTable> AvgMoistureTable
+  entity: AverageMoisture
+  props:
+    - primaryKey: "zone"
+    - columns: data.zone, data.avg_moisture
 end
 
-Action CreateBook
-  from: BookCreateRequest
-  to: Book
-  using: BooksCreate
-  validates: Book
-end
-
-Action UpdateBook
-  from: BookUpdateInput
-  to: Book
-  using: BookUpdate
-  validates: Book
-end
-
-Action DeleteBook
-  from: BookDeleteRequest
-  to: Book
-  using: BookDelete
-end
-
-Action GetAuthor
-  from: AuthorRequest
-  to: Author
-  using: AuthorGet
+Component<Image> CameraStream
+  entity: FieldCameraData
+  props:
+    - src: data.frame
+    - motionDetected: data.motion
 end

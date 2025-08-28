@@ -1,72 +1,40 @@
-import database
-import client
+import utils
+import expression
 import endpoints
 
-// Primitive
 AttrType:
-    'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict'
+  'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
 ;
 
-Bool: 'true' | 'false';
-
-// Literal for defaults
 AttrValue:
-    STRING | FLOAT | INT | Bool
+  STRING | FLOAT | INT | Bool
 ;
 
-// Optional attribute modifiers after type
-AttrModifier:
-    'pk' | 'required'
+Attribute:
+    SchemaAttribute | ComputedAttribute
 ;
 
-// Polymorphic source for entities (frontend client, REST/WS endpoint, or database)
-Source:
-      Client
-    | RESTEndpoint
-    | WebSocketEndpoint
-    | Database
+SchemaAttribute:
+  name=ID ':' type=AttrType
+  (required?='required')?
+  ('default=' default=AttrValue)?
 ;
 
-// Entities define shape (and optionally storage/source/uri)
-Model:
-    'Model' name=ID
-    (
-        ('source:' source=[Source])?       // 0..1 source (e.g., Database, Client, Endpoint)
-        ('table:'  table=STRING)?          // DB-oriented models can set a table
-        'attributes:' '-' attributes+=Attribute['-']
-    )#
-    'end'
+ComputedAttribute:
+  name=ID '=' expr=Expr
 ;
 
-Request:
-    'Request' name=ID
-    (
-        ('base:' base=[Entity])?           //  projection/base model
-        'attributes:' '-' attributes+=Attribute['-']
-    )#
-    'end'
-;
-
-Response:
-    'Response' name=ID
-    (
-        ('base:' base=[Entity])?           //  projection/base model
-        'attributes:' '-' attributes+=Attribute['-']
-    )#
-    'end'
+Input:
+  alias=ID ':' target=[Entity]
 ;
 
 Entity:
-      Model
-    | Request
-    | Response
-;
-
-
-// Attribute line:
-//   <name> ':' <type> (modifiers...)? ('default=' <value>)?
-Attribute:
-    name=ID ':' type=AttrType
-    (modifiers+=AttrModifier)*
-    ('default=' default=AttrValue)?
+  'Entity' name=ID
+  (
+    ('source:' source=[Source])?
+    ('inputs:' '-' inputs+=Input ('-' inputs+=Input)*)?
+    ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
+    ('strict:' strict=Bool)?
+  )#
+  'end'
 ;

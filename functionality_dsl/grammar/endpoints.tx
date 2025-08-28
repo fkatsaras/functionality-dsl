@@ -1,28 +1,28 @@
-import server
+import utils
 
-HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+
+// Abstract union hook for Entity.source
+Source:
+      RESTEndpoint
+    | WSEndpoint
+;
 
 RESTEndpoint:
     'RESTEndpoint' name=ID
     (
-        ('verb:' verb=HttpVerb)?          // default = GET (set in processor/model)
-        ('server:' server=[Server])       // <-- 1..1
-        ('path:' path=STRING)
+        'url:' url=STRING
+        ('verb:' verb=HttpVerb)?
+        ('headers:' headers=STRING)?
     )#
     'end'
 ;
 
-Protocol: ID | STRING;
-
-WebSocketEndpoint:
-    'WebSocketEndpoint' name=ID
+WSEndpoint:
+    'WSEndpoint' name=ID
     (
-        ('server:' server=[Server])       // <-- 1..1 server per Ecore
-        ('path:' path=STRING)
-        ('protocol:' protocol=Protocol)?
+        'url:' url=STRING
+        ('protocol:' protocol=STRING)?
     )#
     'end'
 ;
-
-Endpoint:
-    RESTEndpoint | WebSocketEndpoint;
