@@ -1,0 +1,18 @@
+# Auto-generated models.py
+from pydantic import BaseModel
+from typing import Optional, Any, List, Dict
+from datetime import datetime
+from uuid import UUID
+
+{% for ent in entities %}
+class {{ ent.name }}(BaseModel):
+{% for attr in ent.attributes %}
+{% if attr.kind == "schema" %}
+    {{ attr.name }}: {{ attr.py_type }}
+{% else %}
+    # computed attribute (expression: {{ attr.expr_raw | replace("\n"," ") }})
+    {{ attr.name }}: Optional[Any] = None
+{% endif %}
+{% endfor %}
+
+{% endfor %}

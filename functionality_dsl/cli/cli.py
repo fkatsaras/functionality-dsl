@@ -1,11 +1,15 @@
 import click
 import os
-from rich import print, pretty
+
+from datetime import date
+from rich import pretty
+from rich.console import Console
 
 from functionality_dsl.language import build_model
 from functionality_dsl.utils import print_model_debug
 
 pretty.install()
+console = Console()
 
 def make_executable(path: str):
     mode = os.stat(path).st_mode
@@ -23,9 +27,9 @@ def cli(context):
 def validate(context, model_path):
     try:
         _ = build_model(model_path)
-        print("[*] Model validation success!!")
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Model validation success!", style='green')
     except Exception as e:
-        print(f"[*] Validation failed with error(s): {e}")
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Validation failed with error(s): {e}", style='red')
         context.exit(1)
     else:
         context.exit(0)
@@ -36,10 +40,10 @@ def validate(context, model_path):
 def inspect_cmd(context, model_path):
     try:
         model = build_model(model_path)
-        print("[*] Model validation success!!")
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Model validation success!", style='green')
         print_model_debug(model)
     except Exception as e:
-        print(f"[*] Inspect failed with error(s): {e}")
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Inspect failed with error(s): {e}", style='red')
         context.exit(1)
     else:
         context.exit(0)

@@ -1,0 +1,35 @@
+# Auto-generated WebSocket listener for {{ ws.name }}
+# Listens to external WS and stores latest messages in memory.
+import asyncio
+import json
+from fastapi import APIRouter
+from typing import Any, Dict
+import websockets
+
+router = APIRouter(prefix="/api/external/{{ ws.name | lower }}", tags=["{{ ws.name }}"])
+
+_latest: Dict[str, Any] = {"value": None}
+
+async def _ws_loop():
+    while True:
+        try:
+            async with websockets.connect("{{ ws.url }}") as ws:
+                async for raw in ws:
+                    try:
+                        if "{{ ws.protocol }}" == "json":
+                            _latest["value"] = json.loads(raw)
+                        else:
+                            _latest["value"] = raw
+                    except Exception:
+                        _latest["value"] = raw
+        except Exception:
+            # reconnect after a delay
+            await asyncio.sleep(1)
+
+# spawn background task when module loaded
+loop = asyncio.get_event_loop()
+loop.create_task(_ws_loop())
+
+@router.get("/latest")
+async def latest():
+    return _latest["value"]

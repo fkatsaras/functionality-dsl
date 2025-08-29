@@ -1,0 +1,15 @@
+# (direct REST source)
+from fastapi import APIRouter, HTTPException
+from typing import List
+import httpx
+from .models import {{ entity.name }}
+
+router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+
+@router.get("/", response_model=List[{{ entity.name }}])
+async def list_{{ entity.name | lower }}():
+    async with httpx.AsyncClient() as client:
+        response = await client.request("{{ entity.source.verb }}", "{{ entity.source.url }}")
+        if response.status_code >= 400:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+        return response.json()
