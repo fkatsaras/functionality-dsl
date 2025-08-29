@@ -1,4 +1,4 @@
-// ----------- Server (optional config) -----------
+// ----------- Server (config) -----------
 Server SimpleAPI
   host: "localhost"
   port: 8080
@@ -14,11 +14,6 @@ end
 
 RESTEndpoint SoilMoistureZone2
   url: "http://localhost:8080/api/soil/moisture/z2"
-  verb: GET
-end
-
-RESTEndpoint AverageMoisturePerZone
-  url: "http://localhost:8080/api/soil/avgMoisture"
   verb: GET
 end
 
@@ -57,10 +52,12 @@ end
 
 // Aggregated data
 Entity AverageMoisture
-  source: AverageMoisturePerZone
+  inputs:
+    - z1: MoistureZone1
+    - z2: MoistureZone2
   attributes:
     - zone: string
-    - avg_moisture: float
+    - avg_moisture = avg([z1.moisture_percent, z2.moisture_percent])
 end
 
 // Derived: computed status labels

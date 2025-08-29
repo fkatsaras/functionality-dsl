@@ -1,4 +1,3 @@
-# language.py
 import logging
 from os.path import join, dirname, abspath
 from textx import (
