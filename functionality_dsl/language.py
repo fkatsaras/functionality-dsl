@@ -1,4 +1,6 @@
 import logging
+import textx.scoping.providers as scoping_providers
+
 from os.path import join, dirname, abspath
 from textx import (
     metamodel_from_file,
@@ -6,7 +8,8 @@ from textx import (
     get_location,
     TextXSemanticError,
 )
-import textx.scoping.providers as scoping_providers
+
+from .lib.computed import compile_expr_to_python, DSL_FUNCTION_SIG
 
 # ------------------------------------------------------------------------------
 # Paths / logging
@@ -17,6 +20,78 @@ logger = logging.getLogger("functionality_dsl")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
+
+# ------------------------------------------------------------------------------
+# Expression validation helpers
+def _collect_refs(expr):
+    for r in get_children_of_type("Ref", expr):
+        alias = getattr(r, "alias", None)
+        attr = getattr(r, "attr", None)
+        is_data = (getattr(r, "data", None) is not None) or (alias is None and attr is not None)
+        yield ("data" if is_data else alias, attr, r)
+        
+def _collect_calls(expr):
+    for c in get_children_of_type("Call", expr):
+        fname = getattr(c, "func", None)
+        argc = len(getattr(c, "args", []) or [])
+        yield fname, argc, c
+
+def _validate_func(name, argc, node):
+    if name not in DSL_FUNCTION_SIG:
+        raise TextXSemanticError(f"Unknown function '{name}'.", **get_location(node))
+    min_arity, max_arity = DSL_FUNCTION_SIG[name]
+    if argc < min_arity or (max_arity is not None and argc > max_arity):
+        raise TextXSemanticError(
+            f"Function '{name}' expects {min_arity}"
+            f"{'' if (max_arity == min_arity) else '..' + (str(max_arity) if max_arity else 'or more')}"
+            f" args, got {argc}.",
+            **get_location(node),
+        )
+        
+def _annotate_computed_attrs(model, metamodel=None):
+    # Entities
+    for ent in get_children_of_type("Entity", model):
+        inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
+        target_attrs = {e.name: {a.name for a in getattr(e, "attributes", []) or []} 
+                        for e in get_children_of_type("Entity", model)}
+        for a in getattr(ent, "attributes", []) or []:
+            if a.__class__.__name__ != "ComputedAttribute":
+                continue
+            expr = getattr(a, "expr", None)
+            if expr is None:
+                raise TextXSemanticError("Computed attribute missing expression.", **get_location(a))
+
+            # refs
+            for alias, attr, node in _collect_refs(expr):
+                if alias == "data":
+                    raise TextXSemanticError("`data.` invalid in Entity expressions.", **get_location(node))
+                if alias not in inputs:
+                    raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
+                tgt = inputs[alias].name
+                if attr not in target_attrs.get(tgt, set()):
+                    raise TextXSemanticError(f"'{alias}.{attr}' not found on entity '{tgt}'.", **get_location(node))
+
+            # calls
+            for fname, argc, node in _collect_calls(expr):
+                _validate_func(fname, argc, node)
+
+            # compile
+            try:
+                a._py = compile_expr_to_python(expr, context="entity")
+            except Exception as ex:
+                raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
+
+    # Components (compile prop expressions)
+    for cmp in get_children_of_type("Component", model):
+        for prop in getattr(cmp, "props", []) or []:
+            for expr in getattr(prop, "items", []) or []:
+                try:
+                    expr._py = compile_expr_to_python(expr, context="component")
+                except Exception as ex:
+                    raise TextXSemanticError(
+                        f"Component '{cmp.name}' prop '{prop.key}' compile error: {ex}",
+                        **get_location(expr),
+                    )
 
 # ------------------------------------------------------------------------------
 # Public helpers
@@ -35,7 +110,7 @@ def build_model_str(model_str: str):
 
 
 # ------------------------------------------------------------------------------
-# Getters (aligned to new grammar)
+# Getters 
 def get_model_servers(model):
     return get_children_of_type("Server", model)
 
@@ -284,7 +359,8 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     )
 
     mm.register_scope_providers(get_scope_providers())
-    mm.register_model_processor(model_processor)
+
+    # Obj processors run while the model is being built
     mm.register_obj_processors(
         {
             "RESTEndpoint": rest_endpoint_obj_processor,
@@ -293,7 +369,11 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
             "Component": component_obj_processor,
         }
     )
-    return mm
+
+    # Model processors run AFTER the whole model is built.
+    mm.register_model_processor(model_processor)            # cross-model checks
+    mm.register_model_processor(_annotate_computed_attrs)   # compile expressions
+    return mm 
 
 
 FunctionalityDSLMetaModel = get_metamodel(debug=False)
