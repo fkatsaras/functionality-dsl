@@ -6,8 +6,6 @@ Server DemoAPI
 end
 
 // ----------- Sources (public REST) -----------
-// Both endpoints return JSON ARRAYS (lists of objects)
-
 RESTEndpoint Posts
   url: "https://jsonplaceholder.typicode.com/posts"
   verb: GET
@@ -18,14 +16,13 @@ RESTEndpoint Users
   verb: GET
 end
 
-WSEndpoint BinanceBTCTrades
-  url: "wss://stream.binance.com:9443/ws/btcusdt@trade"
+// ----------- Public WebSocket (no auth) -----------
+WSEndpoint KrakenBTCUSD
+  url: "wss://ws.kraken.com"
   protocol: "json"
 end
 
 // ----------- Entities (data) -----------
-// These two are direct REST-backed entities. Attribute names must match the remote JSON keys.
-
 Entity Post
   source: Posts
   attributes:
@@ -44,8 +41,6 @@ Entity User
     - email: string
 end
 
-// Derived entity: combine "Post" and "User" to expose author name + some computed stats.
-// NOTE: For demo purposes we index-align (min_len). In real apps you'd join by keys (e.g., userId==id).
 Entity PostWithAuthor
   inputs:
     - p: Post
@@ -57,22 +52,19 @@ Entity PostWithAuthor
     - body_len  = len(p.body)
 end
 
-Entity Trade
-  source: BinanceBTCTrades
+// Example entity bound to Kraken stream (latest trade payloads)
+Entity KrakenTrade
+  source: KrakenBTCUSD
   attributes:
-    - base: string
-    - quote: string
-    - price: float
-    - volume: float
+    - channel: string
+    - type: string
+    - data: string
 end
 
-// ----------- Components (UI bindings) -----------
-// A simple table that shows the derived data. Component props must use ONLY `data.*`.
-
+// ----------- Components (UI) -----------
 Component<LiveTable> PostsTable
   entity: PostWithAuthor
   props:
     - primaryKey: "post_id"
     - columns: data.post_id, data.author, data.title, data.body_len
 end
-
