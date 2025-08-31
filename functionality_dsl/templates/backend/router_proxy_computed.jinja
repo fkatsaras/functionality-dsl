@@ -3,9 +3,9 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 
-from app.schemas.generated_models import {{ entity.name }}
+from app.schemas.models import {{ entity.name }}
 from app.core.config import settings
-from functionality_dsl.lib.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
 

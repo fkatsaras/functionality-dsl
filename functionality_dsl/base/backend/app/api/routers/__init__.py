@@ -1,22 +1,16 @@
-import importlib
-import pkgutil
-
 from fastapi import FastAPI
+import pkgutil
+import importlib
+import app.api.routers as _pkg
 
-
-def include_generated_routers(app: FastAPI, prefix: str = "/api", package: str = "app.api.routers.generated") -> None:
+def include_generated_routers(app: FastAPI):
     """
-    Import every module in `app.api.routers.generated` that defines `router`,
-    and include it under the given prefix.
+    Auto-import every module in app.api.routers that defines `router`
+    and include it as-is (modules already define their own prefixes).
     """
-    
-    try:
-        pkg = importlib.import_module(package)
-    except ModuleNotFoundError:
-        return
-    
-    for m in pkgutil.iter_modules(pkg.__path__, prefix=package + '.'):
-        module = importlib.import_module(m.name)
-        router = getattr(module, "router", None)
+    for _, mod_name, _ in pkgutil.iter_modules(_pkg.__path__):
+        # skip __init__.py and any non-.py files, but no prefix filter
+        mod = importlib.import_module(f"{_pkg.__name__}.{mod_name}")
+        router = getattr(mod, "router", None)
         if router is not None:
-            app.include_router(router=router, prefix="")    # routers already have prefixes
+            app.include_router(router)

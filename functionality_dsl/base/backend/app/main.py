@@ -22,7 +22,7 @@ def create_app() -> FastAPI:
     )
     
     # Mount generated routers under /api
-    include_generated_routers(app, settings.API_PREFIX)
+    include_generated_routers(app)
     
     @app.get("/healthz")
     def health():

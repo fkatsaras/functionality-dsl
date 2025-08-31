@@ -27,8 +27,8 @@ def _pyd_type_for(attr):
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
     """
     Renders:
-      - app/schemas/generated_models.py
-      - app/api/routers/generated_*.py
+      - app/schemas/models.py
+      - app/api/routers/*.py
     using templates in templates_dir.
     """
     env = Environment(
@@ -64,7 +64,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         })
 
     models_tpl = env.get_template("models.jinja")
-    models_out = out_dir / "app" / "schemas" / "generated_models.py"
+    models_out = out_dir / "app" / "schemas" / "models.py"
     models_out.parent.mkdir(parents=True, exist_ok=True)
     models_out.write_text(models_tpl.render(entities=entities_ctx), encoding="utf-8")
 
@@ -77,7 +77,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         tpl = env.get_template("router_entity_proxy.jinja")
         for e in _entities(model):
             if getattr(e, "source", None):
-                (routers_dir / f"generated_{e.name.lower()}_source.py").write_text(
+                (routers_dir / f"{e.name.lower()}_source.py").write_text(
                     tpl.render(entity=e), encoding="utf-8"
                 )
 
@@ -102,7 +102,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     computed_attrs.append({"name": a.name, "pyexpr": pyexpr})
 
             if inputs or computed_attrs:
-                (routers_dir / f"generated_{e.name.lower()}_computed.py").write_text(
+                (routers_dir / f"{e.name.lower()}_computed.py").write_text(
                     tpl.render(entity=e, inputs=inputs, computed_attrs=computed_attrs),
                     encoding="utf-8",
                 )
@@ -111,7 +111,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if (templates_dir / "router_proxy.jinja").exists():
         tpl = env.get_template("router_proxy.jinja")
         for ep in _rest_endpoints(model):
-            (routers_dir / f"generated_external_{ep.name.lower()}.py").write_text(
+            (routers_dir / f"{ep.name.lower()}.py").write_text(
                 tpl.render(endpoint=ep), encoding="utf-8"
             )
 
@@ -119,7 +119,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if (templates_dir / "router_ws_listener.jinja").exists():
         tpl = env.get_template("router_ws_listener.jinja")
         for ws in _ws_endpoints(model):
-            (routers_dir / f"generated_ws_{ws.name.lower()}.py").write_text(
+            (routers_dir / f"{ws.name.lower()}.py").write_text(
                 tpl.render(ws=ws), encoding="utf-8"
             )
 
