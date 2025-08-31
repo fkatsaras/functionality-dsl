@@ -172,6 +172,7 @@ def _annotate_computed_attrs(model, metamodel=None):
             # compile
             try:
                 a._py = compile_expr_to_python(expr, context="entity")
+                logger.debug("Compiled expression: " + a._py)
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
 

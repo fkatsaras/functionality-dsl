@@ -1,8 +1,11 @@
 # Auto-generated entity router for computed entity {{ entity.name }}
+import httpx
+
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
-import httpx
+
 from .models import {{ entity.name }}
+from functionality_dsl.lib.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
 
@@ -14,8 +17,17 @@ async def fetch_list(url: str):
             raise HTTPException(status_code=response.status_code, detail=response.text)
         return response.json()
 
-# For safety we evaluate computed expressions with an empty builtin set.
-SAFE_GLOBALS = {"__builtins__": None}
+# For safety, evaluate with no builtins and only the two names we expect.
+SAFE_GLOBALS = {"__builtins__": {} , "dsl_funcs": dsl_funcs}
+
+def eval_py_expr(expr_str: str, ctx: dict):
+    """
+    expr_str: compiler output like "ctx['z']['moisture_percent']"
+              or "dsl_funcs['avg']([ctx['z']['moisture_percent']])"
+    ctx:      {'z': {...}} for entity context
+    """
+    code = compile(expr_str, "<dsl_expr>", "eval")
+    return eval(code, SAFE_GLOBALS, {"ctx": ctx})
 
 @router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}():
@@ -37,34 +49,17 @@ async def list_{{ entity.name | lower }}():
     {% endfor %}
     }
 
-    # alignment strategy: prefer timestamp intersection if all inputs have 'timestamp'
-    all_have_ts = all(any('timestamp' in (list(item.keys()) if isinstance(item, dict) else []) for item in lists[k]) for k in lists if lists[k])
     rows = []
-
-    if all_have_ts:
-        maps = {k: {item.get('timestamp'): item for item in lists[k] if isinstance(item, dict) and item.get('timestamp') is not None} for k in lists}
-        common_ts = set.intersection(*[set(m.keys()) for m in maps.values()]) if maps else set()
-        for ts in sorted(common_ts):
-            ctx = {k: maps[k][ts] for k in maps}
-            row: Dict[str, Any] = {}
-            {% for attr in computed_attrs %}
-            try:
-                row["{{ attr.name }}"] = eval({{ attr.pyexpr | tojson }}, SAFE_GLOBALS, ctx)
-            except Exception:
-                row["{{ attr.name }}"] = None
-            {% endfor %}
-            rows.append(row)
-    else:
-        min_len = min((len(lists[k]) for k in lists if isinstance(lists[k], list)), default=0)
-        for i in range(min_len):
-            ctx = {k: (lists[k][i] if isinstance(lists[k][i], dict) else {}) for k in lists}
-            row: Dict[str, Any] = {}
-            {% for attr in computed_attrs %}
-            try:
-                row["{{ attr.name }}"] = eval({{ attr.pyexpr | tojson }}, SAFE_GLOBALS, ctx)
-            except Exception:
-                row["{{ attr.name }}"] = None
-            {% endfor %}
-            rows.append(row)
+    min_len = min((len(lists[k]) for k in lists if isinstance(lists[k], list)), default=0)
+    for i in range(min_len):
+        ctx = {k: (lists[k][i] if isinstance(lists[k][i], dict) else {}) for k in lists}
+        row: Dict[str, Any] = {}
+        {% for attr in computed_attrs %}
+        try:
+            row["{{ attr.name }}"] = _eval_pyexpr({{ attr.pyexpr | tojson }}, ctx)
+        except Exception:
+            row["{{ attr.name }}"] = None
+        {% endfor %}
+        rows.append(row)
 
     return rows
