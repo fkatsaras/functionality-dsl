@@ -1,0 +1,38 @@
+// ----------- Minimal header -----------
+Server TestAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+RESTEndpoint Soil1
+  url: "http://localhost:8080/api/soil/z1"
+  verb: GET
+end
+
+RESTEndpoint Soil2
+  url: "http://localhost:8080/api/soil/z2"
+  verb: GET
+end
+
+Entity MoistureZone1
+  source: Soil1
+  attributes:
+    - timestamp: datetime
+    - moisture_percent: float
+end
+
+Entity MoistureZone2
+  source: Soil2
+  attributes:
+    - timestamp: datetime
+    - moisture_percent: float
+end
+// Entities ------------------------------------
+
+Entity E4
+  inputs:
+    - z: MoistureZone1
+  attributes:
+    - ok = (z.moisture_percent >= 0 and z.moisture_percent <= 100) or (z.moisture_percent == 999)
+end

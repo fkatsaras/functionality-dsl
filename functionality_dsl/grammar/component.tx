@@ -6,13 +6,8 @@ ComponentKind:
   'Stat' | 'Gauge' | 'LineChart' | 'LiveTable' | 'Image' | 'Page'
 ;
 
-ExprList:
-  items+=Expr (',' items+=Expr)*
-;
-
 Prop:
-  key=ID ':' value=ExprList
-;
+  key=ID ':' items+=Expr (',' items+=Expr)* ;
 
 Component:
   'Component' '<' kind=ComponentKind '>' name=ID

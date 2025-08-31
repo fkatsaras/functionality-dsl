@@ -102,10 +102,7 @@ def is_computed_attr(a):
 def _collect_refs(expr):
     for n in _walk(expr):
         if n.__class__.__name__ == "Ref":
-            if getattr(n, "data", None):
-                yield "data", n.attr, n
-            else:
-                yield getattr(n, "alias", None), getattr(n, "attr", None), n
+            yield getattr(n, "alias", None), getattr(n, "attr", None), n
 
 
 def _collect_calls(expr):
@@ -159,8 +156,6 @@ def _annotate_computed_attrs(model, metamodel=None):
 
             # refs validation
             for alias, attr, node in refs:
-                if alias == "data":
-                    raise TextXSemanticError("`data.` invalid in Entity expressions.", **get_location(node))
                 if alias not in inputs:
                     raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
                 tgt = inputs[alias].name
@@ -182,8 +177,26 @@ def _annotate_computed_attrs(model, metamodel=None):
 
     # Components (compile prop expressions)
     for cmp in get_children_of_type("Component", model):
+        ent = getattr(cmp, "entity", None)
+        ent_attrs = {a.name for a in getattr(ent, "attributes", []) or []} if ent else set()
+    
         for prop in getattr(cmp, "props", []) or []:
             for expr in getattr(prop, "items", []) or []:
+            
+                # Enforce only data.* and that the field exists on the entity
+                for alias, attr, node in _collect_refs(expr):
+                    if alias != "data":
+                        raise TextXSemanticError(
+                            "Only `data.*` references are allowed in Component props.",
+                            **get_location(node),
+                        )
+                    if attr not in ent_attrs:
+                        raise TextXSemanticError(
+                            f"'data.{attr}' not found on entity '{ent.name}'.",
+                            **get_location(node),
+                        )
+    
+                # Compile with component context
                 try:
                     expr._py = compile_expr_to_python(expr, context="component")
                 except Exception as ex:

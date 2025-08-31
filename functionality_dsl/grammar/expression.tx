@@ -11,7 +11,7 @@ AndExpr: left=CmpExpr   (ops+=AndTail)* ;
 AndTail: op='and'       right=CmpExpr ;
 
 // comparisons
-CmpOp: '==' | '!=' | '>' | '>=' | '<' | '<=' ;
+CmpOp: '==' | '!=' | '>=' | '<=' | '>' | '<' ;
 CmpExpr: left=AddExpr (ops+=CmpTail)* ;
 CmpTail: op=CmpOp    right=AddExpr ;
 
@@ -48,11 +48,7 @@ Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
-// references: bind 'data' to a field
-Ref:
-    (data='data' '.' attr=ID)
-  | (alias=ID '.' attr=ID)
-;
+Ref: alias=ID '.' attr=ID ;
 
 // literals
 Literal:

@@ -57,6 +57,12 @@ def compile_expr_to_python(expr, *, context: str) -> str:
 
     def to_py(node) -> str:
         cls = node.__class__.__name__
+        if isinstance(node, bool):
+            return "True" if node else "False"
+        if isinstance(node, (int, float)):
+            return str(node)
+        if isinstance(node, str):
+            return repr(node)
 
         if cls == "Literal":
             if getattr(node, "STRING", None) is not None:
@@ -67,13 +73,24 @@ def compile_expr_to_python(expr, *, context: str) -> str:
                 return str(node.INT)
             if getattr(node, "Bool", None) is not None:
                 return "True" if node.Bool == "true" else "False"
+
+            # tolerant unwrap: sometimes Literal might carry a direct value
+            for k, v in vars(node).items():
+                if k in SKIP_KEYS:
+                    continue
+                if isinstance(v, (int, float, bool)):
+                    return to_py(v)
+                if isinstance(v, str):
+                    return repr(v)
+
             inner = (
                 getattr(node, "ListLiteral", None)
                 or getattr(node, "literal", None)
                 or getattr(node, "value", None)
             )
             if inner is not None:
-                return to_py(inner) if _is_node(inner) else repr(inner)
+                return to_py(inner) if hasattr(inner, "__class__") else repr(inner)
+
             return "None"
 
         if cls == "ListLiteral":
@@ -81,14 +98,17 @@ def compile_expr_to_python(expr, *, context: str) -> str:
             return "[" + ", ".join(to_py(x) for x in items) + "]"
 
         if cls == "Ref":
-            attr = node.attr
-            if getattr(node, "data", None):
-                if context != "component":
-                    raise ValueError("`data.` references only valid in Component props.")
-                return f'ctx["data"][{attr!r}]'
             alias = getattr(node, "alias", None)
+            attr  = getattr(node, "attr", None)
             if alias is None or attr is None:
                 raise ValueError("Invalid Ref.")
+
+            if context == "component":
+                # Components: ONLY data.* is allowed
+                if alias != "data":
+                    raise ValueError("Only `data.*` references are allowed in Component props.")
+                return f'ctx["data"][{attr!r}]'
+
             return f'ctx[{alias!r}][{attr!r}]'
 
         if cls == "IfThenElse":

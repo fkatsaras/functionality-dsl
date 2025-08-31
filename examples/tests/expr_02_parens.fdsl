@@ -1,0 +1,40 @@
+// ----------- Minimal header -----------
+Server TestAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+RESTEndpoint Soil1
+  url: "http://localhost:8080/api/soil/z1"
+  verb: GET
+end
+
+RESTEndpoint Soil2
+  url: "http://localhost:8080/api/soil/z2"
+  verb: GET
+end
+
+Entity MoistureZone1
+  source: Soil1
+  attributes:
+    - timestamp: datetime
+    - moisture_percent: float
+end
+
+Entity MoistureZone2
+  source: Soil2
+  attributes:
+    - timestamp: datetime
+    - moisture_percent: float
+end
+
+// Entity ----------------------------------
+Entity E2
+  inputs:
+    - z1: MoistureZone1
+    - z2: MoistureZone2
+  attributes:
+    - a = (z1.moisture_percent - z2.moisture_percent) * 2
+    - b = z1.moisture_percent - (z2.moisture_percent * 2)
+end
