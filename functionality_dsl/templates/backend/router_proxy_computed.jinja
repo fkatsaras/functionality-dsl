@@ -1,10 +1,10 @@
 # Auto-generated entity router for computed entity {{ entity.name }}
 import httpx
-
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 
-from .models import {{ entity.name }}
+from app.schemas.generated_models import {{ entity.name }}
+from app.core.config import settings
 from functionality_dsl.lib.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
@@ -17,15 +17,9 @@ async def fetch_list(url: str):
             raise HTTPException(status_code=response.status_code, detail=response.text)
         return response.json()
 
-# For safety, evaluate with no builtins and only the two names we expect.
-SAFE_GLOBALS = {"__builtins__": {} , "dsl_funcs": dsl_funcs}
+SAFE_GLOBALS = {"__builtins__": {}, "dsl_funcs": dsl_funcs}
 
 def eval_py_expr(expr_str: str, ctx: dict):
-    """
-    expr_str: compiler output like "ctx['z']['moisture_percent']"
-              or "dsl_funcs['avg']([ctx['z']['moisture_percent']])"
-    ctx:      {'z': {...}} for entity context
-    """
     code = compile(expr_str, "<dsl_expr>", "eval")
     return eval(code, SAFE_GLOBALS, {"ctx": ctx})
 
@@ -37,12 +31,10 @@ async def list_{{ entity.name | lower }}():
     {% if inp.target_source_url %}
     {{ inp.alias }}_data = await fetch_list("{{ inp.target_source_url }}")
     {% else %}
-    # fallback: call internal endpoint (uses server host/port)
-    {{ inp.alias }}_data = await fetch_list("http://{{ server_host }}:{{ server_port }}/api/entities/{{ inp.target_name | lower }}")
+    {{ inp.alias }}_data = await fetch_list(f"http://{settings.SERVER_HOST}:{settings.SERVER_PORT}/api/entities/{{ inp.target_name | lower }}")
     {% endif %}
     {% endfor %}
 
-    # collect lists
     lists = {
     {% for inp in inputs %}
         "{{ inp.alias }}": {{ inp.alias }}_data,
@@ -56,7 +48,7 @@ async def list_{{ entity.name | lower }}():
         row: Dict[str, Any] = {}
         {% for attr in computed_attrs %}
         try:
-            row["{{ attr.name }}"] = _eval_pyexpr({{ attr.pyexpr | tojson }}, ctx)
+            row["{{ attr.name }}"] = eval_py_expr({{ attr.pyexpr | tojson }}, ctx)
         except Exception:
             row["{{ attr.name }}"] = None
         {% endfor %}

@@ -6,7 +6,7 @@ from datetime import date
 from rich import pretty
 from rich.console import Console
 
-from functionality_dsl.api.generator import scaffold_backend_from_model
+from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
 from functionality_dsl.language import build_model
 from functionality_dsl.utils import print_model_debug
 from functionality_dsl.language import THIS_DIR as PKG_DIR
@@ -69,6 +69,7 @@ def generate_backend(context, model_path, out_dir):
             templates_backend_dir=templates_backend_dir,
             out_dir=out_path,
         )
+        render_domain_files(model, templates_backend_dir, out_path)
 
         # make docker helpers executable if you add shell scripts later
         console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")

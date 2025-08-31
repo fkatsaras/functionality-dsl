@@ -1,8 +1,10 @@
 # (direct REST source)
+import httpx
+
 from fastapi import APIRouter, HTTPException
 from typing import List
-import httpx
-from .models import {{ entity.name }}
+
+from app.schemas.generated_models import {{ entity.name }}
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
 
