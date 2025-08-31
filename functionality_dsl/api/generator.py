@@ -131,6 +131,12 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             if (templates_dir / "router_ws_listener.jinja").exists():
                 # normalize headers for ws too (harmless if none)
                 src.headers = _as_headers_list(src)
+                subs = getattr(src, "subprotocols", None)
+                try:
+                    if subs and hasattr(subs, "items"):
+                        src.subprotocols = list(subs.items)
+                except Exception:
+                    src.subprotocols = []
                 tpl = env.get_template("router_ws_listener.jinja")
                 (routers_dir / f"{e.name.lower()}_ws.py").write_text(
                     tpl.render(entity=e, ws=src), encoding="utf-8"
@@ -177,7 +183,18 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if (templates_dir / "router_ws_listener.jinja").exists():
         tpl = env.get_template("router_ws_listener.jinja")
         for ws in _ws_endpoints(model):
-            ws.headers = _as_headers_list(ws)  # ← add this
+            ws.headers = _as_headers_list(ws)  # existing line
+
+            # normalize subprotocols to a plain list[str]
+            subs = getattr(ws, "subprotocols", None)
+            try:
+                # if it's a textX object with .items, pull them out
+                if subs and hasattr(subs, "items"):
+                    ws.subprotocols = list(subs.items)
+                # if it's already a list (or None), leave it
+            except Exception:
+                ws.subprotocols = []
+
             (routers_dir / f"{ws.name.lower()}.py").write_text(
                 tpl.render(ws=ws), encoding="utf-8"
             )

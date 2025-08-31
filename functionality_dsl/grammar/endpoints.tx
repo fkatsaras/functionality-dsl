@@ -25,11 +25,13 @@ WSEndpoint:
   (
     'url:' url=STRING
     ('protocol:' protocol=STRING)?
+    ('subprotocols:' subprotocols=StringList)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
     ('subscribe:' subscribe=STRING)?
   )#
   'end'
 ;
 
+StringList: '[' (items+=STRING (',' items+=STRING)*)? ']';
 // key can be an identifier or a dashy token like X-API-Key
 Header: key=/[A-Za-z][A-Za-z0-9\-]*/ ':' value=STRING ;

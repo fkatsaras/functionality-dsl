@@ -1,15 +1,11 @@
-import asyncio
-import json
-import websockets
-import logging
-import contextlib
+# Auto-generated WebSocket listener for {{ (entity.name if entity is defined else ws.name) }}
+import asyncio, json, websockets, logging, contextlib
 from contextlib import asynccontextmanager
 from fastapi import APIRouter
 from typing import Any, Dict, Optional
-
 from app.core.utils import resolve_headers
 
-logging.basicConfig(level=logging.INFO)  # ensure logs appear
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ws.{{ (entity.name if entity is defined else ws.name) | lower }}")
 logger.setLevel(logging.INFO)
 
@@ -19,22 +15,39 @@ logger.setLevel(logging.INFO)
   {% set hdrs = ws.headers | default([], true) %}
 {% endif %}
 
+# Subprotocols come from FDSL (e.g., ["token","API_KEY"])
+_subprotocols = {{ (ws.subprotocols | default([], true)) | tojson }}
+
 _latest: Dict[str, Any] = {"value": None}
-_task: Optional[asyncio.Task] = None  # lazy-start fallback
+_task: Optional[asyncio.Task] = None
 
 async def _ws_loop():
     while True:
         try:
-            headers = resolve_headers([
+            headers_list = [
                 {% for h in hdrs %}
                 ("{{ h.key }}", "{{ h.value }}"),
                 {% endfor %}
-            ])
+            ]
             logger.info("Connecting to {{ ws.url }} ...")
-            async with websockets.connect("{{ ws.url }}", extra_headers=headers) as ws_conn:
+
+            # websockets>=10 accepts extra_headers=; some older builds accept additional_headers=
+            try:
+                connect_cm = websockets.connect(
+                    "{{ ws.url }}",
+                    extra_headers=headers_list,
+                    subprotocols=_subprotocols if _subprotocols else None,
+                )
+            except TypeError:
+                connect_cm = websockets.connect(
+                    "{{ ws.url }}",
+                    additional_headers=headers_list,
+                    subprotocols=_subprotocols if _subprotocols else None,
+                )
+
+            async with connect_cm as ws_conn:
                 logger.info("Connected to {{ ws.url }}")
                 {% if ws.subscribe is defined and ws.subscribe %}
-                # Send user-defined subscription message (as STRING) after connecting
                 await ws_conn.send("""{{ ws.subscribe | trim }}""")
                 logger.info("Subscribe message sent")
                 {% endif %}
@@ -50,13 +63,11 @@ async def _ws_loop():
                         _latest["value"] = raw
         except Exception as ex:
             logger.warning("WS error: %s", ex)
-            await asyncio.sleep(1)  # backoff & retry
-
+            await asyncio.sleep(1)
 
 @asynccontextmanager
 async def _lifespan(app):
     global _task
-    # schedule after the event loop is up
     _task = asyncio.create_task(_ws_loop())
     try:
         yield
@@ -66,7 +77,6 @@ async def _lifespan(app):
             with contextlib.suppress(Exception):
                 await _task
 
-# IMPORTANT: pass lifespan in the constructor (don’t assign after)
 router = APIRouter(
     prefix="/api/external/{{ (entity.name if entity is defined else ws.name) | lower }}",
     tags=["{{ (entity.name if entity is defined else ws.name) }}"],
@@ -74,7 +84,6 @@ router = APIRouter(
 )
 
 def _ensure_started():
-    """Lazy-start fallback in case startup hooks didn't run (some envs)."""
     global _task
     if _task is None or _task.done():
         logger.info("Starting WS loop lazily from request handler")
@@ -82,5 +91,5 @@ def _ensure_started():
 
 @router.get("/latest")
 async def latest():
-    _ensure_started()  # ensure the loop is running
+    _ensure_started()
     return _latest["value"]

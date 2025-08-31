@@ -14,11 +14,8 @@ end
 WSEndpoint DeepgramListen
   url: "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1"
   protocol: "json"
-  headers: [
-    Authorization: "Token 21170afb4d31f7fc8d33fa2a5e89f398920c03df"
-  ]
+  subprotocols: ["token", "21170afb4d31f7fc8d33fa2a5e89f398920c03df"]
 end
-
 // ----------- Entities (data) -----------
 Entity Post
   source: Posts
