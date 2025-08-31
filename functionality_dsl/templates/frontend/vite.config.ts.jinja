@@ -1,0 +1,15 @@
+import { sveltekit } from '@sveltejs/kit/vite';
+import type { UserConfig } from 'vite';
+
+// Use Docker-provided env if available; otherwise use DSL Server port
+const target = process.env.VITE_API_URL || 'http://localhost:[[ server.port ]]';
+
+export default {
+  plugins: [sveltekit()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': { target, changeOrigin: true, secure: false, ws: true, rewrite: p => p }
+    }
+  }
+} as UserConfig;

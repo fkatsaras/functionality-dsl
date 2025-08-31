@@ -7,6 +7,7 @@ from rich import pretty
 from rich.console import Console
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
+from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
 from functionality_dsl.language import build_model
 from functionality_dsl.utils import print_model_debug
 from functionality_dsl.language import THIS_DIR as PKG_DIR
@@ -51,33 +52,51 @@ def inspect_cmd(context, model_path):
     else:
         context.exit(0)
 
-@cli.command("generate-backend", help="Emit a runnable FastAPI backend from the model's Server block.")
+@cli.command("generate", help="Emit a runnable project (backend, frontend, or both).")
 @click.pass_context
 @click.argument("model_path")
-@click.option("--out", "out_dir", default="api", help="Output directory for the backend scaffold (default: ./api)")
-def generate_backend(context, model_path, out_dir):
+@click.option(
+    "--target",
+    type=click.Choice(["all", "backend", "frontend"], case_sensitive=False),
+    default="all",
+    help="What to generate (default: all)."
+)
+@click.option("--out", "out_dir", default="generated", help="Output directory (default: ./generated)")
+def generate(context, model_path, target, out_dir):
     try:
         model = build_model(model_path)
-        # Resolve directories relative to the installed package
-        base_backend_dir = Path(PKG_DIR) / "base" / "backend"
-        templates_backend_dir = Path(PKG_DIR) / "templates" / "backend"
         out_path = Path(out_dir).resolve()
 
-        scaffold_backend_from_model(
-            model,
-            base_backend_dir=base_backend_dir,
-            templates_backend_dir=templates_backend_dir,
-            out_dir=out_path,
-        )
-        render_domain_files(model, templates_backend_dir, out_path)
+        if target in ("all", "backend"):
+            base_backend_dir = Path(PKG_DIR) / "base" / "backend"
+            templates_backend_dir = Path(PKG_DIR) / "templates" / "backend"
+            scaffold_backend_from_model(
+                model,
+                base_backend_dir=base_backend_dir,
+                templates_backend_dir=templates_backend_dir,
+                out_dir=out_path,
+            )
+            render_domain_files(model, templates_backend_dir, out_path)
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")
 
-        # make docker helpers executable if you add shell scripts later
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")
+        if target in ("all", "frontend"):
+            base_frontend_dir = Path(PKG_DIR) / "base" / "frontend"
+            templates_frontend_dir = Path(PKG_DIR) / "templates" / "frontend"
+            # copy SvelteKit scaffold + render vite.config.ts & Dockerfile
+            scaffold_frontend_from_model(
+                model,
+                base_frontend_dir=base_frontend_dir,
+                templates_frontend_dir=templates_frontend_dir,
+                out_dir=out_path / "frontend",
+            )
+            # then write generated components
+            render_frontend_files(model, templates_frontend_dir, out_path / "frontend")
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Frontend emitted to: {out_path / 'frontend'}", style="green")
+
     except Exception as e:
         console.print(f"[{date.today().strftime('%Y-%m-%d')}] Generate failed with error(s): {e}", style="red")
         context.exit(1)
     else:
         context.exit(0)
-        
 def main():
     cli(prog_name="fdsl")

@@ -1,0 +1,40 @@
+// ----------- Server (config) -----------
+Server SimpleAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// ----------- Source (real public REST) -----------
+// Returns an ARRAY of coffee drinks: [{ id, title, description, ingredients, image, ...}, ...]
+RESTEndpoint CoffeeHot
+  url: "https://api.sampleapis.com/coffee/hot"
+  verb: GET
+end
+
+// ----------- Entities (data) -----------
+Entity Coffee
+  source: CoffeeHot
+  attributes:
+    - id: int
+    - title: string
+    - description: string
+end
+
+// Derived stats for display (simple calculations)
+Entity CoffeeStats
+  inputs:
+    - c: Coffee
+  attributes:
+    - name       = c.title
+    - title_len  = len(c.title)
+    - desc_len   = len(c.description)
+end
+
+// ----------- Components (UI bindings) -----------
+Component<LiveTable> CoffeeTable
+  entity: CoffeeStats
+  props:
+    - primaryKey: "name"           // 'id' also works if present
+    - columns: data.name, data.title_len, data.desc_len
+end
