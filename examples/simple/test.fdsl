@@ -100,7 +100,7 @@ Component<LineChart> DeltaChart
     - xLabel: "Time"
     - yLabel: "Delta (%)"
     - xValue: data.timestamp
-    - yValues: lol.delta
+    - yValues: data.delta
 end
 
 Component<LiveTable> AvgMoistureTable

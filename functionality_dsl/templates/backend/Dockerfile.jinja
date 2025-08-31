@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+RUN pip install --no-cache-dir --upgrade pip
+
+COPY pyproject.toml ./
+# you may replace this with requirements.txt if needed
+RUN python - <<'PY'\nimport tomllib, subprocess, sys\nwith open('pyproject.toml','rb') as f:\n d=tomllib.load(f)\n deps=d['project']['dependencies']\n subprocess.check_call([sys.executable,'-m','pip','install','--no-cache-dir',*deps])\nPY
+
+COPY app ./app
+
+EXPOSE {{ server.port }}
+CMD ["uvicorn", "app.main:app", "--host=0.0.0.0", "--port={{ server.port }}"]

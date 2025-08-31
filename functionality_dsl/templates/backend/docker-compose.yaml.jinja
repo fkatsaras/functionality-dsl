@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  backend:
+    build: .
+    container_name: {{ server.name | lower | replace(' ', '-') }}-backend
+    ports:
+      - "{{ server.port }}:{{ server.port }}"
+    env_file:
+      - .env
+    restart: unless-stopped
