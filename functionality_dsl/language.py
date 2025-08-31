@@ -293,6 +293,14 @@ def ws_endpoint_obj_processor(ep):
             f"WSEndpoint '{ep.name}' url must start with ws:// or wss://.",
             **get_location(ep),
         )
+    
+    sub = getattr(ep, "subscribe", None)
+    if sub and getattr(ep, "protocol", None) == "json":
+        # best-effort lint: must start with '{' or '['
+        s = sub.strip()
+        if not (s.startswith("{") or s.startswith("[")):
+            # not fatal; just warn (or convert later if you prefer)
+            logger.warning("WSEndpoint '%s' subscribe: expected JSON string.", ep.name)
 
 
 def entity_obj_processor(ent):

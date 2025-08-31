@@ -26,6 +26,7 @@ WSEndpoint:
     'url:' url=STRING
     ('protocol:' protocol=STRING)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+    ('subscribe:' subscribe=STRING)?
   )#
   'end'
 ;

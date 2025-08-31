@@ -20,6 +20,7 @@ end
 WSEndpoint KrakenBTCUSD
   url: "wss://ws.kraken.com"
   protocol: "json"
+  subscribe: "{\"event\":\"subscribe\",\"pair\":[\"BTC/USD\"],\"subscription\":{\"name\":\"trade\"}}"
 end
 
 // ----------- Entities (data) -----------
