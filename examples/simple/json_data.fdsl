@@ -18,6 +18,10 @@ RESTEndpoint Users
   verb: GET
 end
 
+WSEndpoint Prices
+  url: "wss://ws.coincap.io/prices?assets=bitcoin,ethereum"
+  protocol: "json"
+end
 // ----------- Entities (data) -----------
 // These two are direct REST-backed entities. Attribute names must match the remote JSON keys.
 
@@ -52,6 +56,13 @@ Entity PostWithAuthor
     - body_len  = len(p.body)
 end
 
+Entity Price
+  source: Prices
+  attributes:
+    - asset: string
+    - price: float
+end
+
 // ----------- Components (UI bindings) -----------
 // A simple table that shows the derived data. Component props must use ONLY `data.*`.
 
@@ -61,3 +72,4 @@ Component<LiveTable> PostsTable
     - primaryKey: "post_id"
     - columns: data.post_id, data.author, data.title, data.body_len
 end
+

@@ -1,4 +1,4 @@
-# Auto-generated WebSocket listener for {{ ws.name }}
+# Auto-generated WebSocket listener for {{ (entity.name if entity is defined else ws.name) }}
 # Listens to external WS and stores latest messages in memory.
 import asyncio
 import json
@@ -6,27 +6,31 @@ from fastapi import APIRouter
 from typing import Any, Dict
 import websockets
 
+{# If generated for an entity, mount under /api/entities/<entity>; else under /api/external/<ws> #}
+{% if entity is defined %}
+router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+{% else %}
 router = APIRouter(prefix="/api/external/{{ ws.name | lower }}", tags=["{{ ws.name }}"])
+{% endif %}
 
 _latest: Dict[str, Any] = {"value": None}
 
 async def _ws_loop():
     while True:
         try:
-            async with websockets.connect("{{ ws.url }}") as ws:
-                async for raw in ws:
+            async with websockets.connect("{{ ws.url }}") as ws_conn:
+                async for raw in ws_conn:
                     try:
-                        if "{{ ws.protocol }}" == "json":
-                            _latest["value"] = json.loads(raw)
-                        else:
-                            _latest["value"] = raw
+                        {% if ws.protocol == "json" %}
+                        _latest["value"] = json.loads(raw)
+                        {% else %}
+                        _latest["value"] = raw
+                        {% endif %}
                     except Exception:
                         _latest["value"] = raw
         except Exception:
-            # reconnect after a delay
             await asyncio.sleep(1)
 
-# spawn background task when module loaded
 loop = asyncio.get_event_loop()
 loop.create_task(_ws_loop())
 

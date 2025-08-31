@@ -24,6 +24,7 @@ def _pyd_type_for(attr):
         "datetime": "datetime",
     }.get((t or "").lower(), "Any")
 
+
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
     """
     Renders:
@@ -72,13 +73,25 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) direct REST proxies for source-bound entities
-    if (templates_dir / "router_entity_proxy.jinja").exists():
-        tpl = env.get_template("router_entity_proxy.jinja")
-        for e in _entities(model):
-            if getattr(e, "source", None):
+    # 1) source-bound entities (REST vs WS)
+    for e in _entities(model):
+        src = getattr(e, "source", None)
+        if not src:
+            continue
+
+        if src.__class__.__name__ == "RESTEndpoint":
+            if (templates_dir / "router_entity_proxy.jinja").exists():
+                tpl = env.get_template("router_entity_proxy.jinja")
                 (routers_dir / f"{e.name.lower()}_source.py").write_text(
                     tpl.render(entity=e), encoding="utf-8"
+                )
+
+        elif src.__class__.__name__ == "WSEndpoint":
+            # NEW: special-case for WS sources
+            if (templates_dir / "router_ws_listener.jinja").exists():
+                tpl = env.get_template("router_ws_listener.jinja")
+                (routers_dir / f"{e.name.lower()}_ws.py").write_text(
+                    tpl.render(entity=e, ws=src), encoding="utf-8"
                 )
 
     # 2) computed entity routers
@@ -115,7 +128,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 tpl.render(endpoint=ep), encoding="utf-8"
             )
 
-    # 4) WS listeners
+    # 4) WS listeners (standalone, not tied to entity)
     if (templates_dir / "router_ws_listener.jinja").exists():
         tpl = env.get_template("router_ws_listener.jinja")
         for ws in _ws_endpoints(model):
