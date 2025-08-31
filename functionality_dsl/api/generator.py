@@ -57,7 +57,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "kind": "schema",
                     "py_type": _pyd_type_for(a),
                 })
-        entities_ctx.append({"name": e.name, "attributes": attrs_ctx})
+        entities_ctx.append({
+            "name": e.name,
+            "has_inputs": bool(getattr(e, "inputs", None)),
+            "attributes": attrs_ctx,
+        })
 
     models_tpl = env.get_template("models.jinja")
     models_out = out_dir / "app" / "schemas" / "generated_models.py"

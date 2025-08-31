@@ -8,7 +8,12 @@ from uuid import UUID
 class {{ ent.name }}(BaseModel):
 {% for attr in ent.attributes %}
 {% if attr.kind == "schema" %}
+{# If this entity has inputs (i.e., is derived), make schema attrs optional #}
+{% if ent.has_inputs %}
+    {{ attr.name }}: Optional[Any] = None
+{% else %}
     {{ attr.name }}: {{ attr.py_type }}
+{% endif %}
 {% else %}
     # computed attribute (expression: {{ attr.expr_raw | replace("\n"," ") }})
     {{ attr.name }}: Optional[Any] = None
