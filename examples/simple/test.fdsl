@@ -56,7 +56,7 @@ Entity AverageMoisture
     - z1: MoistureZone1
     - z2: MoistureZone2
   attributes:
-    - zone: string
+    - zone = "Zone average moisture"
     - avg_moisture = avg([z1.moisture_percent, z2.moisture_percent])
 end
 
