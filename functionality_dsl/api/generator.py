@@ -1,7 +1,10 @@
 from __future__ import annotations
+
+import re
+
 from pathlib import Path
 from shutil import copytree
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from textx import get_children_of_type
 
 def _entities(model):
@@ -23,6 +26,41 @@ def _pyd_type_for(attr):
         "bool": "bool",
         "datetime": "datetime",
     }.get((t or "").lower(), "Any")
+    
+def _as_headers_list(obj):
+    """
+    Normalize the .headers attribute from a RESTEndpoint or WSEndpoint.
+    Returns list[{"key": str, "value": str}].
+    Accepts either:
+      - None
+      - list of Header objects (from grammar with headers: [Key: "Value", ...])
+      - a single string "Key: Value; Another: Foo"
+    """
+    hs = getattr(obj, "headers", None)
+    out = []
+    if not hs:
+        return out
+
+    # Case 1: grammar gave us a list of Header model objects
+    if isinstance(hs, list):
+        for h in hs:
+            k = getattr(h, "key", None)
+            v = getattr(h, "value", None)
+            if k and v is not None:
+                out.append({"key": k, "value": v})
+        return out
+
+    # Case 2: grammar gave us a single string
+    if isinstance(hs, str):
+        # split on semicolon or comma as separators
+        parts = [p.strip() for p in re.split(r"[;,]", hs) if p.strip()]
+        for p in parts:
+            if ":" in p:
+                k, v = p.split(":", 1)
+                out.append({"key": k.strip(), "value": v.strip()})
+        return out
+
+    return out
 
 
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
@@ -37,6 +75,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
         trim_blocks=True,
         lstrip_blocks=True,
+        undefined=StrictUndefined,
     )
 
     # -------- models --------
@@ -81,14 +120,17 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         if src.__class__.__name__ == "RESTEndpoint":
             if (templates_dir / "router_entity_proxy.jinja").exists():
+                # normalize headers for the template
+                src.headers = _as_headers_list(src)
                 tpl = env.get_template("router_entity_proxy.jinja")
                 (routers_dir / f"{e.name.lower()}_source.py").write_text(
                     tpl.render(entity=e), encoding="utf-8"
                 )
 
         elif src.__class__.__name__ == "WSEndpoint":
-            # NEW: special-case for WS sources
             if (templates_dir / "router_ws_listener.jinja").exists():
+                # normalize headers for ws too (harmless if none)
+                src.headers = _as_headers_list(src)
                 tpl = env.get_template("router_ws_listener.jinja")
                 (routers_dir / f"{e.name.lower()}_ws.py").write_text(
                     tpl.render(entity=e, ws=src), encoding="utf-8"
@@ -102,10 +144,12 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             for inp in getattr(e, "inputs", []) or []:
                 tgt = inp.target
                 src = getattr(tgt, "source", None)
+                headers = _as_headers_list(src) if src else []
                 inputs.append({
                     "alias": inp.alias,
                     "target_name": tgt.name,
                     "target_source_url": getattr(src, "url", None) if src else None,
+                    "target_headers": headers,   # ← NEW
                 })
 
             computed_attrs = []
@@ -124,6 +168,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if (templates_dir / "router_proxy.jinja").exists():
         tpl = env.get_template("router_proxy.jinja")
         for ep in _rest_endpoints(model):
+            ep.headers = _as_headers_list(ep)  # ← add this
             (routers_dir / f"{ep.name.lower()}.py").write_text(
                 tpl.render(endpoint=ep), encoding="utf-8"
             )
@@ -132,6 +177,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if (templates_dir / "router_ws_listener.jinja").exists():
         tpl = env.get_template("router_ws_listener.jinja")
         for ws in _ws_endpoints(model):
+            ws.headers = _as_headers_list(ws)  # ← add this
             (routers_dir / f"{ws.name.lower()}.py").write_text(
                 tpl.render(ws=ws), encoding="utf-8"
             )

@@ -18,10 +18,11 @@ RESTEndpoint Users
   verb: GET
 end
 
-WSEndpoint Prices
-  url: "wss://ws.coincap.io/prices?assets=bitcoin,ethereum"
+WSEndpoint BinanceBTCTrades
+  url: "wss://stream.binance.com:9443/ws/btcusdt@trade"
   protocol: "json"
 end
+
 // ----------- Entities (data) -----------
 // These two are direct REST-backed entities. Attribute names must match the remote JSON keys.
 
@@ -56,11 +57,13 @@ Entity PostWithAuthor
     - body_len  = len(p.body)
 end
 
-Entity Price
-  source: Prices
+Entity Trade
+  source: BinanceBTCTrades
   attributes:
-    - asset: string
+    - base: string
+    - quote: string
     - price: float
+    - volume: float
 end
 
 // ----------- Components (UI bindings) -----------

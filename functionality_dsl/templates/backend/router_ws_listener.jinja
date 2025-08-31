@@ -2,9 +2,12 @@
 # Listens to external WS and stores latest messages in memory.
 import asyncio
 import json
+import websockets
+
 from fastapi import APIRouter
 from typing import Any, Dict
-import websockets
+
+from app.core.utils import resolve_headers
 
 {# If generated for an entity, mount under /api/entities/<entity>; else under /api/external/<ws> #}
 {% if entity is defined %}
@@ -15,10 +18,22 @@ router = APIRouter(prefix="/api/external/{{ ws.name | lower }}", tags=["{{ ws.na
 
 _latest: Dict[str, Any] = {"value": None}
 
+{# Decide which headers to use WITHOUT touching `entity` when it's undefined #}
+{% if entity is defined %}
+  {% set hdrs = entity.source.headers | default([], true) %}
+{% else %}
+  {% set hdrs = ws.headers | default([], true) %}
+{% endif %}
+
 async def _ws_loop():
     while True:
         try:
-            async with websockets.connect("{{ ws.url }}") as ws_conn:
+            headers = resolve_headers([
+                {% for h in  hdrs %}
+                ("{{ h.key }}", "{{ h.value }}"),
+                {% endfor %}
+            ])
+            async with websockets.connect("{{ ws.url }}", extra_headers=headers) as ws_conn:
                 async for raw in ws_conn:
                     try:
                         {% if ws.protocol == "json" %}

@@ -8,21 +8,27 @@ Source:
     | WSEndpoint
 ;
 
+// Abstract union hook for Entity.source
 RESTEndpoint:
-    'RESTEndpoint' name=ID
-    (
-        'url:' url=STRING
-        ('verb:' verb=HttpVerb)?
-        ('headers:' headers=STRING)?
-    )#
-    'end'
+  'RESTEndpoint' name=ID
+  (
+    'url:' url=STRING
+    ('verb:' verb=HttpVerb)?
+    // structured headers list (0..1)
+    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+  )#
+  'end'
 ;
 
 WSEndpoint:
-    'WSEndpoint' name=ID
-    (
-        'url:' url=STRING
-        ('protocol:' protocol=STRING)?
-    )#
-    'end'
+  'WSEndpoint' name=ID
+  (
+    'url:' url=STRING
+    ('protocol:' protocol=STRING)?
+    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+  )#
+  'end'
 ;
+
+// key can be an identifier or a dashy token like X-API-Key
+Header: key=/[A-Za-z][A-Za-z0-9\-]*/ ':' value=STRING ;
