@@ -47,7 +47,7 @@ Entity ZoneDelta
     - z2: MoistureZone2
   attributes:
     - timestamp = z1.timestamp
-    - delta     = z1.moisture_percent - z2.moisture_percent -z3.fwfwfew
+    - delta     = z1.moisture_percent - z2.moisture_percent -   fwfwwfew
 end
 
 // Aggregated data
@@ -57,7 +57,7 @@ Entity AverageMoisture
     - z2: MoistureZone2
   attributes:
     - zone: string
-    - avg_moisture = avg([ z2.moisture_percent])
+    - avg_moisture = avg([z2.moisture_percent])
 end
 
 // Derived: computed status labels

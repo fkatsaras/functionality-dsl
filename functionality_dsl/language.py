@@ -19,60 +19,159 @@ GRAMMAR_DIR = join(THIS_DIR, "grammar")
 logger = logging.getLogger("functionality_dsl")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    
+SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
 
+def _is_node(x):
+    return hasattr(x, "__class__") and not isinstance(
+        x, (str, int, float, bool, list, dict, tuple)
+    )
+
+def _push_if_nodes(stack, obj):
+    """
+    Push any textX nodes found inside obj onto the stack.
+    Handles lists/tuples arbitrarily nested.
+    """
+    if obj is None:
+        return
+    if _is_node(obj):
+        stack.append(obj)
+        return
+    if isinstance(obj, (list, tuple)):
+        for item in obj:
+            _push_if_nodes(stack, item)
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            _push_if_nodes(stack, v)
+
+def _walk(node):
+    """
+    Robust DFS over a textX node graph; ignores parent/model backrefs and primitives.
+    Critically, this descends into tuples (where textX often stores (op, expr) pairs).
+    """
+    seen = set()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        nid = id(n)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        yield n
+        # descend over attributes
+        for k, v in vars(n).items():
+            if k in SKIP_KEYS or v is None:
+                continue
+            if _is_node(v):
+                stack.append(v)
+            elif isinstance(v, (list, tuple)):
+                for item in v:
+                    _push_if_nodes(stack, item)
+            elif isinstance(v, dict):
+                for _, item in v.items():
+                    _push_if_nodes(stack, item)
+
+# ------------------------------------------------------------------------------
+# Helpers to identify/obtain computed-attribute expressions
+def get_expr(a):
+    # Try common field names first
+    for key in ("expr", "expression", "valueExpr", "value", "rhs"):
+        if hasattr(a, key):
+            v = getattr(a, key)
+            if v is not None:
+                logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> via '{key}'")
+                return v
+
+    # Fallback: first Expr child
+    expr_children = list(get_children_of_type("Expr", a))
+    if expr_children:
+        logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> via first Expr child")
+        return expr_children[0]
+
+    logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> None")
+    return None
+
+
+def is_computed_attr(a):
+    e = get_expr(a)
+    logger.debug(f"[is_computed_attr] {a.__class__.__name__}.{getattr(a,'name',None)} -> {bool(e)}")
+    return e is not None
 
 # ------------------------------------------------------------------------------
 # Expression validation helpers
 def _collect_refs(expr):
-    for r in get_children_of_type("Ref", expr):
-        alias = getattr(r, "alias", None)
-        attr = getattr(r, "attr", None)
-        is_data = (getattr(r, "data", None) is not None) or (alias is None and attr is not None)
-        yield ("data" if is_data else alias, attr, r)
-        
+    for n in _walk(expr):
+        if n.__class__.__name__ == "Ref":
+            if getattr(n, "data", None):
+                yield "data", n.attr, n
+            else:
+                yield getattr(n, "alias", None), getattr(n, "attr", None), n
+
+
 def _collect_calls(expr):
-    for c in get_children_of_type("Call", expr):
-        fname = getattr(c, "func", None)
-        argc = len(getattr(c, "args", []) or [])
-        yield fname, argc, c
+    """
+    Same idea for function calls.
+    """
+    for n in _walk(expr):
+        if n.__class__.__name__ == "Call":
+            fname = getattr(n, "func", None)
+            argc = len(getattr(n, "args", []) or [])
+            yield fname, argc, n
+
+
 
 def _validate_func(name, argc, node):
     if name not in DSL_FUNCTION_SIG:
         raise TextXSemanticError(f"Unknown function '{name}'.", **get_location(node))
     min_arity, max_arity = DSL_FUNCTION_SIG[name]
     if argc < min_arity or (max_arity is not None and argc > max_arity):
+        rng = "" if (max_arity == min_arity) else ".." + (str(max_arity) if max_arity else "or more")
         raise TextXSemanticError(
-            f"Function '{name}' expects {min_arity}"
-            f"{'' if (max_arity == min_arity) else '..' + (str(max_arity) if max_arity else 'or more')}"
-            f" args, got {argc}.",
+            f"Function '{name}' expects {min_arity}{rng} args, got {argc}.",
             **get_location(node),
         )
-        
+
+
 def _annotate_computed_attrs(model, metamodel=None):
     # Entities
     for ent in get_children_of_type("Entity", model):
         inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
-        target_attrs = {e.name: {a.name for a in getattr(e, "attributes", []) or []} 
-                        for e in get_children_of_type("Entity", model)}
+        target_attrs = {
+            e.name: {a.name for a in getattr(e, "attributes", []) or []}
+            for e in get_children_of_type("Entity", model)
+        }
+        logger.debug(f"[annot] Entity {ent.name}: inputs={list(inputs.keys())}")
+
         for a in getattr(ent, "attributes", []) or []:
-            if a.__class__.__name__ != "ComputedAttribute":
+            logger.debug(f"[annot]   Attr {getattr(a,'name',None)} class={a.__class__.__name__}")
+            if not is_computed_attr(a):
                 continue
-            expr = getattr(a, "expr", None)
+
+            expr = get_expr(a)
             if expr is None:
                 raise TextXSemanticError("Computed attribute missing expression.", **get_location(a))
 
-            # refs
-            for alias, attr, node in _collect_refs(expr):
+            # Log refs & calls
+            refs = list(_collect_refs(expr))
+            logger.debug(f"[annot]     Refs -> {[(al, at) for al, at, _ in refs]}")
+            calls = list(_collect_calls(expr))
+            logger.debug(f"[annot]     Calls -> {[(fn, ar) for fn, ar, _ in calls]}")
+
+            # refs validation
+            for alias, attr, node in refs:
                 if alias == "data":
                     raise TextXSemanticError("`data.` invalid in Entity expressions.", **get_location(node))
                 if alias not in inputs:
                     raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
                 tgt = inputs[alias].name
                 if attr not in target_attrs.get(tgt, set()):
-                    raise TextXSemanticError(f"'{alias}.{attr}' not found on entity '{tgt}'.", **get_location(node))
+                    raise TextXSemanticError(
+                        f"'{alias}.{attr}' not found on entity '{tgt}'.",
+                        **get_location(node),
+                    )
 
-            # calls
-            for fname, argc, node in _collect_calls(expr):
+            # calls validation
+            for fname, argc, node in calls:
                 _validate_func(fname, argc, node)
 
             # compile
@@ -93,6 +192,7 @@ def _annotate_computed_attrs(model, metamodel=None):
                         **get_location(expr),
                     )
 
+
 # ------------------------------------------------------------------------------
 # Public helpers
 def build_model(model_path: str):
@@ -110,7 +210,7 @@ def build_model_str(model_str: str):
 
 
 # ------------------------------------------------------------------------------
-# Getters 
+# Getters
 def get_model_servers(model):
     return get_children_of_type("Server", model)
 
@@ -140,7 +240,6 @@ def get_model_components(model):
 
 # ------------------------------------------------------------------------------
 # Object processors (defaults & enrichment)
-
 def rest_endpoint_obj_processor(ep):
     """
     RESTEndpoint:
@@ -212,19 +311,12 @@ def entity_obj_processor(ent):
             )
         seen.add(aname)
 
-        # If schema attr: ensure type exists (grammar enforces), noop here.
-        # If computed attr: ensure expr present
-        if type(a).__name__ == "ComputedAttribute":
-            # Robustly get the expression object regardless of feature name.
-            expr_obj = getattr(a, "expr", None)
-            if expr_obj is None:
-                expr_obj = getattr(a, "expression", None)  # fallback if textX named it differently
-
-            if expr_obj is None:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' computed attribute '{aname}' is missing an expression.",
-                    **get_location(a),
-                )
+        # If computed attr, ensure expression is present
+        if is_computed_attr(a) and get_expr(a) is None:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' computed attribute '{aname}' is missing an expression.",
+                **get_location(a),
+            )
 
     # inputs alias uniqueness (if present)
     inputs = getattr(ent, "inputs", None) or []
@@ -278,7 +370,6 @@ def component_obj_processor(cmp):
 
 # ------------------------------------------------------------------------------
 # Model-wide validation & enrichment
-
 def model_processor(model, metamodel=None):
     """
     Runs after parsing; perform cross-object validation and light enrichment.
@@ -338,7 +429,6 @@ def _populate_aggregates(model):
 
 # ------------------------------------------------------------------------------
 # Scope providers / metamodel creation
-
 def get_scope_providers():
     """
     Minimal FQN import provider (imports of files/namespaces).
@@ -373,7 +463,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run AFTER the whole model is built.
     mm.register_model_processor(model_processor)            # cross-model checks
     mm.register_model_processor(_annotate_computed_attrs)   # compile expressions
-    return mm 
+    return mm
 
 
 FunctionalityDSLMetaModel = get_metamodel(debug=False)

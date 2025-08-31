@@ -1,11 +1,9 @@
-
 from __future__ import annotations
 
 import ast
 from typing import List
 import logging
 import os
-import sys
 
 log = logging.getLogger("functionality_dsl.compiler")
 if not log.handlers:
@@ -25,10 +23,10 @@ DSL_FUNCTION_REGISTRY = {
 }
 
 DSL_FUNCTION_SIG = {    # name -> (min arity, max arity)
-    "avg": (1,1),
+    "avg": (1, 1),
     "min": (1, None),
     "max": (1, None),
-    "len": (1,1),
+    "len": (1, 1),
 }
 
 _ALLOWED_AST = {
@@ -44,15 +42,18 @@ def _assert_safe_python_expr(py: str):
     for n in ast.walk(tree):
         if type(n) not in _ALLOWED_AST:
             raise ValueError(f"Disallowed AST node: {type(n).__name__}")
-        
+
 def compile_expr_to_python(expr, *, context: str) -> str:
     """
     context: 'entity' (aliases allowed) or 'component' (data.* allowed)
     Produces a Python expr using ONLY ctx[...] and dsl_funcs[...](...).
     """
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
+
     def _is_node(x):
-        return hasattr(x, "__class__") and not isinstance(x, (str, int, float, bool, list, dict, tuple))
+        return hasattr(x, "__class__") and not isinstance(
+            x, (str, int, float, bool, list, dict, tuple)
+        )
 
     def to_py(node) -> str:
         cls = node.__class__.__name__
@@ -66,7 +67,11 @@ def compile_expr_to_python(expr, *, context: str) -> str:
                 return str(node.INT)
             if getattr(node, "Bool", None) is not None:
                 return "True" if node.Bool == "true" else "False"
-            inner = getattr(node, "ListLiteral", None) or getattr(node, "literal", None) or getattr(node, "value", None)
+            inner = (
+                getattr(node, "ListLiteral", None)
+                or getattr(node, "literal", None)
+                or getattr(node, "value", None)
+            )
             if inner is not None:
                 return to_py(inner) if _is_node(inner) else repr(inner)
             return "None"
@@ -76,82 +81,76 @@ def compile_expr_to_python(expr, *, context: str) -> str:
             return "[" + ", ".join(to_py(x) for x in items) + "]"
 
         if cls == "Ref":
-            attr = getattr(node, "attr", None)
-            alias = getattr(node, "alias", None)
-            is_data = (getattr(node, "data", None) is not None) or (alias is None and attr is not None)
-            if is_data:
+            attr = node.attr
+            if getattr(node, "data", None):
                 if context != "component":
                     raise ValueError("`data.` references only valid in Component props.")
-                return f'ctx["data"][{repr(attr)}]'
+                return f'ctx["data"][{attr!r}]'
+            alias = getattr(node, "alias", None)
             if alias is None or attr is None:
                 raise ValueError("Invalid Ref.")
-            return f'ctx[{repr(alias)}][{repr(attr)}]'
+            return f'ctx[{alias!r}][{attr!r}]'
 
         if cls == "IfThenElse":
             return f"({to_py(node.thenExpr)} if {to_py(node.cond)} else {to_py(node.elseExpr)})"
 
         if cls == "Call":
-            fname = getattr(node, "func", None)
-            args = getattr(node, "args", []) or []
-            return f'dsl_funcs[{repr(fname)}](' + ", ".join(to_py(a) for a in args) + ")"
+            fname = node.func
+            args = ", ".join(to_py(a) for a in (node.args or []))
+            return f'dsl_funcs[{fname!r}]({args})'
 
-        if cls == "Postfix":
-            atom = (
-                getattr(node, "Atom", None)
-                or getattr(node, "atom", None)
-                or getattr(node, "inner", None)
-                or getattr(node, "value", None)     # some grammars use 'value' for the primary
-                or getattr(node, "primary", None)   # another common name
-            )
-            if atom is None:
-                raise ValueError("Malformed Postfix node: missing base atom/inner/primary.")
-            base = to_py(atom)
-
-            for k, v in vars(node).items():
-                if k in SKIP_KEYS:
-                    continue
-                if isinstance(v, list):
-                    for s in v:
-                        if getattr(s, "__class__", None) and s.__class__.__name__ == "PipeSuffix":
-                            fname = getattr(s, "func", None)
-                            args = getattr(s, "args", []) or []
-                            base = f'dsl_funcs[{repr(fname)}](' + ", ".join([base] + [to_py(a) for a in args]) + ")"
-            return base
-
-        if cls in {"OrExpr", "AndExpr", "CmpExpr", "AddExpr", "MulExpr", "UnaryExpr", "Atom"}:
-            toks = []
-            for k, v in vars(node).items():
-                # ⬇️ Add this guard to avoid following parent/model cycles
-                if k in SKIP_KEYS:
-                    continue
-                if v is None:
-                    continue
-                if isinstance(v, list):
-                    for item in v:
-                        if _is_node(item):
-                            toks.append(to_py(item))
-                        elif isinstance(item, str):
-                            toks.append(item)
+        if cls == "UnaryExpr":
+            s = to_py(node.atom)
+            # apply unops from left to right as written
+            for u in node.unops:
+                if u.op == 'not':
+                    s = f"(not {s})"
+                elif u.op == '-':
+                    s = f"(- {s})"
                 else:
-                    if _is_node(v):
-                        toks.append(to_py(v))
-                    elif isinstance(v, str):
-                        toks.append(v)
-            if not toks:
-                raise ValueError(f"Could not compile node {cls}")
-            return "(" + " ".join(toks) + ")"
+                    raise ValueError(f"Unknown unary op {u.op!r}")
+            return f"({s})"
 
-        # last resort: single child
-        for k, v in vars(node).items():
-            if k in SKIP_KEYS:
-                continue
-            elif isinstance(v, str):
-                raise ValueError(f"Unexpected bare identifier {v} in {cls}") # bare IDs should not sneak through
-            if _is_node(v):
-                return to_py(v)
+        if cls == "MulExpr":
+            s = to_py(node.left)
+            for t in (node.ops or []):
+                s = f"({s} {t.op} {to_py(t.right)})"
+            return s
+
+        if cls == "AddExpr":
+            s = to_py(node.left)
+            for t in (node.ops or []):
+                s = f"({s} {t.op} {to_py(t.right)})"
+            return s
+
+        if cls == "CmpExpr":
+            # Python supports chained comparisons; mirror the chain
+            parts = [to_py(node.left)]
+            for t in (node.ops or []):
+                parts.append(f"{t.op} {to_py(t.right)}")
+            return "(" + " ".join(parts) + ")"
+
+        if cls == "AndExpr":
+            s = to_py(node.left)
+            for t in (node.ops or []):
+                s = f"({s} and {to_py(t.right)})"
+            return s
+
+        if cls == "OrExpr":
+            s = to_py(node.left)
+            for t in (node.ops or []):
+                s = f"({s} or {to_py(t.right)})"
+            return s
+
+        if cls == "Atom":
+            # reach into the single populated alternative
+            for fld in ("literal","ref","call","ifx","inner"):
+                v = getattr(node, fld, None)
+                if v is not None:
+                    return to_py(v)
+            raise ValueError("Empty Atom")
         raise ValueError(f"Unhandled node type: {cls}")
 
     py = to_py(expr).replace(" null ", " None ")
     _assert_safe_python_expr(py)
     return py
-

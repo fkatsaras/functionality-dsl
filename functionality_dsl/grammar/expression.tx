@@ -1,32 +1,35 @@
 import utils
 
-// Expressions with standard precedence.
-// Fix: pipeline is postfix, not left-recursive.
-
+// Root
 Expr: OrExpr ;
 
-OrExpr: AndExpr ( 'or' AndExpr )* ;
-AndExpr: CmpExpr ( 'and' CmpExpr )* ;
+// or/and with explicit tails
+OrExpr:  left=AndExpr   (ops+=OrTail)* ;
+OrTail:  op='or'        right=AndExpr ;
 
+AndExpr: left=CmpExpr   (ops+=AndTail)* ;
+AndTail: op='and'       right=CmpExpr ;
+
+// comparisons
 CmpOp: '==' | '!=' | '>' | '>=' | '<' | '<=' ;
-CmpExpr: AddExpr ( CmpOp AddExpr )* ;
+CmpExpr: left=AddExpr (ops+=CmpTail)* ;
+CmpTail: op=CmpOp    right=AddExpr ;
 
-AddExpr: MulExpr ( ('+' | '-') MulExpr )* ;
-MulExpr: UnaryExpr ( ('*' | '/' | '%') UnaryExpr )* ;
+// additive / multiplicative
+AddExpr: left=MulExpr (ops+=AddTail)* ;
+AddTail: op=AddOp     right=MulExpr ;
+AddOp:   '+' | '-' ;
 
-UnaryExpr: ('not' | '-')* Postfix ;
+MulExpr: left=UnaryExpr (ops+=MulTail)* ;
+MulTail: op=MulOp       right=UnaryExpr ;
+MulOp:   '*' | '/' | '%' ;
 
-// Postfix handles pipelines like: <atom> |> foo(a) |> bar()
-Postfix:
-    Atom ( PipeSuffix )*
-;
+// unary binds to Atom
+UnaryExpr: unops+=UnaryOp* atom=Atom ;
+UnaryOp:   op=UnaryOpTok ;
+UnaryOpTok: 'not' | '-' ;
 
-// One suffix step of a pipeline
-PipeSuffix:
-    '|>' func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
-;
-
-// Atoms (no left recursion here)
+// atoms
 Atom:
       literal=Literal
     | ref=Ref
@@ -35,21 +38,23 @@ Atom:
     | '(' inner=Expr ')'
 ;
 
+// ternary
 IfThenElse:
   'if' cond=Expr 'then' thenExpr=Expr 'else' elseExpr=Expr
 ;
 
-// Function call: name(args...)
+// calls
 Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
-// Reference to attributes/entities: data.attr | this.attr | alias.attr
+// references: bind 'data' to a field
 Ref:
-    (('data' ) '.' attr=ID) | (alias=ID '.' attr=ID)
+    (data='data' '.' attr=ID)
+  | (alias=ID '.' attr=ID)
 ;
 
-// Literals
+// literals
 Literal:
       STRING
     | FLOAT
