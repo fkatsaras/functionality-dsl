@@ -79,7 +79,7 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
         # avoid Svelte conflicts:
         variable_start_string="[[",
         variable_end_string="]]",
-        block_start_string="[%",   # if you need blocks later
+        block_start_string="[%",
         block_end_string="%]",
         comment_start_string="[#",
         comment_end_string="#]",
@@ -111,9 +111,7 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
             continue
         ent_name = ent.name
 
-        inputs = getattr(ent, "inputs", None) or []
-        has_computed = any(getattr(a, "expr", None) is not None for a in (getattr(ent, "attributes", None) or []))
-        src_url = f"/api/entities/{ent_name.lower()}/" if (inputs or has_computed) else f"/api/entities/{ent_name.lower()}/"
+        src_url = f"/api/entities/{ent_name.lower()}/"
 
         prim_key = None
         cols = []

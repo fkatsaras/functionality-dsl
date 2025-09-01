@@ -1,9 +1,6 @@
 <script lang="ts">
     import { onMount, tick } from 'svelte';
-    // // Provided by the generator
-    // export let src: string = [[ src | tojson ]];// e.g. "/api/entities/postwithauthor"
-    // export let columns: Array<{ key: string; label: string }> = [[ columns | tojson ]];
-    // export let primaryKey: string = [[ primaryKey | tojson ]];
+
 
     const {
         src = [[ src | tojson ]],
@@ -49,9 +46,9 @@
 
 <div class="w-full">
     <div class="mb-3 flex items-center gap-3">
-        <h2 class="test-base font-approachmono text-dag-text/90 tracking-tight">Table</h2>
+        <h2 class="text-base font-approachmono text-text/90 tracking-tight">{name}</h2>
         <button
-            class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--dag-surface)] hover:bg-[color:var(--dag-edge-soft)] transition disabled:opacity-60"
+            class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition disabled:opacity-60"
             on:click={load}
             disabled={loading}
             aria-label="Refresh"
@@ -63,22 +60,22 @@
         {/if}
     </div>
 
-    <div class="overflow-auto rounded-xl2 shadow-card border table-border bg-[color:var(--dag-card)]">
+    <div class="overflow-auto rounded-xl2 shadow-card border table-border bg-[color:var(--card)]">
         <table class="min-w-full border-collapse text-sm">
-            <thead class="bg-[color:var(--dag-surface)] sticky top-0 z-10">
+            <thead class="bg-[color:var(--surface)] sticky top-0 z-10"></thead>
                 <tr>
                     {#each columns as c}
-                      <th class="text-left font-approachmono font-medium text-dag-text/90 px-3 py-2 border-b thin-border">
+                      <th class="text-left font-approachmono font-medium text-text/90 px-3 py-2 border-b thin-border">
                         {c.label}
                       </th>
                     {/each}
                 </tr>
-            </thead>
+
 
             <tbody>
                 {#if loading}
                     <tr>
-                      <td class="font-approachmono px-3 py-4 text-dag-text-muted" colspan={columns.length}>Loading…</td>
+                      <td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>Loading…</td>
                     </tr>
                 {:else if error}
                     <tr>
@@ -86,13 +83,13 @@
                     </tr>
                 {:else if data.length === 0}
                     <tr>
-                      <td class="font-approachmono px-3 py-4 text-dag-text-muted" colspan={columns.length}>No data</td>
+                      <td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>No data</td>
                     </tr>
                 {:else}
                     {#each data as row, i (`${row?.id ?? row?.[primaryKey] ?? JSON.stringify(row)}-${i}`)}
-                            <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--dag-surface)] hover:bg-[color:var(--dag-edge-soft)] transition-colors">
+                            <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
                                 {#each columns as c}
-                                    <td class="px-3 py-2 border-b thin-border text-dag-text/90">
+                                    <td class="px-3 py-2 border-b thin-border text-text/90">
                                         {colValue(row, c.key)}
                                     </td>
                                 {/each}
@@ -108,5 +105,5 @@
     .font-approachmono {
       font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
-    .thin-border, .table-border { border-color: var(--dag-edge); }
+    .thin-border, .table-border { border-color: var(--edge); }
 </style>

@@ -9,18 +9,18 @@
 
 <div class="min-h-screen p-6">
   <header class="mb-6 flex items-center justify-between">
-    <h1 class="text-lg font-approachmono text-dag-text/90">FDSL Components</h1>
-    <a href="/docs" class="text-xs text-dag-accent hover:text-dag-accentSoft underline">Docs</a>
+    <h1 class="text-lg font-approachmono text-text/90">FDSL Components</h1>
+    <a href="/docs" class="text-xs text-accent hover:text-accentSoft underline">Docs</a>
   </header>
 
   {#if generated.length === 0}
-    <div class="text-dag-text-muted">No generated components found yet.</div>
+    <div class="text-text-muted">No generated components found yet.</div>
   {:else}
     <div class="grid gap-6 md:grid-cols-2">
       {#each generated as g}
-        <section class="rounded-xl2 shadow-card border table-border bg-dag-card p-3">
-          <div class="mb-2 text-xs font-approachmono text-dag-text-muted">{g.path.split('/').pop()}</div>
-          <div class="bg-[color:var(--dag-surface)] rounded-lg p-2">
+        <section class="rounded-xl2 shadow-card border table-border bg-card p-3">
+          <div class="mb-2 text-xs font-approachmono text-text-muted">{g.path.split('/').pop()}</div>
+          <div class="bg-[color:var(--surface)] rounded-lg p-2">
             <svelte:component this={g.Comp} />
           </div>
         </section>

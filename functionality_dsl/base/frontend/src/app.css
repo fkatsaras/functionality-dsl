@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Approach Mono Medium — put file under /static/fonts/... if you have it */
+
 @font-face {
   font-family: "Approach Mono";
   src: url("/fonts/ApproachMonoTRIAL-Md.otf") format("opentype");
@@ -19,30 +19,30 @@
   font-display: swap;
 }
 
-/* Dagster-ish theme variables */
+/* theme variables */
 :root {
-  --dag-canvas: #0e1116;
-  --dag-surface: #0f172a;
-  --dag-card: #0b1220;
-  --dag-edge: #2b3445;
-  --dag-edge-soft: #1f2837;
-  --dag-text: #e5e7eb;
-  --dag-text-muted: #a7b0c0;
-  --dag-accent: #7c83ff;
+  --canvas: #0e1116;
+  --surface: #0f172a;
+  --card: #0b1220;
+  --edge: #2b3445;
+  --edge-soft: #1f2837;
+  --text: #e5e7eb;
+  --text-muted: #a7b0c0;
+  --accent: #7c83ff;
 }
 
 html, body {
   height: 100%;
-  background: var(--dag-canvas);
-  color: var(--dag-text);
+  background: var(--canvas);
+  color: var(--text);
 }
 
 /* subtle edges */
-.edge, .thin-border, .table-border { border-color: var(--dag-edge); }
+.edge, .thin-border, .table-border { border-color: var(--edge); }
 
 /* scrollbars */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: var(--dag-edge); border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* utility alias */

@@ -17,7 +17,7 @@ def _ws_endpoints(model):
     return list(get_children_of_type("WSEndpoint", model))
 
 def _pyd_type_for(attr):
-    # very simple mapper; adapt as needed to your DSL types
+    # very simple mapper
     t = getattr(attr, "type", None)
     return {
         "int": "int",

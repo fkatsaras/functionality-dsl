@@ -27,8 +27,8 @@ Entity CoffeeStats
     - c: Coffee
   attributes:
     - name       = c.title
-    - title_len  = len(c.title)
-    - desc_len   = len(c.description)
+    - title_length  = len(c.title)
+    - description   = c.description
 end
 
 // ----------- Components (UI bindings) -----------
@@ -36,5 +36,5 @@ Component<LiveTable> CoffeeTable
   entity: CoffeeStats
   props:
     - primaryKey: "name"           // 'id' also works if present
-    - columns: data.name, data.title_len, data.desc_len
+    - columns: data.name, data.title_length, data.description
 end
