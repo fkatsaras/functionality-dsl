@@ -1,0 +1,11 @@
+{% import 'component_macros.jinja' as macros %}
+
+<script lang="ts">
+    import LiveTable from "$lib/components/LiveTable.svelte";
+</script>
+
+<div class="space-y-6">
+    {% for cmp in components %}
+        {{ macros.render_component(cmp) }}
+    {% endfor %}
+</div>

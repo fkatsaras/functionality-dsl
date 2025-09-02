@@ -128,6 +128,13 @@ def _validate_func(name, argc, node):
             **get_location(node),
         )
 
+def _strip_quotes(s):
+    if s is None:
+        return s
+    s = str(s)
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        return s[1:-1]
+    return s
 
 def _annotate_computed_attrs(model, metamodel=None):
     # Entities
@@ -175,36 +182,6 @@ def _annotate_computed_attrs(model, metamodel=None):
                 logger.debug("Compiled expression: " + a._py)
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
-
-    # Components (compile prop expressions)
-    for cmp in get_children_of_type("Component", model):
-        ent = getattr(cmp, "entity", None)
-        ent_attrs = {a.name for a in getattr(ent, "attributes", []) or []} if ent else set()
-    
-        for prop in getattr(cmp, "props", []) or []:
-            for expr in getattr(prop, "items", []) or []:
-            
-                # Enforce only data.* and that the field exists on the entity
-                for alias, attr, node in _collect_refs(expr):
-                    if alias != "data":
-                        raise TextXSemanticError(
-                            "Only `data.*` references are allowed in Component props.",
-                            **get_location(node),
-                        )
-                    if attr not in ent_attrs:
-                        raise TextXSemanticError(
-                            f"'data.{attr}' not found on entity '{ent.name}'.",
-                            **get_location(node),
-                        )
-    
-                # Compile with component context
-                try:
-                    expr._py = compile_expr_to_python(expr, context="component")
-                except Exception as ex:
-                    raise TextXSemanticError(
-                        f"Component '{cmp.name}' prop '{prop.key}' compile error: {ex}",
-                        **get_location(expr),
-                    )
 
 
 # ------------------------------------------------------------------------------
@@ -364,13 +341,22 @@ def component_obj_processor(cmp):
     Component:
       - Must point to an entity
       - Prop keys must be unique
+      - Validate prop expressions (only `data.<attr>`, attr must exist on entity)
+      - Annotate with simple keys/values (NO compilation for components)
     """
+    # Canonical kind and template path
+    kind = getattr(cmp, "kind", None) or getattr(cmp, "type", None) or "LiveTable"
+    setattr(cmp, "kind", kind)
+    setattr(cmp, "_tpl_file", f"components/{kind}.jinja")
+
     ent = getattr(cmp, "entity", None)
     if ent is None:
         raise TextXSemanticError(
             f"Component '{cmp.name}' must bind an 'entity:'.",
             **get_location(cmp),
         )
+
+    ent_attrs = {a.name for a in getattr(ent, "attributes", []) or []}
 
     props = getattr(cmp, "props", None) or []
     seen = set()
@@ -387,7 +373,114 @@ def component_obj_processor(cmp):
                 **get_location(p),
             )
         seen.add(key)
-        # valueExpr is an Expr; the grammar guarantees presence.
+
+        items = getattr(p, "items", None)
+
+        # LIST-LIKE props (e.g., columns): accept many refs; flatten everything
+        if key == "columns":
+            keys = []
+            if items:
+                # Each item may contain one OR MORE refs; collect them all
+                for expr in items:
+                    refs = list(_collect_refs(expr))
+                    if not refs:
+                        raise TextXSemanticError(
+                            "columns entries must be references like `data.field`.",
+                            **get_location(expr),
+                        )
+                    for alias, attr, node in refs:
+                        if alias != "data":
+                            raise TextXSemanticError(
+                                "Only `data.*` references are allowed in Component props.",
+                                **get_location(node),
+                            )
+                        if attr not in ent_attrs:
+                            raise TextXSemanticError(
+                                f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
+                                **get_location(node),
+                            )
+                        keys.append(attr)
+            else:
+                # In some grammars the bracket list is a single expr on the prop
+                expr = get_expr(p)
+                if expr is None:
+                    raise TextXSemanticError(
+                        "columns requires at least one field.",
+                        **get_location(p),
+                    )
+                refs = list(_collect_refs(expr))
+                if not refs:
+                    raise TextXSemanticError(
+                        "columns entries must be references like `data.field`.",
+                        **get_location(p),
+                    )
+                for alias, attr, node in refs:
+                    if alias != "data":
+                        raise TextXSemanticError(
+                            "Only `data.*` references are allowed in Component props.",
+                            **get_location(node),
+                        )
+                    if attr not in ent_attrs:
+                        raise TextXSemanticError(
+                            f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
+                            **get_location(node),
+                        )
+                    keys.append(attr)
+
+            # order-preserving dedupe (if you want)
+            keys = list(dict.fromkeys(keys))
+            if not keys:
+                raise TextXSemanticError("columns cannot be empty.", **get_location(p))
+            p._keys = keys
+            continue
+
+        # SCALAR props (e.g., primaryKey): allow either string literal or one `data.field`
+        if key == "primaryKey":
+            if items:
+                # collect all refs across items
+                all_refs = []
+                for expr in items:
+                    all_refs.extend(list(_collect_refs(expr)))
+                if len(all_refs) != 1:
+                    raise TextXSemanticError(
+                        "primaryKey must be a single field reference (e.g., `data.id`) or a quoted string.",
+                        **get_location(p),
+                    )
+                alias, attr, node = all_refs[0]
+                if alias != "data":
+                    raise TextXSemanticError(
+                        "Only `data.*` references are allowed in Component props.",
+                        **get_location(node),
+                    )
+                if attr not in ent_attrs:
+                    raise TextXSemanticError(
+                        f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
+                        **get_location(node),
+                    )
+                p._value = attr
+            else:
+                val = getattr(p, "value", None) or getattr(p, "text", None)
+                # If someone wrote an unquoted identifier, try to treat it as an expr
+                if not (isinstance(val, str) and (val.startswith("'") or val.startswith('"'))):
+                    expr = get_expr(p)
+                    if expr is not None:
+                        refs = list(_collect_refs(expr))
+                        if len(refs) == 1 and refs[0][0] == "data" and refs[0][1] in ent_attrs:
+                            p._value = refs[0][1]
+                            continue
+                # otherwise, literal string like "id" / 'id'
+                p._value = _strip_quotes(val)
+            continue
+
+        # Other props: keep simple — literal scalar if present
+        if not items:
+            val = getattr(p, "value", None) or getattr(p, "text", None)
+            p._value = _strip_quotes(val)
+        else:
+            raise TextXSemanticError(
+                f"Unsupported list-style prop '{key}' for component '{cmp.name}'.",
+                **get_location(p),
+            )
 
 
 # ------------------------------------------------------------------------------

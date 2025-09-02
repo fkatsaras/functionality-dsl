@@ -35,6 +35,6 @@ end
 Component<LiveTable> CoffeeTable
   entity: CoffeeStats
   props:
-    - primaryKey: "name"           // 'id' also works if present
-    - columns: data.name, data.title_length, data.description
+    - primaryKey: data.name          // 'id' also works if present
+    - columns: [data.name, data.title_length, data.description]
 end

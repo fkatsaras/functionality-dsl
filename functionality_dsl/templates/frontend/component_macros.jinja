@@ -1,0 +1,15 @@
+{% macro render_component(cmp) %}
+    {% set kind = cmp.kind %}  {# guaranteed by annotation #}
+    {% set ent = cmp.entity %}
+    {% set entname = ent.name if ent is defined and ent.name is defined else None %}
+    {% set props = cmp | props_dict %}
+
+    {% set common = {
+        "name": cmp.name or (kind ~ 'Component'),
+        "entity": entname,
+        "url": ("/api/entities/" ~ entname|lower ~ "/") if entname else None
+    } %}
+
+    {# we stored _tpl_file, use that; otherwise build it now #}
+    {% include cmp._tpl_file if cmp._tpl_file is defined else ("components/" ~ kind ~ ".jinja") %}
+{% endmacro %}
