@@ -50,11 +50,6 @@ def compile_expr_to_python(expr, *, context: str) -> str:
     """
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
 
-    def _is_node(x):
-        return hasattr(x, "__class__") and not isinstance(
-            x, (str, int, float, bool, list, dict, tuple)
-        )
-
     def to_py(node) -> str:
         cls = node.__class__.__name__
         if isinstance(node, bool):
