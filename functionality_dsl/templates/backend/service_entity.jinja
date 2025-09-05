@@ -1,31 +1,12 @@
 # app/services/{{ entity.name | lower }}_service.py
-from typing import Any, Dict, List, Optional
+from typing import List
 from app.domain.models import {{ entity.name }}
-
-# The adapter does the actual fetching (HTTP/DB/etc.)
 from app.infra.repositories.{{ entity.name | lower }}_adapter import {{ entity.name }}Adapter
-
-# Default projection = schema attributes for this entity
-_DEFAULT_FIELDS: list[str] = [
-{%- for a in entity.attributes if a.kind == "schema" %}
-    "{{ a.name }}",
-{%- endfor %}
-]
 
 class {{ entity.name }}Service:
     def __init__(self, adapter: {{ entity.name }}Adapter | None = None):
-        # Allow DI in tests, default to concrete adapter
         self.adapter = adapter or {{ entity.name }}Adapter()
 
-    async def list(
-        self,
-        *,
-        limit: int,
-        offset: int,
-        sort: Optional[str],
-        fields: Optional[list[str]],
-        filters: Optional[Dict[str, Any]],
-    ) -> List[{{ entity.name }}]:
-        eff_fields = fields or _DEFAULT_FIELDS
-        raw = await self.adapter.list(limit, offset, sort, eff_fields, filters)
+    async def list(self) -> List[{{ entity.name }}]:
+        raw = await self.adapter.list()
         return [{{ entity.name }}(**item) for item in raw]

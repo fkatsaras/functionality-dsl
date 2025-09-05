@@ -1,21 +1,15 @@
 {# props.columns: [{key: "..."}], props.primaryKey: "..." #}
 {% set col_items = props.get('columns') or [] %}
 {% set ns = namespace(cols=[]) %}
-
 {% for item in col_items %}
     {% set key = item.key %}
     {% if key %}
         {% set ns.cols = ns.cols + [ {'key': key, 'label': key.replace('_',' ').replace('-',' ')|title } ] %}
     {% endif %}
 {% endfor %}
-
 {% set keys = ns.cols | map(attribute='key') | list %}
-{% set primaryKey = props.get('primaryKey') or (
-    keys and ('id' in keys and 'id' or keys[0])
-) or 'id' %}
-
+{% set primaryKey = props.get('primaryKey') or (keys and ('id' in keys and 'id' or keys[0])) or 'id' %}
 {% set endpoint = props.get('url') or props.get('URL') or common.url %}
-
 <LiveTable
   name="{{ common.name }}"
   {% if endpoint %}

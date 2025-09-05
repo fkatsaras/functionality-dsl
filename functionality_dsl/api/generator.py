@@ -151,12 +151,19 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             # source-bound (REST)
             if src and src.__class__.__name__ == "RESTEndpoint":
                 src.headers = _as_headers_list(src)
+
+                # get schema attribute names from the raw textX model
+                schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
+
                 (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
-                    tpl_adapter.render(entity=e), encoding="utf-8"
+                    tpl_adapter.render(entity=e, schema_attrs=schema_attrs), encoding="utf-8"
                 )
+            else:
+                # still compute schema_attrs for non-REST, in case templates rely on it
+                schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
 
             (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_entity.render(entity=e), encoding="utf-8"
+                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs), encoding="utf-8"
             )
             (routers_dir / f"{e.name.lower()}.py").write_text(
                 tpl_router_entity.render(entity=e), encoding="utf-8"

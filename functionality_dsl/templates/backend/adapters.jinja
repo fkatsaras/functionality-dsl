@@ -9,11 +9,11 @@ _HEADERS = resolve_headers([
 {% for h in entity.source.headers | default([], true) %}    ("{{ h.key }}", "{{ h.value }}"),
 {% endfor %}])
 
-# Default projection = schema attributes for this entity
+# Default projection = schema attributes for this entity (to avoid extra fields)
 _DEFAULT_FIELDS: list[str] = [
-{%- for a in entity.attributes if a.kind == "schema" %}
-    "{{ a.name }}",
-{%- endfor %}
+{% for name in schema_attrs %}
+    "{{ name }}",
+{% endfor %}
 ]
 
 def _project(x: Dict[str, Any], keep: Optional[list[str]]) -> Dict[str, Any]:
@@ -22,14 +22,7 @@ def _project(x: Dict[str, Any], keep: Optional[list[str]]) -> Dict[str, Any]:
     return {k: x.get(k) for k in keep}
 
 class {{ entity.name }}Adapter:
-    async def list(
-        self,
-        limit: int,
-        offset: int,
-        sort: Optional[str],
-        fields: Optional[list[str]],
-        filters: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+    async def list(self) -> List[Dict[str, Any]]:
         client = get_http_client()
         r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
         if r.status_code >= 400:
@@ -40,19 +33,5 @@ class {{ entity.name }}Adapter:
             from fastapi import HTTPException
             raise HTTPException(status_code=502, detail="Upstream did not return a list")
 
-        # naive eq filters
-        if filters:
-            def ok(d): return all(d.get(k) == v for k, v in filters.items())
-            data = [d for d in data if ok(d)]
-
-        # sorting
-        if sort:
-            reverse = sort.startswith("-")
-            key = sort.lstrip("-")
-            data = sorted(data, key=lambda x: x.get(key), reverse=reverse)
-
-        # projection (default to schema)
-        keep = fields or _DEFAULT_FIELDS
-        data = [_project(d, keep) for d in data]
-
-        return data[offset: offset + limit]
+        # Always project to the schema attributes so Pydantic validation is clean
+        return [_project(d, _DEFAULT_FIELDS) for d in data]

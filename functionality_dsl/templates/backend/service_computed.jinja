@@ -1,5 +1,5 @@
 # app/services/{{ entity.name | lower }}_service.py
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from types import MappingProxyType
 
 from app.domain.models import {{ entity.name }}
@@ -27,22 +27,10 @@ class {{ entity.name }}Service:
         self.{{ inp.alias }} = {{ inp.alias }} or {{ inp.target_name }}Service()
 {% endfor %}
 
-    async def list(
-        self,
-        *,
-        limit: int,
-        offset: int,
-        sort: Optional[str],
-        fields: Optional[list[str]],
-        filters: Optional[Dict[str, Any]],
-    ) -> List[{{ entity.name }}]:
-        # Fetch inputs
+    async def list(self) -> List[{{ entity.name }}]:
+        # Fetch inputs (whole lists; components can slice/filter client-side)
 {% for inp in inputs %}
-        {{ inp.alias }}_items = [
-            i.model_dump() for i in await self.{{ inp.alias }}.list(
-                limit=10_000, offset=0, sort=None, fields=None, filters=None
-            )
-        ]
+        {{ inp.alias }}_items = [i.model_dump() for i in await self.{{ inp.alias }}.list()]
 {% endfor %}
 
         lists = {
@@ -64,14 +52,4 @@ class {{ entity.name }}Service:
                 )
             rows.append(row)
 
-        # sort
-        if sort:
-            reverse = sort.startswith("-")
-            key = sort.lstrip("-")
-            rows = sorted(rows, key=lambda x: x.get(key), reverse=reverse)
-
-        # projection
-        if fields:
-            rows = [{k: it.get(k) for k in fields} for it in rows]
-
-        return [{{ entity.name }}(**it) for it in rows[offset: offset + limit]]
+        return [{{ entity.name }}(**it) for it in rows]
