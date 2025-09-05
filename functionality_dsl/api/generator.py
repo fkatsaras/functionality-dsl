@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
-
 from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from textx import get_children_of_type
+
+
+# ---------------- helpers ----------------
 
 def _entities(model):
     return list(get_children_of_type("Entity", model))
@@ -26,7 +28,7 @@ def _pyd_type_for(attr):
         "bool": "bool",
         "datetime": "datetime",
     }.get((t or "").lower(), "Any")
-    
+
 def _as_headers_list(obj):
     """
     Normalize the .headers attribute from a RESTEndpoint or WSEndpoint.
@@ -63,13 +65,9 @@ def _as_headers_list(obj):
     return out
 
 
+# ---------------- code generation ----------------
+
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
-    """
-    Renders:
-      - app/schemas/models.py
-      - app/api/routers/*.py
-    using templates in templates_dir.
-    """
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -78,12 +76,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         undefined=StrictUndefined,
     )
 
-    # -------- models --------
+    # -------- models (to app/domain/models.py) --------
     entities_ctx = []
     for e in _entities(model):
         attrs_ctx = []
         for a in getattr(e, "attributes", []) or []:
-            # computed if it has an Expr attached
             if hasattr(a, "expr") and a.expr is not None:
                 attrs_ctx.append({
                     "name": a.name,
@@ -104,112 +101,94 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         })
 
     models_tpl = env.get_template("models.jinja")
-    models_out = out_dir / "app" / "schemas" / "models.py"
+    models_out = out_dir / "app" / "domain" / "models.py"
     models_out.parent.mkdir(parents=True, exist_ok=True)
     models_out.write_text(models_tpl.render(entities=entities_ctx), encoding="utf-8")
 
-    # -------- routers --------
+    # -------- directories --------
     routers_dir = out_dir / "app" / "api" / "routers"
-    routers_dir.mkdir(parents=True, exist_ok=True)
+    repos_dir   = out_dir / "app" / "infra" / "repositories"   # adapters live here
+    svcs_dir    = out_dir / "app" / "services"
+    for d in (routers_dir, repos_dir, svcs_dir):
+        d.mkdir(parents=True, exist_ok=True)
 
-    # 1) source-bound entities (REST vs WS)
+    # -------- load templates --------
+    tpl_adapter       = env.get_template("adapters.jinja")
+    tpl_svc_entity    = env.get_template("service_entity.jinja")
+    tpl_svc_computed  = env.get_template("service_computed.jinja")
+    tpl_router_entity = env.get_template("router_controller_entity.jinja")
+    tpl_router_comp   = env.get_template("router_controller_computed.jinja")
+
+    # optional extras
+    tpl_ws_listener   = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
+
+    # -------- per-entity generation --------
     for e in _entities(model):
         src = getattr(e, "source", None)
-        if not src:
-            continue
+        has_inputs = bool(getattr(e, "inputs", None))
 
-        if src.__class__.__name__ == "RESTEndpoint":
-            if (templates_dir / "router_entity_proxy.jinja").exists():
-                # normalize headers for the template
-                src.headers = _as_headers_list(src)
-                tpl = env.get_template("router_entity_proxy.jinja")
-                (routers_dir / f"{e.name.lower()}_source.py").write_text(
-                    tpl.render(entity=e), encoding="utf-8"
-                )
-
-        elif src.__class__.__name__ == "WSEndpoint":
-            if (templates_dir / "router_ws_listener.jinja").exists():
-                # normalize headers for ws too (harmless if none)
-                src.headers = _as_headers_list(src)
-                subs = getattr(src, "subprotocols", None)
-                try:
-                    if subs and hasattr(subs, "items"):
-                        src.subprotocols = list(subs.items)
-                except Exception:
-                    src.subprotocols = []
-                tpl = env.get_template("router_ws_listener.jinja")
-                (routers_dir / f"{e.name.lower()}_ws.py").write_text(
-                    tpl.render(entity=e, ws=src), encoding="utf-8"
-                )
-
-    # 2) computed entity routers
-    if (templates_dir / "router_proxy_computed.jinja").exists():
-        tpl = env.get_template("router_proxy_computed.jinja")
-        for e in _entities(model):
+        if has_inputs:
+            # computed entity
             inputs = []
             for inp in getattr(e, "inputs", []) or []:
-                tgt = inp.target
-                src = getattr(tgt, "source", None)
-                headers = _as_headers_list(src) if src else []
-                inputs.append({
-                    "alias": inp.alias,
-                    "target_name": tgt.name,
-                    "target_source_url": getattr(src, "url", None) if src else None,
-                    "target_headers": headers,   # ← NEW
-                })
+                inputs.append({"alias": inp.alias, "target_name": inp.target.name})
 
             computed_attrs = []
             for a in getattr(e, "attributes", []) or []:
                 if hasattr(a, "expr") and a.expr is not None:
-                    pyexpr = getattr(a, "_py", None) or ""
-                    computed_attrs.append({"name": a.name, "pyexpr": pyexpr})
+                    computed_attrs.append({"name": a.name, "pyexpr": getattr(a, "_py", "") or ""})
 
-            if inputs or computed_attrs:
-                (routers_dir / f"{e.name.lower()}_computed.py").write_text(
-                    tpl.render(entity=e, inputs=inputs, computed_attrs=computed_attrs),
-                    encoding="utf-8",
+            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
+                tpl_svc_computed.render(entity=e, inputs=inputs, computed_attrs=computed_attrs),
+                encoding="utf-8",
+            )
+            (routers_dir / f"{e.name.lower()}.py").write_text(
+                tpl_router_comp.render(entity=e, inputs=inputs),
+                encoding="utf-8",
+            )
+
+        else:
+            # source-bound (REST)
+            if src and src.__class__.__name__ == "RESTEndpoint":
+                src.headers = _as_headers_list(src)
+                (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
+                    tpl_adapter.render(entity=e), encoding="utf-8"
                 )
 
-    # 3) raw external REST endpoints
-    if (templates_dir / "router_proxy.jinja").exists():
-        tpl = env.get_template("router_proxy.jinja")
-        for ep in _rest_endpoints(model):
-            ep.headers = _as_headers_list(ep)  # ← add this
-            (routers_dir / f"{ep.name.lower()}.py").write_text(
-                tpl.render(endpoint=ep), encoding="utf-8"
+            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
+                tpl_svc_entity.render(entity=e), encoding="utf-8"
+            )
+            (routers_dir / f"{e.name.lower()}.py").write_text(
+                tpl_router_entity.render(entity=e), encoding="utf-8"
             )
 
-    # 4) WS listeners (standalone, not tied to entity)
-    if (templates_dir / "router_ws_listener.jinja").exists():
-        tpl = env.get_template("router_ws_listener.jinja")
+    # -------- WebSockets standalone (optional) --------
+    if tpl_ws_listener:
         for ws in _ws_endpoints(model):
-            ws.headers = _as_headers_list(ws)  # existing line
-
-            # normalize subprotocols to a plain list[str]
+            ws.headers = _as_headers_list(ws)
             subs = getattr(ws, "subprotocols", None)
             try:
-                # if it's a textX object with .items, pull them out
                 if subs and hasattr(subs, "items"):
                     ws.subprotocols = list(subs.items)
-                # if it's already a list (or None), leave it
             except Exception:
                 ws.subprotocols = []
-
             (routers_dir / f"{ws.name.lower()}.py").write_text(
-                tpl.render(ws=ws), encoding="utf-8"
+                tpl_ws_listener.render(ws=ws), encoding="utf-8"
             )
 
+
+# ---------------- server / env / docker rendering ----------------
 
 def _server_ctx(model):
     server = next(iter(get_children_of_type("Server", model)), None)
     if server is None:
         raise RuntimeError("No `Server` block found in model.")
-    
+
     cors_val = getattr(server, "cors", None)
-    
+
     if isinstance(cors_val, (list, tuple)) and len(cors_val) == 1:
         cors_val = cors_val[0]
-        
+
     return {
         "server": {
             "name": server.name,
@@ -218,7 +197,7 @@ def _server_ctx(model):
             "cors": cors_val or "http://localhost:3000",
         }
     }
-    
+
 def _render_env_and_docker(ctx: dict, templates_dir: Path, out_dir: Path):
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),

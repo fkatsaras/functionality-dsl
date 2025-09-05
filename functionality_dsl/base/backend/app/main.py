@@ -1,8 +1,12 @@
+# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import AsyncExitStack
+
 from app.core.config import settings
 from app.api.routers import include_generated_routers
-
+from app.core.http import lifespan_http_client
+from app.core.observability import RequestIDMiddleware
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -10,7 +14,7 @@ def create_app() -> FastAPI:
         openapi_url=settings.OPENAPI_URL,
         docs_url=settings.DOCS_URL
     )
-    
+
     # CORS
     origins = set(settings.BACKEND_CORS_ORIGINS) | set(settings.BACKEND_CORS_RAW_ORIGINS)
     app.add_middleware(
@@ -20,14 +24,27 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
+    # Observability
+    app.add_middleware(RequestIDMiddleware)
+
+    # Lifespan resources (HTTP client, etc.)
+    @app.on_event("startup")
+    async def _startup():
+        app.state._stack = AsyncExitStack()
+        await app.state._stack.enter_async_context(lifespan_http_client())
+
+    @app.on_event("shutdown")
+    async def _shutdown():
+        await app.state._stack.aclose()
+
     # Mount generated routers under /api
     include_generated_routers(app)
-    
+
     @app.get("/healthz")
     def health():
         return {"status": "OK"}
-    
+
     return app
 
 app = create_app()

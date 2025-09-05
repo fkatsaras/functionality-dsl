@@ -1,0 +1,77 @@
+# app/services/{{ entity.name | lower }}_service.py
+from typing import Any, Dict, List, Optional
+from types import MappingProxyType
+
+from app.domain.models import {{ entity.name }}
+from app.core.expressions import compile_safe
+from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+{% for inp in inputs %}
+from app.services.{{ inp.target_name | lower }}_service import {{ inp.target_name }}Service
+{% endfor %}
+
+# Precompile expressions once
+_COMPILED = {
+{% for attr in computed_attrs %}
+    "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
+{% endfor %}
+}
+
+class {{ entity.name }}Service:
+    def __init__(
+        self,
+{% for inp in inputs %}
+        {{ inp.alias }}: {{ inp.target_name }}Service | None = None{{ "," if not loop.last else "" }}
+{% endfor %}
+    ):
+{% for inp in inputs %}
+        self.{{ inp.alias }} = {{ inp.alias }} or {{ inp.target_name }}Service()
+{% endfor %}
+
+    async def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        sort: Optional[str],
+        fields: Optional[list[str]],
+        filters: Optional[Dict[str, Any]],
+    ) -> List[{{ entity.name }}]:
+        # Fetch inputs
+{% for inp in inputs %}
+        {{ inp.alias }}_items = [
+            i.model_dump() for i in await self.{{ inp.alias }}.list(
+                limit=10_000, offset=0, sort=None, fields=None, filters=None
+            )
+        ]
+{% endfor %}
+
+        lists = {
+{% for inp in inputs %}
+            "{{ inp.alias }}": {{ inp.alias }}_items,
+{% endfor %}
+        }
+
+        n = min((len(v) for v in lists.values()), default=0)
+        rows: List[Dict[str, Any]] = []
+        for i in range(n):
+            ctx = {k: lists[k][i] for k in lists}
+            row: Dict[str, Any] = {}
+            for name, code in _COMPILED.items():
+                row[name] = eval(
+                    code,
+                    {"__builtins__": {}, "dsl_funcs": dsl_funcs},
+                    {"ctx": MappingProxyType(ctx)},
+                )
+            rows.append(row)
+
+        # sort
+        if sort:
+            reverse = sort.startswith("-")
+            key = sort.lstrip("-")
+            rows = sorted(rows, key=lambda x: x.get(key), reverse=reverse)
+
+        # projection
+        if fields:
+            rows = [{k: it.get(k) for k in fields} for it in rows]
+
+        return [{{ entity.name }}(**it) for it in rows[offset: offset + limit]]

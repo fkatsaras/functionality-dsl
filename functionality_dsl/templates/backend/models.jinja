@@ -1,5 +1,5 @@
 # Auto-generated models.py
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Any, List, Dict
 from datetime import datetime
 from uuid import UUID
@@ -8,7 +8,6 @@ from uuid import UUID
 class {{ ent.name }}(BaseModel):
 {% for attr in ent.attributes %}
 {% if attr.kind == "schema" %}
-{# If this entity has inputs (i.e., is derived), make schema attrs optional #}
 {% if ent.has_inputs %}
     {{ attr.name }}: Optional[Any] = None
 {% else %}
@@ -20,4 +19,5 @@ class {{ ent.name }}(BaseModel):
 {% endif %}
 {% endfor %}
 
+    model_config = ConfigDict(extra="forbid")
 {% endfor %}

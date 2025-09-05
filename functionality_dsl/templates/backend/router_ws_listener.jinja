@@ -1,8 +1,14 @@
 # Auto-generated WebSocket listener for {{ (entity.name if entity is defined else ws.name) }}
-import asyncio, json, websockets, logging, contextlib
+import asyncio
+import json
+import websockets
+import logging
+import contextlib
+
 from contextlib import asynccontextmanager
 from fastapi import APIRouter
 from typing import Any, Dict, Optional
+
 from app.core.utils import resolve_headers
 
 logging.basicConfig(level=logging.INFO)

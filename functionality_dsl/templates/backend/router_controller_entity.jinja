@@ -1,0 +1,40 @@
+# app/api/routers/{{ entity.name | lower }}.py
+from fastapi import APIRouter, Depends, Query
+from typing import List, Optional, Dict, Any
+
+from app.domain.models import {{ entity.name }}
+from app.core.params import pagination_params
+from app.services.{{ entity.name | lower }}_service import {{ entity.name }}Service
+
+router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+
+def get_service() -> {{ entity.name }}Service:
+    # Service defaults to concrete Adapter internally
+    return {{ entity.name }}Service()
+
+@router.get("/", response_model=List[{{ entity.name }}], summary="List {{ entity.name }}")
+async def list_{{ entity.name | lower }}(
+    p: dict = Depends(pagination_params),
+    fields: Optional[str] = Query(default=None, description="comma-separated projection"),
+    filter: Optional[str] = Query(default=None, description="eq filters: key:value,key:value"),
+    sort: Optional[str] = Query(default=None, description="field or -field"),
+    svc: {{ entity.name }}Service = Depends(get_service),
+):
+
+    fields_list = [f.strip() for f in fields.split(",")] if fields else None
+    filters: Optional[Dict[str, Any]] = None
+
+    if filter:
+        filters = {}
+        for pair in filter.split(","):
+            if ":" in pair:
+                k, v = pair.split(":", 1)
+                filters[k.strip()] = v.strip()
+                
+    return await svc.list(
+        limit=p["limit"],
+        offset=p["offset"],
+        sort=sort or p["sort"],
+        fields=fields_list,
+        filters=filters,
+    )
