@@ -46,49 +46,51 @@
     });
 </script>
 
-<div class="w-full">
-    <div class="mb-3 flex items-center gap-3">
-        <h2 class="text-base font-approachmono text-text/90 tracking-tight">{name}</h2>
-        <button
-          class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition disabled:opacity-60"
-          on:click={load}
-          disabled={loading}
-          aria-label="Refresh"
-        >
-            {loading ? 'Loading...' : 'Refresh'}
-        </button>
-        {#if error}
-            <span class="text-xs text-dag-danger">{error}</span>
-        {/if}
-    </div>
-
-    <div class="overflow-auto rounded-xl2 shadow-card border table-border bg-[color:var(--card)]">
-        <table class="min-w-full border-collapse text-sm">
-            <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
-                <tr>
-                    {#each columns as c}
-                        <th class="text-left font-approachmono font-medium text-text/90 px-3 py-2 border-b thin-border">{c.label}</th>
-                    {/each}
-                </tr>
-            </thead>
-            <tbody>
-                {#if loading}
-                    <tr><td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>Loading…</td></tr>
-                {:else if error}
-                    <tr><td class="font-approachmono px-3 py-4 text-dag-danger" colspan={columns.length}>{error}</td></tr>
-                {:else if data.length === 0}
-                    <tr><td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>No data</td></tr>
-                {:else}
-                    {#each data as row, i (`${row?.id ?? row?.[primaryKey] ?? JSON.stringify(row)}-${i}`)}
-                        <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
-                            {#each columns as c}
-                                <td class="px-3 py-2 border-b thin-border text-text/90">{colValue(row, c.key)}</td>
-                            {/each}
-                        </tr>
-                    {/each}
-                {/if}
-            </tbody>
-        </table>
+<div class="w-full flex justify-center">
+    <div class="w-4/5">
+        <div class="mb-3 flex items-center justify-center gap-3">
+            <h2 class="text-base font-approachmono text-text/90 tracking-tight">{name}</h2>
+            <button
+              class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition disabled:opacity-60"
+              on:click={load}
+              disabled={loading}
+              aria-label="Refresh"
+            >
+                {loading ? 'Loading...' : 'Refresh'}
+            </button>
+            {#if error}
+                <span class="text-xs text-dag-danger">{error}</span>
+            {/if}
+        </div>
+    
+        <div class="overflow-auto rounded-xl2 shadow-card border table-border bg-[color:var(--card)]">
+            <table class="min-w-full border-collapse text-sm">
+                <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
+                    <tr>
+                        {#each columns as c}
+                            <th class="text-left font-approachmono font-medium text-text/90 px-3 py-2 border-b thin-border">{c.label}</th>
+                        {/each}
+                    </tr>
+                </thead>
+                <tbody>
+                    {#if loading}
+                        <tr><td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>Loading…</td></tr>
+                    {:else if error}
+                        <tr><td class="font-approachmono px-3 py-4 text-dag-danger" colspan={columns.length}>{error}</td></tr>
+                    {:else if data.length === 0}
+                        <tr><td class="font-approachmono px-3 py-4 text-text-muted" colspan={columns.length}>No data</td></tr>
+                    {:else}
+                        {#each data as row, i (`${row?.id ?? row?.[primaryKey] ?? JSON.stringify(row)}-${i}`)}
+                            <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
+                                {#each columns as c}
+                                    <td class="px-3 py-2 border-b thin-border text-text/90">{colValue(row, c.key)}</td>
+                                {/each}
+                            </tr>
+                        {/each}
+                    {/if}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

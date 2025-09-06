@@ -71,8 +71,23 @@ def scaffold_frontend_from_model(model, *, base_frontend_dir: Path, templates_fr
         (out_dir / target).write_text(tpl.render(**ctx), encoding="utf-8")
     return out_dir
 
+def _render_component(env: Environment, cmp):
+    type_name = getattr(cmp, "type_name", None) or getattr(cmp, "type", None)
+    if not type_name:
+        raise RuntimeError("Component missing type")
+    props = _props_to_dict(cmp)
+    # try specific, fall back to a default renderer
+    for name in (f"components/{type_name}.svelte.jinja", "components/_default.svelte.jinja"):
+        try:
+            tpl = env.get_template(name)
+            return tpl.render(component=cmp, props=props)
+        except Exception:
+            continue
+    raise RuntimeError(f"No template for component type '{type_name}'")
+
 def render_frontend_files(model, templates_dir: Path, out_dir: Path):
-    env = _jinja_env(loader=FileSystemLoader(str(templates_dir)))
+    env = _jinja_env(loader=FileSystemLoader([str(templates_dir / "components"), str(templates_dir)]))
+    components = _components(model)
+    snippets = [_render_component(env, c) for c in components]
     page_tpl = env.get_template("+page.svelte.jinja")
-    page_path = out_dir / "src" / "routes" / "+page.svelte"
-    page_path.write_text(page_tpl.render(components=_components(model)), encoding="utf-8")
+    (out_dir / "src" / "routes" / "+page.svelte").write_text(page_tpl.render(snippets=snippets), encoding="utf-8")

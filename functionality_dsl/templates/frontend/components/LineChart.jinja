@@ -1,0 +1,30 @@
+{# templates/frontend/components/LineChart.jinja #}
+{# props: url (string), series (list), windowSize (int), refreshMs (int), height (int), name (string) #}
+
+{% set series_items = props.get('series') or [] %}
+{# If series came in via _keys (like columns do), normalize to plain strings #}
+{% set series = [] %}
+{% for item in series_items %}
+  {% if item.key is defined %}
+    {% set series = series + [item.key] %}
+  {% else %}
+    {% set series = series + [item] %}
+  {% endif %}
+{% endfor %}
+
+{% set endpoint = props.get('url') or props.get('URL') or common.url %}
+{% set windowSize = props.get('windowSize') or 100 %}
+{% set refreshMs  = props.get('refreshMs')  or 1000 %}
+{% set height     = props.get('height')     or 220 %}
+{% set name       = props.get('name')       or common.name %}
+
+<LineChart
+  name="{{ name }}"
+  {% if endpoint %}
+  url="{{ endpoint }}"
+  {% endif %}
+  series={{ "['" ~ series|join("','") ~ "']" }}
+  windowSize={{ windowSize }}
+  refreshMs={{ refreshMs }}
+  height={{ height }}
+/>

@@ -1,0 +1,25 @@
+// ------------------- Server (config) -------------------
+Server BTCAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// ------------------- Public WebSocket -------------------
+// Live crypto prices as JSON (no auth, no subscribe message needed).
+WSEndpoint CoinCapPrices
+  url: "wss://ws.coincap.io/prices?assets=bitcoin,ethereum"
+  protocol: "json"
+  headers: [Authorization: "Bearer a20313b58dcc8bac0188421b5f11195edf56bf0b7680edec7769e88a26d6e291"]
+end
+
+// ------------------- Entities (data) ---------------------
+
+
+// ------------------- Components (UI bindings) ------------
+Component<LiveTable> PostsTable
+  entity: PostStats
+  props:
+    - primaryKey: data.id
+    - columns: [data.id, data.user_id, data.title, data.title_length]
+end

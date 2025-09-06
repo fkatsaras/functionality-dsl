@@ -1,5 +1,5 @@
 // ----------- Server (config) -----------
-Server SimpleAPI
+Server CoffeeAPI
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"

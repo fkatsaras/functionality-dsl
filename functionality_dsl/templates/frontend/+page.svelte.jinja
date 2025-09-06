@@ -1,11 +1,23 @@
+{# templates/frontend/+page.svelte.jinja #}
 {% import 'component_macros.jinja' as macros %}
 
+{% set kinds = components | map(attribute='kind') | list %}
+{% set unique_kinds = [] %}
+{% for k in kinds %}
+  {% if k not in unique_kinds %}
+    {% set unique_kinds = unique_kinds + [k] %}
+  {% endif %}
+{% endfor %}
+
 <script lang="ts">
-    import LiveTable from "$lib/components/LiveTable.svelte";
+  {# auto-import all component implementations present in the page #}
+  {%- for k in unique_kinds %}
+  import {{ k }} from "$lib/components/{{ k }}.svelte";
+  {%- endfor %}
 </script>
 
 <div class="space-y-6">
-    {% for cmp in components %}
-        {{ macros.render_component(cmp) }}
-    {% endfor %}
+  {% for cmp in components %}
+    {{ macros.render_component(cmp) }}
+  {% endfor %}
 </div>
