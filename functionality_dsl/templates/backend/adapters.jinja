@@ -1,4 +1,4 @@
-# app/infra/repositories/{{ entity.name | lower }}_adapter.py
+{# app/infra/repositories/{{ entity.name | lower }}_adapter.py #}
 from typing import Any, Dict, List, Optional
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
@@ -9,12 +9,9 @@ _HEADERS = resolve_headers([
 {% for h in entity.source.headers | default([], true) %}    ("{{ h.key }}", "{{ h.value }}"),
 {% endfor %}])
 
-# Default projection = schema attributes for this entity (to avoid extra fields)
 _DEFAULT_FIELDS: list[str] = [
-{% for name in schema_attrs %}
-    "{{ name }}",
-{% endfor %}
-]
+{% for name in schema_attrs %}    "{{ name }}",
+{% endfor %}]
 
 def _project(x: Dict[str, Any], keep: Optional[list[str]]) -> Dict[str, Any]:
     if not keep:
@@ -33,5 +30,4 @@ class {{ entity.name }}Adapter:
             from fastapi import HTTPException
             raise HTTPException(status_code=502, detail="Upstream did not return a list")
 
-        # Always project to the schema attributes so Pydantic validation is clean
         return [_project(d, _DEFAULT_FIELDS) for d in data]

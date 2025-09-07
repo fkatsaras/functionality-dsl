@@ -1,17 +1,16 @@
 {# templates/frontend/+page.svelte.jinja #}
-{% import 'component_macros.jinja' as macros %}
+{% import 'component_macros.jinja' as macros with context %}
 
-{% set kinds = components | map(attribute='kind') | list %}
-{% set unique_kinds = [] %}
-{% for k in kinds %}
-  {% if k not in unique_kinds %}
-    {% set unique_kinds = unique_kinds + [k] %}
+{% set uniq = namespace(kinds=[]) %}
+{% for cmp in components %}
+  {% set k = cmp.kind %}
+  {% if k not in uniq.kinds %}
+    {% set uniq.kinds = uniq.kinds + [k] %}
   {% endif %}
 {% endfor %}
 
 <script lang="ts">
-  {# auto-import all component implementations present in the page #}
-  {%- for k in unique_kinds %}
+  {%- for k in uniq.kinds %}
   import {{ k }} from "$lib/components/{{ k }}.svelte";
   {%- endfor %}
 </script>

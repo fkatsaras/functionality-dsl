@@ -1,20 +1,23 @@
-{# props.columns: [{key: "..."}], props.primaryKey: "..." #}
-{% set col_items = props.get('columns') or [] %}
+{# props.columns: ["id", "user_id", ...] OR [{key: "..."}], props.primaryKey: "..." #}
+{# Normalize columns to [{key, label}] #}
 {% set ns = namespace(cols=[]) %}
-{% for item in col_items %}
-    {% set key = item.key %}
-    {% if key %}
-        {% set ns.cols = ns.cols + [ {'key': key, 'label': key.replace('_',' ').replace('-',' ')|title } ] %}
-    {% endif %}
+{% for item in (props.get('columns') or []) %}
+  {% if item is string %}
+    {% set label = item.replace('_',' ').replace('-',' ')|title %}
+    {% set ns.cols = ns.cols + [ {'key': item, 'label': label } ] %}
+  {% elif item.key is defined %}
+    {% set lbl = (item.label if item.label is defined else item.key.replace('_',' ').replace('-',' ')|title) %}
+    {% set ns.cols = ns.cols + [ {'key': item.key, 'label': lbl } ] %}
+  {% endif %}
 {% endfor %}
 {% set keys = ns.cols | map(attribute='key') | list %}
 {% set primaryKey = props.get('primaryKey') or (keys and ('id' in keys and 'id' or keys[0])) or 'id' %}
-{% set endpoint = props.get('url') or props.get('URL') or common.url %}
+{% set endpoint = props.get('url') or common.url %}
 <LiveTable
-  name="{{ common.name }}"
-  {% if endpoint %}
-  url="{{ endpoint }}"
-  {% endif %}
-  columns={{ "{" }}{{ ns.cols | tojson }}{{ "}" }}
-  primaryKey="{{ primaryKey }}"
+    name="{{ common.name }}"
+    {% if endpoint %}
+    url="{{ endpoint }}"
+    {% endif %}
+    columns={{ "{" }}{{ ns.cols | tojson }}{{ "}" }}
+    primaryKey="{{ primaryKey }}"
 />

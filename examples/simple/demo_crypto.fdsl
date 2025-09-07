@@ -1,0 +1,70 @@
+// ----------- Server -----------
+Server MarketAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// ----------- Sources (public REST, static arrays) -----------
+// Binance recent trades — array at root:
+// [ { "id": 123, "price": "4263.54", "qty": "0.01", "quoteQty": "42.63", "time": 1712345678901, ... }, ... ]
+
+RESTEndpoint BTCTrades
+  url: "https://api.binance.com/api/v3/trades?symbol=BTCUSDT&limit=500"
+  verb: GET
+end
+
+RESTEndpoint ETHTrades
+  url: "https://api.binance.com/api/v3/trades?symbol=ETHUSDT&limit=500"
+  verb: GET
+end
+
+// ----------- Raw Entities (as returned by REST) -----------
+Entity BTCRawTrade
+  source: BTCTrades
+  attributes:
+    - time: int      // ms since epoch
+    - price: float   // Binance returns string; cast to float here
+end
+
+Entity ETHRawTrade
+  source: ETHTrades
+  attributes:
+    - time: int
+    - price: float
+end
+
+// ----------- Derived Entities (rename for chart semantics) -----------
+// Use the raw fields to produce chart-friendly names.
+Entity BTCSeries
+  inputs:
+    - r: BTCRawTrade
+  attributes:
+    - t     = r.time
+    - price = r.price
+end
+
+Entity ETHSeries
+  inputs:
+    - r: ETHRawTrade
+  attributes:
+    - t     = r.time
+    - price = r.price
+end
+
+// ----------- Components (static line charts) -----------
+Component<LineChart> BTCChart
+  entity: BTCSeries
+  x: data.t
+  y: [data.price]
+  xLabel: "Time"
+  yLabel: "BTC/USDT"
+end
+
+Component<LineChart> ETHChart
+  entity: ETHSeries
+  x: data.t
+  y: [data.price]
+  xLabel: "Time"
+  yLabel: "ETH/USDT"
+end

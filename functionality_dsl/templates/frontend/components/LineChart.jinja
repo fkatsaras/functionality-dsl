@@ -1,30 +1,48 @@
-{# templates/frontend/components/LineChart.jinja #}
-{# props: url (string), series (list), windowSize (int), refreshMs (int), height (int), name (string) #}
-
-{% set series_items = props.get('series') or [] %}
-{# If series came in via _keys (like columns do), normalize to plain strings #}
-{% set series = [] %}
-{% for item in series_items %}
-  {% if item.key is defined %}
-    {% set series = series + [item.key] %}
-  {% else %}
-    {% set series = series + [item] %}
-  {% endif %}
+{# props: optional x (string), series OR y (list/string), labels #}
+{% set endpoint    = common.url %}
+{% set ws_endpoint = common.wsUrl %}
+{# Normalize x: default to 't' and strip 'data.' if present #}
+{% set x_raw = props.get('x') %}
+{% set x_key = (x_raw if x_raw is not none else 't') | replace('data.', '') %}
+{# Normalize y: accept props.y or props.series; make it a list and strip 'data.' #}
+{% set y_raw = props.get('y') or props.get('series') %}
+{% if y_raw is string %}
+{% set y_list = [y_raw] %}
+{% else %}
+{% set y_list = y_raw or [] %}
+{% endif %}
+{% set y_keys = [] %}
+{% for yk in y_list %}
+{% set _ = y_keys.append(yk | replace('data.', '')) %}
 {% endfor %}
-
-{% set endpoint = props.get('url') or props.get('URL') or common.url %}
-{% set windowSize = props.get('windowSize') or 100 %}
-{% set refreshMs  = props.get('refreshMs')  or 1000 %}
-{% set height     = props.get('height')     or 220 %}
-{% set name       = props.get('name')       or common.name %}
-
+{# Optional labels #}
+{% set x_label = props.get('xLabel') %}
+{% set y_label = props.get('yLabel') %}
+{# Numeric props; render as numbers, not strings #}
+{% set window   = props.get('windowSize', 240) %}
+{% set refresh  = props.get('refreshMs', 0) %}   {# default no polling; WS drives liveness #}
+{% set height   = props.get('height', 220) %}
 <LineChart
-  name="{{ name }}"
+  name="{{ common.name }}"
   {% if endpoint %}
   url="{{ endpoint }}"
   {% endif %}
-  series={{ "['" ~ series|join("','") ~ "']" }}
-  windowSize={{ windowSize }}
-  refreshMs={{ refreshMs }}
-  height={{ height }}
+  {% if ws_endpoint %}
+  wsUrl="{{ ws_endpoint }}"
+  {% endif %}
+  x="{{ x_key }}"
+  {%- if y_keys|length == 1 %}
+  y="{{ y_keys[0] }}"
+  {%- else %}
+  y={{ "{" }}[{{ y_keys | map('tojson') | join(',') }}]{{ "}" }}
+  {%- endif %}
+  {%- if x_label is not none %}
+  xLabel="{{ x_label }}"
+  {% endif %}
+  {%- if y_label is not none %}
+  yLabel="{{ y_label }}"
+  {% endif %}
+  windowSize={{ "{" }}{{ window }}{{ "}" }}
+  refreshMs={{ "{" }}{{ refresh }}{{ "}" }}
+  height={{ "{" }}{{ height }}{{ "}" }}
 />

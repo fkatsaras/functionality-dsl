@@ -19,7 +19,6 @@ def _ws_endpoints(model):
     return list(get_children_of_type("WSEndpoint", model))
 
 def _pyd_type_for(attr):
-    # very simple mapper
     t = getattr(attr, "type", None)
     return {
         "int": "int",
@@ -31,19 +30,17 @@ def _pyd_type_for(attr):
 
 def _as_headers_list(obj):
     """
-    Normalize the .headers attribute from a RESTEndpoint or WSEndpoint.
-    Returns list[{"key": str, "value": str}].
-    Accepts either:
+    Normalize .headers from RESTEndpoint/WSEndpoint to list[{'key','value'}].
+    Accepts:
       - None
-      - list of Header objects (from grammar with headers: [Key: "Value", ...])
-      - a single string "Key: Value; Another: Foo"
+      - list of Header nodes with .key/.value
+      - single string like "Key: Val; Another: Foo"
     """
     hs = getattr(obj, "headers", None)
     out = []
     if not hs:
         return out
 
-    # Case 1: grammar gave us a list of Header model objects
     if isinstance(hs, list):
         for h in hs:
             k = getattr(h, "key", None)
@@ -52,9 +49,7 @@ def _as_headers_list(obj):
                 out.append({"key": k, "value": v})
         return out
 
-    # Case 2: grammar gave us a single string
     if isinstance(hs, str):
-        # split on semicolon or comma as separators
         parts = [p.strip() for p in re.split(r"[;,]", hs) if p.strip()]
         for p in parts:
             if ":" in p:
@@ -63,6 +58,25 @@ def _as_headers_list(obj):
         return out
 
     return out
+
+def _normalize_ws_source(ws):
+    """
+    Mutate a WSEndpoint so templates have simple, JSON-serializable attrs.
+    - headers -> list of {'key','value'}
+    - subprotocols -> [] or list[str]
+    """
+    if ws is None:
+        return
+    ws.headers = _as_headers_list(ws)
+    subs = getattr(ws, "subprotocols", None)
+    try:
+        if subs and hasattr(subs, "items"):
+            ws.subprotocols = list(subs.items)
+        else:
+            # already list/None
+            ws.subprotocols = subs or []
+    except Exception:
+        ws.subprotocols = []
 
 
 # ---------------- code generation ----------------
@@ -107,20 +121,24 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
     # -------- directories --------
     routers_dir = out_dir / "app" / "api" / "routers"
-    repos_dir   = out_dir / "app" / "infra" / "repositories"   # adapters live here
+    repos_dir   = out_dir / "app" / "infra" / "repositories"
     svcs_dir    = out_dir / "app" / "services"
     for d in (routers_dir, repos_dir, svcs_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     # -------- load templates --------
-    tpl_adapter       = env.get_template("adapters.jinja")
-    tpl_svc_entity    = env.get_template("service_entity.jinja")
-    tpl_svc_computed  = env.get_template("service_computed.jinja")
-    tpl_router_entity = env.get_template("router_controller_entity.jinja")
-    tpl_router_comp   = env.get_template("router_controller_computed.jinja")
+    tpl_adapter_rest   = env.get_template("adapters.jinja")                    # REST entities
+    tpl_adapter_ws     = env.get_template("adapters_ws_entity.jinja")          # WS entities (entity-named import)
+    tpl_svc_entity     = env.get_template("service_entity.jinja")
+    tpl_svc_computed   = env.get_template("service_computed.jinja")
+    tpl_router_entity  = env.get_template("router_controller_entity.jinja")
+    tpl_router_comp    = env.get_template("router_controller_computed.jinja")
+    tpl_ws_listener    = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
+    tpl_ws_listener    = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
+    tpl_ws_comp_stream = env.get_template("router_ws_computed.jinja") if (templates_dir / "router_ws_computed.jinja").exists() else None
 
-    # optional extras
-    tpl_ws_listener   = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
+    # Remember WS endpoints already used by entities (to avoid duplicate standalone listeners)
+    ws_nodes_used_by_entities = set()
 
     # -------- per-entity generation --------
     for e in _entities(model):
@@ -128,15 +146,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         has_inputs = bool(getattr(e, "inputs", None))
 
         if has_inputs:
-            # computed entity
-            inputs = []
-            for inp in getattr(e, "inputs", []) or []:
-                inputs.append({"alias": inp.alias, "target_name": inp.target.name})
+            # Computed entity
+            inputs = [{"alias": inp.alias, "target_name": inp.target.name}
+                      for inp in (getattr(e, "inputs", []) or [])]
 
-            computed_attrs = []
-            for a in getattr(e, "attributes", []) or []:
-                if hasattr(a, "expr") and a.expr is not None:
-                    computed_attrs.append({"name": a.name, "pyexpr": getattr(a, "_py", "") or ""})
+            computed_attrs = [{"name": a.name, "pyexpr": getattr(a, "_py", "") or ""} \
+                              for a in (getattr(e, "attributes", []) or []) \
+                              if hasattr(a, "expr") and a.expr is not None]
 
             (svcs_dir / f"{e.name.lower()}_service.py").write_text(
                 tpl_svc_computed.render(entity=e, inputs=inputs, computed_attrs=computed_attrs),
@@ -146,41 +162,91 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 tpl_router_comp.render(entity=e, inputs=inputs),
                 encoding="utf-8",
             )
+        
+            if tpl_ws_comp_stream:
+                ws_inputs = []
+                for inp in (getattr(e, "inputs", []) or []):
+                    tgt = inp.target
+                    src = getattr(tgt, "source", None)
+                    if src and src.__class__.__name__ == "WSEndpoint":
+                        ws_inputs.append({"alias": inp.alias, "target_name": tgt.name})
+                if ws_inputs:
+                    # Use the first WS-backed input as the trigger; import its listener module
+                    ws_input_listener_module = ws_inputs[0]["target_name"].lower() + "_ws"
+                    (routers_dir / f"{e.name.lower()}_stream.py").write_text(
+                        tpl_ws_comp_stream.render(
+                            entity=e,
+                            inputs=inputs,  # pass all inputs; service will compute with all
+                            ws_input_listener_module=ws_input_listener_module,
+                        ),
+                        encoding="utf-8",
+                    )
+            continue
 
-        else:
-            # source-bound (REST)
-            if src and src.__class__.__name__ == "RESTEndpoint":
-                src.headers = _as_headers_list(src)
+        # Non-computed entity
+        schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
 
-                # get schema attribute names from the raw textX model
-                schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
-
-                (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
-                    tpl_adapter.render(entity=e, schema_attrs=schema_attrs), encoding="utf-8"
-                )
-            else:
-                # still compute schema_attrs for non-REST, in case templates rely on it
-                schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
-
+        if src and src.__class__.__name__ == "RESTEndpoint":
+            # REST entity: REST adapter + standard svc/router
+            src.headers = _as_headers_list(src)
+            (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
+                tpl_adapter_rest.render(entity=e, schema_attrs=schema_attrs),
+                encoding="utf-8",
+            )
             (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs), encoding="utf-8"
+                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
+                encoding="utf-8",
             )
             (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_entity.render(entity=e), encoding="utf-8"
+                tpl_router_entity.render(entity=e),
+                encoding="utf-8",
             )
 
-    # -------- WebSockets standalone (optional) --------
+        elif src and src.__class__.__name__ == "WSEndpoint":
+            # WS entity: entity-named WS listener + WS adapter + standard svc/router
+            if not tpl_ws_listener:
+                raise RuntimeError("router_ws_listener.jinja not found, but a WSEntity is present.")
+            _normalize_ws_source(src)
+            ws_nodes_used_by_entities.add(src)
+
+            # listener named <entity>_ws.py to avoid collisions and match adapter import
+            (routers_dir / f"{e.name.lower()}_ws.py").write_text(
+                tpl_ws_listener.render(entity=e, ws=src),
+                encoding="utf-8",
+            )
+            (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
+                tpl_adapter_ws.render(entity=e, schema_attrs=schema_attrs),
+                encoding="utf-8",
+            )
+            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
+                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
+                encoding="utf-8",
+            )
+            (routers_dir / f"{e.name.lower()}.py").write_text(
+                tpl_router_entity.render(entity=e),
+                encoding="utf-8",
+            )
+
+        else:
+            # Entity without a source (still generate trivial svc/router)
+            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
+                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
+                encoding="utf-8",
+            )
+            (routers_dir / f"{e.name.lower()}.py").write_text(
+                tpl_router_entity.render(entity=e),
+                encoding="utf-8",
+            )
+
+    # -------- Standalone WS listeners (for WS endpoints not bound to any entity) --------
     if tpl_ws_listener:
         for ws in _ws_endpoints(model):
-            ws.headers = _as_headers_list(ws)
-            subs = getattr(ws, "subprotocols", None)
-            try:
-                if subs and hasattr(subs, "items"):
-                    ws.subprotocols = list(subs.items)
-            except Exception:
-                ws.subprotocols = []
+            if ws in ws_nodes_used_by_entities:
+                continue  # already generated via an entity
+            _normalize_ws_source(ws)
             (routers_dir / f"{ws.name.lower()}.py").write_text(
-                tpl_ws_listener.render(ws=ws), encoding="utf-8"
+                tpl_ws_listener.render(ws=ws),
+                encoding="utf-8",
             )
 
 
@@ -192,7 +258,6 @@ def _server_ctx(model):
         raise RuntimeError("No `Server` block found in model.")
 
     cors_val = getattr(server, "cors", None)
-
     if isinstance(cors_val, (list, tuple)) and len(cors_val) == 1:
         cors_val = cors_val[0]
 
@@ -233,11 +298,6 @@ def scaffold_backend_from_model(model, *,
     using values from the model's `Server` block.
     """
     ctx = _server_ctx(model)
-
-    # 1) copy the base scaffold (app/, pyproject.toml, etc.)
     copytree(base_backend_dir, out_dir, dirs_exist_ok=True)
-
-    # 2) render env + docker bits into out/
     _render_env_and_docker(ctx, templates_backend_dir, out_dir)
-
     return out_dir

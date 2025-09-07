@@ -34,7 +34,6 @@ end
 // ----------- Components (UI bindings) -----------
 Component<LiveTable> CoffeeTable
   entity: CoffeeStats
-  props:
-    - primaryKey: data.name          // 'id' also works if present
-    - columns: [data.name, data.title_length, data.description]
+  primaryKey: data.name          // 'id' also works if present
+  columns: [data.name, data.title_length, data.description]
 end

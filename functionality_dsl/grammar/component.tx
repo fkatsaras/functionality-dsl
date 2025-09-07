@@ -1,19 +1,37 @@
 import utils
-import expression
 import entity
 
-ComponentKind:
-  'Stat' | 'Gauge' | 'LineChart' | 'LiveTable' | 'Image' | 'Page'
+// ---------- attribute reference tied to the component's entity ----------
+AttrRef:
+  'data' '.' attr=[entity.Attribute]
 ;
 
-Prop:
-  key=ID ':' items+=Expr (',' items+=Expr)* ;
-
+// ---------- COMPONENTS (strictly typed, no generic props) ----------
 Component:
-  'Component' '<' kind=ComponentKind '>' name=ID
+    LiveTableComponent
+  | LineChartComponent
+;
+
+// Component<LiveTable> ...
+LiveTableComponent:
+  'Component' '<' 'LiveTable' '>' name=ID
+  ('entity:' entity=[Entity])?
   (
-    'entity:' entity=[Entity]
-    ('props:' '-' props+=Prop ('-' props+=Prop)*)?
+    ('columns:' '[' columns+=AttrRef (',' columns+=AttrRef)* ']')?
+    ('primaryKey:' (primaryKey=AttrRef | primaryKey_str=STRING))?
+  )#
+  'end'
+;
+
+// Component<LineChart> ...
+LineChartComponent:
+  'Component' '<' 'LineChart' '>' name=ID
+  ('entity:' entity=[Entity])?
+  (
+    ('x:' x=AttrRef)?
+    ('y:' '[' y+=AttrRef (',' y+=AttrRef)* ']')?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
   )#
   'end'
 ;

@@ -1,0 +1,27 @@
+# app/infra/repositories/{{ entity.name | lower }}_adapter.py
+from typing import Any, Dict, List
+
+# Read in-memory “latest” maintained by the entity's WS router.
+# NOTE: the router file is named <entity>_ws.py
+from app.api.routers.{{ entity.name | lower }}_ws import _latest
+
+_DEFAULT_FIELDS: list[str] = [
+{% for name in schema_attrs %}
+    "{{ name }}",
+{% endfor %}
+]
+
+def _project(x: Dict[str, Any], keep: list[str] | None = None) -> Dict[str, Any]:
+    if not keep:
+        return x
+    return {k: x.get(k) for k in keep}
+
+class {{ entity.name }}Adapter:
+    async def list(self) -> List[Dict[str, Any]]:
+        cur = _latest.get("value")
+        # Some WS providers send {"stream": "...", "data": {...}}
+        if isinstance(cur, dict) and "data" in cur and isinstance(cur["data"], dict):
+            cur = cur["data"]
+        if not isinstance(cur, dict):
+            return []
+        return [_project(cur, _DEFAULT_FIELDS)]

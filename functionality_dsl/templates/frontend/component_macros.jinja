@@ -1,15 +1,34 @@
 {% macro render_component(cmp) %}
-    {% set kind = cmp.kind %}  {# guaranteed by annotation #}
-    {% set ent = cmp.entity %}
-    {% set entname = ent.name if ent is defined and ent.name is defined else None %}
-    {% set props = cmp | props_dict %}
+  {% set kind = cmp.kind %}
+  {% set ent = cmp.entity %}
+  {% set entname = ent.name if ent is defined and ent is not none else none %}
 
-    {% set common = {
-        "name": cmp.name or (kind ~ 'Component'),
-        "entity": entname,
-        "url": ("/api/entities/" ~ entname|lower ~ "/") if entname else None
-    } %}
+  {# Use the context lists passed from the frontend generator #}
+  {% set is_ws_entity = (entname is not none) and (ws_entities is defined) and (entname in ws_entities) %}
+  {% set has_ws_input = (entname is not none) and (computed_ws_entities is defined) and (entname in computed_ws_entities) %}
 
-    {# we stored _tpl_file, use that; otherwise build it now #}
-    {% include cmp._tpl_file if cmp._tpl_file is defined else ("components/" ~ kind ~ ".jinja") %}
+  {# Decide endpoints #}
+  {% set wsUrl = None %}
+  {% if is_ws_entity %}
+    {% set wsUrl = "/api/external/" ~ entname|lower ~ "/stream" %}
+  {% elif has_ws_input %}
+    {% set wsUrl = "/api/entities/" ~ entname|lower ~ "/stream" %}
+  {% endif %}
+
+  {# IMPORTANT: only provide HTTP url when there is NO wsUrl #}
+  {% set httpUrl = None %}
+  {% if not wsUrl and entname %}
+    {% set httpUrl = "/api/entities/" ~ entname|lower ~ "/" %}
+  {% endif %}
+
+  {% set props = cmp.to_props() %}
+
+  {% set common = {
+    "name": cmp.name or (kind ~ 'Component'),
+    "entity": entname,
+    "url": httpUrl,
+    "wsUrl": wsUrl
+  } %}
+
+  {% include "components/" ~ kind ~ ".jinja" %}
 {% endmacro %}

@@ -36,7 +36,6 @@ end
 // ----------- Components (UI bindings) -----------
 Component<LiveTable> PostsTable
   entity: PostStats
-  props:
-    - primaryKey: data.id
-    - columns: [data.id, data.user_id, data.title, data.title_length]
+  primaryKey: data.id
+  columns: [data.id, data.user_id, data.title, data.title_length]
 end

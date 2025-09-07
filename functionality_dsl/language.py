@@ -10,6 +10,7 @@ from textx import (
 )
 
 from .lib.computed import compile_expr_to_python, DSL_FUNCTION_SIG
+from .lib.component_types import COMPONENT_TYPES, LiveTableComponent, LineChartComponent
 
 # ------------------------------------------------------------------------------
 # Paths / logging
@@ -128,14 +129,6 @@ def _validate_func(name, argc, node):
             **get_location(node),
         )
 
-def _strip_quotes(s):
-    if s is None:
-        return s
-    s = str(s)
-    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
-        return s[1:-1]
-    return s
-
 def _annotate_computed_attrs(model, metamodel=None):
     # Entities
     for ent in get_children_of_type("Entity", model):
@@ -226,7 +219,11 @@ def get_model_entities(model):
 
 
 def get_model_components(model):
-    return get_children_of_type("Component", model)
+    comps = []
+    comps.extend(get_children_of_type("LiveTableComponent", model))
+    comps.extend(get_children_of_type("LineChartComponent", model))
+    # add more kinds here 
+    return comps
 
 
 # ------------------------------------------------------------------------------
@@ -334,153 +331,17 @@ def entity_obj_processor(ent):
                 **get_location(inp),
             )
         alias_seen.add(alias)
-
-
-def component_obj_processor(cmp):
-    """
-    Component:
-      - Must point to an entity
-      - Prop keys must be unique
-      - Validate prop expressions (only `data.<attr>`, attr must exist on entity)
-      - Annotate with simple keys/values (NO compilation for components)
-    """
-    # Canonical kind and template path
-    kind = getattr(cmp, "kind", None) or getattr(cmp, "type", None) or "LiveTable"
-    setattr(cmp, "kind", kind)
-    setattr(cmp, "_tpl_file", f"components/{kind}.jinja")
-
-    ent = getattr(cmp, "entity", None)
-    if ent is None:
-        raise TextXSemanticError(
-            f"Component '{cmp.name}' must bind an 'entity:'.",
-            **get_location(cmp),
-        )
-
-    ent_attrs = {a.name for a in getattr(ent, "attributes", []) or []}
-
-    props = getattr(cmp, "props", None) or []
-    seen = set()
-    for p in props:
-        key = getattr(p, "key", None)
-        if not key:
-            raise TextXSemanticError(
-                f"Component '{cmp.name}' has a prop without a key.",
-                **get_location(p),
-            )
-        if key in seen:
-            raise TextXSemanticError(
-                f"Component '{cmp.name}' prop key '{key}' is duplicated.",
-                **get_location(p),
-            )
-        seen.add(key)
-
-        items = getattr(p, "items", None)
-
-        # LIST-LIKE props (e.g., columns): accept many refs; flatten everything
-        if key == "columns":
-            keys = []
-            if items:
-                # Each item may contain one OR MORE refs; collect them all
-                for expr in items:
-                    refs = list(_collect_refs(expr))
-                    if not refs:
-                        raise TextXSemanticError(
-                            "columns entries must be references like `data.field`.",
-                            **get_location(expr),
-                        )
-                    for alias, attr, node in refs:
-                        if alias != "data":
-                            raise TextXSemanticError(
-                                "Only `data.*` references are allowed in Component props.",
-                                **get_location(node),
-                            )
-                        if attr not in ent_attrs:
-                            raise TextXSemanticError(
-                                f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
-                                **get_location(node),
-                            )
-                        keys.append(attr)
-            else:
-                # In some grammars the bracket list is a single expr on the prop
-                expr = get_expr(p)
-                if expr is None:
-                    raise TextXSemanticError(
-                        "columns requires at least one field.",
-                        **get_location(p),
-                    )
-                refs = list(_collect_refs(expr))
-                if not refs:
-                    raise TextXSemanticError(
-                        "columns entries must be references like `data.field`.",
-                        **get_location(p),
-                    )
-                for alias, attr, node in refs:
-                    if alias != "data":
-                        raise TextXSemanticError(
-                            "Only `data.*` references are allowed in Component props.",
-                            **get_location(node),
-                        )
-                    if attr not in ent_attrs:
-                        raise TextXSemanticError(
-                            f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
-                            **get_location(node),
-                        )
-                    keys.append(attr)
-
-            # order-preserving dedupe (if you want)
-            keys = list(dict.fromkeys(keys))
-            if not keys:
-                raise TextXSemanticError("columns cannot be empty.", **get_location(p))
-            p._keys = keys
-            continue
-
-        # SCALAR props (e.g., primaryKey): allow either string literal or one `data.field`
-        if key == "primaryKey":
-            if items:
-                # collect all refs across items
-                all_refs = []
-                for expr in items:
-                    all_refs.extend(list(_collect_refs(expr)))
-                if len(all_refs) != 1:
-                    raise TextXSemanticError(
-                        "primaryKey must be a single field reference (e.g., `data.id`) or a quoted string.",
-                        **get_location(p),
-                    )
-                alias, attr, node = all_refs[0]
-                if alias != "data":
-                    raise TextXSemanticError(
-                        "Only `data.*` references are allowed in Component props.",
-                        **get_location(node),
-                    )
-                if attr not in ent_attrs:
-                    raise TextXSemanticError(
-                        f"'data.{attr}' not found on entity '{getattr(ent, 'name', '?')}'.",
-                        **get_location(node),
-                    )
-                p._value = attr
-            else:
-                val = getattr(p, "value", None) or getattr(p, "text", None)
-                # If someone wrote an unquoted identifier, try to treat it as an expr
-                if not (isinstance(val, str) and (val.startswith("'") or val.startswith('"'))):
-                    expr = get_expr(p)
-                    if expr is not None:
-                        refs = list(_collect_refs(expr))
-                        if len(refs) == 1 and refs[0][0] == "data" and refs[0][1] in ent_attrs:
-                            p._value = refs[0][1]
-                            continue
-                # otherwise, literal string like "id" / 'id'
-                p._value = _strip_quotes(val)
-            continue
-
-        # Other props: keep simple — literal scalar if present
-        if not items:
-            val = getattr(p, "value", None) or getattr(p, "text", None)
-            p._value = _strip_quotes(val)
-        else:
-            raise TextXSemanticError(
-                f"Unsupported list-style prop '{key}' for component '{cmp.name}'.",
-                **get_location(p),
-            )
+    
+    # mark source kind for templates/macros
+    src = getattr(ent, "source", None)
+    kind = None
+    if src is not None:
+        t = src.__class__.__name__
+        if t == "RESTEndpoint":
+            kind = "rest"
+        elif t == "WSEndpoint":
+            kind = "ws"
+    setattr(ent, "_source_kind", kind)
 
 
 # ------------------------------------------------------------------------------
@@ -544,11 +405,33 @@ def _populate_aggregates(model):
 
 # ------------------------------------------------------------------------------
 # Scope providers / metamodel creation
+
+# Scope provider: tie AttrRef.attr to the bound component's entity attributes
+def _component_entity_attr_scope(obj, attr, attr_ref):
+    comp = obj
+    while comp is not None and not hasattr(comp, "entity"):
+        comp = getattr(comp, "parent", None)
+
+    if comp is None or getattr(comp, "entity", None) is None:
+        raise TextXSemanticError(
+            "Component has no 'entity:' bound.", **get_location(attr_ref)
+        )
+
+    entity = comp.entity
+    for a in getattr(entity, "attributes", []) or []:
+        if a.name == attr_ref.obj_name:
+            return a
+    raise TextXSemanticError(
+        f"Attribute '{attr_ref.obj_name}' not found on entity '{entity.name}'.",
+        **get_location(attr_ref),
+    )
+
 def get_scope_providers():
-    """
-    Minimal FQN import provider (imports of files/namespaces).
-    """
-    return {"*.*": scoping_providers.FQNImportURI(importAs=True)}
+    return {
+        "Component.entity": scoping_providers.FQNImportURI(importAs=True),
+        "AttrRef.attr": _component_entity_attr_scope,
+    }
+
 
 
 def get_metamodel(debug: bool = False, global_repo: bool = True):
@@ -561,6 +444,11 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
         textx_tools_support=True,
         global_repository=global_repo,
         debug=debug,
+        classes=[
+            # strictly typed components + typed Entity
+            LiveTableComponent,
+            LineChartComponent,
+        ],
     )
 
     mm.register_scope_providers(get_scope_providers())
@@ -571,7 +459,6 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
             "RESTEndpoint": rest_endpoint_obj_processor,
             "WSEndpoint": ws_endpoint_obj_processor,
             "Entity": entity_obj_processor,
-            "Component": component_obj_processor,
         }
     )
 

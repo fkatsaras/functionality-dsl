@@ -6,8 +6,8 @@ import logging
 import contextlib
 
 from contextlib import asynccontextmanager
-from fastapi import APIRouter
-from typing import Any, Dict, Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Any, Dict, Optional, Set
 
 from app.core.utils import resolve_headers
 
@@ -21,13 +21,68 @@ logger.setLevel(logging.INFO)
   {% set hdrs = ws.headers | default([], true) %}
 {% endif %}
 
-# Subprotocols come from FDSL (e.g., ["token","API_KEY"])
 _subprotocols = {{ (ws.subprotocols | default([], true)) | tojson }}
 
 _latest: Dict[str, Any] = {"value": None}
 _task: Optional[asyncio.Task] = None
 
+# ---- Downstream browser clients
+_clients: Set[WebSocket] = set()
+_clients_lock = asyncio.Lock()
+
+# ---- In-process subscribers (other routers/services in this backend)
+_subscribers: Set[asyncio.Queue] = set()
+_subs_lock = asyncio.Lock()
+
+def subscribe(maxsize: int = 1) -> asyncio.Queue:
+    """
+    Register an in-process subscriber. Returns an asyncio.Queue that receives
+    new payloads as they arrive. Caller must call unsubscribe(q) on teardown.
+    """
+    q: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
+    async def _add():
+        async with _subs_lock:
+            _subscribers.add(q)
+    asyncio.get_event_loop().create_task(_add())
+    return q
+
+async def unsubscribe(q: asyncio.Queue):
+    async with _subs_lock:
+        _subscribers.discard(q)
+
+async def _notify_subscribers(msg: Any):
+    dead = []
+    async with _subs_lock:
+        for q in list(_subscribers):
+            try:
+                q.put_nowait(msg)
+            except asyncio.QueueFull:
+                # drop oldest to make room for latest
+                try:
+                    _ = q.get_nowait()
+                except Exception:
+                    pass
+                with contextlib.suppress(Exception):
+                    q.put_nowait(msg)
+
+async def _broadcast(msg: Any):
+    """Send msg to browser WebSocket clients; drop broken ones."""
+    dead: list[WebSocket] = []
+    async with _clients_lock:
+        for ws in list(_clients):
+            try:
+                {% if ws.protocol == "json" %}
+                await ws.send_json(msg)
+                {% else %}
+                await ws.send_text(msg if isinstance(msg, str) else json.dumps(msg))
+                {% endif %}
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            _clients.discard(ws)
+
 async def _ws_loop():
+    """Maintain upstream WS; update _latest; push to in-proc subscribers and browser clients."""
     while True:
         try:
             headers_list = [
@@ -36,8 +91,6 @@ async def _ws_loop():
                 {% endfor %}
             ]
             logger.info("Connecting to {{ ws.url }} ...")
-
-            # websockets>=10 accepts extra_headers=; some older builds accept additional_headers=
             try:
                 connect_cm = websockets.connect(
                     "{{ ws.url }}",
@@ -57,19 +110,29 @@ async def _ws_loop():
                 await ws_conn.send("""{{ ws.subscribe | trim }}""")
                 logger.info("Subscribe message sent")
                 {% endif %}
+
                 async for raw in ws_conn:
                     try:
                         {% if ws.protocol == "json" %}
-                        _latest["value"] = json.loads(raw)
+                        msg = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
                         {% else %}
-                        _latest["value"] = raw
+                        msg = raw
                         {% endif %}
+                        # Some providers send {"stream": "...", "data": {...}}
+                        payload = msg.get("data") if isinstance(msg, dict) and "data" in msg else msg
+                        _latest["value"] = payload
+                        # push to in-proc and browser listeners
+                        await _notify_subscribers(_latest["value"])
+                        await _broadcast(_latest["value"])
                     except Exception as parse_ex:
-                        logger.warning("Parse error: %s", parse_ex)
+                        logger.warning("Parse/broadcast error: %s", parse_ex)
                         _latest["value"] = raw
+                        with contextlib.suppress(Exception):
+                            await _notify_subscribers(_latest["value"])
+                            await _broadcast(_latest["value"])
         except Exception as ex:
             logger.warning("WS error: %s", ex)
-            await asyncio.sleep(1)
+            await asyncio.sleep(1)  # backoff
 
 @asynccontextmanager
 async def _lifespan(app):
@@ -99,3 +162,26 @@ def _ensure_started():
 async def latest():
     _ensure_started()
     return _latest["value"]
+
+@router.websocket("/stream")
+async def stream(ws: WebSocket):
+    await ws.accept()
+    async with _clients_lock:
+        _clients.add(ws)
+    try:
+        _ensure_started()
+        cur = _latest.get("value")
+        if cur is not None:
+            {% if ws.protocol == "json" %}
+            await ws.send_json(cur)
+            {% else %}
+            await ws.send_text(cur if isinstance(cur, str) else json.dumps(cur))
+            {% endif %}
+        # keep open; we don't expect client messages
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        async with _clients_lock:
+            _clients.discard(ws)
