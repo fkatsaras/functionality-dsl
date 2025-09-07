@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { subscribe as wsSubscribe } from "../ws";
 
   const {
     name = "LineChart",
-    url,                  // optional: one-shot REST (and/or bootstrap for WS)
-    wsUrl,                // optional: if present -> open WebSocket and STOP polling
-    x,                    // REQUIRED: field name for x (e.g. "t")
-    y,                    // REQUIRED: string | string[] for y fields (e.g. "c" or ["c","v"])
+    url,                  // optional REST (used only if NO wsUrl)
+    wsUrl,                // preferred; when present we never poll
+    x,                    // field for x (e.g., "t")
+    y,                    // field(s) for y: string | string[]
     xLabel,
     yLabel,
-    windowSize: _windowSize = 0, // 0 = keep all history
-    refreshMs = 0,               // default to no polling for REST unless explicitly set
+    windowSize: _windowSize = 0, // 0 = keep all
+    refreshMs = 0,               // intentionally unused when wsUrl exists
     height = 320
   } = $props<{
     name?: string;
@@ -32,10 +33,9 @@
   let points = $state<Record<string, Point[]>>({});
   for (const k of yKeys) points[k] = [];
 
-  let loading = $state<boolean>(false);
-  let error   = $state<string | null>(null);
+  let error: string | null = null;
 
-  // formatting helpers
+  // --- helpers
   const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 });
   const nfTerse = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
   const fmtNum = (n: number) => nf.format(n);
@@ -68,60 +68,29 @@
 
   async function fetchOnce() {
     if (!url) return;
-    loading = true;
-    error = null;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const payload = await res.json();
-      // REST: consume ALL rows on first fetch (static); not just the last element
-      pushPayload(payload);
+      pushPayload(await res.json());
     } catch (e: any) {
       error = e?.message ?? "Failed to load data.";
-    } finally {
-      loading = false;
     }
   }
 
-  let timer: any;
-  let sock: WebSocket | null = null;
-
-  function resolveWs(u: string): string {
-    if (!u) return "";
-    if (u.startsWith("ws://") || u.startsWith("wss://")) return u;
-    if (u.startsWith("/")) return u;                  // let Vite proxy & upgrade
-    if (u.startsWith("http://"))  return "ws://"  + u.slice(7);
-    if (u.startsWith("https://")) return "wss://" + u.slice(8);
-    return u;
-  }
-
-  function openSocket() {
-    if (!wsUrl) return;
-    const full = resolveWs(wsUrl);
-    try {
-      sock = new WebSocket(full);
-      sock.onmessage = (ev) => {
-        try { pushPayload(typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data); } catch {}
-      };
-      sock.onerror = () => { error = "WebSocket error"; };
-    } catch (e: any) {
-      error = e?.message ?? "WebSocket failed to open.";
-    }
-  }
+  // --- lifecycle
+  let unsub: null | (() => void) = null;
 
   onMount(() => {
-    // Bootstrap via REST only if there's no wsUrl
-    if (!wsUrl && url) fetchOnce();
-
     if (wsUrl) {
-      openSocket();
-    } else if (url && refreshMs > 0) {
-      timer = setInterval(fetchOnce, refreshMs);
+      unsub = wsSubscribe(wsUrl, pushPayload);
+    } else if (url) {
+      fetchOnce();
     }
-
-    return () => { if (timer) clearInterval(timer); if (sock) try { sock.close(); } catch {} };
   });
 
+  onDestroy(() => { if (unsub) unsub(); });
+
+  // --- mini chart maths
   function viewBoxFor(arr: Point[]) {
     if (!arr.length) return { pts: "", min: 0, max: 0 };
     const ys = arr.map((p) => p.y);
