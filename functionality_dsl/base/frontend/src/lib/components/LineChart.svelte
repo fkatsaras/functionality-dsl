@@ -83,31 +83,18 @@
     }
   }
 
-  function toWsUrl(u: string): string {
-    if (!u) return "";
-    if (u.startsWith("ws://") || u.startsWith("wss://")) return u;
-    const base = (import.meta as any).env?.VITE_API_URL || window.location.origin;
-    const full = new URL(u, base);
-    full.protocol = full.protocol === "https:" ? "wss:" : "ws:";
-    return full.toString();
-  }
-
   let timer: any;
   let sock: WebSocket | null = null;
 
   function resolveWs(u: string): string {
     if (!u) return "";
-    // absolute WS already
     if (u.startsWith("ws://") || u.startsWith("wss://")) return u;
-    // path-only => let the browser use current origin (localhost:5173) and Vite will proxy+upgrade
-    if (u.startsWith("/")) return u;
-    // support devs who accidentally pass http(s)
+    if (u.startsWith("/")) return u;                  // let Vite proxy & upgrade
     if (u.startsWith("http://"))  return "ws://"  + u.slice(7);
     if (u.startsWith("https://")) return "wss://" + u.slice(8);
-    // otherwise leave as-is
     return u;
   }
-  
+
   function openSocket() {
     if (!wsUrl) return;
     const full = resolveWs(wsUrl);

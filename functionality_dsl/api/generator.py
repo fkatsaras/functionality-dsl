@@ -12,12 +12,6 @@ from textx import get_children_of_type
 def _entities(model):
     return list(get_children_of_type("Entity", model))
 
-def _rest_endpoints(model):
-    return list(get_children_of_type("RESTEndpoint", model))
-
-def _ws_endpoints(model):
-    return list(get_children_of_type("WSEndpoint", model))
-
 def _pyd_type_for(attr):
     t = getattr(attr, "type", None)
     return {
@@ -27,6 +21,14 @@ def _pyd_type_for(attr):
         "bool": "bool",
         "datetime": "datetime",
     }.get((t or "").lower(), "Any")
+
+def _schema_attr_names(ent) -> list[str]:
+    """Return schema (non-computed) attribute names for an entity."""
+    names: list[str] = []
+    for a in (getattr(ent, "attributes", []) or []):
+        if not (hasattr(a, "expr") and a.expr is not None):
+            names.append(getattr(a, "name"))
+    return names
 
 def _as_headers_list(obj):
     """
@@ -73,7 +75,6 @@ def _normalize_ws_source(ws):
         if subs and hasattr(subs, "items"):
             ws.subprotocols = list(subs.items)
         else:
-            # already list/None
             ws.subprotocols = subs or []
     except Exception:
         ws.subprotocols = []
@@ -119,26 +120,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     models_out.parent.mkdir(parents=True, exist_ok=True)
     models_out.write_text(models_tpl.render(entities=entities_ctx), encoding="utf-8")
 
-    # -------- directories --------
+    # -------- routers only (minimal backend) --------
     routers_dir = out_dir / "app" / "api" / "routers"
-    repos_dir   = out_dir / "app" / "infra" / "repositories"
-    svcs_dir    = out_dir / "app" / "services"
-    for d in (routers_dir, repos_dir, svcs_dir):
-        d.mkdir(parents=True, exist_ok=True)
+    routers_dir.mkdir(parents=True, exist_ok=True)
 
-    # -------- load templates --------
-    tpl_adapter_rest   = env.get_template("adapters.jinja")                    # REST entities
-    tpl_adapter_ws     = env.get_template("adapters_ws_entity.jinja")          # WS entities (entity-named import)
-    tpl_svc_entity     = env.get_template("service_entity.jinja")
-    tpl_svc_computed   = env.get_template("service_computed.jinja")
-    tpl_router_entity  = env.get_template("router_controller_entity.jinja")
-    tpl_router_comp    = env.get_template("router_controller_computed.jinja")
-    tpl_ws_listener    = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
-    tpl_ws_listener    = env.get_template("router_ws_listener.jinja") if (templates_dir / "router_ws_listener.jinja").exists() else None
-    tpl_ws_comp_stream = env.get_template("router_ws_computed.jinja") if (templates_dir / "router_ws_computed.jinja").exists() else None
-
-    # Remember WS endpoints already used by entities (to avoid duplicate standalone listeners)
-    ws_nodes_used_by_entities = set()
+    # Templates in your current set
+    tpl_router_rest = env.get_template("router_rest.jinja")
+    tpl_router_ws   = env.get_template("router_ws.jinja")
 
     # -------- per-entity generation --------
     for e in _entities(model):
@@ -146,108 +134,63 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         has_inputs = bool(getattr(e, "inputs", None))
 
         if has_inputs:
-            # Computed entity
-            inputs = [{"alias": inp.alias, "target_name": inp.target.name}
-                      for inp in (getattr(e, "inputs", []) or [])]
+            # Computed streaming entity (requires at least one WS input)
+            computed_attrs = [
+                {"name": a.name, "pyexpr": getattr(a, "_py", "") or ""}
+                for a in (getattr(e, "attributes", []) or [])
+                if hasattr(a, "expr") and a.expr is not None
+            ]
 
-            computed_attrs = [{"name": a.name, "pyexpr": getattr(a, "_py", "") or ""} \
-                              for a in (getattr(e, "attributes", []) or []) \
-                              if hasattr(a, "expr") and a.expr is not None]
+            ws_inputs = []
+            for inp in (getattr(e, "inputs", []) or []):
+                tgt = inp.target
+                t_src = getattr(tgt, "source", None)
+                if t_src and t_src.__class__.__name__ == "WSEndpoint":
+                    _normalize_ws_source(t_src)
+                    ws_inputs.append({
+                        "alias": inp.alias,
+                        "url": t_src.url,
+                        # list of pairs is OK; template uses tojson -> list of lists works with websockets
+                        "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
+                        "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
+                        "protocol": getattr(t_src, "protocol", "json") or "json",
+                    })
 
-            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_computed.render(entity=e, inputs=inputs, computed_attrs=computed_attrs),
+            if not ws_inputs:
+                # Minimal backend: we only support streaming computed entities if there is a WS input.
+                # You can extend later to support REST-only computed via a REST router or a task.
+                raise RuntimeError(
+                    f"Computed entity '{e.name}' has no WS inputs; "
+                    "the minimal backend only supports streaming computed entities with at least one WSEndpoint input."
+                )
+
+            (routers_dir / f"{e.name.lower()}_stream.py").write_text(
+                tpl_router_ws.render(
+                    entity=e,
+                    computed_attrs=computed_attrs,
+                    ws_inputs=ws_inputs,
+                    ws_aliases=[wi["alias"] for wi in ws_inputs],
+                ),
                 encoding="utf-8",
             )
-            (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_comp.render(entity=e, inputs=inputs),
-                encoding="utf-8",
-            )
-        
-            if tpl_ws_comp_stream:
-                ws_inputs = []
-                for inp in (getattr(e, "inputs", []) or []):
-                    tgt = inp.target
-                    src = getattr(tgt, "source", None)
-                    if src and src.__class__.__name__ == "WSEndpoint":
-                        ws_inputs.append({"alias": inp.alias, "target_name": tgt.name})
-                if ws_inputs:
-                    # Use the first WS-backed input as the trigger; import its listener module
-                    ws_input_listener_module = ws_inputs[0]["target_name"].lower() + "_ws"
-                    (routers_dir / f"{e.name.lower()}_stream.py").write_text(
-                        tpl_ws_comp_stream.render(
-                            entity=e,
-                            inputs=inputs,  # pass all inputs; service will compute with all
-                            ws_input_listener_module=ws_input_listener_module,
-                        ),
-                        encoding="utf-8",
-                    )
             continue
 
         # Non-computed entity
-        schema_attrs = [getattr(a, "name", None) for a in (getattr(e, "attributes", []) or [])]
-
         if src and src.__class__.__name__ == "RESTEndpoint":
-            # REST entity: REST adapter + standard svc/router
             src.headers = _as_headers_list(src)
-            (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
-                tpl_adapter_rest.render(entity=e, schema_attrs=schema_attrs),
-                encoding="utf-8",
-            )
-            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
-                encoding="utf-8",
-            )
+            schema_attrs = _schema_attr_names(e)
             (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_entity.render(entity=e),
+                tpl_router_rest.render(entity=e, schema_attrs=schema_attrs),
                 encoding="utf-8",
             )
 
         elif src and src.__class__.__name__ == "WSEndpoint":
-            # WS entity: entity-named WS listener + WS adapter + standard svc/router
-            if not tpl_ws_listener:
-                raise RuntimeError("router_ws_listener.jinja not found, but a WSEntity is present.")
-            _normalize_ws_source(src)
-            ws_nodes_used_by_entities.add(src)
-
-            # listener named <entity>_ws.py to avoid collisions and match adapter import
-            (routers_dir / f"{e.name.lower()}_ws.py").write_text(
-                tpl_ws_listener.render(entity=e, ws=src),
-                encoding="utf-8",
-            )
-            (repos_dir / f"{e.name.lower()}_adapter.py").write_text(
-                tpl_adapter_ws.render(entity=e, schema_attrs=schema_attrs),
-                encoding="utf-8",
-            )
-            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
-                encoding="utf-8",
-            )
-            (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_entity.render(entity=e),
-                encoding="utf-8",
-            )
+            # Raw WS entity: schema-only (no router in minimal backend)
+            pass
 
         else:
-            # Entity without a source (still generate trivial svc/router)
-            (svcs_dir / f"{e.name.lower()}_service.py").write_text(
-                tpl_svc_entity.render(entity=e, schema_attrs=schema_attrs),
-                encoding="utf-8",
-            )
-            (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_entity.render(entity=e),
-                encoding="utf-8",
-            )
-
-    # -------- Standalone WS listeners (for WS endpoints not bound to any entity) --------
-    if tpl_ws_listener:
-        for ws in _ws_endpoints(model):
-            if ws in ws_nodes_used_by_entities:
-                continue  # already generated via an entity
-            _normalize_ws_source(ws)
-            (routers_dir / f"{ws.name.lower()}.py").write_text(
-                tpl_ws_listener.render(ws=ws),
-                encoding="utf-8",
-            )
+            # Entity without a source: nothing to expose in this minimal backend
+            pass
 
 
 # ---------------- server / env / docker rendering ----------------
@@ -290,9 +233,9 @@ def _render_env_and_docker(ctx: dict, templates_dir: Path, out_dir: Path):
         (out_dir / target).write_text(tpl.render(**ctx), encoding="utf-8")
 
 def scaffold_backend_from_model(model, *,
-                               base_backend_dir: Path,
-                               templates_backend_dir: Path,
-                               out_dir: Path) -> Path:
+                                base_backend_dir: Path,
+                                templates_backend_dir: Path,
+                                out_dir: Path) -> Path:
     """
     Copies the base backend scaffold and renders .env, docker-compose.yml, Dockerfile
     using values from the model's `Server` block.

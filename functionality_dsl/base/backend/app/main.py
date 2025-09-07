@@ -6,7 +6,6 @@ from contextlib import AsyncExitStack
 from app.core.config import settings
 from app.api.routers import include_generated_routers
 from app.core.http import lifespan_http_client
-from app.core.observability import RequestIDMiddleware
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -24,9 +23,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Observability
-    app.add_middleware(RequestIDMiddleware)
 
     # Lifespan resources (HTTP client, etc.)
     @app.on_event("startup")

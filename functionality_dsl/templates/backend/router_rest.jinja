@@ -1,0 +1,34 @@
+# app/api/routers/{{ entity.name | lower }}.py
+from fastapi import APIRouter, HTTPException
+from typing import List, Any, Dict
+from app.core.http import get_http_client
+from app.core.utils import resolve_headers
+from app.domain.models import {{ entity.name }}
+
+router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+
+_UPSTREAM_URL = "{{ entity.source.url }}"
+_HEADERS = resolve_headers([
+{% for h in entity.source.headers | default([], true) -%}
+    ("{{ h.key }}", "{{ h.value }}"),
+{% endfor -%}
+])
+
+_FIELDS = [
+{% for n in schema_attrs -%}    "{{ n }}",
+{% endfor -%}
+]
+
+def _project(x: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: x.get(k) for k in _FIELDS}
+
+@router.get("/", response_model=List[{{ entity.name }}])
+async def list_{{ entity.name | lower }}():
+    client = get_http_client()
+    r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
+    data = r.json()
+    if not isinstance(data, list):
+        raise HTTPException(status_code=502, detail="Upstream did not return a list")
+    return [{{ entity.name }}(**_project(d)) for d in data]

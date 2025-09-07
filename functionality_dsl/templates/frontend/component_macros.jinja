@@ -3,21 +3,18 @@
   {% set ent = cmp.entity %}
   {% set entname = ent.name if ent is defined and ent is not none else none %}
 
-  {# Use the context lists passed from the frontend generator #}
-  {% set is_ws_entity = (entname is not none) and (ws_entities is defined) and (entname in ws_entities) %}
+  {# these two lists come from the frontend generator context #}
   {% set has_ws_input = (entname is not none) and (computed_ws_entities is defined) and (entname in computed_ws_entities) %}
+  {% set has_rest     = (entname is not none) and (rest_entities is defined) and (entname in rest_entities) %}
 
-  {# Decide endpoints #}
+  {# Decide endpoints (mutually exclusive) #}
   {% set wsUrl = None %}
-  {% if is_ws_entity %}
-    {% set wsUrl = "/api/external/" ~ entname|lower ~ "/stream" %}
-  {% elif has_ws_input %}
+  {% if has_ws_input %}
     {% set wsUrl = "/api/entities/" ~ entname|lower ~ "/stream" %}
   {% endif %}
 
-  {# IMPORTANT: only provide HTTP url when there is NO wsUrl #}
   {% set httpUrl = None %}
-  {% if not wsUrl and entname %}
+  {% if (not wsUrl) and has_rest %}
     {% set httpUrl = "/api/entities/" ~ entname|lower ~ "/" %}
   {% endif %}
 
