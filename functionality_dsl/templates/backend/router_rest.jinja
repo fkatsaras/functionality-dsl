@@ -14,6 +14,8 @@ _HEADERS = resolve_headers([
 {% endfor -%}
 ])
 
+_METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
+
 _FIELDS = [
 {% for n in schema_attrs -%}    "{{ n }}",
 {% endfor -%}
@@ -25,7 +27,11 @@ def _project(x: Dict[str, Any]) -> Dict[str, Any]:
 @router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}():
     client = get_http_client()
-    r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
+    if _METHOD == "GET":
+        r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
+    else:
+        # no body (bootstrap search); frontend could add a POST-able /external route instead
+        r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
     if r.status_code >= 400:
         raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
     data = r.json()

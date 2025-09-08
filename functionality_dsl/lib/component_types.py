@@ -1,6 +1,7 @@
 COMPONENT_TYPES = (
     "LiveTableComponent",
     "LineChartComponent",
+    "ActionFormComponent",
 )
 
 class _BaseComponent:
@@ -64,8 +65,6 @@ class LiveTableComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
         if not self.columns:
             raise ValueError(f"Component '{name}': 'columns:' cannot be empty.")
-        if self.primaryKey and self.primaryKey not in self.columns:
-            raise ValueError(f"Component '{name}': primaryKey '{self.primaryKey}' must be in columns.")
 
     def to_props(self):
         return {"columns": self.columns, "primaryKey": self.primaryKey}
@@ -88,3 +87,27 @@ class LineChartComponent(_BaseComponent):
 
     def to_props(self):
         return {"x": self.x, "y": self.y, "xLabel": self.xLabel, "yLabel": self.yLabel}
+    
+class ActionFormComponent(_BaseComponent):
+    def __init__(self, parent=None, name=None, action=None, fields=None,
+                 pathKey=None, submitLabel=None, method=None):
+        super().__init__(parent, name, None)
+
+        self.action = action                  # the RESTEndpoint/Action node
+        self.fields = fields or []
+        self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
+        self.submitLabel = submitLabel
+
+        # Pick up verb from the DSL action if not explicitly provided
+        verb_from_action = getattr(action, "verb", None) or getattr(action, "method", None)
+        self.method = (method or verb_from_action).upper()
+
+    def to_props(self):
+        return {
+            # IMPORTANT: ActionForm.svelte prefixes /api/external, so emit only the suffix:
+            "actionPath": f"/{self.action.name.lower()}",
+            "fields": [str(f) for f in (self.fields or [])],
+            "pathKey": self.pathKey,
+            "submitLabel": self.submitLabel or "Submit",
+            "method": self.method,   # <-- pass it through
+        }

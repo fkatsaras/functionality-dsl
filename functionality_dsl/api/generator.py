@@ -12,6 +12,11 @@ from textx import get_children_of_type
 def _entities(model):
     return list(get_children_of_type("Entity", model))
 
+# --- add near top with other helpers ---
+def _rest_endpoints(model):
+    return list(get_children_of_type("RESTEndpoint", model))
+
+
 def _pyd_type_for(attr):
     t = getattr(attr, "type", None)
     return {
@@ -124,9 +129,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
-    # Templates in your current set
-    tpl_router_rest = env.get_template("router_rest.jinja")
-    tpl_router_ws   = env.get_template("router_ws.jinja")
+    # ---- Load templates
+    tpl_router_entity_rest  = env.get_template("router_rest.jinja")      # RAW REST entity
+    tpl_router_computed_rest = env.get_template("router_computed_rest.jinja")   # COMPUTED (no WS)
+    tpl_router_ws           = env.get_template("router_ws.jinja")               # COMPUTED (with WS)
+    tpl_router_action = env.get_template("router_action.jinja")         # POST / PUT 
 
     # -------- per-entity generation --------
     for e in _entities(model):
@@ -134,7 +141,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         has_inputs = bool(getattr(e, "inputs", None))
 
         if has_inputs:
-            # Computed streaming entity (requires at least one WS input)
+            # Computed entity: decide WS vs REST
             computed_attrs = [
                 {"name": a.name, "pyexpr": getattr(a, "_py", "") or ""}
                 for a in (getattr(e, "attributes", []) or [])
@@ -142,54 +149,79 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             ]
 
             ws_inputs = []
+            rest_inputs = []
+
             for inp in (getattr(e, "inputs", []) or []):
                 tgt = inp.target
                 t_src = getattr(tgt, "source", None)
+
                 if t_src and t_src.__class__.__name__ == "WSEndpoint":
                     _normalize_ws_source(t_src)
                     ws_inputs.append({
                         "alias": inp.alias,
                         "url": t_src.url,
-                        # list of pairs is OK; template uses tojson -> list of lists works with websockets
                         "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
                         "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
                         "protocol": getattr(t_src, "protocol", "json") or "json",
                     })
+                elif t_src and t_src.__class__.__name__ == "RESTEndpoint":
+                    rest_inputs.append({
+                        "alias": inp.alias,
+                        "target_name": tgt.name,
+                        "url": t_src.url,
+                        "headers": _as_headers_list(t_src),
+                        "fields": _schema_attr_names(tgt),
+                    })
 
-            if not ws_inputs:
-                # Minimal backend: we only support streaming computed entities if there is a WS input.
-                # You can extend later to support REST-only computed via a REST router or a task.
-                raise RuntimeError(
-                    f"Computed entity '{e.name}' has no WS inputs; "
-                    "the minimal backend only supports streaming computed entities with at least one WSEndpoint input."
+            if ws_inputs:
+                # STREAMING computed
+                (routers_dir / f"{e.name.lower()}_stream.py").write_text(
+                    tpl_router_ws.render(
+                        entity=e,
+                        computed_attrs=computed_attrs,
+                        ws_inputs=ws_inputs,
+                        ws_aliases=[wi["alias"] for wi in ws_inputs],
+                    ),
+                    encoding="utf-8",
                 )
-
-            (routers_dir / f"{e.name.lower()}_stream.py").write_text(
-                tpl_router_ws.render(
-                    entity=e,
-                    computed_attrs=computed_attrs,
-                    ws_inputs=ws_inputs,
-                    ws_aliases=[wi["alias"] for wi in ws_inputs],
-                ),
-                encoding="utf-8",
-            )
+            else:
+                # REST-ONLY computed (simple GET that computes)
+                (routers_dir / f"{e.name.lower()}.py").write_text(
+                    tpl_router_computed_rest.render(
+                        entity=e,
+                        computed_attrs=computed_attrs,
+                        rest_inputs=rest_inputs,
+                    ),
+                    encoding="utf-8",
+                )
             continue
+        
+        # -------- Passthrough routers for REST actions (POST/PUT/PATCH/DELETE) --------
+        for ep in _rest_endpoints(model):
+            verb = (getattr(ep, "verb", "GET") or "GET").upper()
+            if verb in {"POST", "PUT", "PATCH", "DELETE"}:
+                ep.headers = _as_headers_list(ep)
+                (routers_dir / f"{ep.name.lower()}_action.py").write_text(
+                    tpl_router_action.render(endpoint=ep),
+                    encoding="utf-8",
+                )
 
         # Non-computed entity
         if src and src.__class__.__name__ == "RESTEndpoint":
+            # RAW REST entity - simple pass-through list
             src.headers = _as_headers_list(src)
             schema_attrs = _schema_attr_names(e)
             (routers_dir / f"{e.name.lower()}.py").write_text(
-                tpl_router_rest.render(entity=e, schema_attrs=schema_attrs),
+                tpl_router_entity_rest.render(entity=e, schema_attrs=schema_attrs),
                 encoding="utf-8",
             )
 
         elif src and src.__class__.__name__ == "WSEndpoint":
-            # Raw WS entity: schema-only (no router in minimal backend)
+            # Raw WS entity: no router in minimal backend (we bind to computed)
             pass
 
         else:
-            # Entity without a source: nothing to expose in this minimal backend
+            # Entity without a source: nothing to expose here
             pass
 
 

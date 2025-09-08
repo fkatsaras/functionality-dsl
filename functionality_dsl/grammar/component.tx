@@ -1,5 +1,6 @@
 import utils
 import entity
+import endpoints
 
 // ---------- attribute reference tied to the component's entity ----------
 AttrRef:
@@ -10,9 +11,9 @@ AttrRef:
 Component:
     LiveTableComponent
   | LineChartComponent
+  | ActionFormComponent
 ;
 
-// Component<LiveTable> ...
 LiveTableComponent:
   'Component' '<' 'LiveTable' '>' name=ID
   ('entity:' entity=[Entity])?
@@ -23,7 +24,6 @@ LiveTableComponent:
   'end'
 ;
 
-// Component<LineChart> ...
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
   ('entity:' entity=[Entity])?
@@ -32,6 +32,17 @@ LineChartComponent:
     ('y:' '[' y+=AttrRef (',' y+=AttrRef)* ']')?
     ('xLabel:' xLabel=STRING)?
     ('yLabel:' yLabel=STRING)?
+  )#
+  'end'
+;
+
+ActionFormComponent:
+  'Component' '<' 'ActionForm' '>' name=ID
+  (
+    'action:' action=[RESTEndpoint]                 // required
+    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?   // request body keys
+    ('pathKey:' pathKey=ID)?                            // optional path param name
+    ('submitLabel:' submitLabel=STRING)?                // optional UI label
   )#
   'end'
 ;

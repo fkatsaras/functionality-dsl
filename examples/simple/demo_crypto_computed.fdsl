@@ -1,0 +1,48 @@
+Server BinanceWS
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+WSEndpoint BTCUSDT
+  url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  protocol: "json"
+end
+
+WSEndpoint ETHUSDT
+  url: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  protocol: "json"
+end
+
+// raw snapshots (just pick the 'c' field = last price)
+Entity BTCRaw
+  source: BTCUSDT
+  attributes: - c: float
+end
+
+Entity ETHRaw
+  source: ETHUSDT
+  attributes: - c: float
+end
+
+// derived streaming entity: time + both prices + spread + alert flag
+Entity Prices
+  inputs:
+    - b: BTCRaw
+    - e: ETHRaw
+  attributes:
+    - t       = now()
+    - btc     = float(b.c)
+    - eth     = float(e.c)
+    - spread  = float(b.c) - float(e.c)
+    - pctdiff = (float(b.c) - float(e.c)) / float(e.c) * 100
+    - alert   = abs((float(b.c) - float(e.c)) / float(e.c) * 100) > 0.25
+end
+
+Component<LineChart> PriceChart
+  entity: Prices
+  x: data.t
+  y: [data.btc, data.eth, data.spread]
+  xLabel: "Time"
+  yLabel: "Price / Spread"
+end

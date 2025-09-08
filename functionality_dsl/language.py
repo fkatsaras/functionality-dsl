@@ -10,7 +10,7 @@ from textx import (
 )
 
 from .lib.computed import compile_expr_to_python, DSL_FUNCTION_SIG
-from .lib.component_types import COMPONENT_TYPES, LiveTableComponent, LineChartComponent
+from .lib.component_types import COMPONENT_TYPES, LiveTableComponent, LineChartComponent, ActionFormComponent
 
 # ------------------------------------------------------------------------------
 # Paths / logging
@@ -222,6 +222,7 @@ def get_model_components(model):
     comps = []
     comps.extend(get_children_of_type("LiveTableComponent", model))
     comps.extend(get_children_of_type("LineChartComponent", model))
+    comps.extend(get_children_of_type("ActionFormComponent", model))
     # add more kinds here 
     return comps
 
@@ -448,6 +449,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
             # strictly typed components + typed Entity
             LiveTableComponent,
             LineChartComponent,
+            ActionFormComponent,
         ],
     )
 

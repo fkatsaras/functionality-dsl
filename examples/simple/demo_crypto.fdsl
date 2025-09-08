@@ -1,70 +1,50 @@
-// ----------- Server -----------
-Server MarketAPI
+// ------------------- Server -------------------
+Server BinanceWS
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-// ----------- Sources (public REST, static arrays) -----------
-// Binance recent trades — array at root:
-// [ { "id": 123, "price": "4263.54", "qty": "0.01", "quoteQty": "42.63", "time": 1712345678901, ... }, ... ]
-
-RESTEndpoint BTCTrades
-  url: "https://api.binance.com/api/v3/trades?symbol=BTCUSDT&limit=500"
-  verb: GET
+// ------------------- WebSockets ----------------
+WSEndpoint BTCUSDT
+  url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  protocol: "json"
 end
 
-RESTEndpoint ETHTrades
-  url: "https://api.binance.com/api/v3/trades?symbol=ETHUSDT&limit=500"
-  verb: GET
+WSEndpoint ETHUSDT
+  url: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  protocol: "json"
 end
 
-// ----------- Raw Entities (as returned by REST) -----------
-Entity BTCRawTrade
-  source: BTCTrades
+// ------------------- Raw Entities (WS snapshots) ------------------
+Entity BTCRaw
+  source: BTCUSDT
   attributes:
-    - time: int      // ms since epoch
-    - price: float   // Binance returns string; cast to float here
+    - c: float     // last price in string number at key "c"
 end
 
-Entity ETHRawTrade
-  source: ETHTrades
+Entity ETHRaw
+  source: ETHUSDT
   attributes:
-    - time: int
-    - price: float
+    - c: float
 end
 
-// ----------- Derived Entities (rename for chart semantics) -----------
-// Use the raw fields to produce chart-friendly names.
-Entity BTCSeries
+// ------------------- Aggregated, computed stream ------------------
+Entity Prices
   inputs:
-    - r: BTCRawTrade
+    - btc: BTCRaw
+    - eth: ETHRaw
   attributes:
-    - t     = r.time
-    - price = r.price
+    - t   = now()
+    - btc = btc.c
+    - eth = eth.c
 end
 
-Entity ETHSeries
-  inputs:
-    - r: ETHRawTrade
-  attributes:
-    - t     = r.time
-    - price = r.price
-end
-
-// ----------- Components (static line charts) -----------
-Component<LineChart> BTCChart
-  entity: BTCSeries
+// ------------------- Component ----------------
+Component<LineChart> PricesChart
+  entity: Prices
   x: data.t
-  y: [data.price]
+  y: [data.btc, data.eth]
   xLabel: "Time"
-  yLabel: "BTC/USDT"
-end
-
-Component<LineChart> ETHChart
-  entity: ETHSeries
-  x: data.t
-  y: [data.price]
-  xLabel: "Time"
-  yLabel: "ETH/USDT"
+  yLabel: "USDT"
 end

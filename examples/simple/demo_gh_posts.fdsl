@@ -1,0 +1,38 @@
+Server GH
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+RESTEndpoint SvelteIssues
+  url: "https://api.github.com/repos/sveltejs/svelte/issues?state=open&per_page=50"
+  verb: GET
+end
+
+Entity Issue
+  source: SvelteIssues
+  attributes:
+    - id: int
+    - number: int
+    - title: string
+    - state: string
+end
+
+Entity IssueStats
+  inputs:
+    - i: Issue
+  attributes:
+    - id           = i.id
+    - number       = i.number
+    - title        = i.title
+    - title_len    = len(i.title)
+    - has_bug      = icontains(i.title, "bug")
+    - has_dom      = contains(i.title, "DOM")
+    - is_question  = icontains(i.title, "question") or endswith(i.title, "?")
+end
+
+Component<LiveTable> Issues
+  entity: IssueStats
+  primaryKey: data.id
+  columns: [data.number, data.title, data.title_len, data.has_dom, data.has_bug, data.is_question]
+end

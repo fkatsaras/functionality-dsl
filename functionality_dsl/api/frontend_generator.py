@@ -6,13 +6,12 @@ from textx import get_children_of_type
 
 # ---------- helpers ----------
 def _components(model):
-    # Prefer the typed list from your model processor, else fallback
     cmps = getattr(model, "aggregated_components", None)
     if cmps is not None:
         return list(cmps)
     from textx import get_children_of_type as _gc
     nodes = []
-    for rule in ("LiveTableComponent", "LineChartComponent"):
+    for rule in ("LiveTableComponent", "LineChartComponent", "ActionFormComponent"):
         nodes += list(_gc(rule, model))
     return nodes
 
@@ -59,41 +58,42 @@ def scaffold_frontend_from_model(model, *, base_frontend_dir: Path, templates_fr
     return out_dir
 
 # ---------- page render ----------
+def _is_ws_entity(ent) -> bool:
+    src = getattr(ent, "source", None)
+    return src and src.__class__.__name__ == "WSEndpoint"
+
+def _is_computed_with_ws(ent) -> bool:
+    if not getattr(ent, "inputs", None):
+        return False
+    for inp in ent.inputs:
+        t = inp.target
+        s = getattr(t, "source", None)
+        if s and s.__class__.__name__ == "WSEndpoint":
+            return True
+    return False
+
 def render_frontend_files(model, templates_dir: Path, out_dir: Path):
-    # loader must include the /components dir so the page template can import the macro
-    env = _jinja_env(loader=FileSystemLoader([str(templates_dir / "components"), str(templates_dir)]))
+    env = Environment(
+        loader=FileSystemLoader([str(templates_dir / "components"), str(templates_dir)]),
+        autoescape=select_autoescape(disabled_extensions=("jinja",)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        undefined=StrictUndefined,
+    )
 
     components = _components(model)
-    ents = _entities(model)
 
-    # Entities with REST sources -> have GET /api/entities/<name>/
-    rest_entities = []
-    # Computed entities that depend on ≥1 WS input -> have WS /api/entities/<name>/stream
-    computed_ws_entities = []
+    ws_entities = {e.name for e in get_children_of_type("Entity", model) if _is_ws_entity(e)}
+    computed_ws_entities = {
+        e.name for e in get_children_of_type("Entity", model) if _is_computed_with_ws(e)
+    }
 
-    # Build the two sets
-    for e in ents:
-        src = getattr(e, "source", None)
-        inputs = getattr(e, "inputs", None)
-
-        if src and src.__class__.__name__ == "RESTEndpoint":
-            rest_entities.append(e.name)
-
-        if inputs:
-            for inp in inputs:
-                tgt = inp.target
-                t_src = getattr(tgt, "source", None)
-                if t_src and t_src.__class__.__name__ == "WSEndpoint":
-                    computed_ws_entities.append(e.name)
-                    break  # once is enough
-
-    # Write page
     (out_dir / "src" / "routes").mkdir(parents=True, exist_ok=True)
     page_tpl = env.get_template("+page.svelte.jinja")
     (out_dir / "src" / "routes" / "+page.svelte").write_text(
         page_tpl.render(
             components=components,
-            rest_entities=rest_entities,
+            ws_entities=ws_entities,
             computed_ws_entities=computed_ws_entities,
         ),
         encoding="utf-8",
