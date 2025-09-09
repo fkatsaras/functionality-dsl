@@ -1,7 +1,5 @@
 # app/api/routers/{{ entity.name | lower }}_stream.py
-import asyncio
-import json
-import contextlib
+import asyncio, json, contextlib, time, uuid, logging
 from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -9,29 +7,35 @@ import websockets
 
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 from app.core.expressions import compile_safe
-from app.domain.models import {{ entity.name }}
+from app.core.logging import set_request_id
 
-router = APIRouter(
-    prefix="/api/entities/{{ entity.name | lower }}",
-    tags=["{{ entity.name }} (stream)"],
-)
+logger = logging.getLogger("fdsl.router.ws.{{ entity.name }}")
 
-# ---- Upstream WS inputs (one task per WS input) -----------------
+router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }} (stream)"])
 
 _WS_INPUTS = [
-{%- for wi in ws_inputs %}
-    {
-        "alias": "{{ wi.alias }}",
-        "url": "{{ wi.url }}",
-        "headers": {{ wi.headers | tojson }},
-        "subprotocols": {{ wi.subprotocols | tojson }},
-        "protocol": "{{ wi.protocol }}",   # "json" | "text"
-    },
+{%- for it in ws_inputs %}
+    {"alias":"{{ it.alias }}","url":"{{ it.url }}","headers":{{ it.headers | tojson }},
+     "subprotocols":{{ it.subprotocols | tojson }},"protocol":"{{ it.protocol }}"},
 {%- endfor %}
 ]
 
-_latest: Dict[str, Any] = {}        # alias -> last snapshot
+_latest: Dict[str, Any] = {}
 _started = False
+_clients: Set[WebSocket] = set()
+_clients_lock = asyncio.Lock()
+_bg_task: Optional[asyncio.Task] = None
+
+def _coerce_delta(payload: dict) -> dict:
+    # Optional normalizer — safe no-op for non-Hatnote sources
+    out = dict(payload)
+    if "delta" in out: return out
+    if "change_size" in out: out["delta"] = out["change_size"]; return out
+    length = out.get("length")
+    if isinstance(length, dict) and all(k in length for k in ("old","new")):
+        try: out["delta"] = float(length["new"]) - float(length["old"])
+        except Exception: pass
+    return out
 
 async def _ws_consumer(alias: str, url: str, headers: list, subprotocols: list, protocol: str, tick: asyncio.Queue):
     while True:
@@ -41,26 +45,23 @@ async def _ws_consumer(alias: str, url: str, headers: list, subprotocols: list, 
             except TypeError:
                 cm = websockets.connect(url, additional_headers=headers, subprotocols=subprotocols or None)
 
+            logger.info("upstream_connecting", extra={"alias":alias,"url":url})
             async with cm as ws_conn:
+                logger.info("upstream_connected", extra={"alias":alias})
                 async for raw in ws_conn:
                     try:
-                        if protocol == "json":
-                            msg = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-                        else:
-                            msg = raw
-                        # Many providers send {"stream": "...", "data": {...}}
+                        msg = json.loads(raw) if (protocol == "json" and isinstance(raw, (str, bytes, bytearray))) else raw
                         payload = msg.get("data") if isinstance(msg, dict) and "data" in msg else msg
+                        if isinstance(payload, dict):
+                            payload = _coerce_delta(payload)
                         _latest[alias] = payload
-                        # Notify the compute loop there is fresh data
                         with contextlib.suppress(Exception):
                             tick.put_nowait(True)
-                    except Exception:
-                        # ignore malformed frames but keep the loop
-                        pass
-        except Exception:
-            await asyncio.sleep(1.0)  # backoff and reconnect
-
-# ---- Compute (re-evaluate expressions on each tick) --------------
+                    except Exception as ex:
+                        logger.debug("frame_parse_error", extra={"alias":alias,"err":repr(ex)})
+        except Exception as ex:
+            logger.warning("upstream_reconnect", extra={"alias":alias,"err":repr(ex)})
+            await asyncio.sleep(1.0)
 
 _COMPILED = {
 {%- for attr in computed_attrs %}
@@ -69,27 +70,19 @@ _COMPILED = {
 }
 
 def _compute_row() -> Dict[str, Any] | None:
-    # Only compute if all WS aliases have at least one value
-    if any(alias not in _latest for alias in {{ ws_aliases | tojson }}):
+    if any(alias not in _latest for alias in [{% for a in ws_aliases %}"{{ a }}",{% endfor %}]):
         return None
-
-    row: Dict[str, Any] = {}
-    # Context object seen by expressions: ctx.<alias> -> latest snapshot dict
     ctx = {alias: _latest[alias] for alias in _latest}
-
-    for name, code in _COMPILED.items():
-        row[name] = eval(
-            code,
-            {"__builtins__": {}, "dsl_funcs": dsl_funcs},
-            {"ctx": ctx},
-        )
-    return row
-
-# ---- Browser WS endpoint ----------------------------------------
-
-_clients: Set[WebSocket] = set()
-_clients_lock = asyncio.Lock()
-_bg_task: Optional[asyncio.Task] = None
+    row: Dict[str, Any] = {}
+    try:
+        for name, code in _COMPILED.items():
+            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+        return row
+    except Exception as ex:
+        # single-line, structured
+        sample = {k: (list(v.keys())[:6] if isinstance(v, dict) else type(v).__name__) for k, v in ctx.items()}
+        logger.error("compute_error", extra={"err":repr(ex), "ctx_keys": sample})
+        return None
 
 async def _broadcast(msg: Any):
     dead = []
@@ -101,47 +94,45 @@ async def _broadcast(msg: Any):
                 dead.append(ws)
         for ws in dead:
             _clients.discard(ws)
+    logger.debug("broadcast", extra={"clients": len(_clients)})
 
 async def _loop():
     global _started
     tick: asyncio.Queue = asyncio.Queue(maxsize=1)
-
-    # Start one upstream consumer per WS input
     if not _started:
         for it in _WS_INPUTS:
-            asyncio.create_task(_ws_consumer(
-                it["alias"], it["url"], it["headers"], it["subprotocols"], it["protocol"], tick
-            ))
+            asyncio.create_task(_ws_consumer(it["alias"], it["url"], it["headers"], it["subprotocols"], it["protocol"], tick))
         _started = True
 
-    # On every tick, recompute and broadcast the last computed row
     while True:
         await tick.get()
-        with contextlib.suppress(Exception):
-            row = _compute_row()
-            if row is not None:
-                await _broadcast(row)
+        row = _compute_row()
+        if row is not None:
+            await _broadcast(row)
 
 @router.websocket("/stream")
 async def stream(ws: WebSocket):
-    global _bg_task
+    # WS gets its own correlation id
+    rid = uuid.uuid4().hex
+    set_request_id(rid)
     await ws.accept()
+    logger.info("client_connected", extra={"rid":rid, "path":str(ws.url)})
+
+    global _bg_task
     async with _clients_lock:
         _clients.add(ws)
     try:
         if _bg_task is None or _bg_task.done():
             _bg_task = asyncio.create_task(_loop())
 
-        # If we can compute immediately (all inputs have a value), push one
-        with contextlib.suppress(Exception):
-            row = _compute_row()
-            if row is not None:
-                await ws.send_json(row)
+        row = _compute_row()
+        if row is not None:
+            await ws.send_json(row)
 
         while True:
-            await ws.receive_text()  # keep open; no client messages expected
+            await ws.receive_text()
     except WebSocketDisconnect:
-        pass
+        logger.info("client_disconnected", extra={"rid":rid})
     finally:
         async with _clients_lock:
             _clients.discard(ws)

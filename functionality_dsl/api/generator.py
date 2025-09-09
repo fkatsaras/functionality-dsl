@@ -12,10 +12,8 @@ from textx import get_children_of_type
 def _entities(model):
     return list(get_children_of_type("Entity", model))
 
-# --- add near top with other helpers ---
 def _rest_endpoints(model):
     return list(get_children_of_type("RESTEndpoint", model))
-
 
 def _pyd_type_for(attr):
     t = getattr(attr, "type", None)
@@ -85,8 +83,6 @@ def _normalize_ws_source(ws):
         ws.subprotocols = []
 
 
-# ---------------- code generation ----------------
-
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
@@ -96,7 +92,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         undefined=StrictUndefined,
     )
 
-    # -------- models (to app/domain/models.py) --------
+    # -------- models --------
     entities_ctx = []
     for e in _entities(model):
         attrs_ctx = []
@@ -125,7 +121,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     models_out.parent.mkdir(parents=True, exist_ok=True)
     models_out.write_text(models_tpl.render(entities=entities_ctx), encoding="utf-8")
 
-    # -------- routers only (minimal backend) --------
+    # -------- routers --------
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
@@ -264,10 +260,7 @@ def _render_env_and_docker(ctx: dict, templates_dir: Path, out_dir: Path):
         tpl = env.get_template(tpl_name)
         (out_dir / target).write_text(tpl.render(**ctx), encoding="utf-8")
 
-def scaffold_backend_from_model(model, *,
-                                base_backend_dir: Path,
-                                templates_backend_dir: Path,
-                                out_dir: Path) -> Path:
+def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path) -> Path:
     """
     Copies the base backend scaffold and renders .env, docker-compose.yml, Dockerfile
     using values from the model's `Server` block.

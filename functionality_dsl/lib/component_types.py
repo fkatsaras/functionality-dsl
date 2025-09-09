@@ -1,8 +1,15 @@
-COMPONENT_TYPES = (
-    "LiveTableComponent",
-    "LineChartComponent",
-    "ActionFormComponent",
-)
+from collections import OrderedDict
+
+# Single source of truth: name -> class
+COMPONENT_TYPES = OrderedDict()
+
+def register_component(cls):
+    """
+    Registers a component class under its class name.
+    Usage: @register_component above each component class.
+    """
+    COMPONENT_TYPES[cls.__name__] = cls
+    return cls
 
 class _BaseComponent:
     def __init__(self, parent=None, name=None, entity=None):
@@ -53,7 +60,7 @@ def _strip_quotes(s):
         return s[1:-1]
     return s
 
-
+@register_component
 class LiveTableComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, entity=None, columns=None, primaryKey=None, primaryKey_str=None):
         super().__init__(parent, name, entity)
@@ -69,7 +76,7 @@ class LiveTableComponent(_BaseComponent):
     def to_props(self):
         return {"columns": self.columns, "primaryKey": self.primaryKey}
 
-
+@register_component
 class LineChartComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, entity=None, x=None, y=None, xLabel=None, yLabel=None):
         super().__init__(parent, name, entity)
@@ -87,10 +94,10 @@ class LineChartComponent(_BaseComponent):
 
     def to_props(self):
         return {"x": self.x, "y": self.y, "xLabel": self.xLabel, "yLabel": self.yLabel}
-    
+
+@register_component 
 class ActionFormComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, action=None, fields=None,
-                 pathKey=None, submitLabel=None, method=None):
+    def __init__(self, parent=None, name=None, action=None, fields=None, pathKey=None, submitLabel=None, method=None):
         super().__init__(parent, name, None)
 
         self.action = action                  # the RESTEndpoint/Action node
@@ -109,5 +116,45 @@ class ActionFormComponent(_BaseComponent):
             "fields": [str(f) for f in (self.fields or [])],
             "pathKey": self.pathKey,
             "submitLabel": self.submitLabel or "Submit",
-            "method": self.method,   # <-- pass it through
+            "method": self.method,
+        }
+
+@register_component
+class GaugeComponent(_BaseComponent):
+    """
+    <Component<Gauge> ...>
+      entity: <ComputedWS>          # bind to computed entity that has WS input(s)
+      value:  data.<attr>           # required: which field to show
+      min:    <number or expr>      # optional (default 0)
+      max:    <number or expr>      # optional (default 100)
+      label:  "string"              # optional
+      unit:   "string"              # optional, e.g. "°C"
+    """
+    def __init__(self, parent=None, name=None, entity=None,
+                 value=None, min=None, max=None, label=None, unit=None,
+                 min_val=None, max_val=None, label_str=None, unit_str=None):
+        super().__init__(parent, name, entity)
+        # accept either attr-ref or string literal variants from grammar
+        self.value = self._attr_name(value)
+        self.min   = min if isinstance(min, (int, float)) else _strip_quotes(min_val)
+        self.max   = max if isinstance(max, (int, float)) else _strip_quotes(max_val)
+        self.label = _strip_quotes(label) if label is not None else _strip_quotes(label_str)
+        self.unit  = _strip_quotes(unit)  if unit  is not None else _strip_quotes(unit_str)
+
+        if entity is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.value:
+            raise ValueError(f"Component '{name}': 'value:' is required.")
+
+        # defaults
+        self.min = float(self.min) if self.min is not None else 0.0
+        self.max = float(self.max) if self.max is not None else 100.0
+
+    def to_props(self):
+        return {
+            "value": self.value,
+            "min": float(self.min),
+            "max": float(self.max),
+            "label": self.label or "",
+            "unit": self.unit or "",
         }

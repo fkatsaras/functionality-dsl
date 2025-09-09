@@ -1,0 +1,52 @@
+// =====================
+// Live Wikipedia Gauge
+// =====================
+
+Server WikiLive
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// Public WebSocket feed of live Wikipedia recent changes (Hatnote/WikiMon).
+// Note: service runs plain ws://; if your environment requires TLS, try wss://
+// (availability can vary). Keep protocol "json" so messages are parsed as JSON.
+WSEndpoint WikiMonEN
+  url: "wss://wikimon.hatnote.com/en/"
+  protocol: "json"
+  // no headers / subscribe message required for this feed
+end
+
+// Raw event (shape depends on the upstream feed; these are common fields).
+// If a field is missing in some messages, your generated Pydantic model
+// can keep them optional or you can compute derived values in the view below.
+Entity WikiEdit
+  source: WikiMonEN
+  attributes:
+    - title: string
+    - user: string
+    - delta: int          // bytes changed (+/-)
+    - is_bot: bool
+    - is_minor: bool
+    - wiki: string
+end
+
+// Computed view for the Gauge. We keep it simple: absolute byte delta.
+// You can add more attributes (e.g., thresholds, labels) if you like.
+Entity EditGauge
+  inputs:
+    - e: WikiEdit
+  attributes:
+    - edit_size_abs = abs(e.delta)
+end
+
+// UI: a Gauge bound to the computed entity.
+// value -> which attribute to read; min/max tune the arc; label/unit purely visual.
+Component<Gauge> LiveEditSize
+  entity: EditGauge
+  value: data.edit_size_abs
+  min: 0
+  max: 2000
+  label: "Wikipedia edit size (abs bytes)"
+  unit: "B"
+end

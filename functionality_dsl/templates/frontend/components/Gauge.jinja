@@ -1,0 +1,17 @@
+{# components/Gauge.jinja #}
+{# Normalize value key: allow "data.foo" or "foo" #}
+{% set raw_value = props.get('value') or 'value' %}
+{% set value_key = raw_value | replace('data.', '') %}
+{# Resolve WS path: explicit prop wins, else common.wsUrl #}
+{% set ws_path = props.get('wsPath') or common.wsUrl %}
+<Gauge
+  name="{{ common.name }}"
+  {% if ws_path %}
+  wsPath="{{ ws_path }}"
+  {% endif %}
+  valueKey="{{ value_key }}"
+  min={{ props.get('min', 0) }}
+  max={{ props.get('max', 100) }}
+  label={{ (props.get('label') or '') | tojson }}
+  unit={{ (props.get('unit') or '') | tojson }}
+/>

@@ -12,6 +12,7 @@ Component:
     LiveTableComponent
   | LineChartComponent
   | ActionFormComponent
+  | GaugeComponent 
 ;
 
 LiveTableComponent:
@@ -36,13 +37,27 @@ LineChartComponent:
   'end'
 ;
 
-ActionFormComponent:
-  'Component' '<' 'ActionForm' '>' name=ID
+GaugeComponent:
+  'Component' '<' 'Gauge' '>' name=ID
+  ('entity:' entity=[Entity])?
   (
-    'action:' action=[RESTEndpoint]                 // required
-    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?   // request body keys
-    ('pathKey:' pathKey=ID)?                            // optional path param name
-    ('submitLabel:' submitLabel=STRING)?                // optional UI label
+    ('value:' value=AttrRef)?
+    ('min:'   min=FLOAT)?
+    ('max:'   max=FLOAT)?
+    ('label:' label=STRING)?
+    ('unit:'  unit=STRING)?
   )#
   'end'
 ;
+
+ActionFormComponent:
+  'Component' '<' 'ActionForm' '>' name=ID
+  (
+    'action:' action=[RESTEndpoint]
+    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
+    ('pathKey:' pathKey=ID)?
+    ('submitLabel:' submitLabel=STRING)?
+  )#
+  'end'
+;
+

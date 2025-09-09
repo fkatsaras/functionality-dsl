@@ -140,7 +140,7 @@
   const fmt = (n: number) => nf.format(n);
 </script>
 
-<div class="w-full flex justify-center">
+<div class="w-full min-h-screen flex justify-center">
   <div class="w-4/5 space-y-4">
     <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4">
       <div class="mb-3 text-center">

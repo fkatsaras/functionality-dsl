@@ -15,9 +15,6 @@ def _components(model):
         nodes += list(_gc(rule, model))
     return nodes
 
-def _entities(model):
-    return list(get_children_of_type("Entity", model))
-
 def _get_server_ctx(model):
     servers = list(get_children_of_type("Server", model))
     if not servers:

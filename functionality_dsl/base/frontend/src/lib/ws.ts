@@ -32,6 +32,14 @@ function connect(state: SocketState): string | undefined {
     try {
         state.ws = new WebSocket(state.fullUrl);
 
+        // debugs
+        state.ws.onopen = () => {
+            state.reconnects = 0;
+            for (const cb of state.listeners) {
+                try { cb({ __meta: "open" }); } catch {}
+            }
+        };
+
         state.ws.onmessage = (ev) => {
             let msg: any = ev.data;
             if (typeof msg === "string") {

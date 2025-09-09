@@ -1,10 +1,13 @@
 # app/api/routers/{{ entity.name | lower }}.py
-from fastapi import APIRouter, HTTPException
+import time, logging
+from fastapi import APIRouter, HTTPException, Request
 from typing import List, Any, Dict
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
+from app.core.logging import set_request_id
 from app.domain.models import {{ entity.name }}
 
+logger = logging.getLogger("fdsl.router.{{ entity.name }}")
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
 
 _UPSTREAM_URL = "{{ entity.source.url }}"
@@ -13,28 +16,45 @@ _HEADERS = resolve_headers([
     ("{{ h.key }}", "{{ h.value }}"),
 {% endfor -%}
 ])
-
 _METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
-
-_FIELDS = [
-{% for n in schema_attrs -%}    "{{ n }}",
-{% endfor -%}
-]
+_FIELDS = [{% for n in schema_attrs %}"{{ n }}",{% endfor %}]
 
 def _project(x: Dict[str, Any]) -> Dict[str, Any]:
     return {k: x.get(k) for k in _FIELDS}
 
 @router.get("/", response_model=List[{{ entity.name }}])
-async def list_{{ entity.name | lower }}():
+async def list_{{ entity.name | lower }}(request: Request):
+    t0 = time.monotonic()
+    rid = getattr(request.state, "request_id", None)
+    if rid: set_request_id(rid)
+
     client = get_http_client()
-    if _METHOD == "GET":
-        r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
-    else:
-        # no body (bootstrap search); frontend could add a POST-able /external route instead
-        r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
-    if r.status_code >= 400:
-        raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
-    data = r.json()
-    if not isinstance(data, list):
-        raise HTTPException(status_code=502, detail="Upstream did not return a list")
-    return [{{ entity.name }}(**_project(d)) for d in data]
+    try:
+        if _METHOD == "GET":
+            r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
+        else:
+            r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
+        elapsed = (time.monotonic() - t0) * 1000.0
+
+        if r.status_code >= 400:
+            logger.warning("upstream_error",
+                extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL,
+                       "status":r.status_code,"elapsed_ms":round(elapsed,2)})
+            raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
+
+        data = r.json()
+        n = len(data) if isinstance(data, list) else 0
+        if not isinstance(data, list):
+            logger.error("unexpected_shape", extra={"entity":"{{ entity.name }}","got_type":type(data).__name__})
+            raise HTTPException(status_code=502, detail="Upstream did not return a list")
+
+        rows = [{{ entity.name }}(**_project(d)) for d in data]
+        logger.info("ok",
+            extra={"entity":"{{ entity.name }}","rows":len(rows),"elapsed_ms":round(elapsed,2)})
+        return rows
+    except HTTPException:
+        raise
+    except Exception as ex:
+        logger.exception("router_error",
+            extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL})
+        raise

@@ -1,13 +1,21 @@
 # app/main.py
-from fastapi import FastAPI
+import logging
+import uuid
+
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import AsyncExitStack
 
 from app.core.config import settings
 from app.api.routers import include_generated_routers
 from app.core.http import lifespan_http_client
+from app.core.logging import configure_logging, set_request_id
+
 
 def create_app() -> FastAPI:
+    
+    configure_logging(level="INFO", json_mode=True)
+    
     app = FastAPI(
         title=settings.APP_NAME,
         openapi_url=settings.OPENAPI_URL,
@@ -23,6 +31,18 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    @app.middleware("http")
+    async def _rid_mw(request: Request, call_next):
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex
+        set_request_id(rid)
+        request.state.request_id = rid
+        resp = await call_next(request)
+        # mirror id so proxies/logs correlate
+        resp.headers["x-request-id"] = rid
+        return resp
+    
+    # NOTE: For WebSocket, we’ll set request_id inside routers on accept()
 
     # Lifespan resources (HTTP client, etc.)
     @app.on_event("startup")

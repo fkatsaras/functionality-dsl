@@ -1,4 +1,4 @@
-import logging
+from collections import deque
 import textx.scoping.providers as scoping_providers
 
 from os.path import join, dirname, abspath
@@ -10,17 +10,13 @@ from textx import (
 )
 
 from .lib.computed import compile_expr_to_python, DSL_FUNCTION_SIG
-from .lib.component_types import COMPONENT_TYPES, LiveTableComponent, LineChartComponent, ActionFormComponent
+from .lib.component_types import COMPONENT_TYPES
 
 # ------------------------------------------------------------------------------
 # Paths / logging
 THIS_DIR = dirname(abspath(__file__))
 GRAMMAR_DIR = join(THIS_DIR, "grammar")
 
-logger = logging.getLogger("functionality_dsl")
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    
 SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
 
 def _is_node(x):
@@ -28,30 +24,29 @@ def _is_node(x):
         x, (str, int, float, bool, list, dict, tuple)
     )
 
-def _push_if_nodes(stack, obj):
-    """
-    Push any textX nodes found inside obj onto the stack.
-    Handles lists/tuples arbitrarily nested.
-    """
-    if obj is None:
-        return
-    if _is_node(obj):
-        stack.append(obj)
-        return
-    if isinstance(obj, (list, tuple)):
-        for item in obj:
-            _push_if_nodes(stack, item)
-    elif isinstance(obj, dict):
-        for k, v in obj.items():
-            _push_if_nodes(stack, v)
-
 def _walk(node):
     """
-    Robust DFS over a textX node graph; ignores parent/model backrefs and primitives.
-    Critically, this descends into tuples (where textX often stores (op, expr) pairs).
+    DFS over a textX node graph; ignores parent/model backrefs and primitives.
+    Also descends into lists, tuples and dicts.
     """
+    if node is None:
+        return
     seen = set()
-    stack = [node]
+    stack = deque([node])
+
+    def push(obj):
+        if obj is None:
+            return
+
+        if _is_node(obj):
+            stack.append(obj)
+        elif isinstance(obj, (list, tuple)):
+            for it in obj:
+                push(it)
+        elif isinstance(obj, dict):
+            for it in obj.values():
+                push(it)
+
     while stack:
         n = stack.pop()
         nid = id(n)
@@ -59,18 +54,10 @@ def _walk(node):
             continue
         seen.add(nid)
         yield n
-        # descend over attributes
         for k, v in vars(n).items():
             if k in SKIP_KEYS or v is None:
                 continue
-            if _is_node(v):
-                stack.append(v)
-            elif isinstance(v, (list, tuple)):
-                for item in v:
-                    _push_if_nodes(stack, item)
-            elif isinstance(v, dict):
-                for _, item in v.items():
-                    _push_if_nodes(stack, item)
+            push(v)
 
 # ------------------------------------------------------------------------------
 # Helpers to identify/obtain computed-attribute expressions
@@ -80,22 +67,17 @@ def get_expr(a):
         if hasattr(a, key):
             v = getattr(a, key)
             if v is not None:
-                logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> via '{key}'")
                 return v
 
     # Fallback: first Expr child
     expr_children = list(get_children_of_type("Expr", a))
     if expr_children:
-        logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> via first Expr child")
         return expr_children[0]
-
-    logger.debug(f"[get_expr] {a.__class__.__name__}.{getattr(a,'name',None)} -> None")
     return None
 
 
 def is_computed_attr(a):
     e = get_expr(a)
-    logger.debug(f"[is_computed_attr] {a.__class__.__name__}.{getattr(a,'name',None)} -> {bool(e)}")
     return e is not None
 
 # ------------------------------------------------------------------------------
@@ -130,17 +112,17 @@ def _validate_func(name, argc, node):
         )
 
 def _annotate_computed_attrs(model, metamodel=None):
+    # Build entity -> set(attr names) once
+    target_attrs = {
+        e.name: {a.name for a in getattr(e, "attributes", []) or []}
+        for e in get_children_of_type("Entity", model)
+    }
+
     # Entities
     for ent in get_children_of_type("Entity", model):
         inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
-        target_attrs = {
-            e.name: {a.name for a in getattr(e, "attributes", []) or []}
-            for e in get_children_of_type("Entity", model)
-        }
-        logger.debug(f"[annot] Entity {ent.name}: inputs={list(inputs.keys())}")
 
         for a in getattr(ent, "attributes", []) or []:
-            logger.debug(f"[annot]   Attr {getattr(a,'name',None)} class={a.__class__.__name__}")
             if not is_computed_attr(a):
                 continue
 
@@ -148,11 +130,8 @@ def _annotate_computed_attrs(model, metamodel=None):
             if expr is None:
                 raise TextXSemanticError("Computed attribute missing expression.", **get_location(a))
 
-            # Log refs & calls
             refs = list(_collect_refs(expr))
-            logger.debug(f"[annot]     Refs -> {[(al, at) for al, at, _ in refs]}")
             calls = list(_collect_calls(expr))
-            logger.debug(f"[annot]     Calls -> {[(fn, ar) for fn, ar, _ in calls]}")
 
             # refs validation
             for alias, attr, node in refs:
@@ -172,7 +151,6 @@ def _annotate_computed_attrs(model, metamodel=None):
             # compile
             try:
                 a._py = compile_expr_to_python(expr, context="entity")
-                logger.debug("Compiled expression: " + a._py)
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
 
@@ -220,10 +198,8 @@ def get_model_entities(model):
 
 def get_model_components(model):
     comps = []
-    comps.extend(get_children_of_type("LiveTableComponent", model))
-    comps.extend(get_children_of_type("LineChartComponent", model))
-    comps.extend(get_children_of_type("ActionFormComponent", model))
-    # add more kinds here 
+    for kind in COMPONENT_TYPES.keys():
+        comps.extend(get_children_of_type(kind, model))
     return comps
 
 
@@ -268,14 +244,6 @@ def ws_endpoint_obj_processor(ep):
             f"WSEndpoint '{ep.name}' url must start with ws:// or wss://.",
             **get_location(ep),
         )
-    
-    sub = getattr(ep, "subscribe", None)
-    if sub and getattr(ep, "protocol", None) == "json":
-        # best-effort lint: must start with '{' or '['
-        s = sub.strip()
-        if not (s.startswith("{") or s.startswith("[")):
-            # not fatal; just warn (or convert later if you prefer)
-            logger.warning("WSEndpoint '%s' subscribe: expected JSON string.", ep.name)
 
 
 def entity_obj_processor(ent):
@@ -356,11 +324,7 @@ def model_processor(model, metamodel=None):
     verify_entities(model)
     verify_components(model)
 
-    # Aggregate convenience collections (useful for codegen/templates)
     _populate_aggregates(model)
-
-    logger.info("Model processed successfully.")
-
 
 def verify_unique_names(model):
     def ensure_unique(objs, kind):
@@ -419,14 +383,22 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
         )
 
     entity = comp.entity
-    for a in getattr(entity, "attributes", []) or []:
-        if a.name == attr_ref.obj_name:
-            return a
+    # Build once per entity
+    amap = getattr(entity, "_attrmap", None)
+    if amap is None:
+        amap = {a.name: a for a in getattr(entity, "attributes", []) or []}
+        setattr(entity, "_attrmap", amap)
+
+    a = amap.get(attr_ref.obj_name)
+    if a is not None:
+        return a
+
     raise TextXSemanticError(
         f"Attribute '{attr_ref.obj_name}' not found on entity '{entity.name}'.",
         **get_location(attr_ref),
     )
-
+    
+    
 def get_scope_providers():
     return {
         "Component.entity": scoping_providers.FQNImportURI(importAs=True),
@@ -445,12 +417,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
         textx_tools_support=True,
         global_repository=global_repo,
         debug=debug,
-        classes=[
-            # strictly typed components + typed Entity
-            LiveTableComponent,
-            LineChartComponent,
-            ActionFormComponent,
-        ],
+        classes=list(COMPONENT_TYPES.values())  # stritly typed components
     )
 
     mm.register_scope_providers(get_scope_providers())

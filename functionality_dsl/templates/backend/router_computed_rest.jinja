@@ -1,31 +1,25 @@
-# app/api/routers/{{ entity.name | lower }}.py
 from fastapi import APIRouter, HTTPException
 from typing import List, Any, Dict
 
 from app.core.http import get_http_client
 from app.core.expressions import compile_safe
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+from app.core.utils import normalize_json_to_rows
 from app.domain.models import {{ entity.name }}
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
 
-# REST inputs we will fetch once per request
 _REST_INPUTS = [
 {%- for it in rest_inputs %}
     {
         "alias": "{{ it.alias }}",
         "url": "{{ it.url }}",
-        "headers": {%- if it.headers and it.headers|length -%}{% set hs = {} %}
-            {%- for h in it.headers %}{% set _ = hs.update({ h.key: h.value }) %}{% endfor -%}
-            {{ hs | tojson }}
-        {%- else -%}{}
-        {%- endif -%},
+        "headers": {%- if it.headers and it.headers|length -%}{% set hs = {} %}{% for h in it.headers %}{% set _ = hs.update({ h.key: h.value }) %}{% endfor -%}{{ hs | tojson }}{%- else -%}{ }{%- endif -%},
         "fields": {{ it.fields | tojson }}
     },
 {%- endfor %}
 ]
 
-# Precompiled computed expressions
 _COMPILED = {
 {%- for attr in computed_attrs %}
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
@@ -41,30 +35,29 @@ def _project(row: Dict[str, Any], keep: list[str] | None) -> Dict[str, Any]:
 async def list_{{ entity.name | lower }}():
     client = get_http_client()
 
-    # Fetch each REST input
     lists: Dict[str, list] = {}
     for it in _REST_INPUTS:
         r = await client.get(it["url"], headers=it["headers"])
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
-        data = r.json()
-        if not isinstance(data, list):
-            raise HTTPException(status_code=502, detail="Upstream did not return a list")
-        lists[it["alias"]] = [_project(d, it["fields"]) for d in data]
 
-    # Zip by shortest input (like earlier service logic)
+        ct = r.headers.get("content-type", "")
+        if "application/json" not in ct:
+            raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
+
+        data = r.json()
+        rows = normalize_json_to_rows(data, it["fields"])
+        if not isinstance(rows, list) or (rows and not isinstance(rows[0], dict)):
+            raise HTTPException(status_code=502, detail="Upstream did not return a usable list of objects")
+        lists[it["alias"]] = [_project(d, it["fields"]) for d in rows]
+
     n = min((len(v) for v in lists.values()), default=0)
     out_rows: list[Dict[str, Any]] = []
-
     for i in range(n):
         ctx = {alias: lists[alias][i] for alias in lists}
         row: Dict[str, Any] = {}
         for name, code in _COMPILED.items():
-            row[name] = eval(
-                code,
-                {"__builtins__": {}, "dsl_funcs": dsl_funcs},
-                {"ctx": ctx},
-            )
+            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
         out_rows.append(row)
 
     return [{{ entity.name }}(**r) for r in out_rows]
