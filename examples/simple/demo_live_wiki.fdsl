@@ -18,8 +18,6 @@ WSEndpoint WikiMonEN
 end
 
 // Raw event (shape depends on the upstream feed; these are common fields).
-// If a field is missing in some messages, your generated Pydantic model
-// can keep them optional or you can compute derived values in the view below.
 Entity WikiEdit
   source: WikiMonEN
   attributes:

@@ -1,8 +1,7 @@
 # app/main.py
-import logging
 import uuid
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import AsyncExitStack
 
@@ -23,7 +22,7 @@ def create_app() -> FastAPI:
     )
 
     # CORS
-    origins = set(settings.BACKEND_CORS_ORIGINS) | set(settings.BACKEND_CORS_RAW_ORIGINS)
+    origins = { *settings.BACKEND_CORS_ORIGINS, *settings.cors_origins() }
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(origins),
@@ -42,7 +41,7 @@ def create_app() -> FastAPI:
         resp.headers["x-request-id"] = rid
         return resp
     
-    # NOTE: For WebSocket, we’ll set request_id inside routers on accept()
+    # NOTE: For WebSocket, we set request_id inside routers on accept()
 
     # Lifespan resources (HTTP client, etc.)
     @app.on_event("startup")
