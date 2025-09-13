@@ -224,20 +224,28 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 # ---------------- server / env / docker rendering ----------------
 
 def _server_ctx(model):
-    server = next(iter(get_children_of_type("Server", model)), None)
-    if server is None:
+    servers = list(get_children_of_type("Server", model))
+    if not servers:
         raise RuntimeError("No `Server` block found in model.")
-
-    cors_val = getattr(server, "cors", None)
+    s = servers[0]
+    cors_val = getattr(s, "cors", None)
     if isinstance(cors_val, (list, tuple)) and len(cors_val) == 1:
         cors_val = cors_val[0]
-
+        
+    env_val = getattr(s, "env", None)
+    env_val = (env_val or "").lower()
+    if env_val not in {"dev", ""}:
+        # treat anything not 'dev' as production
+        env_val = ""
+        
+    
     return {
         "server": {
-            "name": server.name,
-            "host": getattr(server, "host", "localhost"),
-            "port": int(getattr(server, "port", 8080)),
+            "name": s.name,
+            "host": getattr(s, "host", "localhost"),
+            "port": int(getattr(s, "port", 8080)),
             "cors": cors_val or "http://localhost:3000",
+            "env": env_val,
         }
     }
 

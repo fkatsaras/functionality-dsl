@@ -4,16 +4,15 @@
 
   const {
     name = "LineChart",
-    url,                  // optional HTTP bootstrap (only used if NO wsUrl)
-    wsUrl,                // preferred; when present we never poll
-    x,                    // e.g. "t"
-    y,                    // string | string[]
+    url,
+    wsUrl,
+    x,
+    y,
     xLabel,
     yLabel,
-    windowSize: _windowSize = 0, // 0 = keep all
-    refreshMs = 0,               // ignored when wsUrl is present
-    height = 500,
-    // Optional: legend labels & colors (parallel to y order)
+    windowSize: _windowSize = 0,
+    refreshMs = 0,
+    height = 1000,
     seriesLabels: _seriesLabels = null as null | string[],
     seriesColors: _seriesColors = null as null | string[],
   } = $props<{
@@ -44,7 +43,7 @@
     : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length]);
 
   type Point = { t: number; y: number };
-  let series: Record<string, Point[]> = $state({});
+  let series: Record<string, Point[]> = $state({} as Record<string, Point[]>);
   for (const k of yKeys) series[k] = [];
 
   let error: string | null = null;
@@ -103,24 +102,83 @@
     const ys = pts.map(p => p.y);
     const min = Math.min(...ys);
     const max = Math.max(...ys);
-    // keep a minimum span to avoid divide-by-zero
     return (min === max) ? { min: min - 0.5, max: max + 0.5 } : { min, max };
   }
 
+  // --- "nice" ticks for linear scales
+  function niceStep(span: number, target: number) {
+    if (span <= 0 || !Number.isFinite(span)) return 1;
+    const raw = span / Math.max(1, target);
+    const pow10 = Math.pow(10, Math.floor(Math.log10(raw)));
+    const cand = [1, 2, 5, 10].map(m => m * pow10);
+    let best = cand[0], bestDiff = Infinity;
+    for (const s of cand) {
+      const diff = Math.abs(span / s - target);
+      if (diff < bestDiff) { bestDiff = diff; best = s; }
+    }
+    return best;
+  }
+
+  function makeTicks(min: number, max: number, count = 4): number[] {
+    if (min === max) return [min];
+    const span = max - min;
+    const step = niceStep(span, count);
+    const start = Math.ceil(min / step) * step;
+    const ticks: number[] = [];
+    for (let v = start; v <= max + 1e-9; v += step) ticks.push(Number(v.toFixed(12)));
+    return ticks;
+  }
+
+  // --- formatters
+  const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 });
+  const fmt = (n: number) => nf.format(n);
+
+  function fmtTimeTick(v: number, span: number): string {
+    const isTime = v > 1e9 || span > 1e6;
+    if (!isTime) return fmt(v);
+    const d = new Date(v);
+    if (span >= 24 * 3600 * 1000) {
+      return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(d);
+    } else if (span >= 60 * 60 * 1000) {
+      return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(d);
+    } else {
+      return new Intl.DateTimeFormat(undefined, { minute: "2-digit", second: "2-digit" }).format(d);
+    }
+  }
+
+  // --- plot + gutters
+  const VB_W = 100, VB_H = 30;     // viewBox for the plot SVG
+  const PLOT_PAD = { left: 1, right: 1, top: 2, bottom: 2 }; // tiny breathing room inside dotted bg
+
+  // Gutters (HTML) — OUTSIDE the dotted area
+  const GUTTER_Y_WIDTH = 42;  // px space for Y tick labels + marks
+  const GUTTER_X_HEIGHT = 22; // px space for X tick labels + marks
+
+  // Ticks = SAME size as axis labels (use Tailwind text-[11px]); marks sized to match
+  const TICK_MARK_W = 8;  // px (Y marks, horizontal)
+  const TICK_MARK_H = 8;  // px (X marks, vertical)
+
+  // Scale helpers for plot SVG (data -> viewBox units)
+  function sxPlot(v: number, xExt: {min:number;max:number}) {
+    const span = Math.max(1e-9, xExt.max - xExt.min);
+    return PLOT_PAD.left + ((v - xExt.min) / span) * (VB_W - PLOT_PAD.left - PLOT_PAD.right);
+  }
+  function syPlot(v: number, yExt: {min:number;max:number}) {
+    const span = Math.max(1e-9, yExt.max - yExt.min);
+    return PLOT_PAD.top + (VB_H - PLOT_PAD.top - PLOT_PAD.bottom)
+      - ((v - yExt.min) / span) * (VB_H - PLOT_PAD.top - PLOT_PAD.bottom);
+  }
   function pointsString(arr: Point[], xExt: {min:number;max:number}, yExt: {min:number;max:number}) {
     if (!arr.length) return "";
-    const xSpan = Math.max(1e-9, xExt.max - xExt.min);
-    const ySpan = Math.max(1e-9, yExt.max - yExt.min);
-    return arr.map(p => {
-      const px = ((p.t - xExt.min) / xSpan) * 100;       // 0..100
-      const py = 30 - ((p.y - yExt.min) / ySpan) * 28;   // 1px top/btm margins
-      return `${px},${py}`;
-    }).join(" ");
+    return arr.map(p => `${sxPlot(p.t, xExt)},${syPlot(p.y, yExt)}`).join(" ");
   }
+
+  // Fractions for HTML positioning (0..1 within the plot’s SVG viewBox)
+  const xPct = (v: number, xExt: {min:number;max:number}) => (sxPlot(v, xExt) / VB_W) * 100;
+  const yPct = (v: number, yExt: {min:number;max:number}) => (syPlot(v, yExt) / VB_H) * 100;
 
   // ---- lifecycle
   let unsub: null | (() => void) = null;
-
   onMount(() => {
     if (wsUrl) {
       unsub = wsSubscribe(wsUrl, pushPayload);
@@ -132,84 +190,131 @@
       }
     }
   });
-
   onDestroy(() => { if (unsub) unsub(); });
-
-  // formatting for legend
-  const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 });
-  const fmt = (n: number) => nf.format(n);
 </script>
 
-<div class="w-full min-h-screen flex justify-center">
+<div class="w-full flex justify-center">
   <div class="w-4/5 space-y-4">
-    <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4">
+
+    <!-- 1) CARD: column flexbox : set height from the prop -->
+    <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4 flex flex-col">
       <div class="mb-3 text-center">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
       </div>
 
-      <!-- Legend with latest values -->
+      <!-- Legend -->
       <div class="flex flex-wrap items-center gap-4 mb-2 font-approachmono text-sm">
         {#each yKeys as key, i}
           <div class="flex items-center gap-2">
             <span class="inline-block w-3 h-3 rounded" style="background:{seriesColors[i]}"></span>
             <span class="opacity-80">{seriesLabels[i]}:</span>
             <span class="font-medium">
-              {#if (series[key] && series[key].length)}
-                {fmt(series[key][series[key].length - 1].y)}
-              {:else}
-                —
-              {/if}
+              {#if (series[key] && series[key].length)} {fmt(series[key][series[key].length - 1].y)} {:else} — {/if}
             </span>
           </div>
         {/each}
       </div>
 
-      <!-- Y label + chart -->
-      <div class="grid" style="grid-template-columns: auto 1fr; column-gap: 8px;">
-        <div class="flex items-center justify-center">
-          <div class="text-[11px] text-text/60 font-approachmono"
-               style="transform: rotate(-90deg); transform-origin: center;">
-            {yLabel || "Value"}
+      <!-- 2) GRID -->
+      <div class="flex-1">
+        <div
+          class="grid h-[inherit]"
+          style={`height:${height}px; grid-template-columns: auto ${GUTTER_Y_WIDTH}px 1fr; grid-template-rows: 1fr ${GUTTER_X_HEIGHT}px; column-gap: 8px; row-gap: 4px;`}
+        > 
+          <!-- Y axis label -->
+          <div class="flex items-center justify-center">
+            <div class="text-[11px] text-text/60 font-approachmono"
+                 style="transform: rotate(-90deg); transform-origin: center;">
+              {yLabel || "Value"}
+            </div>
           </div>
-        </div>
 
-        <div class="chart-area rounded-lg overflow-hidden">
-          {#key allPoints().length}
+          <!-- Y ticks + labels  -->
+          <div class="relative h-full min-h-0">
+            {#if allPoints().length}
+              {#await Promise.resolve(extentY()) then yExt}
+                {#each makeTicks(yExt.min, yExt.max, 4) as ty}
+                  <div
+                    class="absolute right-0 flex items-center gap-1 pr-1 select-none"
+                    style={`top:${yPct(ty, yExt)}%; transform:translateY(-50%);`}
+                  >
+                    <div class="text-[11px] font-approachmono text-white/85 leading-none">{fmt(ty)}</div>
+                    <div class="h-px bg-white/85" style={`width:${TICK_MARK_W}px`}></div>
+                  </div>
+                {/each}
+              {/await}
+            {/if}
+          </div>
+
+          <!-- Plot (dotted background) -->
+          <div class="chart-area rounded-lg overflow-hidden relative" style="height: 100%;">
+            {#key allPoints().length}
+              {#if allPoints().length}
+                {#await Promise.resolve(extentX()) then xExt}
+                  {#await Promise.resolve(extentY()) then yExt}
+                    <svg 
+                      viewBox="0 0 {VB_W} {VB_H}" 
+                      class="absolute inset-0 w-full h-full"
+                      preserveAspectRatio="none"
+                    >
+                      {#each yKeys as key, i}
+                        {#if series[key] && series[key].length}
+                          <polyline
+                            fill="none"
+                            stroke={seriesColors[i]}
+                            stroke-width="0.2"
+                            points={pointsString(series[key], xExt, yExt)}
+                          />
+                        {/if}
+                      {/each}
+                    </svg>
+                  {/await}
+                {/await}
+              {:else}
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <div class="text-sm text-text/60 font-approachmono">No data yet...</div>
+                </div>
+              {/if}
+            {/key}
+          </div>
+
+          <!-- spacer under Y label -->
+          <div></div>
+
+          <!-- X gutter (under the plot) -->
+          <div></div>
+          <div class="relative">
             {#if allPoints().length}
               {#await Promise.resolve(extentX()) then xExt}
-                {#await Promise.resolve(extentY()) then yExt}
-                  <svg viewBox="0 0 100 30" width="100%" height="100%" preserveAspectRatio="none">
-                    {#each yKeys as key, i}
-                      {#if series[key] && series[key].length}
-                        <polyline
-                          fill="none"
-                          stroke={seriesColors[i]}
-                          stroke-width="0.8"
-                          points={pointsString(series[key], xExt, yExt)}
-                        />
-                      {/if}
-                    {/each}
-                  </svg>
-                {/await}
+                {#each makeTicks(xExt.min, xExt.max, 5) as tx}
+                  <div
+                    class="absolute top-0 flex flex-col items-center select-none"
+                    style={`left:${xPct(tx, xExt)}%; transform:translateX(-50%);`}
+                  >
+                    <div class="w-px bg-white/85" style={`height:${TICK_MARK_H}px`}></div>
+                    <div class="text-[11px] font-approachmono text-white/85 leading-none mt-1">
+                      {fmtTimeTick(tx, Math.max(1e-9, xExt.max - xExt.min))}
+                    </div>
+                  </div>
+                {/each}
               {/await}
-            {:else}
-              <div class="p-3 text-sm text-text/60 font-approachmono">No data yet...</div>
             {/if}
-          {/key}
+          </div>
         </div>
       </div>
 
-      <!-- X label -->
-      <div class="mt-3 text-center text-[11px] text-text/60 font-approachmono">
+      <!-- X axis label -->
+      <div class="mt-2 text-center text-[11px] text-text/60 font-approachmono">
         {xLabel || x}
       </div>
 
-      {#if error}
-        <div class="mt-2 text-xs text-red-500 font-approachmono">{error}</div>
+      {#if $error}
+        <div class="mt-2 text-xs text-red-500 font-approachmono">{$error}</div>
       {/if}
     </div>
   </div>
 </div>
+
 
 <style>
   .font-approachmono {

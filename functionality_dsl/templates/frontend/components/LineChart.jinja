@@ -21,7 +21,7 @@
 {# Numeric props; render as numbers, not strings #}
 {% set window   = props.get('windowSize', 240) %}
 {% set refresh  = props.get('refreshMs', 0) %}   {# default no polling; WS drives liveness #}
-{% set height   = props.get('height', 220) %}
+{% set height   = props.get('height', 500) %}
 <LineChart
   name="{{ common.name }}"
   {% if endpoint %}

@@ -1,4 +1,6 @@
+# docker-compose.yml.jinja
 version: "3.9"
+
 services:
   backend:
     build: .
@@ -10,14 +12,37 @@ services:
     restart: unless-stopped
 
   frontend:
+    {% if server.env == 'dev' %}
+    # ===================== DEV (HMR) =====================
+    image: node:20-alpine
+    working_dir: /app
+    container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
+    environment:
+      - VITE_API_URL=http://{{ server.name | lower | replace(' ', '-') }}-backend:{{ server.port }}
+      - VITE_ENV=dev
+      - VITE_HMR_POLLING=1
+      - VITE_POLL_INTERVAL=200
+      - CHOKIDAR_USEPOLLING=1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install --no-fund --no-audit && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    {% else %}
+    # ===================== PROD =====================
     build:
       context: ./frontend
     container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
     environment:
-      # frontend talks to the backend service by its Docker name
       - VITE_API_URL=http://{{ server.name | lower | replace(' ', '-') }}-backend:{{ server.port }}
     ports:
-      - "5173:5173"        # vite dev server
+      - "5173:5173"
     depends_on:
       - backend
     restart: unless-stopped
+    {% endif %}

@@ -1,15 +1,29 @@
+// vite.config.ts
 import { sveltekit } from '@sveltejs/kit/vite';
-import type { UserConfig } from 'vite';
+import { defineConfig } from 'vite';
 
-// Use Docker-provided env if available; otherwise use DSL Server port
-const target = process.env.VITE_API_URL || 'http://localhost:[[ server.port ]]';
+// Backend proxy target: Docker name in compose (or local fallback)
+const target = process.env.VITE_API_URL || 'http://localhost:{{ server.port }}';
 
-export default {
+// Dev flags (used when running inside Docker for HMR)
+const DEV = process.env.VITE_ENV === 'dev' || process.env.NODE_ENV === 'development';
+const usePolling =
+  process.env.VITE_HMR_POLLING === '1' || process.env.CHOKIDAR_USEPOLLING === '1';
+const pollInterval = Number(process.env.VITE_POLL_INTERVAL || 200);
+
+export default defineConfig({
   plugins: [sveltekit()],
   server: {
+    host: true,         // allow external (container) access
     port: 5173,
+    strictPort: true,
+    watch: usePolling && DEV ? { usePolling: true, interval: pollInterval } : undefined,
+    hmr: {
+      protocol: 'ws',
+      clientPort: 5173, // browser connects to this port from host
+    },
     proxy: {
       '/api': { target, changeOrigin: true, secure: false, ws: true, rewrite: p => p }
     }
-  }
-} as UserConfig;
+  },
+});
