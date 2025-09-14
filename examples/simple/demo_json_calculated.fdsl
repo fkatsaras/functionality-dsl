@@ -30,7 +30,7 @@ Entity PostStats
     - has_lorem    = icontains(p.title,"lorem")  // simple boolean showcase
 end
 
-Component<LiveTable> PostsTable
+Component<Table> PostsTable
   entity: PostStats
   primaryKey: data.id
   columns: [data.id, data.user_id, data.title, data.title_len, data.is_long, data.has_lorem]

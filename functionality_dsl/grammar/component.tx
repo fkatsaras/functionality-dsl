@@ -9,14 +9,14 @@ AttrRef:
 
 // ---------- COMPONENTS (strictly typed, no generic props) ----------
 Component:
-    LiveTableComponent
+    TableComponent
   | LineChartComponent
   | ActionFormComponent
   | GaugeComponent 
 ;
 
-LiveTableComponent:
-  'Component' '<' 'LiveTable' '>' name=ID
+TableComponent:
+  'Component' '<' 'Table' '>' name=ID
   ('entity:' entity=[Entity])?
   (
     ('columns:' '[' columns+=AttrRef (',' columns+=AttrRef)* ']')?

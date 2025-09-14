@@ -34,7 +34,7 @@ Entity PostStats
 end
 
 // ----------- Components (UI bindings) -----------
-Component<LiveTable> PostsTable
+Component<Table> PostsTable
   entity: PostStats
   primaryKey: data.id
   columns: [data.id, data.user_id, data.title, data.title_length]

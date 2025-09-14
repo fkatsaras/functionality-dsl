@@ -61,7 +61,7 @@ def _strip_quotes(s):
     return s
 
 @register_component
-class LiveTableComponent(_BaseComponent):
+class TableComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, entity=None, columns=None, primaryKey=None, primaryKey_str=None):
         super().__init__(parent, name, entity)
         self.columns = [self._attr_name(a) for a in (columns or [])]

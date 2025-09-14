@@ -43,7 +43,7 @@
       "patterns": [
         {
           "name": "support.class.componentkind.fdsl",
-          "match": "\\b(LiveTable|LineChart|Gauge|ActionForm)\\b"
+          "match": "\\b(Table|LineChart|Gauge|ActionForm)\\b"
         }
       ]
     },

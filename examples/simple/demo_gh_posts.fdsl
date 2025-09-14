@@ -32,7 +32,7 @@ Entity IssueStats
   where: self.has_bug or self.has_dom or self.is_question
 end
 
-Component<LiveTable> Issues
+Component<Table> Issues
   entity: IssueStats
   primaryKey: data.id
   columns: [data.number, data.title, data.title_len, data.has_dom, data.has_bug, data.is_question]

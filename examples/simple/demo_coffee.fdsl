@@ -32,7 +32,7 @@ Entity CoffeeStats
 end
 
 // ----------- Components (UI bindings) -----------
-Component<LiveTable> CoffeeTable
+Component<Table> CoffeeTable
   entity: CoffeeStats
   primaryKey: data.name          // 'id' also works if present
   columns: [data.name, data.title_length, data.description]

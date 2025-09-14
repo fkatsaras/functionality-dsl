@@ -57,7 +57,7 @@ end
 
 // --- Components ---------------------------------------------------------------
 
-Component<LiveTable> WeatherTable
+Component<Table> WeatherTable
   entity: WeatherCompareView
   primaryKey: data.time
   columns: [
