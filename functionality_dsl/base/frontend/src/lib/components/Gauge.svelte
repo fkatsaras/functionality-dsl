@@ -100,9 +100,9 @@
 
       
       <!-- gauge -->
-      <div class="relative flex items-center gap-4">
+      <div class="relative flex items-end gap-4">
         <!-- Min indicator -->
-        <div class="flex flex-col items-center gap-1">
+        <div class="flex flex-col items-end gap-1">
           <div class="w-2 h-2 rounded-full bg-text/30"></div>
           <div class="text-xs font-approachmono text-text/50">{min}</div>
         </div>
@@ -142,7 +142,7 @@
         </svg>
         
         <!-- Max indicator -->
-        <div class="flex flex-col items-center gap-1">
+        <div class="flex flex-col items-end gap-1">
           <div class="w-2 h-2 rounded-full bg-text/30"></div>
           <div class="text-xs font-approachmono text-text/50">{max}</div>
         </div>
