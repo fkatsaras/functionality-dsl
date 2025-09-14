@@ -128,15 +128,23 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         if cls == "Ref":
             alias = getattr(node, "alias", None)
             attr  = getattr(node, "attr", None)
-            if alias is None or attr is None:
+            if attr is None:
                 raise ValueError("Invalid Ref.")
-
+        
             if context == "component":
-                # Components: ONLY data.* is allowed
                 if alias != "data":
                     raise ValueError("Only `data.*` references are allowed in Component props.")
                 return f'ctx["data"][{attr!r}]'
-
+        
+            if context == "predicate":
+                if alias == "self":
+                    return f'row[{attr!r}]'             # current entity’s row
+                else:
+                    return f'ctx[{alias!r}][{attr!r}]'  # input alias
+        
+            # context == "entity" (computed attrs): require alias.attr
+            if alias is None:
+                raise ValueError("Bare attribute not allowed here; use <alias>.<attr>.")
             return f'ctx[{alias!r}][{attr!r}]'
 
         if cls == "IfThenElse":

@@ -1,11 +1,17 @@
 # app/api/routers/{{ entity.name | lower }}.py
 import time, logging
+
 from fastapi import APIRouter, HTTPException, Request
 from typing import List, Any, Dict
+
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
 from app.core.logging import set_request_id
+from app.core.expressions import compile_safe
+from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+
 from app.domain.models import {{ entity.name }}
+
 
 logger = logging.getLogger("fdsl.router.{{ entity.name }}")
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
@@ -21,6 +27,12 @@ _FIELDS = [{% for n in schema_attrs %}"{{ n }}",{% endfor %}]
 
 def _project(x: Dict[str, Any]) -> Dict[str, Any]:
     return {k: x.get(k) for k in _FIELDS}
+
+{% if entity._where_py %}
+_WHERE = compile_safe({{ entity._where_py | tojson }})
+{% else %}
+_WHERE = None
+{% endif %}
 
 @router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}(request: Request):
@@ -48,10 +60,21 @@ async def list_{{ entity.name | lower }}(request: Request):
             logger.error("unexpected_shape", extra={"entity":"{{ entity.name }}","got_type":type(data).__name__})
             raise HTTPException(status_code=502, detail="Upstream did not return a list")
 
-        rows = [{{ entity.name }}(**_project(d)) for d in data]
+        rows_list: list[{{ entity.name }}] = []
+        for d in data:
+            row = _project(d)
+            if _WHERE is not None:
+                try:
+                    ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row}))
+                except Exception:
+                    ok = False
+                if not ok:
+                    continue
+            rows_list.append({{ entity.name }}(**row))
+            
         logger.info("ok",
-            extra={"entity":"{{ entity.name }}","rows":len(rows),"elapsed_ms":round(elapsed,2)})
-        return rows
+            extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
+        return rows_list
     except HTTPException:
         raise
     except Exception as ex:

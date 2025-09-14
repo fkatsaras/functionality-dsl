@@ -48,22 +48,26 @@
 
 <div class="w-full flex justify-center">
     <div class="w-4/5">
-        <div class="mb-3 flex items-center justify-center gap-3">
-            <h2 class="text-base font-approachmono text-text/90 tracking-tight">{name}</h2>
-            <button
-              class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition disabled:opacity-60"
-              on:click={load}
-              disabled={loading}
-              aria-label="Refresh"
-            >
-                {loading ? 'Loading...' : 'Refresh'}
-            </button>
-            {#if error}
-                <span class="text-xs text-dag-danger">{error}</span>
-            {/if}
-        </div>
-    
+        
+        <!-- Card -->    
         <div class="overflow-auto rounded-xl2 shadow-card border table-border bg-[color:var(--card)]">
+
+            <!-- Ttile -->
+             <div class="mb-3 flex items-center justify-between gap-3">
+                <h2 class="text-base font-approachmono text-text/90 tracking-tight font-medium">{name}</h2>
+                <button
+                  class="px-3 py-1 text-xs rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition disabled:opacity-60"
+                  on:click={load}
+                  disabled={loading}
+                  aria-label="Refresh"
+                >
+                    {loading ? 'Loading...' : 'Refresh'}
+                </button>
+                {#if error}
+                    <span class="text-xs text-dag-danger">{error}</span>
+                {/if}
+            </div>
+
             <table class="min-w-full border-collapse text-sm">
                 <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
                     <tr>

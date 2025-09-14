@@ -29,6 +29,7 @@ Entity IssueStats
     - has_bug      = icontains(i.title, "bug")
     - has_dom      = contains(i.title, "DOM")
     - is_question  = icontains(i.title, "question") or endswith(i.title, "?")
+  where: self.has_bug or self.has_dom or self.is_question
 end
 
 Component<LiveTable> Issues

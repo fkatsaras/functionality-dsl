@@ -69,6 +69,12 @@ _COMPILED = {
 {%- endfor %}
 }
 
+{% if entity._where_py %}
+_WHERE = compile_safe({{ entity._where_py | tojson }})
+{% else %}
+_WHERE = None
+{% endif %}
+
 def _compute_row() -> Dict[str, Any] | None:
     if any(alias not in _latest for alias in [{% for a in ws_aliases %}"{{ a }}",{% endfor %}]):
         return None
@@ -108,6 +114,13 @@ async def _loop():
         await tick.get()
         row = _compute_row()
         if row is not None:
+            if _WHERE is not None:
+                try:
+                    ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))
+                except Exception:
+                    ok = False
+                if not ok:
+                    continue
             await _broadcast(row)
 
 @router.websocket("/stream")

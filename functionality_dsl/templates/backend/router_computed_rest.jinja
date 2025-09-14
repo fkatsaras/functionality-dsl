@@ -5,6 +5,7 @@ from app.core.http import get_http_client
 from app.core.expressions import compile_safe
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 from app.core.utils import normalize_json_to_rows
+
 from app.domain.models import {{ entity.name }}
 
 router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
@@ -25,6 +26,12 @@ _COMPILED = {
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
 {%- endfor %}
 }
+
+{% if entity._where_py %}
+_WHERE = compile_safe({{ entity._where_py | tojson }})
+{% else %}
+_WHERE = None
+{% endif %}
 
 def _project(row: Dict[str, Any], keep: list[str] | None) -> Dict[str, Any]:
     if not keep:
@@ -56,8 +63,17 @@ async def list_{{ entity.name | lower }}():
     for i in range(n):
         ctx = {alias: lists[alias][i] for alias in lists}
         row: Dict[str, Any] = {}
+
         for name, code in _COMPILED.items():
             row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+        
+        if _WHERE is not None:
+            try:
+                ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))
+            except Exception:
+                ok = False
+            if not ok:
+                continue
         out_rows.append(row)
 
     return [{{ entity.name }}(**r) for r in out_rows]

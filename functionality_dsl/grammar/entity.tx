@@ -34,7 +34,7 @@ Entity:
     ('source:' source=[Source])?
     ('inputs:' '-' inputs+=Input ('-' inputs+=Input)*)?
     ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
-    ('strict:' strict=Bool)?
+    ('where:' where=Expr)?
   )#
   'end'
 ;

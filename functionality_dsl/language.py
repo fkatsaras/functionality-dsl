@@ -112,31 +112,57 @@ def _validate_func(name, argc, node):
         )
 
 def _annotate_computed_attrs(model, metamodel=None):
-    # Build entity -> set(attr names) once
+    # Build entity -> set(attr names) once (unchanged)
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
     }
 
-    # Entities
     for ent in get_children_of_type("Entity", model):
         inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
 
+        # ---- existing: per-attribute validation/compile ----
         for a in getattr(ent, "attributes", []) or []:
             if not is_computed_attr(a):
                 continue
-
             expr = get_expr(a)
             if expr is None:
                 raise TextXSemanticError("Computed attribute missing expression.", **get_location(a))
 
-            refs = list(_collect_refs(expr))
-            calls = list(_collect_calls(expr))
-
-            # refs validation
-            for alias, attr, node in refs:
+            # refs like i.title
+            for alias, attr, node in _collect_refs(expr):
                 if alias not in inputs:
                     raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
+                tgt = inputs[alias].name
+                if attr not in target_attrs.get(tgt, set()):
+                    raise TextXSemanticError(f"'{alias}.{attr}' not found on entity '{tgt}'.", **get_location(node))
+
+            # function calls
+            for fname, argc, node in _collect_calls(expr):
+                _validate_func(fname, argc, node)
+
+            # compile computed attribute expression
+            try:
+                a._py = compile_expr_to_python(expr, context="entity")
+            except Exception as ex:
+                raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
+
+        # ---- entity-level WHERE predicate ----
+        w = getattr(ent, "where", None)
+        if w is not None:
+            for alias, attr, node in _collect_refs(w):
+                if alias == "self":
+                    # must be an attribute of *this* entity (schema or computed)
+                    if attr not in target_attrs.get(ent.name, set()):
+                        raise TextXSemanticError(
+                            f"'self.{attr}' not found on entity '{ent.name}'.",
+                            **get_location(node),
+                        )
+                    continue
+                
+                if alias not in inputs:
+                    raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
+
                 tgt = inputs[alias].name
                 if attr not in target_attrs.get(tgt, set()):
                     raise TextXSemanticError(
@@ -144,15 +170,15 @@ def _annotate_computed_attrs(model, metamodel=None):
                         **get_location(node),
                     )
 
-            # calls validation
-            for fname, argc, node in calls:
+            for fname, argc, node in _collect_calls(w):
                 _validate_func(fname, argc, node)
 
-            # compile
             try:
-                a._py = compile_expr_to_python(expr, context="entity")
+                ent._where_py = compile_expr_to_python(w, context="predicate")
             except Exception as ex:
-                raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
+                raise TextXSemanticError(f"Compile error in where: {ex}", **get_location(w))
+
+
 
 
 # ------------------------------------------------------------------------------
@@ -311,6 +337,8 @@ def entity_obj_processor(ent):
         elif t == "WSEndpoint":
             kind = "ws"
     setattr(ent, "_source_kind", kind)
+    
+    setattr(ent, "_where_py", None)
 
 
 # ------------------------------------------------------------------------------
