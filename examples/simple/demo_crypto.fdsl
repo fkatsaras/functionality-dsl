@@ -3,16 +3,12 @@ Server BinanceWS
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  env: dev
 end
 
 // ------------------- WebSockets ----------------
 WSEndpoint BTCUSDT
   url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
-  protocol: "json"
-end
-
-WSEndpoint ETHUSDT
-  url: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
   protocol: "json"
 end
 
@@ -23,28 +19,20 @@ Entity BTCRaw
     - c: float     // last price in string number at key "c"
 end
 
-Entity ETHRaw
-  source: ETHUSDT
-  attributes:
-    - c: float
-end
-
 // ------------------- Aggregated, computed stream ------------------
 Entity Prices
   inputs:
     - btc: BTCRaw
-    - eth: ETHRaw
   attributes:
     - t   = now()
     - btc = btc.c
-    - eth = eth.c
 end
 
 // ------------------- Component ----------------
-Component<LineChart> PricesChart
+Component<LineChart> BitcoinPrice
   entity: Prices
   x: data.t
-  y: [data.btc, data.eth]
+  y: [data.btc]
   xLabel: "Time"
   yLabel: "USDT"
 end

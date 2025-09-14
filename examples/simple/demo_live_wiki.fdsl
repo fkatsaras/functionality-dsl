@@ -6,6 +6,7 @@ Server WikiLive
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  env: dev
 end
 
 // Public WebSocket feed of live Wikipedia recent changes (Hatnote/WikiMon).

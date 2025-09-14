@@ -5,67 +5,32 @@ Server KrakenAPI
   cors: "http://localhost:3000"
 end
 
-// ----------- Sources (public REST) -----------
-RESTEndpoint Posts
-  url: "https://jsonplaceholder.typicode.com/posts"
-  verb: GET
-end
-
-RESTEndpoint Users
-  url: "https://jsonplaceholder.typicode.com/users"
-  verb: GET
-end
-
 // ----------- Public WebSocket (no auth) -----------
 WSEndpoint KrakenBTCUSD
   url: "wss://ws.kraken.com"
   protocol: "json"
-  subscribe: "{\"event\":\"subscribe\",\"pair\":[\"BTC/USD\"],\"subscription\":{\"name\":\"trade\"}}"
 end
 
 // ----------- Entities (data) -----------
-Entity Post
-  source: Posts
-  attributes:
-    - userId: int
-    - id: int
-    - title: string
-    - body: string
-end
-
-Entity User
-  source: Users
-  attributes:
-    - id: int
-    - name: string
-    - username: string
-    - email: string
-end
-
-Entity PostWithAuthor
-  inputs:
-    - p: Post
-    - u: User
-  attributes:
-    - post_id   = p.id
-    - title     = p.title
-    - author    = u.name
-    - body_len  = len(p.body)
-end
 
 // Example entity bound to Kraken stream (latest trade payloads)
 Entity KrakenTrade
   source: KrakenBTCUSD
+  // expected mapped payload for each trade: { price: float, volume: float, time: string|datetime, side: "b"|"s", order_type: "m"|"l" }
   attributes:
-    - channel: string
-    - type: string
-    - data: string
+    - price: float
+    - volume: float
+    - time: datetime
+    - side: string
+    - order_type: string
 end
 
 // ----------- Components (UI) -----------
-Component<LiveTable> PostsTable
-  entity: PostWithAuthor
-  props:
-    - primaryKey: "post_id"
-    - columns: data.post_id, data.author, data.title, data.body_len
+
+Component<LineChart> KrakenBTCUSD
+  entity: KrakenTrade
+  x: data.time
+  y: [data.price]
+  xLabel: "Time"
+  yLabel: "BTC/USD"
 end

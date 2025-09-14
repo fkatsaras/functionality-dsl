@@ -5,8 +5,8 @@
   const {
     wsPath = null,
     valueKey = "value",
-    min = 0,              // may be string at runtime → coerce below
-    max = 100,            // may be string at runtime → coerce below
+    min = 0,              // may be string at runtime
+    max = 100,
     label = "",
     unit = "",
     name = "Gauge",
@@ -73,47 +73,111 @@
     return Number.isFinite(n) ? n.toFixed(2) : String(v ?? "");
   }
 </script>
-<div class="gauge-wrap">
-  <div class="header">
-    <h2 class="title">{name}</h2>
-    <span class="badge" data-ok={connected}>{connected ? "LIVE" : "OFF"}</span>
-    {#if error}<span class="err">{error}</span>{/if}
-  </div>
 
-  <div class="gauge-card">
-    <svg width="180" height="120" viewBox="0 0 200 120" aria-label="gauge">
-      <path d="M20,110 A90,90 0 0,1 180,110" fill="none" stroke="#eee" stroke-width="16" />
-      <path
-        d="M20,110 A90,90 0 0,1 180,110"
-        fill="none"
-        stroke-width="16"
-        stroke-linecap="round"
-        stroke="currentColor"
-        style="stroke-dasharray: {dash};"
-      />
-      <g transform="translate(100,110)">
-        <line x1="0" y1="0" x2="0" y2="-70" stroke="currentColor" stroke-width="3" transform="rotate({180 * pct})" />
-        <circle cx="0" cy="0" r="4" fill="currentColor" />
-      </g>
-    </svg>
+<div class="w-full flex justify-center p-4">
+  <div class="w-full max-w-sm">
 
-    <div class="value">{fmt(value)}{unit ? ` ${unit}` : ''}</div>
-    {#if label}<div class="label">{label}</div>{/if}
-    <div class="range">min {min} · max {max}</div>
+    <!-- Card-->
+    <div class="rounded-2xl shadow-lg border thin-border bg-[color:var(--card)] p-6 flex flex-col items-center gap-4 transition-shadow duration-200 hover:shadow-xl">
+
+      <!-- Header -->
+      <div class="mb-6 w-full flex items-center justify-between">
+        <h2 class="text-lg font-approachmono text-text/90 tracking-tight font-medium">{name}</h2>
+      
+        <div class="flex items-center gap-2">
+          <span
+            class="px-3 py-1.5 text-xs font-approachmono rounded-full transition-colors duration-200"
+            class:status-live={connected}
+            class:status-off={!connected}
+          >
+            {connected ? "LIVE" : "OFF"}
+          </span>
+          {#if error}
+            <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
+          {/if}
+        </div>
+      </div>
+
+      
+      <!-- gauge -->
+      <div class="relative flex items-center gap-4">
+        <!-- Min indicator -->
+        <div class="flex flex-col items-center gap-1">
+          <div class="w-2 h-2 rounded-full bg-text/30"></div>
+          <div class="text-xs font-approachmono text-text/50">{min}</div>
+        </div>
+        
+        <svg width="200" height="130" viewBox="0 0 220 130" aria-label="gauge" class="drop-shadow-sm">
+          <!-- Background arc -->
+          <path 
+            d="M30,120 A90,90 0 0,1 190,120" 
+            fill="none" 
+            stroke="var(--edge)" 
+            stroke-width="12" 
+            opacity="0.3"
+          />
+          <!-- Progress arc -->
+          <path
+            d="M30,120 A90,90 0 0,1 190,120"
+            fill="none"
+            stroke-width="12"
+            stroke-linecap="round"
+            stroke="currentColor"
+            style="stroke-dasharray: {dash}; transition: stroke-dasharray 0.3s ease-out;"
+            class="text-text"
+          />
+          <!-- Needle -->
+          <g transform="translate(110,120)">
+            <line 
+              x1="0" y1="0" x2="0" y2="-75" 
+              stroke="currentColor" 
+              stroke-width="3" 
+              stroke-linecap="round"
+              transform="rotate({180 * pct})" 
+              class="transition-transform duration-300 ease-out text-text"
+            />
+            <circle cx="0" cy="0" r="5" fill="currentColor" class="text-text" />
+            <circle cx="0" cy="0" r="2" fill="var(--card)" />
+          </g>
+        </svg>
+        
+        <!-- Max indicator -->
+        <div class="flex flex-col items-center gap-1">
+          <div class="w-2 h-2 rounded-full bg-text/30"></div>
+          <div class="text-xs font-approachmono text-text/50">{max}</div>
+        </div>
+      </div>
+
+      <!-- value display  -->
+      <div class="text-center space-y-2">
+        <div class="text-3xl font-bold font-approachmono text-text tracking-tight">
+          {fmt(value)}{unit ? ` ${unit}` : ''}
+        </div>
+        {#if label}
+          <div class="text-sm text-text/70 font-approachmono">{label}</div>
+        {/if}
+      </div>
+    </div>
   </div>
 </div>
 
 <style>
-  .gauge-wrap { width: 100%; display: flex; justify-content: center; }
-  .header { width: 80%; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .title { font-size: 0.95rem; font-weight: 600; color: var(--text, #222); margin: 0; }
-  .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 8px; background: #eee; color: #333; }
-  .badge[data-ok="true"] { background: #d1fae5; color: #065f46; }
-  .err { font-size: 0.75rem; color: var(--danger, #c00); margin-left: 8px; }
-  .gauge-card { width: 80%; display:flex; flex-direction:column; align-items:center; gap:8px;
-                padding:16px; border:1px solid var(--edge, #eee); border-radius:16px;
-                background: var(--card, #fff); box-shadow: 0 1px 8px rgba(0,0,0,0.04); }
-  .value { font-size: 1.75rem; font-weight: 700; color: var(--text, #222); }
-  .label { color:#666; font-size: 0.9rem; }
-  .range { color:#888; font-size: 0.75rem; }
+  .font-approachmono {
+    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+  .thin-border { 
+    border-color: var(--edge); 
+    border-width: 1px;
+  }
+
+  .status-live { 
+    background: #d1fae5; 
+    color: #065f46; 
+    border: 1px solid #a7f3d0;
+  }
+  .status-off { 
+    background: #f3f4f6; 
+    color: #6b7280; 
+    border: 1px solid #d1d5db;
+  }
 </style>
