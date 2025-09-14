@@ -34,16 +34,17 @@
 >
   <!-- Inline SVG  -->
   <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    class="w-4 h-4"
-    class:animate-spin={loading}
-  >
-    <!-- Refresh arrows (simple, bold) -->
-    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.6M4.6 9A8 8 0 0119 7.5M19 20v-5h-.6m0 0A8 8 0 016 16.5" />
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      style="stroke-width: 2;"
+      class={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+    >
+    <path
+      style="stroke-linecap: round; stroke-linejoin: round;"
+      d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
+    />
   </svg>
 </button>
 

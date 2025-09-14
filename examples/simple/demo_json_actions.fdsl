@@ -5,78 +5,59 @@ Server SimpleJSON
   cors: "http://localhost:3000"
 end
 
-// ------------------- REST Endpoints -------------------
-// Public demo API (non-persistent storage, great for examples)
-RESTEndpoint JsonPosts
-  url: "https://jsonplaceholder.typicode.com/posts"
-  verb: GET
+// REST Endpoints
+RESTEndpoint RealObjects     
+  url: "https://api.restful-api.dev/objects"
+  verb: GET 
 end
 
-RESTEndpoint CreatePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+RESTEndpoint RealCreate
+  url: "https://api.restful-api.dev/objects" 
   verb: POST
 end
 
-RESTEndpoint UpdatePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+RESTEndpoint RealUpdate
+  url: "https://api.restful-api.dev/objects"
   verb: PUT
 end
 
-RESTEndpoint DeletePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+RESTEndpoint RealDelete
+  url: "https://api.restful-api.dev/objects"
   verb: DELETE
 end
 
-// ------------------- Raw Entity (GET list) -------------------
-Entity Post
-  source: JsonPosts
+// Entity (GET list)
+Entity RealObject
+  source: RealObjects
   attributes:
-    - userId: int
-    - id: int
-    - title: string
-    - body: string
+    - id: string
+    - name: string
+    - data: string
 end
 
-// ------------------- Computed Entity (derived fields) -------------------
-Entity PostStats
-  inputs:
-    - p: Post
-  attributes:
-    - id           = p.id
-    - user_id      = p.userId
-    - title        = p.title
-    - title_len    = len(p.title)
-    - is_long      = len(p.title) > 30
-    - has_lorem    = icontains(p.title, "lorem")
-end
-
-// ------------------- Components -------------------
-// Read: derived table over GET
-Component<Table> PostsTable
-  entity: PostStats
+// Components
+Component<Table> ObjectsTable
+  entity: RealObject
   primaryKey: data.id
-  columns: [data.id, data.user_id, data.title, data.title_len, data.is_long, data.has_lorem]
+  columns: [data.id, data.name]
 end
 
-// Create: POST /api/external/createpost
-Component<ActionForm> NewPost
-  action: CreatePost
-  fields: [userId, title, body]
-  submitLabel: "Create Post"
+Component<ActionForm> NewObject
+  action: RealCreate
+  fields: [name, data]
+  submitLabel: "Create Object"
 end
 
-// Update: PUT /api/external/updatepost/{id}
-Component<ActionForm> EditPost
-  action: UpdatePost
-  fields: [id, userId, title, body]
+Component<ActionForm> EditObject
+  action: RealUpdate
+  fields: [id, name, data]
   pathKey: id
-  submitLabel: "Update Post"
+  submitLabel: "Update Object"
 end
 
-// Delete: DELETE /api/external/deletepost/{id}
-Component<ActionForm> DeletePostForm
-  action: DeletePost
+Component<ActionForm> DeleteObject
+  action: RealDelete
   fields: [id]
   pathKey: id
-  submitLabel: "Delete Post"
+  submitLabel: "Delete Object"
 end
