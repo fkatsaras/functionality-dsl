@@ -421,9 +421,17 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
     if a is not None:
         return a
 
+    try:
+        loc = get_location(attr_ref)
+    except Exception:
+        try:
+            loc = get_location(obj)
+        except Exception:
+            loc = {}
+            
     raise TextXSemanticError(
         f"Attribute '{attr_ref.obj_name}' not found on entity '{entity.name}'.",
-        **get_location(attr_ref),
+        **loc,
     )
     
     

@@ -114,6 +114,7 @@ async def _loop():
         await tick.get()
         row = _compute_row()
         if row is not None:
+            ctx = {alias: _latest[alias] for alias in _latest}
             if _WHERE is not None:
                 try:
                     ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))

@@ -5,45 +5,52 @@ Server BinanceWS
   env: dev
 end
 
-WSEndpoint BTCUSDT
-  url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+// --- WS sources (Binance miniTicker) -----------------------------------------
+WSEndpoint BinanceBTCMini
+  url: "wss://stream.binance.com:9443/ws/btcusdt@miniTicker"
   protocol: "json"
 end
 
-WSEndpoint ETHUSDT
-  url: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+WSEndpoint BinanceETHMini
+  url: "wss://stream.binance.com:9443/ws/ethusdt@miniTicker"
   protocol: "json"
 end
 
-// raw snapshots (just pick the 'c' field = last price)
-Entity BTCRaw
-  source: BTCUSDT
-  attributes: - c: float
-end
-
-Entity ETHRaw
-  source: ETHUSDT
-  attributes: - c: float
-end
-
-// derived streaming entity: time + both prices + spread + alert flag
-Entity Prices
-  inputs:
-    - b: BTCRaw
-    - e: ETHRaw
+// Raw WS entities describe the fields we’ll reference in computed expressions.
+// miniTicker payload has keys like c (last price), o/h/l (open/high/low).
+Entity BTCMini
+  source: BinanceBTCMini
   attributes:
-    - t       = now()
-    - btc     = float(b.c)
-    - eth     = float(e.c)
-    - spread  = float(b.c) - float(e.c)
-    - pctdiff = (float(b.c) - float(e.c)) / float(e.c) * 100
-    - alert   = abs((float(b.c) - float(e.c)) / float(e.c) * 100) > 0.25
+    - c: float
+    - o: float
+    - h: float
+    - l: float
 end
 
-Component<LineChart> PriceChart
-  entity: Prices
-  x: data.t
-  y: [data.btc, data.eth, data.spread]
+Entity ETHMini
+  source: BinanceETHMini
+  attributes:
+    - c: float
+    - o: float
+    - h: float
+    - l: float
+end
+
+// Computed, streaming view
+Entity PriceGap
+  inputs:
+    - b: BTCMini
+    - e: ETHMini
+  attributes:
+    - time       = now()
+    - gap        = abs(float(b.c) - float(e.c))
+  where: self.gap >= 100
+end
+
+Component<LineChart> BitcoinPrice
+  entity: PriceGap
+  x: data.time
+  y: [data.gap]
   xLabel: "Time"
-  yLabel: "Price / Spread"
+  yLabel: "USDT"
 end
