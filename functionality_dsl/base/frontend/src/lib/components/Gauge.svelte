@@ -82,7 +82,7 @@
 
       <!-- Header -->
       <div class="mb-6 w-full flex items-center justify-between">
-        <h2 class="text-lg font-approachmono text-text/90 tracking-tight font-medium">{name}</h2>
+        <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
       
         <div class="flex items-center gap-2">
           <span

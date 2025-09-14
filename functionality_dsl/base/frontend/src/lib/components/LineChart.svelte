@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { subscribe as wsSubscribe } from "../ws";
+  import RefreshButton from "./util/RefreshButton.svelte";
 
   const {
     name = "LineChart",
@@ -30,6 +31,7 @@
     seriesColors?: string[] | null;
   }>();
 
+  let loading: boolean = $state(Boolean(url));
   const yKeys: string[] = Array.isArray(y) ? y : [y];
   const windowSize = Number(_windowSize ?? 0);
 
@@ -73,14 +75,23 @@
     for (const r of rows) pushRow(r);
   }
 
-  async function fetchOnce() {
+  function resetSeries() {
+    for (const k of yKeys) series[k] = [];
+  }
+
+  async function fetchOnce({ replace = false } = {}) {
     if (!url) return;
+    loading = true;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      pushPayload(await res.json());
+      const payload = await res.json();
+      if (replace) resetSeries();
+      pushPayload(payload);
     } catch (e: any) {
       error = e?.message ?? "Failed to load data.";
+    } finally {
+      loading = false;
     }
   }
 
@@ -198,8 +209,12 @@
 
     <!-- 1) CARD: column flexbox : set height from the prop -->
     <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4 flex flex-col">
-      <div class="mb-3 text-center">
+      <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
+        {#if url}
+          <RefreshButton on:click={() => fetchOnce({ replace: true })} {loading} ariaLabel="Refresh chart" />
+        {/if}
+
       </div>
 
       <!-- Legend -->
@@ -309,7 +324,7 @@
       </div>
 
       {#if $error}
-        <div class="mt-2 text-xs text-red-500 font-approachmono">{$error}</div>
+        <div class="mt-2 text-xs text-red-500 font-approachmono">{error}</div>
       {/if}
     </div>
   </div>

@@ -55,7 +55,7 @@
 
       <!-- Header -->
       <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
-        <h2 class="text-base font-approachmono text-text/90 tracking-tight font-medium">{name}</h2>
+        <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
 
         <!-- Right controls grouped (prevents weird spacing when error appears) -->
         <div class="flex items-center gap-2">

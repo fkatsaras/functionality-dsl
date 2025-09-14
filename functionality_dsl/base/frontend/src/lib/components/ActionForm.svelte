@@ -64,7 +64,7 @@
 <div class="w-full flex justify-center">
     <form class="w-4/5 space-y-4 rounded-x12 shadow-card table-border bg-[color:var(--card)]" on:submit|preventDefault={submit}>
         <div class="text-center mb-2">
-            <h2 class="text-base font-approachmono text-text/90 tracking-tight">{name}</h2>
+            <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
             <div class="text-[11px] text-text/60 font-approachmono">{method} -> {endpoint()}</div>
         </div>
 
