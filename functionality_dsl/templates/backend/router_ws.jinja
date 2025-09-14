@@ -1,9 +1,15 @@
 # app/api/routers/{{ entity.name | lower }}_stream.py
-import asyncio, json, contextlib, time, uuid, logging
+import asyncio
+import json
+import contextlib
+import time
+import uuid
+import logging
+import websockets
+
 from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-import websockets
 
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 from app.core.expressions import compile_safe
