@@ -1,10 +1,13 @@
 from pathlib import Path
+import subprocess
 import click
 import os
 
 from datetime import date
 from rich import pretty
 from rich.console import Console
+from textx import metamodel_from_file
+from textx.export import metamodel_export, PlantUmlRenderer
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
 from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
@@ -98,5 +101,46 @@ def generate(context, model_path, target, out_dir):
         context.exit(1)
     else:
         context.exit(0)
+        
+@cli.command("visualize", help="Export a PlantUML diagram of a textX grammar/metamodel.")
+@click.pass_context
+@click.argument("grammar_path")
+def visualize_cmd(context, grammar_path):
+    try:
+        gpath = Path(grammar_path).resolve()
+        out_dir = Path("diagrams").resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # build textX metamodel
+        mm = metamodel_from_file(str(gpath))
+
+        # write PlantUML source
+        pu_file = out_dir / (gpath.stem + "_metamodel.puml")
+        metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
+
+        # render to PNG
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering PlantUML diagram...", style="blue")
+        proc = subprocess.run(
+            ["plantuml", "-Tpng", str(pu_file)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if proc.returncode != 0:
+            console.print(proc.stdout or "PlantUML rendering failed.", style="red")
+            context.exit(1)
+
+        out_file = out_dir / (pu_file.stem + ".png")
+        if out_file.exists():
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Diagram written to: {out_file}", style="green")
+            context.exit(0)
+        else:
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML did not produce {out_file.name}.", style="red")
+            context.exit(1)
+
+    except Exception as e:
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Visualize failed with error(s): {e}", style="red")
+        context.exit(1)
+        
 def main():
     cli(prog_name="fdsl")
