@@ -48,8 +48,20 @@ Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
-Ref: alias=ID '.' attr=ID ;
+// A Ref is an alias + 1+ path segments.
+// Segments can be dot IDs or bracketed STRING keys.
+Ref:
+  alias=ID path=AttrPath
+;
 
+AttrPath:
+  '.' first=ID tail=PathSeg*
+;
+
+PathSeg:
+    '.' name=ID
+  | '[' key=STRING ']'
+;
 // literals
 Literal:
       STRING

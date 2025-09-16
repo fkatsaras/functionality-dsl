@@ -25,9 +25,9 @@ Entity PostStats
     - id           = p.id
     - user_id      = p.userId
     - title        = p.title
-    - title_len    = len(p.title)      // length via allowed funcs
+    - title_len    = len(p.title)
     - is_long      = len(p.title) > 30
-    - has_lorem    = icontains(p.title,"lorem")  // simple boolean showcase
+    - has_lorem    = icontains(p.title,"lorem")
 end
 
 Component<Table> PostsTable

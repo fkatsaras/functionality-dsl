@@ -56,13 +56,9 @@ async def list_{{ entity.name | lower }}(request: Request):
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         data = r.json()
-        n = len(data) if isinstance(data, list) else 0
-        if not isinstance(data, list):
-            logger.error("unexpected_shape", extra={"entity":"{{ entity.name }}","got_type":type(data).__name__})
-            raise HTTPException(status_code=502, detail="Upstream did not return a list")
 
         rows_list: list[{{ entity.name }}] = []
-        for d in data:
+        for d in rows:
             row = _project(d)
             if _WHERE is not None:
                 try:
@@ -73,9 +69,9 @@ async def list_{{ entity.name | lower }}(request: Request):
                     continue
             rows_list.append({{ entity.name }}(**row))
             
-        logger.info("ok",
-            extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
+        logger.info("ok", extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
         return rows_list
+
     except HTTPException:
         raise
     except Exception as ex:

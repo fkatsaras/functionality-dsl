@@ -33,47 +33,33 @@ _WHERE = compile_safe({{ entity._where_py | tojson }})
 _WHERE = None
 {% endif %}
 
-def _project(row: Dict[str, Any], keep: list[str] | None) -> Dict[str, Any]:
-    if not keep:
-        return row
-    return {k: row.get(k) for k in keep}
 
 @router.get("/", response_model=List[{{ entity.name }}], summary="List {{ entity.name }}")
 async def list_{{ entity.name | lower }}():
     client = get_http_client()
 
-    lists: Dict[str, list] = {}
+    # fetch all inputs as raw JSON (no reshaping)
+    ctx: Dict[str, Any] = {}
     for it in _REST_INPUTS:
         r = await client.get(it["url"], headers=it["headers"])
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
-
         ct = r.headers.get("content-type", "")
         if "application/json" not in ct:
             raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
+        ctx[it["alias"]] = r.json()
 
-        data = r.json()
-        rows = normalize_json_to_rows(data, it["fields"])
-        if not isinstance(rows, list) or (rows and not isinstance(rows[0], dict)):
-            raise HTTPException(status_code=502, detail="Upstream did not return a usable list of objects")
-        lists[it["alias"]] = [_project(d, it["fields"]) for d in rows]
+    # compute one output object from the input payloads
+    out_row: Dict[str, Any] = {}
+    for name, code in _COMPILED.items():
+        out_row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
 
-    n = min((len(v) for v in lists.values()), default=0)
-    out_rows: list[Dict[str, Any]] = []
-    for i in range(n):
-        ctx = {alias: lists[alias][i] for alias in lists}
-        row: Dict[str, Any] = {}
+    if _WHERE is not None:
+        try:
+            ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": out_row, "ctx": ctx}))
+        except Exception:
+            ok = False
+        if not ok:
+            return []
 
-        for name, code in _COMPILED.items():
-            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
-        
-        if _WHERE is not None:
-            try:
-                ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))
-            except Exception:
-                ok = False
-            if not ok:
-                continue
-        out_rows.append(row)
-
-    return [{{ entity.name }}(**r) for r in out_rows]
+    return [{{ entity.name }}(**out_row)]

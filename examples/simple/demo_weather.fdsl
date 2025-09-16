@@ -20,39 +20,44 @@ end
 
 // --- Raw entities -------------------------------------------------------------
 
-Entity ThessHourly
+Entity ThessRaw
   source: MeteoThess
   attributes:
-    - time: string
-    - temperature_2m: float
-    - relative_humidity_2m: float
+    - root: dict
 end
 
-Entity LondonHourly
+Entity LondonRaw
   source: MeteoLondon
   attributes:
-    - time: string
-    - temperature_2m: float
-    - relative_humidity_2m: float
+    - root: dict
 end
 
 // --- Computed entity: compare two cities -------------------------------------
 
+Entity WeatherSeries
+  inputs:
+    - th: ThessRaw
+    - ln: LondonRaw
+  attributes:
+    // arrays (list type) pulled from nested JSON
+    - time: list      = th.root.hourly.time
+    - th_temp: list   = th.root.hourly.temperature_2m
+    - ln_temp: list   = ln.root.hourly.temperature_2m
+    - th_hum: list    = th.root.hourly.relative_humidity_2m
+    - ln_hum: list    = ln.root.hourly.relative_humidity_2m
+end
+
+
 Entity WeatherCompareView
   inputs:
-    - th: ThessHourly
-    - ln: LondonHourly
+    - hourly: WeatherSeries
   attributes:
-    - time        = th.time
-    - th_temp     = th.temperature_2m
-    - ln_temp     = ln.temperature_2m
-    - th_hum      = th.relative_humidity_2m
-    - ln_hum      = ln.relative_humidity_2m
-    - delta_temp  = th.temperature_2m - ln.temperature_2m
-    - hotter_city = if th.temperature_2m > ln.temperature_2m then "Thessaloniki" else "London"
-    - big_gap     = abs(th.temperature_2m - ln.temperature_2m) >= 5
-    - th_is_comfy = (abs(th.temperature_2m - 22) < 3) and (th.relative_humidity_2m >= 30) and (th.relative_humidity_2m <= 60)
-    - ln_is_comfy = (abs(ln.temperature_2m - 22) < 3) and (ln.relative_humidity_2m >= 30) and (ln.relative_humidity_2m <= 60)
+    - time: list        = hourly.time
+    - delta_temp: list  = hourly.th_temp - hourly.ln_temp
+    - hotter_city: list = if hourly.th_temp > hourly.ln_temp then "Thessaloniki" else "London"
+    - big_gap: list     = abs(hourly.th_temp - hourly.ln_temp) >= 5
+    - th_is_comfy: list = (abs(hourly.th_temp - 22) < 3) and (hourly.th_hum >= 30) and (hourly.th_hum <= 60)
+    - ln_is_comfy: list = (abs(hourly.ln_temp - 22) < 3) and (hourly.ln_hum >= 30) and (hourly.ln_hum <= 60)
 end
 
 // --- Components ---------------------------------------------------------------
@@ -68,9 +73,9 @@ Component<Table> WeatherTable
 end
 
 Component<LineChart> TempComparison
-  entity: WeatherCompareView
-  x: data.time
-  y: [data.th_temp, data.ln_temp]
+  entity: WeatherSeries
+  xSpec:  data.time
+  ySpec: [data.th_temp, data.ln_temp]
   xLabel: "Time"
   yLabel: "Temperature (°C)"
 end

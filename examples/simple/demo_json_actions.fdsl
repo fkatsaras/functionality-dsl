@@ -26,25 +26,35 @@ RESTEndpoint RealDelete
   verb: DELETE
 end
 
-// Entity (GET list)
-Entity RealObject
+// --- Raw entity: mirrors upstream as-is ---
+Entity RealObjectRaw
   source: RealObjects
   attributes:
     - id: string
     - name: string
-    - color: string?
-    - capacity: string?
-    - price: string?
-    - year: string?
+    - data: dict?          // may be null, may have mixed keys/types
 end
 
-// Components
+// --- View: flatten + normalize for UI/compute ---
+Entity RealObjectView
+  inputs:
+    - r: RealObjectRaw
+  attributes:
+    - id       = r.id
+    - name     = r.name
+    // lift from nested "data", handle key variants, keep null-safe
+    - color    = coalesce(r.data.color, r.data.Color, r.data["Strap Colour"])
+    - capacity = coalesce(r.data.capacity, r.data.Capacity, r.data["capacity GB"])
+    - year     = string(coalesce(r.data.year, r.data.Year))
+    - price    = string(coalesce(r.data.price, r.data.Price))
+end
+
+// --- Table component over the VIEW (not the raw) ---
 Component<Table> ObjectsTable
-  entity: RealObject
+  entity: RealObjectView
   primaryKey: data.id
   columns: [data.id, data.name, data.color, data.capacity, data.price, data.year]
 end
-
 Component<ActionForm> NewObject
   action: RealCreate
   fields: [name, data]

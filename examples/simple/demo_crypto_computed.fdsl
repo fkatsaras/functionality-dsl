@@ -16,7 +16,6 @@ WSEndpoint BinanceETHMini
   protocol: "json"
 end
 
-// Raw WS entities describe the fields we’ll reference in computed expressions.
 // miniTicker payload has keys like c (last price), o/h/l (open/high/low).
 Entity BTCMini
   source: BinanceBTCMini

@@ -29,8 +29,8 @@ LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
   ('entity:' entity=[Entity])?
   (
-    ('x:' x=AttrRef)?
-    ('y:' '[' y+=AttrRef (',' y+=AttrRef)* ']')?
+    ('xSpec:' xSpec=AttrRef)?
+    ('ySpec:' '[' ySpec+=AttrRef (',' ySpec+=AttrRef)* ']')?
     ('xLabel:' xLabel=STRING)?
     ('yLabel:' yLabel=STRING)?
   )#

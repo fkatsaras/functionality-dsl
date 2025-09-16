@@ -7,8 +7,8 @@
     name = "LineChart",
     url,
     wsUrl,
-    x,
-    y,
+    xSpec,
+    ySpec,
     xLabel,
     yLabel,
     windowSize: _windowSize = 0,
@@ -20,8 +20,8 @@
     name?: string;
     url?: string;
     wsUrl?: string;
-    x: string;
-    y: string | string[];
+    xSpec: string | number[];                 // <- if array: MUST be number[]
+    ySpec: string | number[] | number[][];    // <- arrays MUST be number[]
     xLabel?: string;
     yLabel?: string;
     windowSize?: number | null;
@@ -31,54 +31,122 @@
     seriesColors?: string[] | null;
   }>();
 
+  // type guards
+  const isNumberArray = (a: unknown): a is number[] =>
+    Array.isArray(a) && a.every(v => typeof v === "number" && Number.isFinite(v));
+  
+  const isNumberArrayArray = (a: unknown): a is number[][] =>
+    Array.isArray(a) && a.length > 0 && a.every(isNumberArray);
+
+  const isStringArray = (a: unknown): a is string[] =>
+    Array.isArray(a) && a.every(v => typeof v === "string");
+
   let loading: boolean = $state(Boolean(url));
-  const yKeys: string[] = Array.isArray(y) ? y : [y];
+  let error: string | null = null;
   const windowSize = Number(_windowSize ?? 0);
 
-  // legend labels/colors
-  const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
-  const seriesLabels = _seriesLabels && _seriesLabels.length === yKeys.length
-    ? _seriesLabels
-    : yKeys.map(k => k.toUpperCase());
-  const seriesColors = _seriesColors && _seriesColors.length === yKeys.length
-    ? _seriesColors
-    : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length]);
+  // --- normalize ySpec into either: list of keys (string[]) OR list of numeric arrays (number[][])
+  function normalizeYSpec(spec: any): string[] | number[][] {
+    if (Array.isArray(spec)) {
+      if (spec.length > 0 && Array.isArray(spec[0])) return spec as number[][];
+      return spec as any[]; // either number[] OR string[]
+    }
+    return [spec]; // single key or single numeric array
+  }
+  const ySpecNorm = normalizeYSpec(ySpec);
 
+  // --- series container
   type Point = { t: number; y: number };
-  let series: Record<string, Point[]> = $state({} as Record<string, Point[]>);
-  for (const k of yKeys) series[k] = [];
+  let series: Record<string, Point[]> = $state({});
 
-  let error: string | null = null;
+  // --- decide legend keys + boot empty series
+  let yKeysForLegend: string[] = [];
+  const isDirectSingleNumeric = isNumberArray(ySpecNorm);
+  const isDirectMultiNumeric  = isNumberArrayArray(ySpecNorm);
+  if (isDirectSingleNumeric) {
+    yKeysForLegend = ["series1"];
+  } else if (isDirectMultiNumeric) {
+    yKeysForLegend = (ySpecNorm as number[][]).map((_, i) => `series${i+1}`);
+  } else {
+    yKeysForLegend = (ySpecNorm as string[]); // keys
+  }
+  for (const k of yKeysForLegend) series[k] = [];
 
-  function normT(v: any): number | null {
-    if (v == null) return null;
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-    const ts = Date.parse(String(v));
-    return Number.isNaN(ts) ? null : ts;
+  // --- legend labels/colors
+  const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
+  const seriesLabels = _seriesLabels && _seriesLabels.length === yKeysForLegend.length
+    ? _seriesLabels
+    : yKeysForLegend.map(k => String(k).toUpperCase());
+  const seriesColors = _seriesColors && _seriesColors.length === yKeysForLegend.length
+    ? _seriesColors
+    : yKeysForLegend.map((_, i) => defaultPalette[i % defaultPalette.length]);
+
+  // --- helpers: NO normalization — enforce numbers
+  const isNum = (v: any) => Number.isFinite(v);
+  function assertNumArray(arr: any, where: string): asserts arr is number[] {
+    if (!Array.isArray(arr) || !arr.every(isNum)) {
+      throw new Error(`${where} must be an array of numbers`);
+    }
   }
 
-  function pushRow(row: any) {
-    const t = normT(row?.[x]);
-    if (t == null) return;
-    for (const key of yKeys) {
-      const v = Number(row?.[key]);
-      if (Number.isFinite(v)) {
+  function resetSeries() {
+    for (const k of yKeysForLegend) series[k] = [];
+  }
+
+  // --- core pairing by INDEX (no guessing)
+  function ingestArrays(xArr: number[], yArrs: number[][], labelKeys: string[]) {
+    assertNumArray(xArr, "xSpec");
+    for (let i = 0; i < yArrs.length; i++) assertNumArray(yArrs[i], `ySpec[${i}]`);
+
+    const n = Math.min(xArr.length, ...yArrs.map(a => a.length));
+    for (let i = 0; i < n; i++) {
+      const t = xArr[i];
+      for (let s = 0; s < yArrs.length; s++) {
+        const v = yArrs[s][i];
+        const key = labelKeys[s];
         const next = [...(series[key] || []), { t, y: v }];
         series[key] = windowSize > 0 ? next.slice(-windowSize) : next;
       }
     }
   }
 
-  function pushPayload(payload: any) {
-    const rows: any[] = Array.isArray(payload) ? payload : (payload ? [payload] : []);
-    for (const r of rows) pushRow(r);
+  // --- push data either from payload keys, or directly from provided arrays
+  function pushPayload(payload: any, { replace = false } = {}) {
+    if (replace) resetSeries();
+
+    // Resolve x
+    let xArr: number[] = [];
+    if (Array.isArray(xSpec)) {
+      xArr = xSpec as number[];
+    } else if (typeof xSpec === "string" && payload && Array.isArray(payload[xSpec])) {
+      xArr = payload[xSpec] as number[];
+    }
+
+    // Resolve y (arrays + labels)
+    let yArrs: number[][] = [];
+    let labels: string[] = [];
+
+    if (isDirectSingleNumeric) {
+      yArrs = [ySpecNorm as number[]];
+      labels = ["series1"];
+    } else if (isDirectMultiNumeric) {
+      yArrs = ySpecNorm as number[][];
+      labels = yArrs.map((_, i) => `series${i+1}`);
+    } else {
+      const keys = ySpecNorm as string[];
+      for (const k of keys) {
+        const arr = payload && Array.isArray(payload[k]) ? payload[k] : [];
+        yArrs.push(arr as number[]);
+      }
+      labels = keys;
+    }
+
+    if (xArr.length && yArrs.length) {
+      ingestArrays(xArr, yArrs, labels);
+    }
   }
 
-  function resetSeries() {
-    for (const k of yKeys) series[k] = [];
-  }
-
+  // --- fetch / ws
   async function fetchOnce({ replace = false } = {}) {
     if (!url) return;
     loading = true;
@@ -86,8 +154,9 @@
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const payload = await res.json();
-      if (replace) resetSeries();
-      pushPayload(payload);
+      // For this generic component we expect an OBJECT like { xKey: number[], yKey1: number[], ... }
+      const obj = Array.isArray(payload) ? payload[0] : payload;
+      pushPayload(obj, { replace });
     } catch (e: any) {
       error = e?.message ?? "Failed to load data.";
     } finally {
@@ -95,9 +164,9 @@
     }
   }
 
-  // ---- geometry helpers (shared x/y scales across all series)
+  // ---- geometry helpers
   function allPoints(): Point[] {
-    return yKeys.flatMap(k => series[k] || []);
+    return yKeysForLegend.flatMap(k => series[k] || []);
   }
 
   function extentX(): { min: number; max: number } {
@@ -116,7 +185,7 @@
     return (min === max) ? { min: min - 0.5, max: max + 0.5 } : { min, max };
   }
 
-  // --- "nice" ticks for linear scales
+  // --- "nice" ticks
   function niceStep(span: number, target: number) {
     if (span <= 0 || !Number.isFinite(span)) return 1;
     const raw = span / Math.max(1, target);
@@ -129,7 +198,6 @@
     }
     return best;
   }
-
   function makeTicks(min: number, max: number, count = 4): number[] {
     if (min === max) return [min];
     const span = max - min;
@@ -143,7 +211,6 @@
   // --- formatters
   const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 });
   const fmt = (n: number) => nf.format(n);
-
   function fmtTimeTick(v: number, span: number): string {
     const isTime = v > 1e9 || span > 1e6;
     if (!isTime) return fmt(v);
@@ -157,19 +224,14 @@
     }
   }
 
-  // --- plot + gutters
-  const VB_W = 100, VB_H = 30;     // viewBox for the plot SVG
-  const PLOT_PAD = { left: 1, right: 1, top: 2, bottom: 2 }; // tiny breathing room inside dotted bg
+  // --- plot geometry helpers
+  const VB_W = 100, VB_H = 30;
+  const PLOT_PAD = { left: 1, right: 1, top: 2, bottom: 2 };
+  const GUTTER_Y_WIDTH = 42;
+  const GUTTER_X_HEIGHT = 22;
+  const TICK_MARK_W = 8;
+  const TICK_MARK_H = 8;
 
-  // Gutters (HTML) — OUTSIDE the dotted area
-  const GUTTER_Y_WIDTH = 42;  // px space for Y tick labels + marks
-  const GUTTER_X_HEIGHT = 22; // px space for X tick labels + marks
-
-  // Ticks = SAME size as axis labels (use Tailwind text-[11px]); marks sized to match
-  const TICK_MARK_W = 8;  // px (Y marks, horizontal)
-  const TICK_MARK_H = 8;  // px (X marks, vertical)
-
-  // Scale helpers for plot SVG (data -> viewBox units)
   function sxPlot(v: number, xExt: {min:number;max:number}) {
     const span = Math.max(1e-9, xExt.max - xExt.min);
     return PLOT_PAD.left + ((v - xExt.min) / span) * (VB_W - PLOT_PAD.left - PLOT_PAD.right);
@@ -183,26 +245,45 @@
     if (!arr.length) return "";
     return arr.map(p => `${sxPlot(p.t, xExt)},${syPlot(p.y, yExt)}`).join(" ");
   }
-
-  // Fractions for HTML positioning (0..1 within the plot’s SVG viewBox)
   const xPct = (v: number, xExt: {min:number;max:number}) => (sxPlot(v, xExt) / VB_W) * 100;
   const yPct = (v: number, yExt: {min:number;max:number}) => (syPlot(v, yExt) / VB_H) * 100;
 
   // ---- lifecycle
   let unsub: null | (() => void) = null;
   onMount(() => {
-    if (wsUrl) {
-      unsub = wsSubscribe(wsUrl, pushPayload);
+    // Direct arrays -> ingest immediately
+    if (Array.isArray(xSpec) || isDirectSingleNumeric || isDirectMultiNumeric) {
+      try {
+        const xArr = Array.isArray(xSpec) ? (xSpec as number[]) : [];
+        let yArrs: number[][] = [];
+        let labels: string[] = [];
+        if (isDirectSingleNumeric) {
+          yArrs = [ySpecNorm as number[]];
+          labels = ["series1"];
+        } else if (isDirectMultiNumeric) {
+          yArrs = ySpecNorm as number[][];
+          labels = yArrs.map((_, i) => `series${i+1}`);
+        }
+        if (xArr.length && yArrs.length) ingestArrays(xArr, yArrs, labels);
+      } catch (e: any) {
+        error = e?.message ?? "Invalid array data.";
+      }
+    } else if (wsUrl) {
+      unsub = wsSubscribe(wsUrl, (payload) => {
+        const obj = Array.isArray(payload) ? payload[0] : payload;
+        pushPayload(obj);
+      });
     } else if (url) {
       fetchOnce();
       if (refreshMs > 0) {
-        const id = setInterval(fetchOnce, refreshMs);
+        const id = setInterval(() => fetchOnce(), refreshMs);
         onDestroy(() => clearInterval(id));
       }
     }
   });
   onDestroy(() => { if (unsub) unsub(); });
 </script>
+
 
 <div class="w-full flex justify-center">
   <div class="w-4/5 space-y-4">

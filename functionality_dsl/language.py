@@ -82,11 +82,14 @@ def is_computed_attr(a):
 
 # ------------------------------------------------------------------------------
 # Expression validation helpers
-def _collect_refs(expr):
+def _collect_ref_first_hop(expr):
     for n in _walk(expr):
         if n.__class__.__name__ == "Ref":
-            yield getattr(n, "alias", None), getattr(n, "attr", None), n
-
+            alias = getattr(n, "alias", None)
+            ap = getattr(n, "path", None)
+            first = getattr(ap, "first", None) if ap is not None else None
+            if alias is not None and first is not None:
+                yield alias, first, n
 
 def _collect_calls(expr):
     """
@@ -112,7 +115,7 @@ def _validate_func(name, argc, node):
         )
 
 def _annotate_computed_attrs(model, metamodel=None):
-    # Build entity -> set(attr names) once (unchanged)
+    # entity -> set(all attribute names on that entity)  (schema + computed)
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
@@ -121,7 +124,7 @@ def _annotate_computed_attrs(model, metamodel=None):
     for ent in get_children_of_type("Entity", model):
         inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
 
-        # ---- existing: per-attribute validation/compile ----
+        # ---- per-attribute validation/compile ----
         for a in getattr(ent, "attributes", []) or []:
             if not is_computed_attr(a):
                 continue
@@ -129,13 +132,16 @@ def _annotate_computed_attrs(model, metamodel=None):
             if expr is None:
                 raise TextXSemanticError("Computed attribute missing expression.", **get_location(a))
 
-            # refs like i.title
-            for alias, attr, node in _collect_refs(expr):
+            # refs like r.data.color  -> validate that 'data' exists on the input target
+            for alias, head_attr, node in _collect_ref_first_hop(expr):
                 if alias not in inputs:
                     raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
                 tgt = inputs[alias].name
-                if attr not in target_attrs.get(tgt, set()):
-                    raise TextXSemanticError(f"'{alias}.{attr}' not found on entity '{tgt}'.", **get_location(node))
+                if not head_attr or head_attr not in target_attrs.get(tgt, set()):
+                    raise TextXSemanticError(
+                        f"'{alias}.{head_attr or '<invalid>'}' not found on entity '{tgt}'.",
+                        **get_location(node),
+                    )
 
             # function calls
             for fname, argc, node in _collect_calls(expr):
@@ -150,23 +156,23 @@ def _annotate_computed_attrs(model, metamodel=None):
         # ---- entity-level WHERE predicate ----
         w = getattr(ent, "where", None)
         if w is not None:
-            for alias, attr, node in _collect_refs(w):
+            for alias, head_attr, node in _collect_ref_first_hop(w):
                 if alias == "self":
                     # must be an attribute of *this* entity (schema or computed)
-                    if attr not in target_attrs.get(ent.name, set()):
+                    if not head_attr or head_attr not in target_attrs.get(ent.name, set()):
                         raise TextXSemanticError(
-                            f"'self.{attr}' not found on entity '{ent.name}'.",
+                            f"'self.{head_attr or '<invalid>'}' not found on entity '{ent.name}'.",
                             **get_location(node),
                         )
                     continue
-                
+
                 if alias not in inputs:
                     raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
 
                 tgt = inputs[alias].name
-                if attr not in target_attrs.get(tgt, set()):
+                if not head_attr or head_attr not in target_attrs.get(tgt, set()):
                     raise TextXSemanticError(
-                        f"'{alias}.{attr}' not found on entity '{tgt}'.",
+                        f"'{alias}.{head_attr or '<invalid>'}' not found on entity '{tgt}'.",
                         **get_location(node),
                     )
 
@@ -177,6 +183,7 @@ def _annotate_computed_attrs(model, metamodel=None):
                 ent._where_py = compile_expr_to_python(w, context="predicate")
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error in where: {ex}", **get_location(w))
+
 
 
 
