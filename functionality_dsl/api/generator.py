@@ -17,13 +17,19 @@ def _rest_endpoints(model):
 
 def _pyd_type_for(attr):
     t = getattr(attr, "type", None)
-    return {
+    
+    base = {
         "int": "int",
         "float": "float",
         "string": "str",
         "bool": "bool",
         "datetime": "datetime",
     }.get((t or "").lower(), "Any")
+    
+    # If its an optional field, mark the model attr
+    if getattr(attr, "optional", False):
+        return f"Optional[{base}]"
+    return base
 
 def _schema_attr_names(ent) -> list[str]:
     """Return schema (non-computed) attribute names for an entity."""

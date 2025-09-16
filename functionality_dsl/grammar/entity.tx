@@ -15,7 +15,7 @@ Attribute:
 ;
 
 SchemaAttribute:
-  name=ID ':' type=AttrType
+  name=ID ':' type=AttrType (optional?='?')?
   (required?='required')?
   ('default=' default=AttrValue)?
 ;

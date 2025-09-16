@@ -32,14 +32,17 @@ Entity RealObject
   attributes:
     - id: string
     - name: string
-    - data: string
+    - color: string?
+    - capacity: string?
+    - price: string?
+    - year: string?
 end
 
 // Components
 Component<Table> ObjectsTable
   entity: RealObject
   primaryKey: data.id
-  columns: [data.id, data.name]
+  columns: [data.id, data.name, data.color, data.capacity, data.price, data.year]
 end
 
 Component<ActionForm> NewObject
