@@ -1,0 +1,52 @@
+// ------------------- Server -------------------
+Server IntChart
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// ------------------- Public REST sources -------------------
+// Random integer from RandomNumberAPI
+RESTEndpoint RandomA
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+// Random integer from RandomNumberAPI
+RESTEndpoint RandomB
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+// ------------------- Raw entities --------------------------
+Entity IntARaw
+  source: RandomA
+  attributes:
+    - value: int     // API returns [42]
+end
+
+Entity IntBRaw
+  source: RandomB
+  attributes:
+    - value: int
+end
+
+// ------------------- Computed stream (timestamp + values) ---
+Entity IntsOverTime
+  inputs:
+    - a: IntARaw
+    - b: IntBRaw
+  attributes:
+    - t = now()
+    - a = a.value
+    - b = b.value
+end
+
+// ------------------- Component ------------------------------
+Component<LineChart> IntsLineChart
+  entity: IntsOverTime
+  x: data.t
+  y: [data.a, data.b]
+  xLabel: "Time"
+  yLabel: "Value"
+end
