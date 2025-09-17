@@ -11,7 +11,7 @@ AttrValue:
 ;
 
 Attribute:
-    SchemaAttribute | ComputedAttribute
+    ComputedAttribute | SchemaAttribute  
 ;
 
 SchemaAttribute:

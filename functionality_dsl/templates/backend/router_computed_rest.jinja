@@ -4,7 +4,7 @@ from typing import List, Any, Dict
 from app.core.http import get_http_client
 from app.core.expressions import compile_safe
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
-from app.core.utils import normalize_json_to_rows
+from app.core.utils import rows_from
 
 from app.domain.models import {{ entity.name }}
 
@@ -53,7 +53,18 @@ async def list_{{ entity.name | lower }}():
             raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
 
         data = r.json()
-        rows = normalize_json_to_rows(data, it["fields"])
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('Entity {{ entity.name }} gets')
+        print(data)
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        # Normalize:
+
+        try:
+            rows = rows_from(data, it["fields"])
+        except Exception as ex:
+            raise HTTPException(status_code=502, detail=str(ex))
+
+
         if not isinstance(rows, list) or (rows and not isinstance(rows[0], dict)):
             raise HTTPException(status_code=502, detail="Upstream did not return a usable list of objects")
         lists[it["alias"]] = [_project(d, it["fields"]) for d in rows]
@@ -75,5 +86,10 @@ async def list_{{ entity.name | lower }}():
             if not ok:
                 continue
         out_rows.append(row)
+
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    print('Entity {{ entity.name }} returns')
+    print(str([{{ entity.name }}(**r) for r in out_rows]))
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
 
     return [{{ entity.name }}(**r) for r in out_rows]

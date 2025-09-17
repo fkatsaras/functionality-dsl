@@ -3,7 +3,7 @@ Server BinanceWS
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
-  env: dev
+  // env: dev
 end
 
 // ------------------- WebSockets ----------------

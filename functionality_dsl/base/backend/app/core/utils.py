@@ -29,63 +29,32 @@ def resolve_headers(headers: Union[List[Tuple[str, str]], None]) -> Dict[str, st
     return result
 
 # ----- REST response shape utils --------
-def _zip_same_length_arrays(d: Dict[str, Any], wanted_fields: Iterable[str] | None) -> List[Dict[str, Any]]:
-    # pick array-valued keys
-    keys = [k for k, v in d.items() if isinstance(v, list)]
-    if not keys:
-        return []
-    if wanted_fields:
-        wanted = set(wanted_fields)
-        # keep only arrays that intersect wanted fields (if any)
-        keys = [k for k in keys if k in wanted] or keys  # fall back to all if no overlap
-    lens = {len(d[k]) for k in keys}
-    if len(lens) != 1:
-        return []
-    n = next(iter(lens))
-    rows: List[Dict[str, Any]] = []
-    for i in range(n):
-        row = {k: d[k][i] for k in keys}
-        rows.append(row)
-    return rows
 
-def normalize_json_to_rows(obj: Any, wanted_fields: Iterable[str] | None = None) -> List[Dict[str, Any]]:
-    """
-    Heuristics to coerce common JSON shapes into a list[dict]:
-    - list[dict] -> as-is
-    - {"data": list} / {"items": list} / ... -> unwrap
-    - any key with list[dict] -> return that list
-    - dict of parallel arrays (possibly nested one level) -> zip into rows
-    - otherwise -> []
-    """
-    # list directly?
-    if isinstance(obj, list):
-        # only accept list of dicts; otherwise, we can't project fields safely
-        return obj if (not obj or isinstance(obj[0], dict)) else []
+def rows_from(data: Any, fields: Iterable[str] | None) -> List[Dict[str, Any]]:
+    fields = list(fields or [])
+    if not fields:
+        raise ValueError("rows_from requires at least one field name")
 
-    if not isinstance(obj, dict):
-        return []
+    if len(fields) == 1:
+        k = fields[0]
+        # list of primitives → wrap using the single field name
+        if isinstance(data, list):
+            if not data:
+                return []
+            if not isinstance(data[0], dict):
+                return [{k: v} for v in data]
+            # list[dict] is fine too; project later
+            return data
+        # dict with a list of primitives under the same key
+        if isinstance(data, dict) and isinstance(data.get(k), list) and (not data[k] or not isinstance(data[k][0], dict)):
+            return [{k: v} for v in data[k]]
+        # already a dict (single object) → wrap as one row if it has k
+        if isinstance(data, dict) and k in data and not isinstance(data[k], (list, dict)):
+            return [{k: data[k]}]
+        raise TypeError(f"Unsupported upstream shape for single-field input {k!r}")
 
-    # common wrappers
-    for k in ("data", "items", "results", "rows"):
-        v = obj.get(k)
-        if isinstance(v, list) and (not v or isinstance(v[0], dict)):
-            return v
+    # multiple fields expected → require list[dict]
+    if isinstance(data, list) and (not data or isinstance(data[0], dict)):
+        return data
 
-    # lists of dicts under any key
-    for _, v in obj.items():
-        if isinstance(v, list) and (not v or isinstance(v[0], dict)):
-            return v
-
-    # zip parallel arrays at top level
-    rows = _zip_same_length_arrays(obj, wanted_fields)
-    if rows:
-        return rows
-
-    # zip parallel arrays one nested dict deep
-    for _, v in obj.items():
-        if isinstance(v, dict):
-            rows = _zip_same_length_arrays(v, wanted_fields)
-            if rows:
-                return rows
-
-    return []
+    raise TypeError("Unsupported upstream shape for multi-field input (need list[dict])")

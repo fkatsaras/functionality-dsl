@@ -31,7 +31,7 @@ end
 Entity IntBRaw
   source: RandomB
   attributes:
-    - value: int // API returns { "result": [23] }
+    - value: int 
 end
 
 // --- Computed entity: compare two integers -----------------------------------
@@ -41,12 +41,12 @@ Entity CompareInts
     - a: IntARaw
     - b: IntBRaw
   attributes:
-    - a_val: int      = a.value
-    - b_val: int      = b.value
-    - delta: int      = b.value - a.value
-    - is_equal: bool  = a.value == b.value
-    - a_greater: bool = a.value > b.value
-    - b_greater: bool = b.value > a.value
+    - a_val       = a.value
+    - b_val       = b.value
+    - delta       = b.value - a.value
+    - is_equal  = a.value == b.value
+    - a_greater = a.value > b.value
+    - b_greater = b.value > a.value
 end
 
 

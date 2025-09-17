@@ -56,6 +56,12 @@ async def list_{{ entity.name | lower }}(request: Request):
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         data = r.json()
+
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('Entity {{ entity.name }} gets')
+        print(data)
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+
         n = len(data) if isinstance(data, list) else 0
         if not isinstance(data, list):
             logger.error("unexpected_shape", extra={"entity":"{{ entity.name }}","got_type":type(data).__name__})
@@ -75,6 +81,12 @@ async def list_{{ entity.name | lower }}(request: Request):
             
         logger.info("ok",
             extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
+
+
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('Entity {{ entity.name }} returns')
+        print(rows_list)
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
         return rows_list
     except HTTPException:
         raise
