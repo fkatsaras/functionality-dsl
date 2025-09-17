@@ -25,13 +25,13 @@ end
 Entity IntARaw
   source: RandomA
   attributes:
-    - value: int        // API returns [42]
+    - value: list        // API returns [42]
 end
 
 Entity IntBRaw
   source: RandomB
   attributes:
-    - value: int // API returns { "result": [23] }
+    - value: list // API returns { "result": [23] }
 end
 
 // --- Computed entity: compare two integers -----------------------------------

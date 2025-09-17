@@ -59,6 +59,11 @@ async def list_{{ entity.name | lower }}(request: Request):
         data = r.json()
         rows: List[{{ entity.name }}] = []
 
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('Entity {{ entity.name }} gets data:')
+        print(str(data))
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+
         for raw in (data if isinstance(data, list) else [data]):
             row: Dict[str, Any] = {}
             {% for attr in entity.attributes %}
@@ -71,6 +76,11 @@ async def list_{{ entity.name | lower }}(request: Request):
                     continue
 
             rows.append({{ entity.name }}(**row))
+
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('Entity {{ entity.name }} gets data:')
+        print(str(rows))
+        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
 
         logger.info("ok", extra={"entity": "{{ entity.name }}", "rows": len(rows), "elapsed_ms": round(elapsed, 2)})
         return rows

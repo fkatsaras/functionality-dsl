@@ -312,32 +312,36 @@ def compile_expr_to_python(expr, *, context: str, vectorize: bool = False) -> st
             if alias is None or ap is None:
                 raise ValueError("Invalid Ref: missing alias or path")
 
-            segs = []
+            # Collect path segments (first + tail)
             first = getattr(ap, "first", None)
             if not first:
                 raise ValueError("Invalid Ref: missing first segment")
-            segs.append(first)
 
+            tail_segs = []
             for t in getattr(ap, "tail", []) or []:
-                # dot segment?
                 name = getattr(t, "name", None)
-                if name:                      # <- truthy check
-                    segs.append(name)
+                if name is not None:
+                    tail_segs.append(name)
                     continue
-                
-                # bracket segment?
                 key = getattr(t, "key", None)
-                if key:                       # <- truthy check, ignores ""
+                if key is not None:
                     # strip quotes if textX left them in
                     if len(key) >= 2 and key[0] == key[-1] and key[0] in ("'", '"'):
                         key = key[1:-1]
-                    segs.append(key)
+                    tail_segs.append(key)
                     continue
-                
                 raise ValueError("Invalid path segment on Ref (neither name nor key set)")
 
-            lst = "[" + ", ".join(repr(s) for s in segs) + "]"
-            return f'dsl_funcs["get"](ctx[{alias!r}], {lst})'
+            # First hop: direct access (validated upstream entity schema)
+            base = f"ctx[{alias!r}][{first!r}]"
+
+            # If there is no tail, return the direct access.
+            if not tail_segs:
+                return base
+
+            # For deeper hops, keep using get() (null-safe) over the tail only.
+            lst = "[" + ", ".join(repr(s) for s in tail_segs) + "]"
+            return f'dsl_funcs["get"]({base}, {lst})'
         
         if cls == "IfThenElse":
             return lif(to_py(node.cond), to_py(node.thenExpr), to_py(node.elseExpr))

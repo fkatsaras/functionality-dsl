@@ -64,6 +64,11 @@ async def list_{{ entity.name | lower }}():
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
         ctx[it["alias"]] = r.json()
 
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    print('Entity {{ entity.name }} gets data:')
+    print(str(ctx))
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+
     # --- Compute outputs ---
     out_row: Dict[str, Any] = {}
     for name, code in _COMPILED.items():
@@ -79,5 +84,10 @@ async def list_{{ entity.name | lower }}():
             if not ok:
                 continue
         result.append({{ entity.name }}(**row))
+
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    print('Entity {{ entity.name }} RETURNS data:')
+    print(result)
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
 
     return result
