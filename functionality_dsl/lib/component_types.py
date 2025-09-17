@@ -78,23 +78,35 @@ class TableComponent(_BaseComponent):
 
 @register_component
 class LineChartComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, entity=None, x=None, y=None, xLabel=None, yLabel=None):
+    def __init__(self, parent=None, name=None, entity=None,
+                 xSpec=None, ySpec=None, xLabel=None, yLabel=None):
         super().__init__(parent, name, entity)
-        self.x = self._attr_name(x) if x is not None else None
-        self.y = [self._attr_name(a) for a in (y or [])]
+        self.xSpec = self._attr_name(xSpec) if xSpec is not None else None
+        # ySpec may be a single value, list of values, or list-of-lists
+        if ySpec is None:
+            self.ySpec = []
+        elif isinstance(ySpec, (list, tuple)):
+            self.ySpec = [self._attr_name(a) for a in ySpec]
+        else:
+            self.ySpec = [self._attr_name(ySpec)]
+
         self.xLabel = _strip_quotes(xLabel)
         self.yLabel = _strip_quotes(yLabel)
 
         if entity is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
-        if self.x is None:
-            raise ValueError(f"Component '{name}': 'x:' is required.")
-        if not self.y:
-            raise ValueError(f"Component '{name}': 'y:' must have at least one field.")
+        if self.xSpec is None:
+            raise ValueError(f"Component '{name}': 'xSpec:' is required.")
+        if not self.ySpec:
+            raise ValueError(f"Component '{name}': 'ySpec:' must have at least one field.")
 
     def to_props(self):
-        return {"x": self.x, "y": self.y, "xLabel": self.xLabel, "yLabel": self.yLabel}
-
+        return {
+            "x": self.xSpec,
+            "y": self.ySpec,
+            "xLabel": self.xLabel,
+            "yLabel": self.yLabel,
+        }
 @register_component 
 class ActionFormComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, action=None, fields=None, pathKey=None, submitLabel=None, method=None):

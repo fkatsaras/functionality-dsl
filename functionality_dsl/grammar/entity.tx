@@ -11,7 +11,7 @@ AttrValue:
 ;
 
 Attribute:
-    SchemaAttribute | ComputedAttribute
+    ComputedAttribute | SchemaAttribute
 ;
 
 SchemaAttribute:
@@ -21,7 +21,7 @@ SchemaAttribute:
 ;
 
 ComputedAttribute:
-  name=ID '=' expr=Expr
+  name=ID ':' type=AttrType '=' expr=Expr
 ;
 
 Input:

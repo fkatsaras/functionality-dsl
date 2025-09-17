@@ -1,32 +1,36 @@
-from fastapi import APIRouter, HTTPException
+# app/api/routers/{{ entity.name | lower }}.py
 from typing import List, Any, Dict
+from fastapi import APIRouter, HTTPException
 
 from app.core.http import get_http_client
 from app.core.expressions import compile_safe
-from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
-from app.core.utils import normalize_json_to_rows
+from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs, VEC_HELPERS
 
 from app.domain.models import {{ entity.name }}
 
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+router = APIRouter(
+    prefix="/api/entities/{{ entity.name | lower }}",
+    tags=["{{ entity.name }}"],
+)
 
-_REST_INPUTS = [
+# REST + entity inputs
+_INPUTS = [
 {%- for it in rest_inputs %}
-    {
-        "alias": "{{ it.alias }}",
-        "url": "{{ it.url }}",
-        "headers": {%- if it.headers and it.headers|length -%}{% set hs = {} %}{% for h in it.headers %}{% set _ = hs.update({ h.key: h.value }) %}{% endfor -%}{{ hs | tojson }}{%- else -%}{ }{%- endif -%},
-        "fields": {{ it.fields | tojson }}
-    },
+    {"alias": "{{ it.alias }}", "url": "{{ it.url }}", "headers": {{ (it.headers or {}) | tojson }}},
+{%- endfor %}
+{%- for it in entity_inputs %}
+    {"alias": "{{ it.alias }}", "url": "http://{{ server.host }}:{{ server.port }}/api/entities/{{ it.target_name | lower }}/"},
 {%- endfor %}
 ]
 
+# Attribute expressions
 _COMPILED = {
 {%- for attr in computed_attrs %}
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
 {%- endfor %}
 }
 
+# WHERE filter
 {% if entity._where_py %}
 _WHERE = compile_safe({{ entity._where_py | tojson }})
 {% else %}
@@ -34,32 +38,46 @@ _WHERE = None
 {% endif %}
 
 
-@router.get("/", response_model=List[{{ entity.name }}], summary="List {{ entity.name }}")
+def expand_vectorized(out_row: dict) -> list[dict]:
+    """Explode any list-valued fields into multiple rows."""
+    list_fields = [k for k, v in out_row.items() if isinstance(v, list)]
+    if not list_fields:
+        return [out_row]
+
+    n = max(len(out_row[k]) for k in list_fields)
+    rows = []
+    for i in range(n):
+        row_i = {k: (v[i] if isinstance(v, list) and i < len(v) else v) for k, v in out_row.items()}
+        rows.append(row_i)
+    return rows
+
+
+@router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}():
     client = get_http_client()
 
-    # fetch all inputs as raw JSON (no reshaping)
+    # --- Fetch inputs ---
     ctx: Dict[str, Any] = {}
-    for it in _REST_INPUTS:
-        r = await client.get(it["url"], headers=it["headers"])
+    for it in _INPUTS:
+        r = await client.get(it["url"], headers=it.get("headers"))
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
-        ct = r.headers.get("content-type", "")
-        if "application/json" not in ct:
-            raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
         ctx[it["alias"]] = r.json()
 
-    # compute one output object from the input payloads
+    # --- Compute outputs ---
     out_row: Dict[str, Any] = {}
     for name, code in _COMPILED.items():
-        out_row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+        out_row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs, **VEC_HELPERS}, {"ctx": ctx})
 
-    if _WHERE is not None:
-        try:
-            ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": out_row, "ctx": ctx}))
-        except Exception:
-            ok = False
-        if not ok:
-            return []
+    rows = expand_vectorized(out_row)
 
-    return [{{ entity.name }}(**out_row)]
+    # --- WHERE filter ---
+    result = []
+    for row in rows:
+        if _WHERE:
+            ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs, **VEC_HELPERS}, {"row": row, "ctx": ctx}))
+            if not ok:
+                continue
+        result.append({{ entity.name }}(**row))
+
+    return result

@@ -147,9 +147,10 @@ def _annotate_computed_attrs(model, metamodel=None):
             for fname, argc, node in _collect_calls(expr):
                 _validate_func(fname, argc, node)
 
-            # compile computed attribute expression
+            # compile computed attribute expression / check if scalar or vector
+            is_list = ((getattr(a, "type", None) or "").lower() == "list")
             try:
-                a._py = compile_expr_to_python(expr, context="entity")
+                a._py = compile_expr_to_python(expr, context="entity", vectorize=is_list)
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
 

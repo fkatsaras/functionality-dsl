@@ -6,6 +6,9 @@ import time
 from typing import Optional
 from functools import wraps
 
+from operator import add, sub, mul, truediv as div, mod, eq, ne, gt, ge, lt, le
+
+
 
 def _avg(xs) -> Optional[float]:
     xs = list(xs)
@@ -116,6 +119,88 @@ def _zip_apply3(a, b, c, f):
     else:
         return f(a, b, c)
 
+# --- internal vectorization helpers (not DSL functions) -----------------------
+
+def _v_abs(a):
+    return _v_zip1(a, abs)
+
+def _v_float(a):
+    return _v_zip1(a, _tofloat)
+
+def _v_string(a):
+    return _v_zip1(a, _tostring)
+
+def _v_as_list(x):
+    return x if isinstance(x, list) else [x]
+
+def _v_broadcast(x, n):
+    return x if isinstance(x, list) else [x] * n
+
+def _v_zip2(a, b, fn):
+    a_is_list = isinstance(a, list)
+    b_is_list = isinstance(b, list)
+    if a_is_list and b_is_list:
+        n = min(len(a), len(b))
+        return [fn(a[i], b[i]) for i in range(n)]
+    if a_is_list:
+        return [fn(x, b) for x in a]
+    if b_is_list:
+        return [fn(a, y) for y in b]
+    return fn(a, b)
+
+def _v_zip1(a, fn):
+    return [fn(x) for x in a] if isinstance(a, list) else fn(a)
+
+def _v_zip3(a, b, c, fn):
+    if isinstance(a, list) or isinstance(b, list) or isinstance(c, list):
+        n = max(len(a) if isinstance(a, list) else 1,
+                len(b) if isinstance(b, list) else 1,
+                len(c) if isinstance(c, list) else 1)
+        aa = _v_broadcast(a, n)
+        bb = _v_broadcast(b, n)
+        cc = _v_broadcast(c, n)
+        return [fn(aa[i], bb[i], cc[i]) for i in range(n)]
+    return fn(a, b, c)
+
+def _nullsafe(op):
+    def wrapper(a, b):
+        if a is None or b is None:
+            return None
+        return op(a, b)
+    return wrapper
+
+_BINOPS = {
+    '+': _nullsafe(add),
+    '-': _nullsafe(sub),
+    '*': _nullsafe(mul),
+    '/': _nullsafe(div),
+    '%': _nullsafe(mod),
+    '==': _nullsafe(eq),
+    '!=': _nullsafe(ne),
+    '>': _nullsafe(gt),
+    '>=': _nullsafe(ge),
+    '<': _nullsafe(lt),
+    '<=': _nullsafe(le),
+}
+
+def _v_bin(op, a, b):
+    return _v_zip2(a, b, _BINOPS[op])
+
+def _v_unary(op, a):
+    if op == '-':  return _v_zip1(a, lambda x: -x)
+    if op == 'not': return _v_zip1(a, lambda x: not bool(x))
+    raise ValueError(f"unknown unary {op}")
+
+def _v_and(a, b):
+    return _v_zip2(a, b, lambda x, y: bool(x) and bool(y))
+
+def _v_or(a, b):
+    return _v_zip2(a, b, lambda x, y: bool(x) or bool(y))
+
+def _v_if(c, t, e):
+    return _v_zip3(c, t, e, lambda ci, ti, ei: ti if ci else ei)
+
+
 # --- name -> (callable, (min_arity, max_arity)) --------------
 DSL_FUNCTIONS = {
     "avg":       (_avg,         (1, 1)),
@@ -123,59 +208,18 @@ DSL_FUNCTIONS = {
     "max":       (max,          (1, None)),
     "len":       (len,          (1, 1)),
     "now":       (_now,         (0, 0)),
-    "abs":       (abs,          (1, 1)),
-    "float":     (_tofloat,     (1, 1)),
     "contains":  (_contains,    (2, 2)),
     "icontains": (_icontains,   (2, 2)),
     "startswith":(_startswith,  (2, 2)),
     "endswith":  (_endswith,    (2, 2)),
-    "string":    (_tostring,    (1, 1)),
     "coalesce":  (_coalesce,    (1, None)),
     "get":       (_get,         (2, 2)),
+    
+    "abs":       (_v_abs,       (1, 1)),
+    "float":     (_v_float,     (1, 1)),
+    "string":    (_v_string,    (1, 1)),
 }
 
-# --- vector operations on lists ----------
-DSL_FUNCTIONS.update({
-    # arithmetic (list <-> list or list <-> scalar; returns list; scalar <-> scalar returns scalar)
-    "vadd": (lambda a, b: _zip_apply2(a, b,
-              lambda x, y: (0 if x is None else float(x)) + (0 if y is None else float(y))), (2, 2)),
-    "vsub": (lambda a, b: _zip_apply2(a, b,
-              lambda x, y: (0 if x is None else float(x)) - (0 if y is None else float(y))), (2, 2)),
-    "vmul": (lambda a, b: _zip_apply2(a, b,
-              lambda x, y: (0 if x is None else float(x)) * (0 if y is None else float(y))), (2, 2)),
-    "vdiv": (lambda a, b: _zip_apply2(a, b,
-              lambda x, y: (float(x)/float(y)) if (x not in (None, 0) and y not in (None, 0)) else None), (2, 2)),
-    "vabs": (lambda a:     _zip_apply1(a,
-              lambda x: None if x is None else abs(float(x))), (1, 1)),
-
-    # comparisons (list of bool when any arg is a list; scalar bool otherwise)
-    "vgt": (lambda a, b: _zip_apply2(a, b,
-            lambda x, y: (float("-inf") if x is None else float(x)) >
-                         (float("-inf") if y is None else float(y))), (2, 2)),
-    "vge": (lambda a, b: _zip_apply2(a, b,
-            lambda x, y: (float("-inf") if x is None else float(x)) >=
-                         (float("-inf") if y is None else float(y))), (2, 2)),
-    "vlt": (lambda a, b: _zip_apply2(a, b,
-            lambda x, y: (float("inf") if x is None else float(x)) <
-                         (float("inf") if y is None else float(y))), (2, 2)),
-    "vle": (lambda a, b: _zip_apply2(a, b,
-            lambda x, y: (float("inf") if x is None else float(x)) <=
-                         (float("inf") if y is None else float(y))), (2, 2)),
-    "veq": (lambda a, b: _zip_apply2(a, b, lambda x, y: x == y), (2, 2)),
-    "vne": (lambda a, b: _zip_apply2(a, b, lambda x, y: x != y), (2, 2)),
-
-    # boolean logic (list-wise)
-    "vand": (lambda a, b: _zip_apply2(a, b, lambda x, y: bool(x) and bool(y)), (2, 2)),
-    "vor":  (lambda a, b: _zip_apply2(a, b, lambda x, y: bool(x) or  bool(y)), (2, 2)),
-    "vnot": (lambda a:     _zip_apply1(a,   lambda x: not bool(x)), (1, 1)),
-
-    # helpers
-    "vbetween": (lambda x, lo, hi: _zip_apply3(x, lo, hi,
-                   lambda xx, l, h: (xx is not None) and (l is not None) and (h is not None)
-                                    and (float(l) <= float(xx) <= float(h))), (3, 3)),
-    "vif":      (lambda cond, a, b: _zip_apply3(cond, a, b,
-                   lambda c, x, y: x if bool(c) else y), (3, 3)),
-})
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
 DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
@@ -188,17 +232,43 @@ _ALLOWED_AST = {
     ast.USub, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
 }
 
+
 def _assert_safe_python_expr(py: str):
     tree = ast.parse(py, mode="eval")
     for n in ast.walk(tree):
         if type(n) not in _ALLOWED_AST:
             raise ValueError(f"Disallowed AST node: {type(n).__name__}")
 
-def compile_expr_to_python(expr, *, context: str) -> str:
+def compile_expr_to_python(expr, *, context: str, vectorize: bool = False) -> str:
     """
     context: 'entity' (aliases allowed), 'predicate' (self.* allowed), or 'component' (data.* only)
     Produces a Python expr using ONLY ctx[...] / row[...] and dsl_funcs['...'] calls.
     """
+    def binop(op, L, R):
+        if vectorize:
+            return f"_v_bin({op!r}, {L}, {R})"
+        return f"({L} {op} {R})"
+
+    def unary(op, S):
+        if vectorize:
+            return f"_v_unary({op!r}, {S})"
+        return f"({op} {S})" if op == '-' else f"(not {S})"
+
+    def land(L, R):
+        if vectorize:
+            return f"_v_and({L}, {R})"
+        return f"({L} and {R})"
+
+    def lor(L, R):
+        if vectorize:
+            return f"_v_or({L}, {R})"
+        return f"({L} or {R})"
+
+    def lif(cond, then, elze):
+        if vectorize:
+            return f"_v_if({cond}, {then}, {elze})"
+        return f"({then} if {cond} else {elze})"
+    
     def to_py(node) -> str:
         cls = node.__class__.__name__
         if isinstance(node, bool):
@@ -230,6 +300,11 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         if cls == "ListLiteral":
             items = getattr(node, "items", []) or []
             return "[" + ", ".join(to_py(x) for x in items) + "]"
+        
+        if cls == "Call":
+            fname = node.func
+            args = ", ".join(to_py(a) for a in (node.args or []))
+            return f'dsl_funcs[{fname!r}]({args})'
 
         if cls == "Ref":
             alias = getattr(node, "alias", None)
@@ -265,20 +340,15 @@ def compile_expr_to_python(expr, *, context: str) -> str:
             return f'dsl_funcs["get"](ctx[{alias!r}], {lst})'
         
         if cls == "IfThenElse":
-            return f"({to_py(node.thenExpr)} if {to_py(node.cond)} else {to_py(node.elseExpr)})"
-
-        if cls == "Call":
-            fname = node.func
-            args = ", ".join(to_py(a) for a in (node.args or []))
-            return f'dsl_funcs[{fname!r}]({args})'
+            return lif(to_py(node.cond), to_py(node.thenExpr), to_py(node.elseExpr))
 
         if cls == "UnaryExpr":
             s = to_py(node.atom)
             for u in node.unops:
                 if u.op == 'not':
-                    s = f"(not {s})"
+                    s = unary('not', s)
                 elif u.op == '-':
-                    s = f"(- {s})"
+                    s = unary('-', s)
                 else:
                     raise ValueError(f"Unknown unary op {u.op!r}")
             return f"({s})"
@@ -286,31 +356,40 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         if cls == "MulExpr":
             s = to_py(node.left)
             for t in (node.ops or []):
-                s = f"({s} {t.op} {to_py(t.right)})"
+                s = binop(t.op, s, to_py(t.right))
             return s
 
         if cls == "AddExpr":
             s = to_py(node.left)
             for t in (node.ops or []):
-                s = f"({s} {t.op} {to_py(t.right)})"
+                s = binop(t.op, s, to_py(t.right))
             return s
 
         if cls == "CmpExpr":
-            parts = [to_py(node.left)]
+            # a < b < c => (a<b) and (b<c)  (vectorized AND if needed)
+            L = to_py(node.left)
+            pieces = []
             for t in (node.ops or []):
-                parts.append(f"{t.op} {to_py(t.right)}")
-            return "(" + " ".join(parts) + ")"
+                R = to_py(t.right)
+                pieces.append(binop(t.op, L, R))
+                L = R
+            if not pieces:
+                return L
+            s = pieces[0]
+            for p in pieces[1:]:
+                s = land(s, p)
+            return s
 
         if cls == "AndExpr":
             s = to_py(node.left)
             for t in (node.ops or []):
-                s = f"({s} and {to_py(t.right)})"
+                s = land(s, to_py(t.right))
             return s
 
         if cls == "OrExpr":
             s = to_py(node.left)
             for t in (node.ops or []):
-                s = f"({s} or {to_py(t.right)})"
+                s = lor(s, to_py(t.right))
             return s
 
         if cls == "Atom":

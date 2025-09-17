@@ -1,80 +1,80 @@
 # app/api/routers/{{ entity.name | lower }}.py
 import time
 import logging
+from typing import List, Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
-from typing import List, Any, Dict
 
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
 from app.core.logging import set_request_id
 from app.core.expressions import compile_safe
-from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs, VEC_HELPERS
 
 from app.domain.models import {{ entity.name }}
 
-
 logger = logging.getLogger("fdsl.router.{{ entity.name }}")
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+router = APIRouter(
+    prefix="/api/entities/{{ entity.name | lower }}",
+    tags=["{{ entity.name }}"],
+)
 
+# Upstream configuration
 _UPSTREAM_URL = "{{ entity.source.url }}"
+_METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
 _HEADERS = resolve_headers([
 {% for h in entity.source.headers | default([], true) -%}
     ("{{ h.key }}", "{{ h.value }}"),
 {% endfor -%}
 ])
-_METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
-_FIELDS = [{% for n in schema_attrs %}"{{ n }}",{% endfor %}]
 
-def _project(x: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: x.get(k) for k in _FIELDS}
-
+# WHERE filter (precompiled expr)
 {% if entity._where_py %}
 _WHERE = compile_safe({{ entity._where_py | tojson }})
 {% else %}
 _WHERE = None
 {% endif %}
 
+
 @router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}(request: Request):
-    t0 = time.monotonic()
     rid = getattr(request.state, "request_id", None)
     if rid: set_request_id(rid)
 
     client = get_http_client()
+    t0 = time.monotonic()
+
     try:
-        if _METHOD == "GET":
-            r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
-        else:
-            r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
+        r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS)
         elapsed = (time.monotonic() - t0) * 1000.0
 
         if r.status_code >= 400:
-            logger.warning("upstream_error",
-                extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL,
-                       "status":r.status_code,"elapsed_ms":round(elapsed,2)})
+            logger.warning("upstream_error", extra={
+                "entity": "{{ entity.name }}",
+                "status": r.status_code,
+                "elapsed_ms": round(elapsed, 2),
+            })
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         data = r.json()
+        rows: List[{{ entity.name }}] = []
 
-        rows_list: list[{{ entity.name }}] = []
-        for d in rows:
-            row = _project(d)
-            if _WHERE is not None:
-                try:
-                    ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row}))
-                except Exception:
-                    ok = False
+        for raw in (data if isinstance(data, list) else [data]):
+            row: Dict[str, Any] = {}
+            {% for attr in entity.attributes %}
+            row["{{ attr.name }}"] = raw.get("{{ attr.name }}") if isinstance(raw, dict) else raw
+            {% endfor %}
+
+            if _WHERE:
+                ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs, **VEC_HELPERS}, {"row": row}))
                 if not ok:
                     continue
-            rows_list.append({{ entity.name }}(**row))
-            
-        logger.info("ok", extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
-        return rows_list
 
-    except HTTPException:
-        raise
-    except Exception as ex:
-        logger.exception("router_error",
-            extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL})
+            rows.append({{ entity.name }}(**row))
+
+        logger.info("ok", extra={"entity": "{{ entity.name }}", "rows": len(rows), "elapsed_ms": round(elapsed, 2)})
+        return rows
+
+    except Exception:
+        logger.exception("router_error", extra={"entity": "{{ entity.name }}"})
         raise

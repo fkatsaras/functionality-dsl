@@ -13,6 +13,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 from app.core.expressions import compile_safe
+from app.core.computed import VEC_HELPERS
 from app.core.logging import set_request_id
 
 logger = logging.getLogger("fdsl.router.ws.{{ entity.name }}")
@@ -88,7 +89,7 @@ def _compute_row() -> Dict[str, Any] | None:
     row: Dict[str, Any] = {}
     try:
         for name, code in _COMPILED.items():
-            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs, **VEC_HELPERS}, {"ctx": ctx})
         return row
     except Exception as ex:
         # single-line, structured

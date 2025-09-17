@@ -23,13 +23,13 @@ end
 Entity ThessRaw
   source: MeteoThess
   attributes:
-    - root: dict
+    - hourly: dict
 end
 
 Entity LondonRaw
   source: MeteoLondon
   attributes:
-    - root: dict
+    - hourly: dict
 end
 
 // --- Computed entity: compare two cities -------------------------------------
@@ -40,11 +40,11 @@ Entity WeatherSeries
     - ln: LondonRaw
   attributes:
     // arrays (list type) pulled from nested JSON
-    - time: list      = th.root.hourly.time
-    - th_temp: list   = th.root.hourly.temperature_2m
-    - ln_temp: list   = ln.root.hourly.temperature_2m
-    - th_hum: list    = th.root.hourly.relative_humidity_2m
-    - ln_hum: list    = ln.root.hourly.relative_humidity_2m
+    - time: list      = th.hourly.time
+    - th_temp: list   = th.hourly.temperature_2m
+    - ln_temp: list   = ln.hourly.temperature_2m
+    - th_hum: list    = th.hourly.relative_humidity_2m
+    - ln_hum: list    = ln.hourly.relative_humidity_2m
 end
 
 
@@ -53,6 +53,10 @@ Entity WeatherCompareView
     - hourly: WeatherSeries
   attributes:
     - time: list        = hourly.time
+    - th_temp: list     = hourly.th_temp
+    - ln_temp: list     = hourly.ln_temp
+    - th_hum: list     = hourly.th_hum
+    - ln_hum: list     = hourly.ln_hum
     - delta_temp: list  = hourly.th_temp - hourly.ln_temp
     - hotter_city: list = if hourly.th_temp > hourly.ln_temp then "Thessaloniki" else "London"
     - big_gap: list     = abs(hourly.th_temp - hourly.ln_temp) >= 5

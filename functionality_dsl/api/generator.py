@@ -21,10 +21,14 @@ def _pyd_type_for(attr):
     base = {
         "int": "int",
         "float": "float",
+        "number": "float",
         "string": "str",
         "bool": "bool",
         "datetime": "datetime",
-    }.get((t or "").lower(), "Any")
+        "uuid": "UUID",
+        "dict": "dict[str, Any]",
+        "list": "list[Any]",
+    }.get(t, "Any")
     
     # If its an optional field, mark the model attr
     if getattr(attr, "optional", False):
@@ -97,6 +101,9 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+    
+    # Server ---
+    server_ctx = _server_ctx(model)["server"]
 
     # -------- models --------
     entities_ctx = []
@@ -152,6 +159,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
             ws_inputs = []
             rest_inputs = []
+            entity_inputs = []
 
             for inp in (getattr(e, "inputs", []) or []):
                 tgt = inp.target
@@ -174,6 +182,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         "headers": _as_headers_list(t_src),
                         "fields": _schema_attr_names(tgt),
                     })
+                # Target is another entity (computed with non-REST source)
+                entity_inputs.append({
+                    "alias": inp.alias,
+                    "target_name": tgt.name,
+                })
 
             if ws_inputs:
                 # STREAMING computed
@@ -193,6 +206,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         entity=e,
                         computed_attrs=computed_attrs,
                         rest_inputs=rest_inputs,
+                        entity_inputs=entity_inputs,
+                        server=server_ctx, 
                     ),
                     encoding="utf-8",
                 )

@@ -300,7 +300,7 @@
 
       <!-- Legend -->
       <div class="flex flex-wrap items-center gap-4 mb-2 font-approachmono text-sm">
-        {#each yKeys as key, i}
+        {#each yKeysForLegend as key, i}
           <div class="flex items-center gap-2">
             <span class="inline-block w-3 h-3 rounded" style="background:{seriesColors[i]}"></span>
             <span class="opacity-80">{seriesLabels[i]}:</span>
@@ -353,7 +353,7 @@
                       class="absolute inset-0 w-full h-full"
                       preserveAspectRatio="none"
                     >
-                      {#each yKeys as key, i}
+                      {#each yKeysForLegend as key, i}
                         {#if series[key] && series[key].length}
                           <polyline
                             fill="none"
