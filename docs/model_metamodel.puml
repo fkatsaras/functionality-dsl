@@ -1,0 +1,163 @@
+@startuml
+set namespaceSeparator .
+
+
+
+class model.FDSLModel  {
+}
+
+
+class utils.Import  {
+  importURI : FQN
+}
+
+
+class endpoints.Source <<abstract>> {
+}
+
+
+class endpoints.RESTEndpoint  {
+  name : ID
+  url : STRING
+  verb : HttpVerb
+}
+
+
+class endpoints.WSEndpoint  {
+  name : ID
+  url : STRING
+  protocol : STRING
+  subscribe : STRING
+}
+
+
+class endpoints.StringList  {
+  items : list[STRING]
+}
+
+
+class endpoints.Header  {
+  key : STRING
+  value : STRING
+}
+
+
+class entity.Attribute <<abstract>> {
+}
+
+
+class entity.SchemaAttribute  {
+  name : ID
+  type : AttrType
+  optional : optional<BOOL>
+  required : optional<BOOL>
+  default : AttrValue
+}
+
+
+class entity.ComputedAttribute  {
+  name : ID
+}
+
+
+class entity.Input  {
+  alias : ID
+}
+
+
+class entity.Entity  {
+  name : ID
+}
+
+
+class component.AttrRef  {
+}
+
+
+class component.Component <<abstract>> {
+}
+
+
+class component.TableComponent  {
+  name : ID
+  primaryKey_str : STRING
+}
+
+
+class component.LineChartComponent  {
+  name : ID
+  xLabel : STRING
+  yLabel : STRING
+}
+
+
+class component.GaugeComponent  {
+  name : ID
+  min : FLOAT
+  max : FLOAT
+  label : STRING
+  unit : STRING
+}
+
+
+class component.ActionFormComponent  {
+  name : ID
+  fields : list[ID]
+  pathKey : ID
+  submitLabel : STRING
+}
+
+
+class server.Server  {
+  name : ID
+  host : STRING
+  port : INT
+  base : STRING
+  cors : list[STRING]
+  env : ID
+}
+
+
+model.FDSLModel *--> "1..*" utils.Import: imports
+model.FDSLModel *--> "1..*" server.Server: servers
+model.FDSLModel *--> "1..*" endpoints.Source: sources
+model.FDSLModel *--> "1..*" entity.Entity: entities
+model.FDSLModel *--> "1..*" component.Component: components
+endpoints.Source <|-- endpoints.RESTEndpoint
+endpoints.Source <|-- endpoints.WSEndpoint
+endpoints.RESTEndpoint *--> "1..*" endpoints.Header: headers
+endpoints.WSEndpoint *-->  endpoints.StringList: subprotocols
+endpoints.WSEndpoint *--> "1..*" endpoints.Header: headers
+entity.Attribute <|-- entity.ComputedAttribute
+entity.Attribute <|-- entity.SchemaAttribute
+entity.Input -->  entity.Entity: target
+entity.Entity -->  endpoints.Source: source
+entity.Entity *--> "1..*" entity.Input: inputs
+entity.Entity *--> "1..*" entity.Attribute: attributes
+component.AttrRef -->  entity.Attribute: attr
+component.Component <|-- component.TableComponent
+component.Component <|-- component.LineChartComponent
+component.Component <|-- component.ActionFormComponent
+component.Component <|-- component.GaugeComponent
+component.TableComponent -->  entity.Entity: entity
+component.TableComponent *--> "1..*" component.AttrRef: columns
+component.TableComponent *-->  component.AttrRef: primaryKey
+component.LineChartComponent -->  entity.Entity: entity
+component.LineChartComponent *-->  component.AttrRef: x
+component.LineChartComponent *--> "1..*" component.AttrRef: y
+component.GaugeComponent -->  entity.Entity: entity
+component.GaugeComponent *-->  component.AttrRef: value
+component.ActionFormComponent -->  endpoints.RESTEndpoint: action
+
+legend
+  Match rules:
+  |= Name  |= Rule details |
+  | AttrValue | STRING\|FLOAT\|INT |
+  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | FQN | ID (. ID)* |
+  | Comment | \\/\\/[^\\n]* |
+  | Bool | true\|false |
+  | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
+end legend
+
+@enduml

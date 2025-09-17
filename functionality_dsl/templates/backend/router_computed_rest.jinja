@@ -53,10 +53,10 @@ async def list_{{ entity.name | lower }}():
             raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
 
         data = r.json()
-        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('#############################################################################################################')
         print('Entity {{ entity.name }} gets')
         print(data)
-        print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+        print('#############################################################################################################')
         # Normalize:
 
         try:
@@ -87,9 +87,9 @@ async def list_{{ entity.name | lower }}():
                 continue
         out_rows.append(row)
 
-    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    print('#############################################################################################################')
     print('Entity {{ entity.name }} returns')
     print(str([{{ entity.name }}(**r) for r in out_rows]))
-    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    print('#############################################################################################################')
 
     return [{{ entity.name }}(**r) for r in out_rows]

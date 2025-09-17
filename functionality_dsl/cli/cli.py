@@ -108,7 +108,7 @@ def generate(context, model_path, target, out_dir):
 def visualize_cmd(context, grammar_path):
     try:
         gpath = Path(grammar_path).resolve()
-        out_dir = Path("diagrams").resolve()
+        out_dir = Path("docs").resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # build textX metamodel

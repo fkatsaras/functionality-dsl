@@ -37,9 +37,6 @@ _WHERE = None
 
 @router.get("/", response_model=List[{{ entity.name }}])
 async def list_{{ entity.name | lower }}(request: Request):
-    t0 = time.monotonic()
-    rid = getattr(request.state, "request_id", None)
-    if rid: set_request_id(rid)
 
     client = get_http_client()
     try:
@@ -47,12 +44,10 @@ async def list_{{ entity.name | lower }}(request: Request):
             r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
         else:
             r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
-        elapsed = (time.monotonic() - t0) * 1000.0
 
         if r.status_code >= 400:
             logger.warning("upstream_error",
-                extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL,
-                       "status":r.status_code,"elapsed_ms":round(elapsed,2)})
+                extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL, "status":r.status_code,})
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         data = r.json()
@@ -79,8 +74,7 @@ async def list_{{ entity.name | lower }}(request: Request):
                     continue
             rows_list.append({{ entity.name }}(**row))
             
-        logger.info("ok",
-            extra={"entity":"{{ entity.name }}","rows":len(rows_list),"elapsed_ms":round(elapsed,2)})
+        logger.info("ok", extra={"entity":"{{ entity.name }}","rows":len(rows_list),})
 
 
         print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
