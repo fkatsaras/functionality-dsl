@@ -10,8 +10,6 @@ Server WikiLive
 end
 
 // Public WebSocket feed of live Wikipedia recent changes (Hatnote/WikiMon).
-// Note: service runs plain ws://; if your environment requires TLS, try wss://
-// (availability can vary). Keep protocol "json" so messages are parsed as JSON.
 WSEndpoint WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
@@ -31,7 +29,6 @@ Entity WikiEdit
 end
 
 // Computed view for the Gauge. We keep it simple: absolute byte delta.
-// You can add more attributes (e.g., thresholds, labels) if you like.
 Entity EditGauge
   inputs:
     - e: WikiEdit

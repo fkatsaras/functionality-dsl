@@ -1,0 +1,64 @@
+// --- Server ------------------------------------------------------------------
+
+Server IntCompare
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+
+// --- Public REST sources ------------------------------------------------------
+
+// Random integer from RandomNumberAPI
+RESTEndpoint RandomA
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+// Random integer from RandomNumberAPI
+RESTEndpoint RandomB
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+// --- Raw entities -------------------------------------------------------------
+Entity IntARaw
+  source: RandomA
+  attributes:
+    - value: int        // API returns [42]
+end
+
+Entity IntBRaw
+  source: RandomB
+  attributes:
+    - value: int // API returns { "result": [23] }
+end
+
+// --- Computed entity: compare two integers -----------------------------------
+
+Entity CompareInts
+  inputs:
+    - a: IntARaw
+    - b: IntBRaw
+  attributes:
+    - a_val:      = a.value
+    - b_val:      = b.value
+    - delta:      = b.value - a.value
+    - is_equal:  = a.value == b.value
+    - a_greater: = a.value > b.value
+    - b_greater: = b.value > a.value
+end
+
+
+// --- Components ---------------------------------------------------------------
+
+// Simple table to show comparisons
+Component<Table> IntComparisonTable
+  entity: CompareInts
+  primaryKey: data.a_val
+  columns: [
+    data.a_val, data.b_val,
+    data.delta, data.is_equal,
+    data.a_greater, data.b_greater
+  ]
+end
