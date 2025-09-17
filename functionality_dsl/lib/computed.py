@@ -209,4 +209,5 @@ def compile_expr_to_python(expr, *, context: str) -> str:
 
     py = to_py(expr).replace(" null ", " None ")
     _assert_safe_python_expr(py)
+    print(py)
     return py
