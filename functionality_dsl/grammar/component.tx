@@ -1,6 +1,7 @@
 import utils
 import entity
 import endpoints
+import integration
 
 // AttrRef remains, but will resolve via Component.endpoint.entity
 AttrRef: 'data' '.' attr=[entity.Attribute] ;
@@ -46,7 +47,7 @@ GaugeComponent:
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'action:' action=[InternalRESTEndpoint]      // ⟵ was RESTEndpoint
+    'action:' action=[ExternalRESTEndpoint]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
