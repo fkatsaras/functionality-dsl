@@ -183,6 +183,7 @@ class GaugeComponent(_BaseComponent):
 
     def to_props(self):
         return {
+            "streamPath":   self._endpoint_path("/stream"),
             "value": self.value,
             "min": float(self.min),
             "max": float(self.max),

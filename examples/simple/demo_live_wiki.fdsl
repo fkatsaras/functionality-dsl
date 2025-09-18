@@ -1,45 +1,44 @@
-// =====================
-// Live Wikipedia Gauge
-// =====================
-
 Server WikiLive
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
-  // env: dev
 end
 
-// Public WebSocket feed of live Wikipedia recent changes (Hatnote/WikiMon).
-
-WSEndpoint WikiMonEN
+// --- External WS feed ------------------------------------------
+ExternalWS WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
-  // no headers / subscribe message required for this feed
 end
 
-// Raw event (shape depends on the upstream feed; these are common fields).
+// --- Raw entity ------------------------------------------------
 Entity WikiEdit
   source: WikiMonEN
   attributes:
     - title: string
     - user: string
-    - delta: int          // bytes changed (+/-)
+    - delta: int
     - is_bot: bool
     - is_minor: bool
     - wiki: string
 end
 
+// --- Computed entity -------------------------------------------
 Entity EditGauge
   inputs:
     - e: WikiEdit
   attributes:
-    - edit_size_abs = abs(e.delta)
+    - edit_size_abs: int = abs(e.delta)
 end
 
-// UI: a Gauge bound to the computed entity.
-// value -> which attribute to read; min/max tune the arc; label/unit purely visual.
-Component<Gauge> LiveEditSize
+// --- Internal endpoint -----------------------------------------
+InternalWS EditGaugeStream
   entity: EditGauge
+  path: "/api/wiki/edits"
+end
+
+// --- Component -------------------------------------------------
+Component<Gauge> LiveEditSize
+  endpoint: EditGaugeStream
   value: data.edit_size_abs
   min: 0
   max: 2000

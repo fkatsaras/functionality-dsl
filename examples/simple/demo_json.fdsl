@@ -1,18 +1,16 @@
-// ----------- Server (config) -----------
 Server SimpleJSONAPI
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-// ----------- Source (real public REST) -----------
-// Returns an ARRAY of posts: [{ userId, id, title, body }, ...]
-RESTEndpoint JsonPosts
+// --- External REST source --------------------------------------
+ExternalREST JsonPosts
   url: "https://jsonplaceholder.typicode.com/posts"
   verb: GET
 end
 
-// ----------- Entities (data) -----------
+// --- Entities --------------------------------------------------
 Entity Post
   source: JsonPosts
   attributes:
@@ -22,20 +20,25 @@ Entity Post
     - body: string
 end
 
-// Derived (simple calculations)
 Entity PostStats
   inputs:
     - p: Post
   attributes:
-    - id            = p.id
-    - user_id       = p.userId
-    - title         = p.title
-    - title_length  = len(p.title)
+    - id: int           = p.id
+    - user_id: int      = p.userId
+    - title: string     = p.title
+    - title_length: int = len(p.title)
 end
 
-// ----------- Components (UI bindings) -----------
-Component<Table> PostsTable
+// --- Internal endpoint -----------------------------------------
+InternalREST PostStatsList
   entity: PostStats
+  path: "/api/posts/stats"
+end
+
+// --- Component -------------------------------------------------
+Component<Table> PostsTable
+  endpoint: PostStatsList
   primaryKey: data.id
   columns: [data.id, data.user_id, data.title, data.title_length]
 end

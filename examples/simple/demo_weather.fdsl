@@ -4,22 +4,18 @@ Server WeatherCompare
   cors: "http://localhost:3000"
 end
 
-// --- Public REST sources ------------------------------------------------------
-
-// Thessaloniki, GR  (lat=40.64, lon=22.94)
-RESTEndpoint MeteoThess
+// --- External REST sources -------------------------------------
+ExternalREST MeteoThess
   url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
 end
 
-// London, UK  (lat=51.5072, lon=-0.1276)
-RESTEndpoint MeteoLondon
+ExternalREST MeteoLondon
   url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
 end
 
-// --- Raw entities -------------------------------------------------------------
-
+// --- Raw entities ----------------------------------------------
 Entity ThessHourly
   source: MeteoThess
   attributes:
@@ -36,39 +32,39 @@ Entity LondonHourly
     - relative_humidity_2m: float
 end
 
-// --- Computed entity: compare two cities -------------------------------------
-
+// --- Computed entity -------------------------------------------
 Entity WeatherCompareView
   inputs:
     - th: ThessHourly
     - ln: LondonHourly
   attributes:
-    - time        = th.time
-    - th_temp     = th.temperature_2m
-    - ln_temp     = ln.temperature_2m
-    - th_hum      = th.relative_humidity_2m
-    - ln_hum      = ln.relative_humidity_2m
-    - delta_temp  = th.temperature_2m - ln.temperature_2m
-    - hotter_city = if th.temperature_2m > ln.temperature_2m then "Thessaloniki" else "London"
-    - big_gap     = abs(th.temperature_2m - ln.temperature_2m) >= 5
-    - th_is_comfy = (abs(th.temperature_2m - 22) < 3) and (th.relative_humidity_2m >= 30) and (th.relative_humidity_2m <= 60)
-    - ln_is_comfy = (abs(ln.temperature_2m - 22) < 3) and (ln.relative_humidity_2m >= 30) and (ln.relative_humidity_2m <= 60)
+    - time: string        = th.time
+    - th_temp: float      = th.temperature_2m
+    - ln_temp: float      = ln.temperature_2m
+    - th_hum: float       = th.relative_humidity_2m
+    - ln_hum: float       = ln.relative_humidity_2m
+    - delta_temp: float   = th.temperature_2m - ln.temperature_2m
+    - hotter_city: string = if th.temperature_2m > ln.temperature_2m then "Thessaloniki" else "London"
+    - big_gap: bool       = abs(th.temperature_2m - ln.temperature_2m) >= 5
+    - th_is_comfy: bool   = (abs(th.temperature_2m - 22) < 3) and (th.relative_humidity_2m >= 30) and (th.relative_humidity_2m <= 60)
+    - ln_is_comfy: bool   = (abs(ln.temperature_2m - 22) < 3) and (ln.relative_humidity_2m >= 30) and (ln.relative_humidity_2m <= 60)
 end
 
-// --- Components ---------------------------------------------------------------
-
-Component<Table> WeatherTable
+// --- Internal endpoint -----------------------------------------
+InternalREST WeatherCompareList
   entity: WeatherCompareView
+  path: "/api/weather/compare"
+end
+
+// --- Components ------------------------------------------------
+Component<Table> WeatherTable
+  endpoint: WeatherCompareList
   primaryKey: data.time
-  columns: [
-    data.time,
-    data.th_temp, data.ln_temp, data.delta_temp, data.hotter_city, data.big_gap,
-    data.th_hum, data.ln_hum, data.th_is_comfy, data.ln_is_comfy
-  ]
+  columns: [data.time, data.th_temp, data.ln_temp, data.delta_temp, data.hotter_city, data.big_gap, data.th_hum, data.ln_hum, data.th_is_comfy, data.ln_is_comfy]
 end
 
 Component<LineChart> TempComparison
-  entity: WeatherCompareView
+  endpoint: WeatherCompareList
   x: data.time
   y: [data.th_temp, data.ln_temp]
   xLabel: "Time"

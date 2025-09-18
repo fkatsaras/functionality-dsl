@@ -1,32 +1,31 @@
-// ------------------- Server -------------------
 Server SimpleJSON
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-// REST Endpoints
-RESTEndpoint RealObjects     
+// --- External REST sources -------------------------------------
+ExternalREST RealObjects
   url: "https://api.restful-api.dev/objects"
-  verb: GET 
+  verb: GET
 end
 
-RESTEndpoint RealCreate
-  url: "https://api.restful-api.dev/objects" 
+ExternalREST RealCreate
+  url: "https://api.restful-api.dev/objects"
   verb: POST
 end
 
-RESTEndpoint RealUpdate
+ExternalREST RealUpdate
   url: "https://api.restful-api.dev/objects"
   verb: PUT
 end
 
-RESTEndpoint RealDelete
+ExternalREST RealDelete
   url: "https://api.restful-api.dev/objects"
   verb: DELETE
 end
 
-// Entity (GET list)
+// --- Entity ----------------------------------------------------
 Entity RealObject
   source: RealObjects
   attributes:
@@ -38,9 +37,15 @@ Entity RealObject
     - year: string?
 end
 
-// Components
-Component<Table> ObjectsTable
+// --- Internal endpoint -----------------------------------------
+InternalREST RealObjectsList
   entity: RealObject
+  path: "/api/objects"
+end
+
+// --- Components ------------------------------------------------
+Component<Table> ObjectsTable
+  endpoint: RealObjectsList
   primaryKey: data.id
   columns: [data.id, data.name, data.color, data.capacity, data.price, data.year]
 end

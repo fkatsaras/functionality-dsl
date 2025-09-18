@@ -1,64 +1,57 @@
-// --- Server ------------------------------------------------------------------
-
+// --- Server ----------------------------------------------------
 Server IntCompare
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-
-// --- Public REST sources ------------------------------------------------------
-
-// Random integer from RandomNumberAPI
-RESTEndpoint RandomA
+// --- External REST sources -------------------------------------
+ExternalREST RandomA
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
 end
 
-// Random integer from RandomNumberAPI
-RESTEndpoint RandomB
+ExternalREST RandomB
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
 end
 
-// --- Raw entities -------------------------------------------------------------
+// --- Raw entities ----------------------------------------------
 Entity IntARaw
   source: RandomA
   attributes:
-    - value: int        // API returns [42]
+    - value: int
 end
 
 Entity IntBRaw
   source: RandomB
   attributes:
-    - value: int 
+    - value: int
 end
 
-// --- Computed entity: compare two integers -----------------------------------
-
+// --- Computed entity -------------------------------------------
 Entity CompareInts
   inputs:
     - a: IntARaw
     - b: IntBRaw
   attributes:
-    - a_val       = a.value
-    - b_val       = b.value
-    - delta       = b.value - a.value
-    - is_equal  = a.value == b.value
-    - a_greater = a.value > b.value
-    - b_greater = b.value > a.value
+    - a_val: int       = a.value
+    - b_val: int       = b.value
+    - delta: int       = b.value - a.value
+    - is_equal: bool   = a.value == b.value
+    - a_greater: bool  = a.value > b.value
+    - b_greater: bool  = b.value > a.value
 end
 
-
-// --- Components ---------------------------------------------------------------
-
-// Simple table to show comparisons
-Component<Table> IntComparisonTable
+// --- Internal endpoint -----------------------------------------
+InternalREST CompareIntsList
   entity: CompareInts
+  path: "/api/compare"
+end
+
+// --- Component -------------------------------------------------
+Component<Table> IntComparisonTable
+  endpoint: CompareIntsList
   primaryKey: data.a_val
-  columns: [
-    data.a_val, data.b_val,
-    data.delta, data.is_equal,
-    data.a_greater, data.b_greater
-  ]
+  columns: [data.a_val, data.b_val, data.delta, data.is_equal, data.a_greater, data.b_greater]
 end

@@ -8,6 +8,6 @@ echo "Removing backend/frontend images..."
 docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'backend|frontend' | xargs -r docker rmi -f
 
 echo "Deleting generated/ folder..."
-rm -rf ../generated
+rm -rf /mnt/c/Users/FotisKatsaras/Desktop/Personal/AUTh/DIPLOMATIKI/functionality-dsl/generated
 
 echo "✅ Cleanup complete."

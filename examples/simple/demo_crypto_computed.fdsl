@@ -1,30 +1,29 @@
+// ------------------- Server -------------------
 Server BinanceWS
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
-  // env: dev
 end
 
-// --- WS sources (Binance miniTicker) -----------------------------------------
-WSEndpoint BinanceBTCMini
+// ------------------- External WebSocket sources ----------------
+ExternalWS BinanceBTCMini
   url: "wss://stream.binance.com:9443/ws/btcusdt@miniTicker"
   protocol: "json"
 end
 
-WSEndpoint BinanceETHMini
+ExternalWS BinanceETHMini
   url: "wss://stream.binance.com:9443/ws/ethusdt@miniTicker"
   protocol: "json"
 end
 
-// Raw WS entities describe the fields we’ll reference in computed expressions.
-// miniTicker payload has keys like c (last price), o/h/l (open/high/low).
+// ------------------- Raw WS entities ---------------------------
 Entity BTCMini
   source: BinanceBTCMini
   attributes:
-    - c: float
-    - o: float
-    - h: float
-    - l: float
+    - c: float   // last price
+    - o: float   // open
+    - h: float   // high
+    - l: float   // low
 end
 
 Entity ETHMini
@@ -36,19 +35,26 @@ Entity ETHMini
     - l: float
 end
 
-// Computed, streaming view
+// ------------------- Computed streaming entity -----------------
 Entity PriceGap
   inputs:
     - b: BTCMini
     - e: ETHMini
   attributes:
-    - time       = now()
-    - gap        = abs(float(b.c) - float(e.c))
+    - time: int   = now()
+    - gap: float  = abs(float(b.c) - float(e.c))
   where: self.gap >= 100
 end
 
-Component<LineChart> BitcoinPrice
+// ------------------- Internal endpoint -------------------------
+InternalWS PriceGapStream
   entity: PriceGap
+  path: "/api/price-gap"
+end
+
+// ------------------- Component (UI) ----------------------------
+Component<LineChart> BitcoinPrice
+  endpoint: PriceGapStream
   x: data.time
   y: [data.gap]
   xLabel: "Time"

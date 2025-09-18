@@ -3,7 +3,7 @@
 {% set raw_value = props.get('value') or 'value' %}
 {% set value_key = raw_value | replace('data.', '') %}
 {# Resolve WS path: explicit prop wins, else common.wsUrl #}
-{% set ws_path = props.get('wsPath') or common.wsUrl %}
+{% set ws_path = props.get('streamPath')   or common.wsUrl %}
 <Gauge
   name="{{ common.name }}"
   {% if ws_path %}
