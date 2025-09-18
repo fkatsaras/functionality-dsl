@@ -34,6 +34,6 @@ end
 // ----------- Components (UI bindings) -----------
 Component<Table> CoffeeTable
   entity: CoffeeStats
-  primaryKey: data.name          // 'id' also works if present
+  primaryKey: data.name
   columns: [data.name, data.title_length, data.description]
 end
