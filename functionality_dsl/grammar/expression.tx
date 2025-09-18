@@ -25,19 +25,32 @@ MulTail: op=MulOp       right=UnaryExpr ;
 MulOp:   '*' | '/' | '%' ;
 
 // unary binds to Atom
-UnaryExpr: unops+=UnaryOp* atom=Atom ;
+UnaryExpr: unops+=UnaryOp* post=PostfixExpr ;
 UnaryOp:   op=UnaryOpTok ;
 UnaryOpTok: 'not' | '-' ;
 
-// atoms
-Atom:
-      literal=Literal
-    | ref=Ref
+// -------- postfix expressions --------
+PostfixExpr: base=AtomBase (tails+=PostfixTail)* ;
+
+PostfixTail:
+      member=MemberAccess
+    | index=IndexAccess
+;
+
+MemberAccess: '.' name=ID ;
+IndexAccess:  '[' index=Expr ']' ;
+
+// -------- atoms --------
+AtomBase:
+      listcomp=ListCompExpr
+    | literal=Literal
     | call=Call
+    | var=Var
     | ifx=IfThenElse
     | '(' inner=Expr ')'
 ;
 
+Var: name=ID ;
 // ternary
 IfThenElse:
   'if' cond=Expr 'then' thenExpr=Expr 'else' elseExpr=Expr
@@ -48,6 +61,10 @@ Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
+// bare variable
+Var: name=ID ;
+
+// legacy ref (still works): alias.attr
 Ref: alias=ID '.' attr=ID ;
 
 // literals
@@ -60,6 +77,12 @@ Literal:
     | ListLiteral
 ;
 
+// plain list
 ListLiteral:
     '[' (items+=Expr (',' items+=Expr)*)? ']'
+;
+
+// comprehension
+ListCompExpr:
+    '[' head=Expr 'for' var=ID 'in' iterable=Expr ']'
 ;

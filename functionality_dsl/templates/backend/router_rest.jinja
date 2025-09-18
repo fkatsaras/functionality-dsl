@@ -1,12 +1,11 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from typing import List, Any, Dict
+from typing import List, Any
 
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
-from app.core.expressions import compile_safe
-from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
+from app.core.computed import compile_safe, safe_globals
 
 from app.domain.models import {{ entity.name }}
 
@@ -25,10 +24,6 @@ _HEADERS = resolve_headers([
 {% endfor -%}
 ])
 _METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
-_FIELDS = [{% for n in schema_attrs %}"{{ n }}",{% endfor %}]
-
-def _project(x: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: x.get(k) for k in _FIELDS}
 
 {% if entity._where_py %}
 _WHERE = compile_safe({{ entity._where_py | tojson }})
@@ -47,28 +42,38 @@ async def list_{{ endpoint.name | lower }}(request: Request):
 
         if r.status_code >= 400:
             logger.warning("upstream_error",
-                extra={"endpoint":"{{ endpoint.name }}","verb":_METHOD,"url":_UPSTREAM_URL, "status":r.status_code,})
+                extra={"endpoint":"{{ endpoint.name }}","verb":_METHOD,"url":_UPSTREAM_URL, "status":r.status_code})
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         data = r.json()
-        if not isinstance(data, list):
-            logger.error("unexpected_shape", extra={"endpoint":"{{ endpoint.name }}","got_type":type(data).__name__})
-            raise HTTPException(status_code=502, detail="Upstream did not return a list")
 
-        rows_list: list[{{ entity.name }}] = []
-        for d in data:
-            row = _project(d)
+
+        print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+        print('Entity {{ entity.name }} gets this data: ')
+        print(data)
+        print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+
+
+        rows: list = []
+        if isinstance(data, list):
+            items = data
+        else:
+            # Coerce into list so output is always iterable
+            items = [data]
+
+        for d in items:
+            row = d
             if _WHERE is not None:
                 try:
-                    ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row}))
+                    ok = bool(eval(_WHERE, safe_globals, {"row": row, "ctx": ctx}))
                 except Exception:
                     ok = False
                 if not ok:
                     continue
-            rows_list.append({{ entity.name }}(**row))
-            
-        logger.info("ok", extra={"endpoint":"{{ endpoint.name }}","rows":len(rows_list),})
-        return rows_list
+            rows.append({{ entity.name }}(**row))
+
+        logger.info("ok", extra={"endpoint":"{{ endpoint.name }}","rows":len(rows)})
+        return rows
     except HTTPException:
         raise
     except Exception:

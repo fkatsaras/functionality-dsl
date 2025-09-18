@@ -16,12 +16,11 @@ Attribute:
 
 SchemaAttribute:
   name=ID ':' type=AttrType (optional?='?')?
-  (required?='required')?
   ('default=' default=AttrValue)?
 ;
 
 ComputedAttribute:
-  name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr
+  name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr ';'
 ;
 
 Input:

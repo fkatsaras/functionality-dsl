@@ -89,7 +89,15 @@ def is_computed_attr(a):
 def _collect_refs(expr):
     for n in _walk(expr):
         if n.__class__.__name__ == "Ref":
+            # strict schema ref
             yield getattr(n, "alias", None), getattr(n, "attr", None), n
+        elif n.__class__.__name__ == "PostfixExpr":
+            base = n.base
+            if getattr(base, "var", None) is not None:
+                alias = base.var.name
+                # mark it as JSON-path access (attr=None means “don’t check attrs”)
+                yield alias, "__jsonpath__", n
+
 
 
 def _collect_calls(expr):
@@ -143,10 +151,16 @@ def _annotate_computed_attrs(model, metamodel=None):
             # refs like i.title
             for alias, attr, node in _collect_refs(expr):
                 if alias not in inputs:
-                    raise TextXSemanticError(
-                        f"Unknown input alias '{alias}'.", **get_location(node)
-                    )
+                    # allow loop variables from comprehensions
+                    if any(alias == getattr(a, "var", None) for a in get_children_of_type("ListCompExpr", expr)):
+                        continue
+                    raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
+                
                 tgt = inputs[alias].name
+                if attr == "__jsonpath__":
+                    # only check alias exists, skip inner keys
+                    continue
+                
                 if attr not in target_attrs.get(tgt, set()):
                     raise TextXSemanticError(
                         f"'{alias}.{attr}' not found on entity '{tgt}'.",
@@ -171,9 +185,13 @@ def _annotate_computed_attrs(model, metamodel=None):
             for alias, attr, node in _collect_refs(w):
                 if alias == "self":
                     # must be an attribute of *this* entity (schema or computed)
-                    if attr not in target_attrs.get(ent.name, set()):
+                    if attr == "__jsonpath__":
+                        # only check alias exists, skip inner keys
+                        continue
+                    
+                    if attr not in target_attrs.get(tgt, set()):
                         raise TextXSemanticError(
-                            f"'self.{attr}' not found on entity '{ent.name}'.",
+                            f"'{alias}.{attr}' not found on entity '{tgt}'.",
                             **get_location(node),
                         )
                     continue
@@ -184,6 +202,10 @@ def _annotate_computed_attrs(model, metamodel=None):
                     )
 
                 tgt = inputs[alias].name
+                if attr == "__jsonpath__":
+                    # only check alias exists, skip inner keys
+                    continue
+                
                 if attr not in target_attrs.get(tgt, set()):
                     raise TextXSemanticError(
                         f"'{alias}.{attr}' not found on entity '{tgt}'.",

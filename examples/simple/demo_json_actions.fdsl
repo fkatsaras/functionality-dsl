@@ -26,15 +26,34 @@ ExternalREST RealDelete
 end
 
 // --- Entity ----------------------------------------------------
-Entity RealObject
+// Upstream JSON looks like:
+// {
+//   "id": "...",
+//   "name": "...",
+//   "data": {
+//      "color": "...",
+//      "capacity": "...",
+//      "price": ...,
+//      "year": ...
+//   }
+// }
+
+Entity RealObjectsRaw
   source: RealObjects
   attributes:
-    - id: string
-    - name: string
-    - color: string?
-    - capacity: string?
-    - price: string?
-    - year: string?
+    - raw: list
+end
+
+Entity RealObject
+  inputs: 
+   - r: RealObjectsRaw
+  attributes:
+    - id: list                 = [x['id'] for x in r.raw];
+    - name: list               = [x['name'] for x in r.raw];
+    - color: list?             = [x['data']['color'] for x in r.raw];
+    - capacity: list?          = [x['data']['capacity'] for x in r.raw];
+    - price: list?             = [x['data']['price'] for x in r.raw];
+    - year: list?              = [x['data']['year'] for x in r.raw];
 end
 
 // --- Internal endpoint -----------------------------------------

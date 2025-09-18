@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import ast
 
 from typing import Optional
 from functools import wraps
@@ -68,3 +69,35 @@ DSL_FUNCTIONS = {
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
 DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
+
+
+
+_ALLOWED_AST = {
+    ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.IfExp,
+    ast.Compare, ast.Call, ast.Name, ast.Load, ast.Store,  # <--- add Store
+    ast.Constant, ast.Subscript, ast.Tuple, ast.List, ast.Dict,
+    ast.Index, ast.Slice, ast.Attribute,
+    ast.And, ast.Or, ast.Not, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
+    ast.USub, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
+    ast.ListComp, ast.comprehension,
+}
+
+def _validate(tree: ast.AST):
+    for node in ast.walk(tree):
+        if type(node) not in _ALLOWED_AST:
+            raise ValueError(f"Disallowed node: {type(node).__name__}")
+
+def compile_safe(expr: str):
+    tree = ast.parse(expr, mode="eval")
+    _validate(tree)
+    return compile(tree, "<dsl_expr>", "eval")
+
+
+safe_globals = {
+    "__builtins__": {},
+    "dsl_funcs": DSL_FUNCTION_REGISTRY,
+    "isinstance": isinstance,
+    "dict": dict,   # whitelist dict type
+    "list": list,   # optional: whitelist list
+    "str": str,     # optional: whitelist str
+}
