@@ -1,33 +1,9 @@
 {% macro render_component(cmp) %}
   {% set kind = cmp.kind %}
-  {% set ent = cmp.entity %}
-  {% set entname = ent.name if ent is defined and ent is not none else none %}
-
-  {# which kinds of WS? #}
-  {% set is_raw_ws = (entname is not none) and (ws_entities is defined) and (entname in ws_entities) %}
-  {% set is_computed_ws = (entname is not none) and (computed_ws_entities is defined) and (entname in computed_ws_entities) %}
-
-  {# Decide endpoints #}
-  {% set wsUrl = None %}
-  {% if is_raw_ws %}
-    {% set wsUrl = "/api/external/" ~ entname|lower ~ "/stream" %}
-  {% elif is_computed_ws %}
-    {% set wsUrl = "/api/entities/" ~ entname|lower ~ "/stream" %}
-  {% endif %}
-
-  {% set httpUrl = None %}
-  {% if entname and not wsUrl %}
-    {% set httpUrl = "/api/entities/" ~ entname|lower ~ "/" %}
-  {% endif %}
-
   {% set props = cmp.to_props() %}
-
   {% set common = {
     "name": cmp.name or (kind ~ 'Component'),
-    "entity": entname,
-    "url": httpUrl,
-    "wsUrl": wsUrl
+    "entity": cmp.entity and cmp.entity.name or None
   } %}
-
   {% include "components/" ~ kind ~ ".jinja" %}
 {% endmacro %}

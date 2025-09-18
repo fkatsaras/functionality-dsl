@@ -8,7 +8,11 @@ from app.core.utils import rows_from
 
 from app.domain.models import {{ entity.name }}
 
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+# Internal endpoint-driven router
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ endpoint.summary or endpoint.name }}"]
+)
 
 _REST_INPUTS = [
 {%- for it in rest_inputs %}
@@ -39,57 +43,69 @@ def _project(row: Dict[str, Any], keep: list[str] | None) -> Dict[str, Any]:
     return {k: row.get(k) for k in keep}
 
 @router.get("/", response_model=List[{{ entity.name }}], summary="List {{ entity.name }}")
-async def list_{{ entity.name | lower }}():
+async def list_{{ endpoint.name | lower }}():
     client = get_http_client()
 
     lists: Dict[str, list] = {}
     for it in _REST_INPUTS:
+        print(f"\n\n\n\n\n\n\n\n\n\n--- Fetching upstream alias={it['alias']} url={it['url']} fields={it['fields']} ---")
         r = await client.get(it["url"], headers=it["headers"])
+        print("HTTP status:", r.status_code)
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
 
         ct = r.headers.get("content-type", "")
+        print("Content-Type:", ct)
         if "application/json" not in ct:
             raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
 
         data = r.json()
-        print('#############################################################################################################')
-        print('Entity {{ entity.name }} gets')
-        print(data)
-        print('#############################################################################################################')
-        # Normalize:
+        print("Upstream JSON sample (first 2 rows):", data[:2] if isinstance(data, list) else data)
 
         try:
             rows = rows_from(data, it["fields"])
         except Exception as ex:
+            print("rows_from error:", ex)
             raise HTTPException(status_code=502, detail=str(ex))
 
+        print(f"rows_from produced {len(rows) if isinstance(rows, list) else type(rows)} rows")
+        if rows and isinstance(rows, list):
+            print("First projected row (raw):", rows[0])
 
         if not isinstance(rows, list) or (rows and not isinstance(rows[0], dict)):
             raise HTTPException(status_code=502, detail="Upstream did not return a usable list of objects")
-        lists[it["alias"]] = [_project(d, it["fields"]) for d in rows]
+
+        projected = [_project(d, it["fields"]) for d in rows]
+        print("First projected row (after _project):", projected[0] if projected else None)
+        lists[it["alias"]] = projected
 
     n = min((len(v) for v in lists.values()), default=0)
+    print(f"\n\n\n\n\n\n\n\n\n\n--- Computing outputs: n={n}, aliases={list(lists.keys())} ---")
     out_rows: list[Dict[str, Any]] = []
     for i in range(n):
         ctx = {alias: lists[alias][i] for alias in lists}
+        print(f"\nRow {i} ctx = {ctx}")
         row: Dict[str, Any] = {}
 
         for name, code in _COMPILED.items():
-            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
-        
+            try:
+                row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+                print(f"  Computed {name} = {row[name]!r}")
+            except Exception as ex:
+                print(f"  ERROR computing {name}: {ex} (ctx={ctx})")
+                raise
+
         if _WHERE is not None:
             try:
                 ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))
-            except Exception:
+                print(f"  WHERE evaluated to {ok}")
+            except Exception as ex:
+                print("  WHERE eval error:", ex)
                 ok = False
             if not ok:
                 continue
+
         out_rows.append(row)
 
-    print('#############################################################################################################')
-    print('Entity {{ entity.name }} returns')
-    print(str([{{ entity.name }}(**r) for r in out_rows]))
-    print('#############################################################################################################')
-
+    print('\nFinal out_rows:', out_rows[:3], f"... total={len(out_rows)}")
     return [{{ entity.name }}(**r) for r in out_rows]

@@ -1,6 +1,6 @@
 import utils
 import expression
-import endpoints
+import integration
 
 AttrType:
   'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
@@ -21,7 +21,7 @@ SchemaAttribute:
 ;
 
 ComputedAttribute:
-  name=ID '=' expr=Expr
+  name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr
 ;
 
 Input:
@@ -31,7 +31,7 @@ Input:
 Entity:
   'Entity' name=ID
   (
-    ('source:' source=[Source])?
+    ('source:' source=[ExternalSource])?   // still works via common
     ('inputs:' '-' inputs+=Input ('-' inputs+=Input)*)?
     ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
     ('where:' where=Expr)?

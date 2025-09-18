@@ -1,8 +1,6 @@
-# app/api/routers/{{ entity.name | lower }}_stream.py
 import asyncio
 import json
 import contextlib
-import time
 import uuid
 import logging
 import websockets
@@ -15,9 +13,13 @@ from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
 from app.core.expressions import compile_safe
 from app.core.logging import set_request_id
 
-logger = logging.getLogger("fdsl.router.ws.{{ entity.name }}")
+logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
 
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }} (stream)"])
+# Internal endpoint-driven router
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ (endpoint.summary or endpoint.name) ~ ' (stream)' }}"]
+)
 
 _WS_INPUTS = [
 {%- for it in ws_inputs %}
@@ -33,7 +35,6 @@ _clients_lock = asyncio.Lock()
 _bg_task: Optional[asyncio.Task] = None
 
 def _coerce_delta(payload: dict) -> dict:
-    # Optional normalizer — safe no-op for non-Hatnote sources
     out = dict(payload)
     if "delta" in out: return out
     if "change_size" in out: out["delta"] = out["change_size"]; return out
@@ -91,7 +92,6 @@ def _compute_row() -> Dict[str, Any] | None:
             row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
         return row
     except Exception as ex:
-        # single-line, structured
         sample = {k: (list(v.keys())[:6] if isinstance(v, dict) else type(v).__name__) for k, v in ctx.items()}
         logger.error("compute_error", extra={"err":repr(ex), "ctx_keys": sample})
         return None
@@ -132,7 +132,6 @@ async def _loop():
 
 @router.websocket("/stream")
 async def stream(ws: WebSocket):
-    # WS gets its own correlation id
     rid = uuid.uuid4().hex
     set_request_id(rid)
     await ws.accept()

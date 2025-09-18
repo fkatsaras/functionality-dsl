@@ -12,7 +12,7 @@
 {% endfor %}
 {% set keys = ns.cols | map(attribute='key') | list %}
 {% set primaryKey = props.get('primaryKey') or (keys and ('id' in keys and 'id' or keys[0])) or 'id' %}
-{% set endpoint = props.get('url') or common.url %}
+{% set endpoint = props.get('endpointPath') or common.url %}
 <Table
     name="{{ common.name }}"
     {% if endpoint %}

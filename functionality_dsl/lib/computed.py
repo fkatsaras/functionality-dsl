@@ -14,6 +14,14 @@ def _avg(xs) -> Optional[float]:
 def _now() -> int:
     return int(time.time() * 1000)
 
+def _len(x) -> Optional[int]:
+    if x is None:
+        return None
+    try:
+        return len(x)
+    except Exception:
+        return None 
+
 def _tofloat(x) -> Optional[float]:
     if x is None:
         return None
@@ -49,7 +57,7 @@ DSL_FUNCTIONS = {
     "avg":       (_avg,         (1, 1)),
     "min":       (min,          (1, None)),
     "max":       (max,          (1, None)),
-    "len":       (len,          (1, 1)),
+    "len":       (_len,         (1, 1)),
     "now":       (_now,         (0, 0)),
     "abs":       (abs,          (1, 1)),
     "float":     (_tofloat,     (1, 1)),

@@ -1,4 +1,5 @@
 import utils
+import integration
 import endpoints
 import entity
 import component
@@ -8,8 +9,9 @@ FDSLModel:
     (imports+=Import)*
     (
         (servers+=Server)*
-        (sources+=Source)*        // RESTEndpoint / WSEndpoint
+        (external+=ExternalSource)*
         (entities+=Entity)*
+        (internal+=InternalEndpoint)*
         (components+=Component)*
     )#
 ;

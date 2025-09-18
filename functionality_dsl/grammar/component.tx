@@ -2,23 +2,20 @@ import utils
 import entity
 import endpoints
 
-// ---------- attribute reference tied to the component's entity ----------
-AttrRef:
-  'data' '.' attr=[entity.Attribute]
-;
+// AttrRef remains, but will resolve via Component.endpoint.entity
+AttrRef: 'data' '.' attr=[entity.Attribute] ;
 
-// ---------- COMPONENTS (strictly typed, no generic props) ----------
 Component:
     TableComponent
   | LineChartComponent
   | ActionFormComponent
   | GaugeComponent
-  | PlotComponent 
+  | PlotComponent
 ;
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('entity:' entity=[Entity])?
+  ('endpoint:' endpoint=[InternalEndpoint])?   // ⟵ replaces 'entity:'
   (
     ('columns:' '[' columns+=AttrRef (',' columns+=AttrRef)* ']')?
     ('primaryKey:' (primaryKey=AttrRef | primaryKey_str=STRING))?
@@ -28,7 +25,7 @@ TableComponent:
 
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
-  ('entity:' entity=[Entity])?
+  ('endpoint:' endpoint=[InternalEndpoint])?
   (
     ('x:' x=AttrRef)?
     ('y:' '[' y+=AttrRef (',' y+=AttrRef)* ']')?
@@ -40,21 +37,16 @@ LineChartComponent:
 
 GaugeComponent:
   'Component' '<' 'Gauge' '>' name=ID
-  ('entity:' entity=[Entity])?
-  (
-    ('value:' value=AttrRef)?
-    ('min:'   min=FLOAT)?
-    ('max:'   max=FLOAT)?
-    ('label:' label=STRING)?
-    ('unit:'  unit=STRING)?
-  )#
+  ('endpoint:' endpoint=[InternalEndpoint])?
+  ( ('value:' value=AttrRef)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
   'end'
 ;
 
+// ActionForm should *not* hit External anymore; point to InternalREST
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'action:' action=[RESTEndpoint]
+    'action:' action=[InternalRESTEndpoint]      // ⟵ was RESTEndpoint
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
@@ -64,13 +56,7 @@ ActionFormComponent:
 
 PlotComponent:
   'Component' '<' 'Plot' '>' name=ID
-  ('entity:' entity=[Entity])?
-  (
-    ('x:' x=AttrRef)?           // expects: list<int|float> attribute key
-    ('y:' y=AttrRef)?           // expects: list<int|float> attribute key
-    ('xLabel:' xLabel=STRING)?
-    ('yLabel:' yLabel=STRING)?
-  )#
+  ('endpoint:' endpoint=[InternalEndpoint])?
+  ( ('x:' x=AttrRef)? ('y:' y=AttrRef)? ('xLabel:' xLabel=STRING)? ('yLabel:' yLabel=STRING)? )#
   'end'
 ;
-

@@ -7,16 +7,7 @@ from uuid import UUID
 {% for ent in entities %}
 class {{ ent.name }}(BaseModel):
 {% for attr in ent.attributes %}
-{% if attr.kind == "schema" %}
-{% if ent.has_inputs %}
-    {{ attr.name }}: Optional[Any] = None
-{% else %}
     {{ attr.name }}: {{ attr.py_type }}
-{% endif %}
-{% else %}
-    # computed attribute (expression: {{ attr.expr_raw | replace("\n"," ") }})
-    {{ attr.name }}: Optional[Any] = None
-{% endif %}
 {% endfor %}
 
     model_config = ConfigDict(extra="forbid")

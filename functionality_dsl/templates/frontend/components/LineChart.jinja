@@ -1,5 +1,5 @@
-{% set endpoint    = common.url %}
-{% set ws_endpoint = common.wsUrl %}
+{% set endpoint    = props.get('endpointPath') or common.url %}
+{% set ws_endpoint = props.get('streamPath')   or common.wsUrl %}
 {# Normalize x: default to 't' and strip 'data.' if present #}
 {% set x_raw = props.get('x') %}
 {% set x_key = (x_raw if x_raw is not none else 't') | replace('data.', '') %}
