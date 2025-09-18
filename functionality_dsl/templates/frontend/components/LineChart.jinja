@@ -1,4 +1,3 @@
-{# props: optional x (string), series OR y (list/string), labels #}
 {% set endpoint    = common.url %}
 {% set ws_endpoint = common.wsUrl %}
 {# Normalize x: default to 't' and strip 'data.' if present #}
@@ -15,12 +14,12 @@
 {% for yk in y_list %}
 {% set _ = y_keys.append(yk | replace('data.', '')) %}
 {% endfor %}
-{# Optional labels #}
+
 {% set x_label = props.get('xLabel') %}
 {% set y_label = props.get('yLabel') %}
 {# Numeric props; render as numbers, not strings #}
 {% set window   = props.get('windowSize', 240) %}
-{% set refresh  = props.get('refreshMs', 0) %}   {# default no polling; WS drives liveness #}
+{% set refresh  = props.get('refreshMs', 0) %}
 {% set height   = props.get('height', 500) %}
 <LineChart
   name="{{ common.name }}"
