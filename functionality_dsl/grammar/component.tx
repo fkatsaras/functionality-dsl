@@ -12,7 +12,8 @@ Component:
     TableComponent
   | LineChartComponent
   | ActionFormComponent
-  | GaugeComponent 
+  | GaugeComponent
+  | PlotComponent 
 ;
 
 TableComponent:
@@ -57,6 +58,18 @@ ActionFormComponent:
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
+  )#
+  'end'
+;
+
+PlotComponent:
+  'Component' '<' 'Plot' '>' name=ID
+  ('entity:' entity=[Entity])?
+  (
+    ('x:' x=AttrRef)?           // expects: list<int|float> attribute key
+    ('y:' y=AttrRef)?           // expects: list<int|float> attribute key
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
   )#
   'end'
 ;

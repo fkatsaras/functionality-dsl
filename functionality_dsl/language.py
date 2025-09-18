@@ -112,7 +112,7 @@ def _validate_func(name, argc, node):
         )
 
 def _annotate_computed_attrs(model, metamodel=None):
-    # Build entity -> set(attr names) once (unchanged)
+    # Build entity -> set(attr names) once
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
@@ -121,7 +121,7 @@ def _annotate_computed_attrs(model, metamodel=None):
     for ent in get_children_of_type("Entity", model):
         inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
 
-        # ---- existing: per-attribute validation/compile ----
+        # ---- per-attribute validation/compile ----
         for a in getattr(ent, "attributes", []) or []:
             if not is_computed_attr(a):
                 continue
@@ -147,7 +147,7 @@ def _annotate_computed_attrs(model, metamodel=None):
             except Exception as ex:
                 raise TextXSemanticError(f"Compile error: {ex}", **get_location(a))
 
-        # ---- entity-level WHERE predicate ----
+        # ---- entity-level WHERE ----
         w = getattr(ent, "where", None)
         if w is not None:
             for alias, attr, node in _collect_refs(w):
@@ -265,7 +265,6 @@ def ws_endpoint_obj_processor(ep):
             **get_location(ep),
         )
     if not (url.startswith("ws://") or url.startswith("wss://")):
-        # loosen if you want to allow http(s) upgrade later
         raise TextXSemanticError(
             f"WSEndpoint '{ep.name}' url must start with ws:// or wss://.",
             **get_location(ep),
@@ -342,7 +341,7 @@ def entity_obj_processor(ent):
 
 
 # ------------------------------------------------------------------------------
-# Model-wide validation & enrichment
+# Model validation
 def model_processor(model, metamodel=None):
     """
     Runs after parsing; perform cross-object validation and light enrichment.
@@ -373,17 +372,14 @@ def verify_unique_names(model):
 
 
 def verify_endpoints(model):
-    # obj processors already validate; hook left for cross-checks if needed
     return
 
 
 def verify_entities(model):
-    # obj processor on each entity does the heavy lifting
     return
 
 
 def verify_components(model):
-    # obj processor on each component does their checks
     return
 
 

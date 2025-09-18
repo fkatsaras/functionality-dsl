@@ -1,0 +1,24 @@
+{# props: x (string key for number[]), y (string key for number[]), optional labels #}
+{% set endpoint    = common.url %}
+{% set ws_endpoint = common.wsUrl %}
+
+{# Normalize keys: strip 'data.' #}
+{% set x_key = (props.get('x') or 'x') %}
+{% set y_key = (props.get('y') or 'y') %}
+
+{% set x_label = props.get('xLabel') %}
+{% set y_label = props.get('yLabel') %}
+{% set height  = props.get('height', 500) %}
+{% set refresh = props.get('refreshMs', 0) %}
+
+<Plot
+  name="{{ common.name }}"
+  {% if endpoint %}url="{{ endpoint }}"{% endif %}
+  {% if ws_endpoint %}wsUrl="{{ ws_endpoint }}"{% endif %}
+  x="{{ x_key }}"
+  y="{{ y_key }}"
+  {%- if x_label is not none %} xLabel="{{ x_label }}"{% endif %}
+  {%- if y_label is not none %} yLabel="{{ y_label }}"{% endif %}
+  height={{ "{" }}{{ height }}{{ "}" }}
+  refreshMs={{ "{" }}{{ refresh }}{{ "}" }}
+/>

@@ -158,3 +158,34 @@ class GaugeComponent(_BaseComponent):
             "label": self.label or "",
             "unit": self.unit or "",
         }
+        
+@register_component
+class PlotComponent(_BaseComponent):
+    """
+    <Component<Plot> ...>
+      entity: <Entity>          # required
+      x:  data.<attr>           # required; MUST be a list of numbers
+      y:  data.<attr>           # required; MUST be a list of numbers
+      xLabel: "string"          # optional
+      yLabel: "string"          # optional
+    """
+    def __init__(self, parent=None, name=None, entity=None,
+                 x=None, y=None, xLabel=None, yLabel=None):
+        super().__init__(parent, name, entity)
+        self.x = self._attr_name(x) if x is not None else None
+        self.y = self._attr_name(y) if y is not None else None
+        self.xLabel = _strip_quotes(xLabel)
+        self.yLabel = _strip_quotes(yLabel)
+
+        if entity is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if self.x is None:
+            raise ValueError(f"Component '{name}': 'x:' is required.")
+        if self.y is None:
+            raise ValueError(f"Component '{name}': 'y:' is required.")
+
+    def to_props(self):
+        # The Svelte Plot expects object-of-arrays payload; it will read
+        # props.x / props.y as KEYS and take arrays from the fetched JSON.
+        return {"x": self.x, "y": self.y,
+                "xLabel": self.xLabel, "yLabel": self.yLabel}
