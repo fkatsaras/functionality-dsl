@@ -74,26 +74,41 @@ def _strip_quotes(s):
         return s[1:-1]
     return s
 
-
 @register_component
 class TableComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, endpoint=None, columns=None, primaryKey=None, primaryKey_str=None):
+    def __init__(self, parent=None, name=None, endpoint=None, colNames=None):
         super().__init__(parent, name, endpoint)
-        self.columns = [self._attr_name(a) for a in (columns or [])]
-        self.primaryKey = self._attr_name(primaryKey) if primaryKey is not None else _strip_quotes(primaryKey_str)
 
-        # tiny sanity rules here (not in language.py)
+        # unwrap StringList
+        if hasattr(colNames, "items"):
+            col_items = colNames.items
+        else:
+            col_items = colNames or []
+
+        self.colNames = [self._attr_name(c) for c in col_items]
+
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if not self.columns:
-            raise ValueError(f"Component '{name}': 'columns:' cannot be empty.")
+        if not self.colNames:
+            raise ValueError(f"Component '{name}': 'colNames:' cannot be empty.")
+
+    def _attr_name(self, a):
+        if a is None:
+            return None
+        if isinstance(a, str):
+            s = a.strip()
+            if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+                return s[1:-1]
+            return s
+        n = getattr(a, "name", None)
+        return n
 
     def to_props(self):
         return {
-            "endpointPath": self._endpoint_path("/"),   # REST list endpoint
-            "columns": self.columns,
-            "primaryKey": self.primaryKey,
+            "endpointPath": self._endpoint_path("/"),
+            "colNames": self.colNames,
         }
+
 
 
 @register_component

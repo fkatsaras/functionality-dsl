@@ -97,7 +97,8 @@ safe_globals = {
     "__builtins__": {},
     "dsl_funcs": DSL_FUNCTION_REGISTRY,
     "isinstance": isinstance,
-    "dict": dict,   # whitelist dict type
-    "list": list,   # optional: whitelist list
-    "str": str,     # optional: whitelist str
+    "dict": dict,
+    "list": list,
+    "str": str,
+    "tuple": tuple,
 }

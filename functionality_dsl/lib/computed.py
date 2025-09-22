@@ -146,6 +146,26 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         if cls == "ListLiteral":
             items = getattr(node, "items", []) or []
             return "[" + ", ".join(to_py(x) for x in items) + "]"
+        
+        if cls == "DictLiteral":
+            pairs = getattr(node, "pairs", []) or []
+            items = []
+            for p in pairs:
+                print("[DEBUG] KeyValue node:", vars(p))
+                ks = getattr(p, "key_str", None)
+                ki = getattr(p, "key_id", None)
+
+                if ks and ks.strip():  # only if it's a non-empty string
+                    key = ks.strip('"').strip("'")
+                    key_code = repr(key)
+                elif ki:  # bare identifier -> treat as string key
+                    key_code = repr(ki)
+                else:
+                    raise ValueError("DictLiteral KeyValue without usable key_str or key_id")
+
+                val_code = to_py(p.value)
+                items.append(f"{key_code}: {val_code}")
+            return "{" + ", ".join(items) + "}"
 
         # ---------------- References ----------------
         if cls == "Ref":
@@ -227,33 +247,41 @@ def compile_expr_to_python(expr, *, context: str) -> str:
                 s = f"({s} or {to_py(t.right)})"
             return s
         
-        # ----- accessors -------
-        # if cls == "PostfixExpr":
-        #     base = to_py(node.base)
-        #     for t in node.tails or []:
-        #         if getattr(t, "member", None) is not None:
-        #             base = f"{base}[{t.member.name!r}]"
-        #         elif getattr(t, "index", None) is not None:
-        #             base = f"{base}[{to_py(t.index)}]"
-        #     return base
+        # ----- accessing lists /dicts -------
         if cls == "PostfixExpr":
             base = to_py(node.base)
             for t in node.tails or []:
                 if getattr(t, "member", None) is not None:
+                    # foo.bar -> safe dict lookup
                     base = f"({base}.get({t.member.name!r}) if isinstance({base}, dict) else None)"
                 elif getattr(t, "index", None) is not None:
                     idx = to_py(t.index)
-                    base = f"(({base} or {{}}).get({idx}) if isinstance({base}, dict) else None)"
+                    # foo[idx] -> safe dict or list indexing
+                    base = (
+                        f"(({base}.get({idx}) if isinstance({base}, dict) else "
+                        f"({base}[{idx}] if isinstance({base}, (list, tuple)) and 0 <= {idx} < len({base}) else None)))"
+                    )
             return base
 
         # ---------------- List comprehensions ----------------
         if cls == "ListCompExpr":
-            target = node.var   # your grammar: 'var=ID'
+            target = node.var
             loop_vars.add(target)
             head = to_py(node.head)
             iterable = to_py(node.iterable)
+            cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
             loop_vars.remove(target)
-            return f"[{head} for {target} in {iterable}]"
+            return f"[{head} for {target} in {iterable}{cond}]"
+        
+        if cls == "DictCompExpr":
+            target = node.var
+            loop_vars.add(target)
+            k = to_py(node.key)
+            v = to_py(node.value)
+            iterable = to_py(node.iterable)
+            cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
+            loop_vars.remove(target)
+            return f"{{ {k}: {v} for {target} in {iterable}{cond} }}"
 
         if cls == "Var":
             if node.name in loop_vars:

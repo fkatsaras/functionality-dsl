@@ -461,7 +461,41 @@ def verify_entities(model):
 
 
 def verify_components(model):
-    return
+    for comp in get_model_components(model):
+        if comp.__class__.__name__ == "TableComponent":
+            _validate_table_component(comp)
+
+# ---- Specific component validation ------
+def _validate_table_component(comp):
+    # 1. must have endpoint
+    if comp.endpoint is None:
+        raise TextXSemanticError(
+            f"Table '{comp.name}' must bind an 'endpoint:'.",
+            **get_location(comp)
+        )
+
+    ent = getattr(comp.endpoint, "entity", None)
+    if ent is None:
+        raise TextXSemanticError(
+            f"Table '{comp.name}': endpoint has no entity bound.",
+            **get_location(comp.endpoint)
+        )
+        
+    # 3. colNames must not be empty
+    if not comp.colNames:
+        raise TextXSemanticError(
+            f"Table '{comp.name}': 'colNames:' cannot be empty.",
+            **get_location(comp)
+        )
+
+    # 4. optional: check length against dict keys (if possible)
+    # This requires deeper inspection of row_attr._py or expression analysis.
+    # For now you can at least assert that colNames are unique:
+    if len(set(comp.colNames)) != len(comp.colNames):
+        raise TextXSemanticError(
+            f"Table '{comp.name}': duplicate colNames not allowed.",
+            **get_location(comp)
+        )
 
 
 def _populate_aggregates(model):

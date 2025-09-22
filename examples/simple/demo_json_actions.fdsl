@@ -44,29 +44,30 @@ Entity RealObjectsRaw
     - raw: list
 end
 
-Entity RealObject
-  inputs: 
-   - r: RealObjectsRaw
+Entity RealObjectsRows
+  inputs:
+    - r: RealObjectsRaw
   attributes:
-    - id: list                 = [x['id'] for x in r.raw];
-    - name: list               = [x['name'] for x in r.raw];
-    - color: list?             = [x['data']['color'] for x in r.raw];
-    - capacity: list?          = [x['data']['capacity'] for x in r.raw];
-    - price: list?             = [x['data']['price'] for x in r.raw];
-    - year: list?              = [x['data']['year'] for x in r.raw];
+    - lol: list = [{ 
+      id: x['id'],
+      name: x['name'],
+      color: x['data']['color'],
+      capacity: x['data']['capacity'],
+      price: x['data']['price'],
+      year: x['data']['year']
+      } for x in r.raw];
 end
 
 // --- Internal endpoint -----------------------------------------
 InternalREST RealObjectsList
-  entity: RealObject
+  entity: RealObjectsRows
   path: "/api/objects"
 end
 
 // --- Components ------------------------------------------------
 Component<Table> ObjectsTable
   endpoint: RealObjectsList
-  primaryKey: data.id
-  columns: [data.id, data.name, data.color, data.capacity, data.price, data.year]
+  colNames: ["id", "name", "color", "capacity", "price", "year"]
 end
 
 Component<ActionForm> NewObject

@@ -43,6 +43,7 @@ IndexAccess:  '[' index=Expr ']' ;
 // -------- atoms --------
 AtomBase:
       listcomp=ListCompExpr
+    | dictcomp=DictCompExpr
     | literal=Literal
     | call=Call
     | var=Var
@@ -61,9 +62,6 @@ Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
-// bare variable
-Var: name=ID ;
-
 // legacy ref (still works): alias.attr
 Ref: alias=ID '.' attr=ID ;
 
@@ -75,6 +73,7 @@ Literal:
     | Bool
     | 'null'
     | ListLiteral
+    | DictLiteral
 ;
 
 // plain list
@@ -82,7 +81,20 @@ ListLiteral:
     '[' (items+=Expr (',' items+=Expr)*)? ']'
 ;
 
-// comprehension
+// list comprehension
 ListCompExpr:
-    '[' head=Expr 'for' var=ID 'in' iterable=Expr ']'
+    '[' head=Expr 'for' var=ID 'in' iterable=Expr ('if' cond=Expr)? ']'
 ;
+
+DictLiteral:
+  '{' (pairs+=KeyValue (',' pairs+=KeyValue)*)? '}'
+;
+
+KeyValue:
+  (key_str=STRING | key_id=ID) ':' value=Expr
+;
+// Dict comprehension
+DictCompExpr:
+  '{' key=Expr ':' value=Expr 'for' var=ID 'in' iterable=Expr ('if' cond=Expr)? '}'
+;
+
