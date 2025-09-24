@@ -18,6 +18,8 @@ THIS_DIR = dirname(abspath(__file__))
 GRAMMAR_DIR = join(THIS_DIR, "grammar")
 
 SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
+RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
+
 
 
 def _is_node(x):
@@ -83,23 +85,81 @@ def is_computed_attr(a):
     e = get_expr(a)
     return e is not None
 
+def _as_id_str(x):
+    if x is None:
+        return None
+    if isinstance(x, str):
+        return x
+    for attr in ("name", "obj_name", "value", "ID"):
+        v = getattr(x, attr, None)
+        if isinstance(v, str):
+            return v
+    try:
+        s = str(x)
+        return s if "<" not in s else None
+    except Exception:
+        return None
+
+def _loop_var_names(expr) -> set[str]:
+    names: set[str] = set()
+
+    for n in _walk(expr):
+        cname = n.__class__.__name__
+
+        if cname == "ListCompExpr":
+            v = getattr(n, "var", None)
+            if v is None:
+                continue
+
+            if hasattr(v, "single"):   # CompTarget.single -> Var
+                nm = _as_id_str(v.single)
+                if nm:
+                    names.add(nm)
+
+            elif hasattr(v, "tuple"):  # CompTarget.tuple -> TupleTarget
+                for vv in getattr(v.tuple, "vars", []):
+                    nm = _as_id_str(vv)
+                    if nm:
+                        names.add(nm)
+
+        elif cname == "DictCompExpr":
+            v = getattr(n, "var", None)
+            nm = _as_id_str(v)
+            if nm:
+                names.add(nm)
+    return names
 
 # ------------------------------------------------------------------------------
 # Expression validation helpers
-def _collect_refs(expr):
+def _collect_refs(expr, loop_vars: set[str] | None = None):
+    """
+    Collect references (alias, attr) from expressions.
+    Skip loop vars so that `x` in `[... for x in ...]` is not flagged as unknown.
+    """
+    lvs = loop_vars or set()
+
     for n in _walk(expr):
-        if n.__class__.__name__ == "Ref":
-            # strict schema ref
-            yield getattr(n, "alias", None), getattr(n, "attr", None), n
-        elif n.__class__.__name__ == "PostfixExpr":
+        nname = n.__class__.__name__
+
+        if nname == "Ref":
+            alias_raw = getattr(n, "alias", None)
+            alias = _as_id_str(alias_raw)
+            if alias in lvs:
+                continue  # loop var, ignore
+            yield alias, getattr(n, "attr", None), n
+
+        elif nname == "PostfixExpr":
             base = n.base
-            if getattr(base, "var", None) is not None:
-                alias = base.var.name
-                # mark it as JSON-path access (attr=None means “don’t check attrs”)
+            tails = list(getattr(n, "tails", []) or [])
+            if getattr(base, "var", None) is not None and tails:
+                alias_raw = base.var
+                alias = _as_id_str(alias_raw)
+
+                if not alias or alias in RESERVED or alias in lvs:
+                    continue  # skip reserved and loop vars
+
                 yield alias, "__jsonpath__", n
-
-
-
+                
 def _collect_calls(expr):
     """
     Same idea for function calls.
@@ -129,100 +189,59 @@ def _validate_func(name, argc, node):
 
 
 def _annotate_computed_attrs(model, metamodel=None):
-    # Build entity -> set(attr names) once
+    """
+    Validate and compile computed attributes inside all entities.
+    - Accepts loop vars inside comprehensions (detected by _loop_var_names).
+    - Accepts parent entity references.
+    """
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
     }
 
     for ent in get_children_of_type("Entity", model):
-        inputs = {inp.alias: inp.target for inp in getattr(ent, "inputs", []) or []}
+        parents = getattr(ent, "parents", []) or []
 
-        # ---- per-attribute validation/compile ----
         for a in getattr(ent, "attributes", []) or []:
             if not is_computed_attr(a):
                 continue
             expr = get_expr(a)
             if expr is None:
                 raise TextXSemanticError(
-                    "Computed attribute missing expression.", **get_location(a)
+                    "Computed attribute missing expression.",
+                    **get_location(a)
                 )
 
-            # refs like i.title
-            for alias, attr, node in _collect_refs(expr):
-                if alias not in inputs:
-                    # allow loop variables from comprehensions
-                    if any(alias == getattr(a, "var", None) for a in get_children_of_type("ListCompExpr", expr)):
-                        continue
-                    raise TextXSemanticError(f"Unknown input alias '{alias}'.", **get_location(node))
-                
-                tgt = inputs[alias].name
-                if attr == "__jsonpath__":
-                    # only check alias exists, skip inner keys
+            loop_vars = _loop_var_names(expr)
+
+            for alias, attr, node in _collect_refs(expr, loop_vars):
+
+                # allow references to parent entities
+                matched_parent = next((p for p in parents if alias == p.name), None)
+                if matched_parent:
+                    tgt_attrs = target_attrs.get(matched_parent.name, set())
+                    if attr != "__jsonpath__" and attr not in tgt_attrs:
+                        raise TextXSemanticError(
+                            f"'{alias}.{attr}' not found on entity '{matched_parent.name}'.",
+                            **get_location(node),
+                        )
                     continue
-                
-                if attr not in target_attrs.get(tgt, set()):
-                    raise TextXSemanticError(
-                        f"'{alias}.{attr}' not found on entity '{tgt}'.",
-                        **get_location(node),
-                    )
+
+                # not a parent entity, not a loop var -> error
+                raise TextXSemanticError(
+                    f"Unknown reference '{alias}'. Allowed parents: {[p.name for p in parents]} or loop vars {loop_vars}"
+                )
 
             # function calls
             for fname, argc, node in _collect_calls(expr):
                 _validate_func(fname, argc, node)
 
-            # compile computed attribute expression
             try:
                 a._py = compile_expr_to_python(expr, context="entity")
             except Exception as ex:
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
                 )
-
-        # ---- entity-level WHERE ----
-        w = getattr(ent, "where", None)
-        if w is not None:
-            for alias, attr, node in _collect_refs(w):
-                if alias == "self":
-                    # must be an attribute of *this* entity (schema or computed)
-                    if attr == "__jsonpath__":
-                        # only check alias exists, skip inner keys
-                        continue
-                    
-                    if attr not in target_attrs.get(tgt, set()):
-                        raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on entity '{tgt}'.",
-                            **get_location(node),
-                        )
-                    continue
-
-                if alias not in inputs:
-                    raise TextXSemanticError(
-                        f"Unknown input alias '{alias}'.", **get_location(node)
-                    )
-
-                tgt = inputs[alias].name
-                if attr == "__jsonpath__":
-                    # only check alias exists, skip inner keys
-                    continue
-                
-                if attr not in target_attrs.get(tgt, set()):
-                    raise TextXSemanticError(
-                        f"'{alias}.{attr}' not found on entity '{tgt}'.",
-                        **get_location(node),
-                    )
-
-            for fname, argc, node in _collect_calls(w):
-                _validate_func(fname, argc, node)
-
-            try:
-                ent._where_py = compile_expr_to_python(w, context="predicate")
-            except Exception as ex:
-                raise TextXSemanticError(
-                    f"Compile error in where: {ex}", **get_location(w)
-                )
-
-
 # ------------------------------------------------------------------------------
 # Public helpers
 def build_model(model_path: str):
@@ -573,6 +592,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
         global_repository=global_repo,
         debug=debug,
         classes=list(COMPONENT_TYPES.values()),  # strictly typed components
+        # reserved_keywords=RESERVED, 
     )
 
     mm.register_scope_providers(get_scope_providers())

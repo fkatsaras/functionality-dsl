@@ -26,8 +26,8 @@ LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
   ('endpoint:' endpoint=[InternalEndpoint])?
   (
-    ('x:' x=AttrRef)?
-    ('y:' '[' y+=AttrRef (',' y+=AttrRef)* ']')?
+    ('rows:' rows=AttrRef)?
+    ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
     ('xLabel:' xLabel=STRING)?
     ('yLabel:' yLabel=STRING)?
   )#

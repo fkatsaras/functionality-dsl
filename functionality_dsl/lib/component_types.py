@@ -113,27 +113,46 @@ class TableComponent(_BaseComponent):
 
 @register_component
 class LineChartComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, endpoint=None, x=None, y=None, xLabel=None, yLabel=None):
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        endpoint=None,
+        rows=None,
+        xLabel=None,
+        yLabel=None,
+        seriesLabels=None,
+        refreshMs=None,
+        windowSize=None,
+        height=None,
+    ):
         super().__init__(parent, name, endpoint)
-        self.x = self._attr_name(x) if x is not None else None
-        self.y = [self._attr_name(a) for a in (y or [])]
+        self.rows = self._attr_name(rows) if rows is not None else None
         self.xLabel = _strip_quotes(xLabel)
         self.yLabel = _strip_quotes(yLabel)
+        self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
+        self.refreshMs = int(refreshMs) if refreshMs is not None else 0
+        self.windowSize = int(windowSize) if windowSize is not None else 0
+        self.height = int(height) if height is not None else 300  # some sensible default
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if self.x is None:
-            raise ValueError(f"Component '{name}': 'x:' is required.")
-        if not self.y:
-            raise ValueError(f"Component '{name}': 'y:' must have at least one field.")
+        if self.rows is None:
+            raise ValueError(f"Component '{name}': 'rows:' is required.")
 
     def to_props(self):
-        return {
+        base = {
             "endpointPath": self._endpoint_path("/"),
-            "streamPath":   self._endpoint_path("/stream"),
-            "x": self.x, "y": self.y,
-            "xLabel": self.xLabel, "yLabel": self.yLabel,
+            "seriesLabels": self.seriesLabels,
+            "xLabel": self.xLabel,
+            "yLabel": self.yLabel,
+            "refreshMs": self.refreshMs,
+            "windowSize": self.windowSize,
+            "height": self.height,
         }
+        if self.endpoint.__class__.__name__ == "InternalWSEndpoint":
+            base["streamPath"] = self._endpoint_path("/stream")
+        return base
 
 
 @register_component

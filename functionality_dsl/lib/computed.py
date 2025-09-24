@@ -5,6 +5,8 @@ import time
 from typing import Optional
 from functools import wraps
 
+RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
+
 
 # ---------------- DSL functions ----------------
 
@@ -41,6 +43,15 @@ def _safe_str(fn):
             return False
     return _wrap
 
+def _safe_zip(*args):
+    iters = []
+    for a in args:
+        if a is None:
+            iters.append([])
+        else:
+            iters.append(a)
+    return zip(*iters)
+
 @_safe_str
 def _contains(s, sub):    return sub in s
 
@@ -68,6 +79,7 @@ DSL_FUNCTIONS = {
     "icontains":  (_icontains,  (2, 2)),
     "startswith": (_startswith, (2, 2)),
     "endswith":   (_endswith,   (2, 2)),
+    "zip":        (_safe_zip,        (1, None)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
@@ -170,36 +182,50 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         # ---------------- References ----------------
         if cls == "Ref":
             alias = getattr(node, "alias", None)
-            attr  = getattr(node, "attr", [])  # This will be a list now
+            attr  = getattr(node, "attr", [])
+            print(f"[COMPILE/REF] context={context} alias={alias} attr={attr}")
 
-            # Build the base reference
+            # reserved keywords should never compile into ctx[…]
+            if alias in RESERVED:
+                return alias
+
             if context == "component":
                 if alias != "data":
                     raise ValueError("Only `data.*` references are allowed in Component props.")
                 base = 'ctx["data"]'
+
             elif context == "predicate":
                 if alias == "self":
                     base = 'row'
+                elif alias in loop_vars:
+                    base = alias
                 else:
                     base = f'ctx[{alias!r}]'
-            else:
+
+            else:  # context == "entity"
                 if alias is None:
                     raise ValueError("Bare attribute not allowed here; use <alias>.<attr>.")
-                # special: loop variable inside a comprehension
                 if alias in loop_vars:
                     base = alias
                 else:
                     base = f'ctx[{alias!r}]'
 
-            # Add nested attribute access
             for a in attr:
                 base += f'[{a!r}]'
-
             return base
 
         # ---------------- Expressions ----------------
         if cls == "IfThenElse":
-            return f"({to_py(node.thenExpr)} if {to_py(node.cond)} else {to_py(node.elseExpr)})"
+            # always have orExpr (this is the "then" value if cond/else are present)
+            then_code = to_py(node.orExpr)
+
+            if getattr(node, "cond", None) is not None and getattr(node, "elseExpr", None) is not None:
+                cond_code = to_py(node.cond)
+                else_code = to_py(node.elseExpr)
+                return f"({then_code} if {cond_code} else {else_code})"
+
+            # no conditional part: just a plain orExpr
+            return then_code
 
         if cls == "Call":
             fname = node.func
@@ -252,26 +278,46 @@ def compile_expr_to_python(expr, *, context: str) -> str:
             base = to_py(node.base)
             for t in node.tails or []:
                 if getattr(t, "member", None) is not None:
-                    # foo.bar -> safe dict lookup
-                    base = f"({base}.get({t.member.name!r}) if isinstance({base}, dict) else None)"
+                    # foo.bar -> safe dict lookup only
+                    member = t.member.name
+                    base = f"({base}.get('{member}') if isinstance({base}, dict) else None)"
                 elif getattr(t, "index", None) is not None:
                     idx = to_py(t.index)
                     # foo[idx] -> safe dict or list indexing
                     base = (
-                        f"(({base}.get({idx}) if isinstance({base}, dict) else "
-                        f"({base}[{idx}] if isinstance({base}, (list, tuple)) and 0 <= {idx} < len({base}) else None)))"
+                        f"({base}.get({idx}) if isinstance({base}, dict) "
+                        f"else ({base}[{idx}] if isinstance({base}, (list, tuple)) "
+                        f"and isinstance({idx}, int) and 0 <= {idx} < len({base}) else None))"
                     )
             return base
 
         # ---------------- List comprehensions ----------------
         if cls == "ListCompExpr":
-            target = node.var
-            loop_vars.add(target)
+            if getattr(node.var, "single", None):
+                target = node.var.single.name
+                loop_vars.add(target)
+                target_code = target
+            elif getattr(node.var, "tuple", None):
+                names = [v.name for v in node.var.tuple.vars]
+                for nm in names:
+                    loop_vars.add(nm)
+                target_code = "(" + ", ".join(names) + ")"
+            else:
+                raise ValueError("Unsupported CompTarget in ListCompExpr")
+
             head = to_py(node.head)
             iterable = to_py(node.iterable)
             cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
-            loop_vars.remove(target)
-            return f"[{head} for {target} in {iterable}{cond}]"
+
+            # cleanup loop vars
+            if getattr(node.var, "single", None):
+                loop_vars.remove(target)
+            elif getattr(node.var, "tuple", None):
+                for nm in names:
+                    loop_vars.remove(nm)
+
+            # IMPORTANT: emit full comprehension, don't recurse into `for`/`in`
+            return f"[{head} for {target_code} in {iterable}{cond}]"
         
         if cls == "DictCompExpr":
             target = node.var
@@ -286,8 +332,10 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         if cls == "Var":
             if node.name in loop_vars:
                 return node.name
-            else:
-                return f"ctx[{node.name!r}]"
+            if node.name in RESERVED:
+                # return the keyword directly
+                return node.name
+            return f"ctx[{node.name!r}]"
 
         if cls == "Atom":
             for fld in ("literal","ref","call","ifx","inner"):
@@ -324,6 +372,7 @@ def compile_expr_to_python(expr, *, context: str) -> str:
         raise ValueError(f"Unhandled node type: {cls}")
 
     py = to_py(expr).replace(" null ", " None ")
+    print("[DEBUG] compiling expr_str:", repr(py))
     _assert_safe_python_expr(py)
     print(py)
     return py

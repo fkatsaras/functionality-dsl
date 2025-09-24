@@ -7,48 +7,53 @@
     name = "LineChart",
     url,
     wsUrl,
-    x,
-    y,
+    refreshMs = 0,
+    windowSize: _windowSize = 0,
+    height = 240,
     xLabel,
     yLabel,
-    windowSize: _windowSize = 0,
-    refreshMs = 0,
-    height = 1000,
     seriesLabels: _seriesLabels = null as null | string[],
     seriesColors: _seriesColors = null as null | string[],
   } = $props<{
     name?: string;
     url?: string;
     wsUrl?: string;
-    x: string;
-    y: string | string[];
+    refreshMs?: number;
+    windowSize?: number;
+    height?: number;
     xLabel?: string;
     yLabel?: string;
-    windowSize?: number | null;
-    refreshMs?: number;
-    height?: number;
     seriesLabels?: string[] | null;
     seriesColors?: string[] | null;
   }>();
 
   let loading: boolean = $state(Boolean(url));
-  const yKeys: string[] = Array.isArray(y) ? y : [y];
+  let xKey: string | null = null;
+  let yKeys: string[] = [];
   const windowSize = Number(_windowSize ?? 0);
 
   // legend labels/colors
   const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
-  const seriesLabels = _seriesLabels && _seriesLabels.length === yKeys.length
-    ? _seriesLabels
-    : yKeys.map(k => k.toUpperCase());
-  const seriesColors = _seriesColors && _seriesColors.length === yKeys.length
-    ? _seriesColors
-    : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length]);
+  const seriesLabels = $derived(
+    _seriesLabels && _seriesLabels.length === yKeys.length
+      ? _seriesLabels
+      : yKeys.map(k => k.toUpperCase())
+  );
 
+  const seriesColors = $derived(
+    _seriesColors && _seriesColors.length === yKeys.length
+      ? _seriesColors
+      : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length])
+);
   type Point = { t: number; y: number };
   let series: Record<string, Point[]> = $state({} as Record<string, Point[]>);
   for (const k of yKeys) series[k] = [];
 
   let error: string | null = null;
+
+  function resetSeries() {
+    series = Object.fromEntries(yKeys.map(k => [k, []]));
+  }
 
   function normT(v: any): number | null {
     if (v == null) return null;
@@ -59,24 +64,47 @@
   }
 
   function pushRow(row: any) {
-    const t = normT(row?.[x]);
+    if (!xKey) return;
+    const t = normT(row?.[xKey]);
     if (t == null) return;
     for (const key of yKeys) {
       const v = Number(row?.[key]);
       if (Number.isFinite(v)) {
         const next = [...(series[key] || []), { t, y: v }];
-        series[key] = windowSize > 0 ? next.slice(-windowSize) : next;
+        series = { ...series, [key]: windowSize > 0 ? next.slice(-windowSize) : next };
       }
     }
   }
 
   function pushPayload(payload: any) {
-    const rows: any[] = Array.isArray(payload) ? payload : (payload ? [payload] : []);
-    for (const r of rows) pushRow(r);
-  }
+    if (!Array.isArray(payload) || !payload.length) return;
 
-  function resetSeries() {
-    for (const k of yKeys) series[k] = [];
+    let rows: any[] = [];
+
+    for (const obj of payload) {
+      for (const [key, value] of Object.entries(obj)) {
+        if (Array.isArray(value) && value.length && typeof value[0] === "object") {
+          rows = value;
+          break;
+        }
+      }
+      if (rows.length) break;
+    }
+
+    if (!rows.length) return;
+
+    // Infer keys
+    if (!xKey || !yKeys.length) {
+      const first = rows[0];
+      if (first && typeof first === "object") {
+        const entries = Object.entries(first);
+        xKey = entries[0][0];
+        yKeys = entries.slice(1).map(([k]) => k);
+        series = Object.fromEntries(yKeys.map(k => [k, []]));
+      }
+    }
+
+    for (const r of rows) pushRow(r);
   }
 
   async function fetchOnce({ replace = false } = {}) {
@@ -86,6 +114,8 @@
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const payload = await res.json();
+      console.log("raw payload from", url, payload);
+
       if (replace) resetSeries();
       pushPayload(payload);
     } catch (e: any) {
@@ -94,6 +124,7 @@
       loading = false;
     }
   }
+
 
   // ---- geometry helpers (shared x/y scales across all series)
   function allPoints(): Point[] {
@@ -191,7 +222,7 @@
   // ---- lifecycle
   let unsub: null | (() => void) = null;
   onMount(() => {
-    if (wsUrl) {
+    if (wsUrl && wsUrl !== "None") {
       unsub = wsSubscribe(wsUrl, pushPayload);
     } else if (url) {
       fetchOnce();
@@ -320,11 +351,11 @@
 
       <!-- X axis label -->
       <div class="mt-2 text-center text-[11px] text-text/60 font-approachmono">
-        {xLabel || x}
+        {xLabel}
       </div>
 
-      {#if $error}
-        <div class="mt-2 text-xs text-red-500 font-approachmono">{error}</div>
+      {#if error}
+        <div class="mt-2 text-xs text-red-500">{error}</div>
       {/if}
     </div>
   </div>

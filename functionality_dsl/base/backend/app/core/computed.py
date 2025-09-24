@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import time
 import ast
-
+import time
 from typing import Optional
 from functools import wraps
 
+RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
+
+
+# ---------------- DSL functions ----------------
 
 def _avg(xs) -> Optional[float]:
     xs = list(xs)
@@ -20,7 +23,7 @@ def _len(x) -> Optional[int]:
     try:
         return len(x)
     except Exception:
-        return None 
+        return None
 
 def _tofloat(x) -> Optional[float]:
     if x is None:
@@ -40,6 +43,15 @@ def _safe_str(fn):
             return False
     return _wrap
 
+def _safe_zip(*args):
+    iters = []
+    for a in args:
+        if a is None:
+            iters.append([])
+        else:
+            iters.append(a)
+    return zip(*iters)
+
 @_safe_str
 def _contains(s, sub):    return sub in s
 
@@ -52,19 +64,22 @@ def _startswith(s, pfx):  return s.startswith(pfx)
 @_safe_str
 def _endswith(s, sfx):    return s.endswith(sfx)
 
-# --- single registry: name -> (callable, (min_arity, max_arity)) --------------
+
+# ---------------- Registry ----------------
+
 DSL_FUNCTIONS = {
-    "avg":       (_avg,         (1, 1)),
-    "min":       (min,          (1, None)),
-    "max":       (max,          (1, None)),
-    "len":       (_len,         (1, 1)),
-    "now":       (_now,         (0, 0)),
-    "abs":       (abs,          (1, 1)),
-    "float":     (_tofloat,     (1, 1)),
-    "contains":  (_contains,    (2, 2)),
-    "icontains": (_icontains,   (2, 2)),
-    "startswith":(_startswith,  (2, 2)),
-    "endswith":  (_endswith,    (2, 2)),
+    "avg":        (_avg,        (1, 1)),
+    "min":        (min,         (1, None)),
+    "max":        (max,         (1, None)),
+    "len":        (_len,        (1, 1)),
+    "now":        (_now,        (0, 0)),
+    "abs":        (abs,         (1, 1)),
+    "float":      (_tofloat,    (1, 1)),
+    "contains":   (_contains,   (2, 2)),
+    "icontains":  (_icontains,  (2, 2)),
+    "startswith": (_startswith, (2, 2)),
+    "endswith":   (_endswith,   (2, 2)),
+    "zip":        (_safe_zip,        (1, None)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
@@ -101,4 +116,5 @@ safe_globals = {
     "list": list,
     "str": str,
     "tuple": tuple,
+    "zip": zip,
 }

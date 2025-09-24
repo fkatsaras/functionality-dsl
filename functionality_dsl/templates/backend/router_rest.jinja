@@ -1,17 +1,12 @@
+from fastapi import APIRouter, HTTPException
+from typing import List, Dict, Any
 import logging
-
-from fastapi import APIRouter, HTTPException, Request
-from typing import List, Any
 
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
-from app.core.computed import compile_safe, safe_globals
-
-from app.domain.models import {{ entity.name }}
 
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
 
-# Internal endpoint-driven router
 router = APIRouter(
     prefix="{{ route_prefix }}",
     tags=["{{ endpoint.summary or endpoint.name }}"]
@@ -25,57 +20,39 @@ _HEADERS = resolve_headers([
 ])
 _METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
 
-{% if entity._where_py %}
-_WHERE = compile_safe({{ entity._where_py | tojson }})
-{% else %}
-_WHERE = None
-{% endif %}
-
-@router.get("/", response_model=List[{{ entity.name }}])
-async def list_{{ endpoint.name | lower }}(request: Request):
+@router.get("/", response_model=List[Dict[str, Any]])
+async def get_{{ endpoint.name | lower }}():
+    """Fetch {{ entity.name }} from external API."""
     client = get_http_client()
+    
     try:
-        if _METHOD == "GET":
-            r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
-        else:
-            r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
+        response = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS)
+        
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502, 
+                detail=f"Upstream error: {response.status_code}"
+            )
+        
+        data = response.json()
+        logger.info(f"{{ entity.name }} fetched data: {type(data)}")
 
-        if r.status_code >= 400:
-            logger.warning("upstream_error",
-                extra={"endpoint":"{{ endpoint.name }}","verb":_METHOD,"url":_UPSTREAM_URL, "status":r.status_code})
-            raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
-
-        data = r.json()
-
-
-        print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-        print('Entity {{ entity.name }} gets this data: ')
+        print("\n" * 14)
+        print(f"Entity {{ entity.name }} gets this data:")
         print(data)
-        print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-
-
-        rows: list = []
-        if isinstance(data, list):
-            items = data
-        else:
-            # Coerce into list so output is always iterable
-            items = [data]
-
-        for d in items:
-            row = d
-            if _WHERE is not None:
-                try:
-                    ok = bool(eval(_WHERE, safe_globals, {"row": row, "ctx": ctx}))
-                except Exception:
-                    ok = False
-                if not ok:
-                    continue
-            rows.append({{ entity.name }}(**row))
-
-        logger.info("ok", extra={"endpoint":"{{ endpoint.name }}","rows":len(rows)})
-        return rows
+        print("\n" * 14)
+        
+        # Always return as list of dicts, one dict for all declared attributes
+        attrs: Dict[str, Any] = {}
+        
+        {% for attr in entity.attributes %}
+        attrs["{{ attr.name }}"] = data
+        {% endfor %}
+        
+        return [attrs]
+        
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("router_error", extra={"endpoint":"{{ endpoint.name }}","verb":_METHOD,"url":_UPSTREAM_URL})
-        raise
+    except Exception as e:
+        logger.exception(f"Error fetching {{ entity.name }}")
+        raise HTTPException(status_code=500, detail="Internal server error")

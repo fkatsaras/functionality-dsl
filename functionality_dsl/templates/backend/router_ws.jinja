@@ -23,7 +23,7 @@ router = APIRouter(
 
 _WS_INPUTS = [
 {%- for it in ws_inputs %}
-    {"alias":"{{ it.alias }}","url":"{{ it.url }}","headers":{{ it.headers | tojson }},
+    {"name":"{{ it.name }}","url":"{{ it.url }}","headers":{{ it.headers | tojson }},
      "subprotocols":{{ it.subprotocols | tojson }},"protocol":"{{ it.protocol }}"},
 {%- endfor %}
 ]
@@ -44,7 +44,7 @@ def _coerce_delta(payload: dict) -> dict:
         except Exception: pass
     return out
 
-async def _ws_consumer(alias: str, url: str, headers: list, subprotocols: list, protocol: str, tick: asyncio.Queue):
+async def _ws_consumer(name: str, url: str, headers: list, subprotocols: list, protocol: str, tick: asyncio.Queue):
     while True:
         try:
             try:
@@ -52,22 +52,22 @@ async def _ws_consumer(alias: str, url: str, headers: list, subprotocols: list, 
             except TypeError:
                 cm = websockets.connect(url, additional_headers=headers, subprotocols=subprotocols or None)
 
-            logger.info("upstream_connecting", extra={"alias":alias,"url":url})
+            logger.info("upstream_connecting", extra={"name": name,"url":url})
             async with cm as ws_conn:
-                logger.info("upstream_connected", extra={"alias":alias})
+                logger.info("upstream_connected", extra={"name":name})
                 async for raw in ws_conn:
                     try:
                         msg = json.loads(raw) if (protocol == "json" and isinstance(raw, (str, bytes, bytearray))) else raw
                         payload = msg.get("data") if isinstance(msg, dict) and "data" in msg else msg
                         if isinstance(payload, dict):
                             payload = _coerce_delta(payload)
-                        _latest[alias] = payload
+                        _latest[name] = payload
                         with contextlib.suppress(Exception):
                             tick.put_nowait(True)
                     except Exception as ex:
-                        logger.debug("frame_parse_error", extra={"alias":alias,"err":repr(ex)})
+                        logger.debug("frame_parse_error", extra={"name":name,"err":repr(ex)})
         except Exception as ex:
-            logger.warning("upstream_reconnect", extra={"alias":alias,"err":repr(ex)})
+            logger.warning("upstream_reconnect", extra={"name":name,"err":repr(ex)})
             await asyncio.sleep(1.0)
 
 _COMPILED = {
@@ -83,9 +83,9 @@ _WHERE = None
 {% endif %}
 
 def _compute_row() -> Dict[str, Any] | None:
-    if any(alias not in _latest for alias in [{% for a in ws_aliases %}"{{ a }}",{% endfor %}]):
+    if any(p not in _latest for p in [{% for a in ws_aliases %}"{{ a }}",{% endfor %}]):
         return None
-    ctx = {alias: _latest[alias] for alias in _latest}
+    ctx = {p: _latest[p] for p in _latest}
     row: Dict[str, Any] = {}
     try:
         for name, code in _COMPILED.items():
@@ -113,7 +113,7 @@ async def _loop():
     tick: asyncio.Queue = asyncio.Queue(maxsize=1)
     if not _started:
         for it in _WS_INPUTS:
-            asyncio.create_task(_ws_consumer(it["alias"], it["url"], it["headers"], it["subprotocols"], it["protocol"], tick))
+            asyncio.create_task(_ws_consumer(it["name"], it["url"], it["headers"], it["subprotocols"], it["protocol"], tick))
         _started = True
 
     while True:

@@ -11,7 +11,7 @@ ExternalREST RealObjects
 end
 
 ExternalREST RealCreate
-  url: "https://api.restful-api.dev/objects"
+  url: "https://api.restful-api.dev/objects"  
   verb: POST
 end
 
@@ -44,18 +44,16 @@ Entity RealObjectsRaw
     - raw: list
 end
 
-Entity RealObjectsRows
-  inputs:
-    - r: RealObjectsRaw
+Entity RealObjectsRows(RealObjectsRaw)
   attributes:
     - lol: list = [{ 
-      id: x['id'],
-      name: x['name'],
-      color: x['data']['color'],
-      capacity: x['data']['capacity'],
-      price: x['data']['price'],
-      year: x['data']['year']
-      } for x in r.raw];
+      "id": x['id'],
+      "name": x['name'],
+      "color": x['data']['color'],
+      "capacity": x['data']['capacity'],
+      "price": x['data']['price'],
+      "year": x['data']['year']
+      } for x in RealObjectsRaw.raw];
 end
 
 // --- Internal endpoint -----------------------------------------

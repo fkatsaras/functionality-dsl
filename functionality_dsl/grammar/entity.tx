@@ -29,9 +29,9 @@ Input:
 
 Entity:
   'Entity' name=ID
+  ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
-    ('source:' source=[ExternalSource])?   // still works via common
-    ('inputs:' '-' inputs+=Input ('-' inputs+=Input)*)?
+    ('source:' source=[ExternalSource])?
     ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
     ('where:' where=Expr)?
   )#

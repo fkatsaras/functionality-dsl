@@ -1,47 +1,30 @@
-{% set endpoint    = props.get('endpointPath') or common.url %}
-{% set ws_endpoint = props.get('streamPath')   or common.wsUrl %}
-{# Normalize x: default to 't' and strip 'data.' if present #}
-{% set x_raw = props.get('x') %}
-{% set x_key = (x_raw if x_raw is not none else 't') | replace('data.', '') %}
-{# Normalize y: accept props.y or props.series; make it a list and strip 'data.' #}
-{% set y_raw = props.get('y') or props.get('series') %}
-{% if y_raw is string %}
-{% set y_list = [y_raw] %}
-{% else %}
-{% set y_list = y_raw or [] %}
-{% endif %}
-{% set y_keys = [] %}
-{% for yk in y_list %}
-{% set _ = y_keys.append(yk | replace('data.', '')) %}
-{% endfor %}
-
-{% set x_label = props.get('xLabel') %}
-{% set y_label = props.get('yLabel') %}
-{# Numeric props; render as numbers, not strings #}
-{% set window   = props.get('windowSize', 240) %}
-{% set refresh  = props.get('refreshMs', 0) %}
-{% set height   = props.get('height', 500) %}
+{% set endpoint    = props.get('endpointPath') %}
+{% set ws_endpoint = props.get('streamPath') %}
 <LineChart
   name="{{ common.name }}"
-  {% if endpoint %}
+  {%- if endpoint %}
   url="{{ endpoint }}"
-  {% endif %}
-  {% if ws_endpoint %}
-  wsUrl="{{ ws_endpoint }}"
-  {% endif %}
-  x="{{ x_key }}"
-  {%- if y_keys|length == 1 %}
-  y="{{ y_keys[0] }}"
-  {%- else %}
-  y={{ "{" }}[{{ y_keys | map('tojson') | join(',') }}]{{ "}" }}
   {%- endif %}
-  {%- if x_label is not none %}
-  xLabel="{{ x_label }}"
-  {% endif %}
-  {%- if y_label is not none %}
-  yLabel="{{ y_label }}"
-  {% endif %}
-  windowSize={{ "{" }}{{ window }}{{ "}" }}
-  refreshMs={{ "{" }}{{ refresh }}{{ "}" }}
-  height={{ "{" }}{{ height }}{{ "}" }}
-/>
+  {%- if endpoint %}
+  wsUrl="{{ ws_endpoint }}"
+  {%- endif %}
+  {%- if props.get('seriesLabels') %}
+  seriesLabels={{ "{" }}{{ props.get('seriesLabels') | tojson }}{{ "}" }}
+  {%- endif %}
+  {%- if props.get('xLabel') %}
+  xLabel="{{ props.get('xLabel') }}"
+  {%- endif %}
+  {%- if props.get('yLabel') %}
+  yLabel="{{ props.get('yLabel') }}"
+  {%- endif %}
+  {%- if props.get('refreshMs') %}
+  refreshMs={{ props.get('refreshMs') }}
+  {%- endif %}
+  {%- if props.get('windowSize') %}
+  windowSize={{ props.get('windowSize') }}
+  {%- endif %}
+  {%- if props.get('height') %}
+  height={{ props.get('height') }}
+  {%- endif %}
+>
+</LineChart>

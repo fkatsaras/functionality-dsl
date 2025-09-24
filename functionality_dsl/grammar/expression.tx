@@ -1,7 +1,13 @@
 import utils
 
 // Root
-Expr: OrExpr ;
+Expr: IfThenElse ;
+
+// ternary
+IfThenElse:
+    orExpr=OrExpr
+    ( 'if' cond=OrExpr 'else' elseExpr=OrExpr )?
+;
 
 // or/and with explicit tails
 OrExpr:  left=AndExpr   (ops+=OrTail)* ;
@@ -47,15 +53,11 @@ AtomBase:
     | literal=Literal
     | call=Call
     | var=Var
-    | ifx=IfThenElse
     | '(' inner=Expr ')'
 ;
 
 Var: name=ID ;
-// ternary
-IfThenElse:
-  'if' cond=Expr 'then' thenExpr=Expr 'else' elseExpr=Expr
-;
+
 
 // calls
 Call:
@@ -83,7 +85,18 @@ ListLiteral:
 
 // list comprehension
 ListCompExpr:
-    '[' head=Expr 'for' var=ID 'in' iterable=Expr ('if' cond=Expr)? ']'
+    '[' head=Expr 'for' var=CompTarget 'in' iterable=Expr ( 'if' cond=Expr )? ']'
+;
+
+// explicit target kinds
+CompTarget:
+      single=Var         // plain loop variable
+    | tuple=TupleTarget  // tuple-unpack
+;
+
+// tuple target e.g. for (a,b) in ...
+TupleTarget:
+    '(' vars+=Var[','] ')'
 ;
 
 DictLiteral:
