@@ -16,7 +16,13 @@ router = APIRouter(
 # REST input sources (external APIs)
 _REST_INPUTS = [
 {%- for it in rest_inputs %}
-    {"name": "{{ it.name }}", "url": "{{ it.url }}", "headers": {{ it.headers | tojson }}},
+    {
+        "name": "{{ it.name }}",
+        "url": "{{ it.url }}",
+        "headers": {{ it.headers | tojson }},
+        "fields": {{ it.fields | tojson }},
+        "method": "{{ (it.method or 'GET')|upper if it.method is defined else 'GET' }}"
+    },
 {%- endfor %}
 ]
 
@@ -34,87 +40,98 @@ _COMPILED_ATTRS = {
 {%- endfor %}
 }
 
-def _import_parent_module(parent_name: str):
-    """Import parent entity module dynamically."""
-    module_path = f"app.api.routers.{parent_name.lower()}"
-    module = __import__(module_path, fromlist=["*"])
-    return module
-
 @router.get("/", response_model=List[Dict[str, Any]])
 async def get_{{ endpoint.name | lower }}():
     """Compute {{ entity.name }} from parent entities."""
     client = get_http_client()
-    
+
     try:
         # Build context for expression evaluation
-        ctx = {}
-        
-        # Fetch external REST inputs
-        for rest_input in _REST_INPUTS:
+        ctx: Dict[str, Any] = {}
+
+        # ---- Fetch external REST inputs (treat them like raw entities) ----
+        for ri in _REST_INPUTS:
             try:
-                response = await client.get(rest_input["url"], headers=rest_input["headers"])
+                headers = resolve_headers([(h["key"], h["value"]) for h in (ri.get("headers") or [])])
+                response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:
-                    raise HTTPException(
-                        status_code=502, 
-                        detail=f"Failed to fetch {rest_input['name']}: {response.status_code}"
-                    )
-                rest_data = response.json()
-                ctx[rest_input["name"]] = rest_data
-                logger.info(f"Fetched REST {rest_input['name']}: {type(rest_data)}")
-            except Exception as e:
-                logger.error(f"Error fetching {rest_input['name']}: {e}")
-                raise HTTPException(status_code=502, detail=f"Failed to fetch REST dependency: {rest_input['name']}")
-        
-        # Fetch computed parent entities (internal API calls)
-        for computed_parent in _COMPUTED_PARENTS:
+                    raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['name']}: {response.status_code}")
+
+                payload = response.json()
+                fields = ri.get("fields") or []
+
+                # Shape into dict-of-attributes
+                if len(fields) == 1:
+                    ctx[ri["name"]] = {fields[0]: payload}
+                elif len(fields) > 1:
+                    if isinstance(payload, dict):
+                        ctx[ri["name"]] = {f: payload.get(f) for f in fields}
+                    else:
+                        # If upstream isn't a dict (e.g., it's a list), mirror the payload for each field
+                        ctx[ri["name"]] = {f: payload for f in fields}
+                else:
+                    # No declared fields; fall back to raw payload
+                    ctx[ri["name"]] = payload
+
+                logger.info(f"Fetched REST {ri['name']}: shaped as {type(ctx[ri['name']])}")
+
+            except Exception:
+                logger.error(f"Error fetching {ri['name']}", exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Failed to fetch REST dependency: {ri['name']}")
+
+        # ---- Fetch computed parents via internal endpoints and MERGE rows ----
+        for cp in _COMPUTED_PARENTS:
             try:
-                # Call internal endpoint
-                response = await client.get(f"http://localhost:8080{computed_parent['endpoint']}")
+                response = await client.get(f"http://localhost:8080{cp['endpoint']}")
                 if response.status_code >= 400:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Failed to fetch computed parent {computed_parent['name']}: {response.status_code}"
-                    )
+                    raise HTTPException(status_code=502, detail=f"Failed to fetch computed parent {cp['name']}: {response.status_code}")
+
                 parent_json = response.json()
 
-                # If it's already a list of dicts with attribute keys, keep it
-                if isinstance(parent_json, list) and parent_json and isinstance(parent_json[0], dict):
-                    ctx[computed_parent["name"]] = parent_json[0]
+                # Contract: internal routers return list[dict]. Merge all into one dict of attributes.
+                if isinstance(parent_json, list):
+                    merged: Dict[str, Any] = {}
+                    for item in parent_json:
+                        if isinstance(item, dict):
+                            merged.update(item)
+                        else:
+                            # If a non-dict sneaks in, expose it under a generic key
+                            merged.setdefault("value", item)
+                    ctx[cp["name"]] = merged
                 elif isinstance(parent_json, dict):
-                    ctx[computed_parent["name"]] = parent_json
-                elif isinstance(parent_json, list):
-                    # wrap bare list under the parent's attribute name
-                    ctx[computed_parent["name"]] = {"{{ entity.attributes[0].name }}": parent_json}
+                    ctx[cp["name"]] = parent_json
                 else:
-                    ctx[computed_parent["name"]] = {"{{ entity.attributes[0].name }}": parent_json}
-                    
-                logger.info(f"Fetched computed parent {computed_parent['name']}: {type(ctx[computed_parent['name']])}")
-                
-            except Exception as e:
-                logger.error(f"Error fetching computed parent {computed_parent['name']}: {e}")
-                raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {computed_parent['name']}")
-        
-        # Compute attributes using compiled expressions
-        computed_attrs = {}
+                    ctx[cp["name"]] = {"value": parent_json}
+
+                logger.info(f"Fetched computed parent {cp['name']}: shaped as {type(ctx[cp['name']])}")
+
+            except Exception:
+                logger.error(f"Error fetching computed parent {cp['name']}", exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
+
+        # ---- Evaluate compiled attributes ----
+        computed_attrs: Dict[str, Any] = {}
         evaluation_context = {"ctx": ctx}
-        
+
         for attr_name, compiled_expr in _COMPILED_ATTRS.items():
             try:
                 result = eval(compiled_expr, safe_globals, evaluation_context)
                 computed_attrs[attr_name] = result
                 logger.debug(f"Computed {attr_name}: {type(result)}")
-            except Exception as e:
-                logger.error(f"Error computing attribute {attr_name}: {e}")
+            except Exception:
+                logger.error(f"Error computing attribute {attr_name}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Computation error: {attr_name}")
+
         print("\n" * 14)
         print(f"Computed Entity {{ entity.name }} returns this data:")
         print([computed_attrs])
         print("\n" * 14)
-        # Return as list of single dict
+
+        # Return as list with single dict of computed attributes
         return [computed_attrs]
-        
+
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error computing {{ entity.name }}")
         raise HTTPException(status_code=500, detail="Internal server error")

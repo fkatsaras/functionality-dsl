@@ -260,6 +260,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         "url": t_src.url,
                         "headers": _as_headers_list(t_src),
                         "fields": _schema_attr_names(parent),
+                        "method": (getattr(t_src, "verb", "GET") or "GET").upper(),  # NEW
                     })
                 else:
                     # No external source - this parent is a computed entity
@@ -305,7 +306,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             (routers_dir / f"{iep.name.lower()}.py").write_text(
                 tpl_router_computed_rest.render(
                     endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                    entity=entity_info,  # ← Now includes attributes info
+                    entity=ent,   # ← keep it as the textX Entity object
                     computed_attrs=computed_attrs,
                     rest_inputs=rest_inputs,
                     computed_parents=computed_parents,
@@ -315,20 +316,26 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             )
             continue
 
-        # Non-computed entity (existing code unchanged)
+        # Non-computed entity (RAW, ExternalREST)
         src = getattr(ent, "source", None)
         if src and src.__class__.__name__ == "ExternalRESTEndpoint":
             src.headers = _as_headers_list(src)
             schema_attrs = _schema_attr_names(ent)
+        
+            # If only one attribute, we'll wrap the payload under it.
+            wrapper_attr = schema_attrs[0] if len(schema_attrs) == 1 else None
+        
             (routers_dir / f"{iep.name.lower()}.py").write_text(
                 tpl_router_entity_rest.render(
                     endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
                     entity={"name": ent.name, "source": src},
                     schema_attrs=schema_attrs,
+                    wrapper_attr=wrapper_attr,    # NEW
                     route_prefix=route_prefix,
                 ),
                 encoding="utf-8",
             )
+        
         else:
             continue
  
