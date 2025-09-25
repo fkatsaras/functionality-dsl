@@ -78,13 +78,13 @@
   }
 
   function pushPayload(payload: any) {
-    // Accept array OR single object
+    // 0) Envelope normalize to an array of entity dicts
     const entities: any[] =
       Array.isArray(payload) ? payload :
       (payload && typeof payload === "object" ? [payload] : []);
     if (!entities.length) return;
 
-    // Find first attribute that is a list of dicts
+    // 1) CASE A: list-of-dicts (REST-style) nested under the first attr
     let rows: any[] = [];
     outer: for (const ent of entities) {
       if (ent && typeof ent === "object") {
@@ -96,21 +96,44 @@
         }
       }
     }
-    if (!rows.length) return;
+    if (rows.length) {
+      if (!xKey || !yKeys.length) {
+        const first = rows[0];
+        if (first && typeof first === "object") {
+          const keys = Object.keys(first);
+          xKey = keys[0] ?? null;
+          yKeys = keys.slice(1);
+          series = Object.fromEntries(yKeys.map(k => [k, []]));
+        }
+      }
+      for (const r of rows) pushRow(r);
+      return;
+    }
 
-    // Infer keys once (first key = x, rest = y series)
-    if (!xKey || !yKeys.length) {
-      const first = rows[0];
-      if (first && typeof first === "object") {
-        const keys = Object.keys(first);
-        xKey = keys[0] ?? null;
-        yKeys = keys.slice(1);
-        // (re)initialize reactive series store
-        series = Object.fromEntries(yKeys.map(k => [k, [] as Point[]]));
+    // 2) CASE B: single-row dict (WS tick) like {tick:{t:..., btc:...}} or {t:..., btc:...}
+    let single: any = null;
+
+    // 2a) payload itself is the row
+    if (!Array.isArray(payload) && payload && typeof payload === "object") {
+      const vals = Object.values(payload);
+      // if it looks like { tick: {...} }, take that inner dict
+      if (vals.length === 1 && vals[0] && typeof vals[0] === "object" && !Array.isArray(vals[0])) {
+        single = vals[0];
+      } else {
+        // or just use payload if it smells like a row already
+        single = payload;
       }
     }
 
-    for (const r of rows) pushRow(r);
+    if (single && typeof single === "object" && !Array.isArray(single)) {
+      if (!xKey || !yKeys.length) {
+        const keys = Object.keys(single);
+        xKey = keys[0] ?? xKey;
+        yKeys = keys.slice(1);
+        series = Object.fromEntries(yKeys.map(k => [k, []]));
+      }
+      pushRow(single);
+    }
   }
 
 
@@ -246,12 +269,30 @@
   <div class="w-4/5 space-y-4">
 
     <!-- 1) CARD: column flexbox : set height from the prop -->
-    <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4 flex flex-col">
+    <div
+      class="rounded-xl2 shadow-card bg-[color:var(--card)] p-4 flex flex-col transition-colors"
+      class:border-dag-success={loading}
+      class:border-dag-danger={!loading}
+    >
+      <!-- Header -->
       <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
-        {#if url}
-          <RefreshButton on:click={() => fetchOnce({ replace: true })} {loading} ariaLabel="Refresh chart" />
-        {/if}
+        <div class="flex items-center gap-2">
+          <!-- LIVE badge -->
+          <span
+            class="px-2 py-0.5 text-xs font-approachmono rounded border"
+            class:border-dag-success={loading}
+            class:border-dag-danger={!loading}
+            class:text-dag-success={loading}
+            class:text-dag-danger={!loading}
+          >
+            {loading ? "LIVE" : "OFF"}
+          </span>
+        
+          {#if !wsUrl}
+            <RefreshButton on:click={() => fetchOnce({ replace: true })} {loading} ariaLabel="Refresh chart" />
+          {/if}
+    </div>
 
       </div>
 

@@ -291,8 +291,14 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                     # foo[idx] -> safe dict or list indexing
                     base = (
                         f"({base}.get({idx}) if isinstance({base}, dict) "
-                        f"else ({base}[{idx}] if isinstance({base}, (list, tuple)) "
-                        f"and isinstance({idx}, int) and 0 <= {idx} < len({base}) else None))"
+                        f"else ("
+                        f"  ({base}[int({idx})] "
+                        f"   if isinstance({base}, (list, tuple)) "
+                        f"   and isinstance({idx}, (int, float)) "
+                        f"   and int({idx}) == {idx} "        # int-like float OK
+                        f"   and -len({base}) <= int({idx}) < len({base}) "
+                        f"   else None)"
+                        f"))"
                     )
             return base
 

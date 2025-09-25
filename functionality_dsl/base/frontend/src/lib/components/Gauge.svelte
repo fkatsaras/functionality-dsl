@@ -78,26 +78,49 @@
   <div class="w-full max-w-sm">
 
     <!-- Card-->
-    <div class="rounded-2xl shadow-lg border thin-border bg-[color:var(--card)] p-6 flex flex-col items-center gap-4 transition-shadow duration-200 hover:shadow-xl">
-
+    <div
+      class="rounded-2xl shadow-lg border bg-[color:var(--card)] p-6 flex flex-col items-center gap-4 transition-shadow duration-200 hover:shadow-xl"
+      class:border-dag-success={connected}
+      class:border-dag-danger={!connected}
+    >
       <!-- Header -->
       <div class="mb-6 w-full flex items-center justify-between">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
       
-        <div class="flex items-center gap-2">
+        <!-- NEW: actionform-style live indicator -->
+        <div
+          class="flex items-center gap-2 px-2 py-1 rounded-md border"
+          class:border-dag-success={connected}
+          class:border-dag-danger={!connected}
+        >
+          <!-- outlined circle like ActionForm tick color -->
+          <svg
+            class="w-4 h-4"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+            class:text-dag-success={connected}
+            class:text-dag-danger={!connected}
+          >
+            <circle cx="10" cy="10" r="8.5" />
+          </svg>
+        
+          <!-- LIVE/OFF label in Approach Mono, green/red letters only -->
           <span
-            class="px-3 py-1.5 text-xs font-approachmono rounded-full transition-colors duration-200"
-            class:status-live={connected}
-            class:status-off={!connected}
+            class="text-xs font-approachmono"
+            class:text-dag-success={connected}
+            class:text-dag-danger={!connected}
           >
             {connected ? "LIVE" : "OFF"}
           </span>
-          {#if error}
-            <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
-          {/if}
         </div>
+      
+        {#if error}
+          <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
+        {/if}
       </div>
-
       
       <!-- gauge -->
       <div class="relative flex items-end gap-4">
@@ -168,16 +191,5 @@
   .thin-border { 
     border-color: var(--edge); 
     border-width: 1px;
-  }
-
-  .status-live { 
-    background: #d1fae5; 
-    color: #065f46; 
-    border: 1px solid #a7f3d0;
-  }
-  .status-off { 
-    background: #f3f4f6; 
-    color: #6b7280; 
-    border: 1px solid #d1d5db;
   }
 </style>

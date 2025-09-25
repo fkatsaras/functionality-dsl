@@ -19,12 +19,9 @@ Entity BTCRaw
 end
 
 // ------------------- Computed Entity -------------------
-Entity Prices
-  inputs:
-    - btc: BTCRaw
+Entity Prices(BTCRaw)
   attributes:
-    - t: int    = now()
-    - btc: float = btc.c
+    - tick: dict = { "t": now(), "btc": BTCRaw.c };
 end
 
 // ------------------- Internal endpoint (UI consumes this) ---------
@@ -36,8 +33,9 @@ end
 // ------------------- Component (bound to internal endpoint) -------
 Component<LineChart> BitcoinPrice
   endpoint: PricesStream
-  x: data.t
-  y: [data.btc]
+  rows: data.tick
+  seriesLabels: ["BTC Price"]
   xLabel: "Time"
   yLabel: "USDT"
 end
+

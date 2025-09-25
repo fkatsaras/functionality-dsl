@@ -9,8 +9,11 @@ from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
-from app.core.expressions import compile_safe
+from app.core.computed import (
+    DSL_FUNCTION_REGISTRY as dsl_funcs,
+    compile_safe,
+    safe_globals,
+)
 from app.core.logging import set_request_id
 
 logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
@@ -52,9 +55,9 @@ async def _ws_consumer(name: str, url: str, headers: list, subprotocols: list, p
             except TypeError:
                 cm = websockets.connect(url, additional_headers=headers, subprotocols=subprotocols or None)
 
-            logger.info("upstream_connecting", extra={"name": name,"url":url})
+            logger.info("upstream_connecting", extra={"feed": name,"url":url})
             async with cm as ws_conn:
-                logger.info("upstream_connected", extra={"name":name})
+                logger.info("upstream_connected", extra={"feed":name})
                 async for raw in ws_conn:
                     try:
                         msg = json.loads(raw) if (protocol == "json" and isinstance(raw, (str, bytes, bytearray))) else raw
@@ -65,9 +68,9 @@ async def _ws_consumer(name: str, url: str, headers: list, subprotocols: list, p
                         with contextlib.suppress(Exception):
                             tick.put_nowait(True)
                     except Exception as ex:
-                        logger.debug("frame_parse_error", extra={"name":name,"err":repr(ex)})
+                        logger.debug("frame_parse_error", extra={"feed":name,"err":repr(ex)})
         except Exception as ex:
-            logger.warning("upstream_reconnect", extra={"name":name,"err":repr(ex)})
+            logger.warning("upstream_reconnect", extra={"feed":name,"err":repr(ex)})
             await asyncio.sleep(1.0)
 
 _COMPILED = {
@@ -89,7 +92,7 @@ def _compute_row() -> Dict[str, Any] | None:
     row: Dict[str, Any] = {}
     try:
         for name, code in _COMPILED.items():
-            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
+            row[name] = eval(code, safe_globals, {"ctx": ctx})
         return row
     except Exception as ex:
         sample = {k: (list(v.keys())[:6] if isinstance(v, dict) else type(v).__name__) for k, v in ctx.items()}
@@ -121,13 +124,6 @@ async def _loop():
         row = _compute_row()
         if row is not None:
             ctx = {alias: _latest[alias] for alias in _latest}
-            if _WHERE is not None:
-                try:
-                    ok = bool(eval(_WHERE, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"row": row, "ctx": ctx}))
-                except Exception:
-                    ok = False
-                if not ok:
-                    continue
             await _broadcast(row)
 
 @router.websocket("/stream")

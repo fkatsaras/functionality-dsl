@@ -15,6 +15,7 @@
     let data = $state<any[]>([]);
     let loading = $state(!!url);
     let error = $state<string | null>(null);
+    let entityKeys = $state<string[]>([]);
 
     async function load() {
         if (!url) return;
@@ -52,17 +53,26 @@
               }
           } else {
               throw new Error("Unexpected response format.");
-          }      
+          }
+
+          // Extract entity keys from the first row for position-based mapping
+          if (data.length > 0 && typeof data[0] === "object") {
+              entityKeys = Object.keys(data[0]);
+              console.log("Entity keys:", entityKeys);
+          }
         } catch (err: any) {
             error = err?.message ?? "Failed to load data from source.";
             data = [];
+            entityKeys = [];
         } finally {
             loading = false;
         }
     }
 
-    function colValue(row: any, key: string) {
-        return key.split('.').reduce((acc: any, k: string) => (acc ? acc[k] : undefined), row);
+    function getValueByPosition(row: any, position: number) {
+        if (position < 0 || position >= entityKeys.length) return undefined;
+        const key = entityKeys[position];
+        return row[key];
     }
 
     onMount(load);
@@ -94,9 +104,9 @@
         <table class="min-w-full border-collapse text-sm">
           <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
             <tr>
-              {#each colNames as key}
+              {#each colNames as displayName}
                 <th class="text-left font-approachmono font-medium text-text/90 px-3 py-2 border-b thin-border">
-                  {key.replace('_',' ').replace('-',' ')}
+                  {displayName}
                 </th>
               {/each}
             </tr>
@@ -111,8 +121,10 @@
             {:else}
               {#each data as row, i (`row-${i}`)}
                 <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
-                  {#each colNames as key}
-                    <td class="px-3 py-2 border-b thin-border text-text/90">{colValue(row, key)}</td>
+                  {#each colNames as displayName, position}
+                    <td class="px-3 py-2 border-b thin-border text-text/90">
+                      {getValueByPosition(row, position)}
+                    </td>
                   {/each}
                 </tr>
               {/each}

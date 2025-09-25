@@ -20,27 +20,24 @@ end
 Entity IntARaw
   source: RandomA
   attributes:
-    - value: int
+    - value: int = RandomA[0];
 end
 
 Entity IntBRaw
   source: RandomB
   attributes:
-    - value: int
+    - value: int = RandomB[0];
 end
 
 // --- Computed entity -------------------------------------------
-Entity CompareInts
-  inputs:
-    - a: IntARaw
-    - b: IntBRaw
+Entity CompareInts(IntARaw,IntBRaw)
   attributes:
-    - a_val: int       = a.value
-    - b_val: int       = b.value
-    - delta: int       = b.value - a.value
-    - is_equal: bool   = a.value == b.value
-    - a_greater: bool  = a.value > b.value
-    - b_greater: bool  = b.value > a.value
+    - a_val: int       = IntARaw.value;
+    - b_val: int       = IntBRaw.value;
+    - delta: int       = IntBRaw.value - IntARaw.value;
+    - is_equal: bool   = IntARaw.value == IntBRaw.value;
+    - a_greater: bool  = IntARaw.value > IntBRaw.value;
+    - b_greater: bool  = IntBRaw.value > IntARaw.value;
 end
 
 // --- Internal endpoint -----------------------------------------
@@ -52,6 +49,5 @@ end
 // --- Component -------------------------------------------------
 Component<Table> IntComparisonTable
   endpoint: CompareIntsList
-  primaryKey: data.a_val
-  columns: [data.a_val, data.b_val, data.delta, data.is_equal, data.a_greater, data.b_greater]
+  colNames: ["First Num", "Second Num", "Diff", "Is equal?", "Is First Bigger?", "Is Second Bigger?"]
 end

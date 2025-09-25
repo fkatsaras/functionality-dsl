@@ -23,13 +23,10 @@ Entity WikiEdit
 end
 
 // --- Computed entity -------------------------------------------
-Entity EditGauge
-  inputs:
-    - e: WikiEdit
+Entity EditGauge(WikiEdit)
   attributes:
-    - edit_size_abs: int = abs(e.delta)
+    - edit_size_abs: int = abs(WikiEdit.delta);
 end
-
 // --- Internal endpoint -----------------------------------------
 InternalWS EditGaugeStream
   entity: EditGauge

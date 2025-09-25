@@ -111,10 +111,17 @@ def compile_safe(expr: str):
 safe_globals = {
     "__builtins__": {},
     "dsl_funcs": DSL_FUNCTION_REGISTRY,
+
+    # used by generated guards
+    "int": int,
+    "float": float,
+    "len": len,
     "isinstance": isinstance,
+
+    # containers/util
     "dict": dict,
     "list": list,
-    "str": str,
     "tuple": tuple,
+    "str": str,
     "zip": zip,
 }

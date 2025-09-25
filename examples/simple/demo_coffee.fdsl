@@ -5,43 +5,63 @@ Server CoffeeAPI
   cors: "http://localhost:3000"
 end
 
-// ----------- External sources (real public REST) -----------
+// ----------- External sources  -----------
 // Returns an ARRAY of coffee drinks: [{ id, title, description, ingredients, image, ...}, ...]
 ExternalREST CoffeeHot
   url: "https://api.sampleapis.com/coffee/hot"
   verb: GET
 end
 
+ExternalREST CoffeeIced
+  url: "https://api.sampleapis.com/coffee/iced"
+  verb: GET
+end
+
 // ----------- Entities (data) -----------
-Entity Coffee
+Entity HotCoffees
   source: CoffeeHot
   attributes:
-    - id: int?
-    - title: string?
-    - description: string?
+    - rows: list = [
+        {
+          "temp": "Hot",
+          "name": x["title"],
+          "title_length": len(x["title"]),
+          "description": x["description"],
+          "image": x["image"]
+        }
+        for x in CoffeeHot
+      ];
 end
 
-// Derived stats for display (simple calculations)
-Entity CoffeeStats
-  inputs:
-    - c: Coffee
+Entity ColdCoffees
+  source: CoffeeIced
   attributes:
-    - name: string?         = c.title
-    - title_length: int?    = len(c.title)
-    - description: string?  = c.description
+    - rows: list = [
+        {
+          "temp": "Iced",
+          "name": x["title"],
+          "title_length": len(x["title"]),
+          "description": x["description"],
+          "image": x["image"]
+        }
+        for x in CoffeeIced
+      ];
 end
 
+Entity CoffeeStatsList(HotCoffees,ColdCoffees)
+  attributes:
+    - rows: list = (HotCoffees.rows + ColdCoffees.rows);
+end
 // ----------- Internal endpoints (what the UI calls) -----------
 // REST: expose computed CoffeeStats
-InternalREST CoffeeStatsList
-  entity: CoffeeStats
+InternalREST CoffeeStats
+  entity: CoffeeStatsList
   path: "/api/coffee/stats"
 end
 
 // ----------- Components (UI bindings) -----------
 // Components now bind to INTERNAL endpoints only
 Component<Table> CoffeeTable
-  endpoint: CoffeeStatsList
-  primaryKey: data.name
-  columns: [data.name, data.title_length, data.description]
+  endpoint: CoffeeStats
+  colNames: ["temp", "name", "title_length", "description", "image"]
 end
