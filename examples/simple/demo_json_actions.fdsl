@@ -41,7 +41,7 @@ end
 Entity RealObjectsRaw
   source: RealObjects
   attributes:
-    - raw: list
+    - raw: list = RealObjects;
 end
 
 Entity RealObjectsRows(RealObjectsRaw)

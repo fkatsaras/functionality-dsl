@@ -19,19 +19,19 @@ end
 Entity ThessHourly
   source: MeteoThess
   attributes:
-    - hourly: dict
+    - hourly: dict = MeteoThess["hourly"];
 end
 
 Entity LondonHourly
   source: MeteoLondon
   attributes:
-    - hourly: dict
+    - hourly: dict = MeteoLondon["hourly"];
 end
 
 // --- Row-shaped compare entity ---------------------------------
 Entity WeatherCompare(ThessHourly,LondonHourly)
   attributes:
-    - rows: list = [
+    - rows: list = [ 
         { 
           "time": t,
           "th_temp": th_t,

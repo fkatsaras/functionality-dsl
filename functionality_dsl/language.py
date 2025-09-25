@@ -193,11 +193,13 @@ def _annotate_computed_attrs(model, metamodel=None):
     Validate and compile computed attributes inside all entities.
     - Accepts loop vars inside comprehensions (detected by _loop_var_names).
     - Accepts parent entity references.
+    - Accepts references to external sources by name (MeteoThess, MeteoLondon, etc.).
     """
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
     }
+    external_sources = {ep.name for ep in get_model_external_sources(model)}
 
     for ent in get_children_of_type("Entity", model):
         parents = getattr(ent, "parents", []) or []
@@ -227,9 +229,21 @@ def _annotate_computed_attrs(model, metamodel=None):
                         )
                     continue
 
-                # not a parent entity, not a loop var -> error
+                # allow references to this entity's external source
+                ent_src = getattr(ent, "source", None)
+                if ent_src and alias == getattr(ent_src, "name", None):
+                    continue
+
+                # allow references to *any* external source
+                if alias in external_sources:
+                    continue
+
+                # not a parent, not a source, not a loop var -> error
                 raise TextXSemanticError(
-                    f"Unknown reference '{alias}'. Allowed parents: {[p.name for p in parents]} or loop vars {loop_vars}"
+                    f"Unknown reference '{alias}'. "
+                    f"Allowed parents: {[p.name for p in parents]}, "
+                    f"external sources: {list(external_sources)}, "
+                    f"or loop vars {loop_vars}"
                 )
 
             # function calls
@@ -242,6 +256,7 @@ def _annotate_computed_attrs(model, metamodel=None):
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
                 )
+
 # ------------------------------------------------------------------------------
 # Public helpers
 def build_model(model_path: str):
