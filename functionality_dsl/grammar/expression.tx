@@ -1,7 +1,13 @@
 import utils
 
 // Root
-Expr: OrExpr ;
+Expr: IfThenElse ;
+
+// ternary
+IfThenElse:
+    orExpr=OrExpr
+    ( 'if' cond=OrExpr 'else' elseExpr=OrExpr )?
+;
 
 // or/and with explicit tails
 OrExpr:  left=AndExpr   (ops+=OrTail)* ;
@@ -25,29 +31,40 @@ MulTail: op=MulOp       right=UnaryExpr ;
 MulOp:   '*' | '/' | '%' ;
 
 // unary binds to Atom
-UnaryExpr: unops+=UnaryOp* atom=Atom ;
+UnaryExpr: unops+=UnaryOp* post=PostfixExpr ;
 UnaryOp:   op=UnaryOpTok ;
 UnaryOpTok: 'not' | '-' ;
 
-// atoms
-Atom:
-      literal=Literal
-    | ref=Ref
+// -------- postfix expressions --------
+PostfixExpr: base=AtomBase (tails+=PostfixTail)* ;
+
+PostfixTail:
+      member=MemberAccess
+    | index=IndexAccess
+;
+
+MemberAccess: '.' name=ID ;
+IndexAccess:  '[' index=Expr ']' ;
+
+// -------- atoms --------
+AtomBase:
+      listcomp=ListCompExpr
+    | dictcomp=DictCompExpr
+    | literal=Literal
     | call=Call
-    | ifx=IfThenElse
+    | var=Var
     | '(' inner=Expr ')'
 ;
 
-// ternary
-IfThenElse:
-  'if' cond=Expr 'then' thenExpr=Expr 'else' elseExpr=Expr
-;
+Var: name=ID ;
+
 
 // calls
 Call:
   func=ID '(' (args+=Expr (',' args+=Expr)*)? ')'
 ;
 
+// legacy ref (still works): alias.attr
 Ref: alias=ID '.' attr=ID ;
 
 // literals
@@ -58,8 +75,39 @@ Literal:
     | Bool
     | 'null'
     | ListLiteral
+    | DictLiteral
 ;
 
+// plain list
 ListLiteral:
     '[' (items+=Expr (',' items+=Expr)*)? ']'
 ;
+
+// list comprehension
+ListCompExpr:
+    '[' head=Expr 'for' var=CompTarget 'in' iterable=Expr ( 'if' cond=Expr )? ']'
+;
+
+// explicit target kinds
+CompTarget:
+      single=Var         // plain loop variable
+    | tuple=TupleTarget  // tuple-unpack
+;
+
+// tuple target e.g. for (a,b) in ...
+TupleTarget:
+    '(' vars+=Var[','] ')'
+;
+
+DictLiteral:
+  '{' (pairs+=KeyValue (',' pairs+=KeyValue)*)? '}'
+;
+
+KeyValue:
+  (key_str=STRING | key_id=ID) ':' value=Expr
+;
+// Dict comprehension
+DictCompExpr:
+  '{' key=Expr ':' value=Expr 'for' var=ID 'in' iterable=Expr ('if' cond=Expr)? '}'
+;
+

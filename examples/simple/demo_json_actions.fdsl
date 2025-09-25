@@ -1,82 +1,89 @@
-// ------------------- Server -------------------
 Server SimpleJSON
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-// ------------------- REST Endpoints -------------------
-// Public demo API (non-persistent storage, great for examples)
-RESTEndpoint JsonPosts
-  url: "https://jsonplaceholder.typicode.com/posts"
+// --- External REST sources -------------------------------------
+ExternalREST RealObjects
+  url: "https://api.restful-api.dev/objects"
   verb: GET
 end
 
-RESTEndpoint CreatePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+ExternalREST RealCreate
+  url: "https://api.restful-api.dev/objects"  
   verb: POST
 end
 
-RESTEndpoint UpdatePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+ExternalREST RealUpdate
+  url: "https://api.restful-api.dev/objects"
   verb: PUT
 end
 
-RESTEndpoint DeletePost
-  url: "https://jsonplaceholder.typicode.com/posts"
+ExternalREST RealDelete
+  url: "https://api.restful-api.dev/objects"
   verb: DELETE
 end
 
-// ------------------- Raw Entity (GET list) -------------------
-Entity Post
-  source: JsonPosts
+// --- Entity ----------------------------------------------------
+// Upstream JSON looks like:
+// {
+//   "id": "...",
+//   "name": "...",
+//   "data": {
+//      "color": "...",
+//      "capacity": "...",
+//      "price": ...,
+//      "year": ...
+//   }
+// }
+
+Entity RealObjectsRaw
+  source: RealObjects
   attributes:
-    - userId: int
-    - id: int
-    - title: string
-    - body: string
+    - raw: list = RealObjects;
 end
 
-// ------------------- Computed Entity (derived fields) -------------------
-Entity PostStats
-  inputs:
-    - p: Post
+Entity RealObjectsRows(RealObjectsRaw)
   attributes:
-    - id           = p.id
-    - user_id      = p.userId
-    - title        = p.title
-    - title_len    = len(p.title)
-    - is_long      = len(p.title) > 30
-    - has_lorem    = icontains(p.title, "lorem")
+    - lol: list = [{ 
+      "id": x['id'],
+      "name": x['name'],
+      "color": x['data']['color'],
+      "capacity": x['data']['capacity'],
+      "price": x['data']['price'],
+      "year": x['data']['year']
+      } for x in RealObjectsRaw.raw];
 end
 
-// ------------------- Components -------------------
-// Read: derived table over GET
-Component<LiveTable> PostsTable
-  entity: PostStats
-  primaryKey: data.id
-  columns: [data.id, data.user_id, data.title, data.title_len, data.is_long, data.has_lorem]
+// --- Internal endpoint -----------------------------------------
+InternalREST RealObjectsList
+  entity: RealObjectsRows
+  path: "/api/objects"
 end
 
-// Create: POST /api/external/createpost
-Component<ActionForm> NewPost
-  action: CreatePost
-  fields: [userId, title, body]
-  submitLabel: "Create Post"
+// --- Components ------------------------------------------------
+Component<Table> ObjectsTable
+  endpoint: RealObjectsList
+  colNames: ["id", "name", "color", "capacity", "price", "year"]
 end
 
-// Update: PUT /api/external/updatepost/{id}
-Component<ActionForm> EditPost
-  action: UpdatePost
-  fields: [id, userId, title, body]
+Component<ActionForm> NewObject
+  action: RealCreate
+  fields: [name, data]
+  submitLabel: "Create Object"
+end
+
+Component<ActionForm> EditObject
+  action: RealUpdate
+  fields: [id, name, data]
   pathKey: id
-  submitLabel: "Update Post"
+  submitLabel: "Update Object"
 end
 
-// Delete: DELETE /api/external/deletepost/{id}
-Component<ActionForm> DeletePostForm
-  action: DeletePost
+Component<ActionForm> DeleteObject
+  action: RealDelete
   fields: [id]
   pathKey: id
-  submitLabel: "Delete Post"
+  submitLabel: "Delete Object"
 end

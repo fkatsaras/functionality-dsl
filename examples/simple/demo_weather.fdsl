@@ -1,76 +1,88 @@
-Server WeatherCompare
+Server WeatherServer
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
 end
 
-// --- Public REST sources ------------------------------------------------------
-
-// Thessaloniki, GR  (lat=40.64, lon=22.94)
-RESTEndpoint MeteoThess
+// --- External REST sources -------------------------------------
+ExternalREST MeteoThess
   url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
 end
 
-// London, UK  (lat=51.5072, lon=-0.1276)
-RESTEndpoint MeteoLondon
+ExternalREST MeteoLondon
   url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
 end
 
-// --- Raw entities -------------------------------------------------------------
-
+// --- Raw entities ----------------------------------------------
 Entity ThessHourly
   source: MeteoThess
   attributes:
-    - time: string
-    - temperature_2m: float
-    - relative_humidity_2m: float
+    - hourly: dict = MeteoThess["hourly"];
 end
 
 Entity LondonHourly
   source: MeteoLondon
   attributes:
-    - time: string
-    - temperature_2m: float
-    - relative_humidity_2m: float
+    - hourly: dict = MeteoLondon["hourly"];
 end
 
-// --- Computed entity: compare two cities -------------------------------------
-
-Entity WeatherCompareView
-  inputs:
-    - th: ThessHourly
-    - ln: LondonHourly
+// --- Row-shaped compare entity ---------------------------------
+Entity WeatherCompare(ThessHourly,LondonHourly)
   attributes:
-    - time        = th.time
-    - th_temp     = th.temperature_2m
-    - ln_temp     = ln.temperature_2m
-    - th_hum      = th.relative_humidity_2m
-    - ln_hum      = ln.relative_humidity_2m
-    - delta_temp  = th.temperature_2m - ln.temperature_2m
-    - hotter_city = if th.temperature_2m > ln.temperature_2m then "Thessaloniki" else "London"
-    - big_gap     = abs(th.temperature_2m - ln.temperature_2m) >= 5
-    - th_is_comfy = (abs(th.temperature_2m - 22) < 3) and (th.relative_humidity_2m >= 30) and (th.relative_humidity_2m <= 60)
-    - ln_is_comfy = (abs(ln.temperature_2m - 22) < 3) and (ln.relative_humidity_2m >= 30) and (ln.relative_humidity_2m <= 60)
+    - rows: list = [ 
+        { 
+          "time": t,
+          "th_temp": th_t,
+          "ln_temp": ln_t,
+          "th_hum": th_h,
+          "ln_hum": ln_h,
+          "delta_temp": abs(th_t - ln_t),
+          "hotter_city": ("Thessaloniki" if th_t > ln_t else "London"),
+          "big_gap": (abs(th_t - ln_t) >= 5),
+          "th_is_comfy": ((abs(th_t - 22) < 3) and (th_h >= 30) and (th_h <= 60)),
+          "ln_is_comfy": ((abs(ln_t - 22) < 3) and (ln_h >= 30) and (ln_h <= 60))
+        }
+        for (t, th_t, ln_t, th_h, ln_h) in zip(
+          ThessHourly.hourly["time"],
+          ThessHourly.hourly["temperature_2m"],
+          LondonHourly.hourly["temperature_2m"],
+          ThessHourly.hourly["relative_humidity_2m"],
+          LondonHourly.hourly["relative_humidity_2m"]
+        )
+      ];
+end
+// --- Simplified stats view (line chart) ------------------------
+Entity WeatherStats(WeatherCompare)
+  attributes:
+    - rows: list = [
+        { time: r["time"], th_temp: r["th_temp"], ln_temp: r["ln_temp"] }
+        for r in WeatherCompare.rows
+      ];
 end
 
-// --- Components ---------------------------------------------------------------
+// --- Internal endpoints ----------------------------------------
+InternalREST WeatherCompareAPI
+  entity: WeatherCompare
+  path: "/api/weather/compare"
+end
 
-Component<LiveTable> WeatherTable
-  entity: WeatherCompareView
-  primaryKey: data.time
-  columns: [
-    data.time,
-    data.th_temp, data.ln_temp, data.delta_temp, data.hotter_city, data.big_gap,
-    data.th_hum, data.ln_hum, data.th_is_comfy, data.ln_is_comfy
-  ]
+InternalREST WeatherStatsAPI
+  entity: WeatherStats
+  path: "/api/weather/stats"
+end
+
+// --- Components ------------------------------------------------
+Component<Table> WeatherTable
+  endpoint: WeatherCompareAPI
+  colNames: ["time", "th_temp", "ln_temp", "delta_temp", "hotter_city", "big_gap", "th_hum", "ln_hum", "th_is_comfy", "ln_is_comfy"]
 end
 
 Component<LineChart> TempComparison
-  entity: WeatherCompareView
-  x: data.time
-  y: [data.th_temp, data.ln_temp]
+  endpoint: WeatherStatsAPI
+  rows: data.rows
+  seriesLabels: ["Thessaloniki", "London"]
   xLabel: "Time"
   yLabel: "Temperature (°C)"
 end

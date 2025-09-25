@@ -43,7 +43,7 @@
       "patterns": [
         {
           "name": "support.class.componentkind.fdsl",
-          "match": "\\b(Stat|Gauge|LineChart|LiveTable|Image|Page)\\b"
+          "match": "\\b(Table|LineChart|Gauge|ActionForm)\\b"
         }
       ]
     },
@@ -51,7 +51,7 @@
       "patterns": [
         {
           "name": "keyword.control.fdsl",
-          "match": "\\b(Server|RESTEndpoint|WSEndpoint|Entity|Component|Import|inputs|attributes|props|source|entity|strict|host|port|base|cors|url|verb|headers|protocol|end)\\b"
+          "match": "\\b(Server|RESTEndpoint|WSEndpoint|Entity|Component|import|inputs|attributes|props|source|entity|strict|host|port|base|cors|env|url|verb|headers|protocol|subprotocols|subscribe|where|end)\\b"
         },
         {
           "name": "keyword.control.conditional.fdsl",
@@ -60,6 +60,9 @@
         {
           "name": "keyword.operator.logical.fdsl",
           "match": "\\b(and|or|not)\\b"
+        },
+        { "name": "keyword.other.componentprop.fdsl",
+          "match": "\\b(action|fields|pathKey|submitLabel|x|y|xLabel|yLabel|value|min|max|label|unit|primaryKey|columns)\\b"
         }
       ]
     },
@@ -98,13 +101,18 @@
       ]
     },
     "props-keys": {
-      "patterns": [
-        {
-          "name": "variable.other.property.fdsl",
-          "match": "(?<=-\\s|\\n\\s*)[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)"
-        }
-      ]
-    },
+       "patterns": [
+         {
+           "name": "meta.mapping.key.fdsl",
+           "begin": "^(\\s*)(-\\s*)?([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+           "beginCaptures": {
+             "3": { "name": "variable.other.property.fdsl" },
+             "4": { "name": "punctuation.separator.keyvalue.fdsl" }
+           },
+           "end": "(?=$)", "patterns": []
+         }
+       ]
+     },
     "identifiers": {
       "patterns": [
         {

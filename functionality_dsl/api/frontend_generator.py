@@ -11,7 +11,7 @@ def _components(model):
         return list(cmps)
     from textx import get_children_of_type as _gc
     nodes = []
-    for rule in ("LiveTableComponent", "LineChartComponent", "ActionFormComponent"):
+    for rule in ("TableComponent", "LineChartComponent", "ActionFormComponent"):
         nodes += list(_gc(rule, model))
     return nodes
 

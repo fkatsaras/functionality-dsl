@@ -1,14 +1,16 @@
-# app/api/routers/{{ entity.name | lower }}.py
-import time, logging
-from fastapi import APIRouter, HTTPException, Request
-from typing import List, Any, Dict
+from fastapi import APIRouter, HTTPException
+from typing import List, Dict, Any
+import logging
+
 from app.core.http import get_http_client
 from app.core.utils import resolve_headers
-from app.core.logging import set_request_id
-from app.domain.models import {{ entity.name }}
 
-logger = logging.getLogger("fdsl.router.{{ entity.name }}")
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
+
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ endpoint.summary or endpoint.name }}"]
+)
 
 _UPSTREAM_URL = "{{ entity.source.url }}"
 _HEADERS = resolve_headers([
@@ -17,44 +19,47 @@ _HEADERS = resolve_headers([
 {% endfor -%}
 ])
 _METHOD = "{{ (entity.source.verb or 'GET')|upper }}"
-_FIELDS = [{% for n in schema_attrs %}"{{ n }}",{% endfor %}]
 
-def _project(x: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: x.get(k) for k in _FIELDS}
-
-@router.get("/", response_model=List[{{ entity.name }}])
-async def list_{{ entity.name | lower }}(request: Request):
-    t0 = time.monotonic()
-    rid = getattr(request.state, "request_id", None)
-    if rid: set_request_id(rid)
-
+@router.get("/", response_model=List[Dict[str, Any]])
+async def get_{{ endpoint.name | lower }}():
+    """Fetch {{ entity.name }} from external API and normalize to list[dict]."""
     client = get_http_client()
+
     try:
-        if _METHOD == "GET":
-            r = await client.get(_UPSTREAM_URL, headers=_HEADERS)
+        resp = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Upstream error: {resp.status_code}")
+
+        data = resp.json()
+        logger.info(f"{{ entity.name }} fetched data: {type(data)}")
+
+        # Single attribute entity → wrap whole payload under that key
+        {%- if wrapper_attr %}
+        return [ {"{{ wrapper_attr }}": data} ]
+        {%- else %}
+
+        # Multi-attribute entity → one row per attribute
+        rows: List[Dict[str, Any]] = []
+        if isinstance(data, dict):
+            {% for attr in schema_attrs %}
+            rows.append({"{{ attr }}": data.get("{{ attr }}")})
+            {% endfor %}
         else:
-            r = await client.request(_METHOD, _UPSTREAM_URL, headers=_HEADERS, json=None)
-        elapsed = (time.monotonic() - t0) * 1000.0
+            # If upstream isn't a dict (e.g., it's a list), put the same payload under each attribute
+            {% for attr in schema_attrs %}
+            rows.append({"{{ attr }}": data})
+            {% endfor %}
 
-        if r.status_code >= 400:
-            logger.warning("upstream_error",
-                extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL,
-                       "status":r.status_code,"elapsed_ms":round(elapsed,2)})
-            raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
+        print("\n" * 14)
+        print(f"Entity {{ entity.name }} gets this data:")
+        print(data)
+        print("\n" * 14)
 
-        data = r.json()
-        n = len(data) if isinstance(data, list) else 0
-        if not isinstance(data, list):
-            logger.error("unexpected_shape", extra={"entity":"{{ entity.name }}","got_type":type(data).__name__})
-            raise HTTPException(status_code=502, detail="Upstream did not return a list")
-
-        rows = [{{ entity.name }}(**_project(d)) for d in data]
-        logger.info("ok",
-            extra={"entity":"{{ entity.name }}","rows":len(rows),"elapsed_ms":round(elapsed,2)})
         return rows
+        {%- endif %}
+
     except HTTPException:
         raise
-    except Exception as ex:
-        logger.exception("router_error",
-            extra={"entity":"{{ entity.name }}","verb":_METHOD,"url":_UPSTREAM_URL})
-        raise
+    except Exception:
+        logger.exception(f"Error fetching {{ entity.name }}")
+        raise HTTPException(status_code=500, detail="Internal server error")

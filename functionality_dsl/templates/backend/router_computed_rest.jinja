@@ -1,63 +1,160 @@
 from fastapi import APIRouter, HTTPException
-from typing import List, Any, Dict
+from typing import List, Dict, Any
+import logging
 
 from app.core.http import get_http_client
-from app.core.expressions import compile_safe
-from app.core.computed import DSL_FUNCTION_REGISTRY as dsl_funcs
-from app.core.utils import normalize_json_to_rows
-from app.domain.models import {{ entity.name }}
+from app.core.computed import compile_safe, safe_globals
+from app.core.utils import resolve_headers
 
-router = APIRouter(prefix="/api/entities/{{ entity.name | lower }}", tags=["{{ entity.name }}"])
+logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
 
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ endpoint.summary or endpoint.name }}"]
+)
+
+# REST input sources (external APIs) for PARENT ENTITIES
+# Each entry includes the parent's attributes as expressions to evaluate
 _REST_INPUTS = [
 {%- for it in rest_inputs %}
     {
-        "alias": "{{ it.alias }}",
+        "entity": "{{ it.entity }}",   # e.g. RealObjectsRaw
+        "alias":  "{{ it.alias }}",    # e.g. RealObjects (or parent entity name)
         "url": "{{ it.url }}",
-        "headers": {%- if it.headers and it.headers|length -%}{% set hs = {} %}{% for h in it.headers %}{% set _ = hs.update({ h.key: h.value }) %}{% endfor -%}{{ hs | tojson }}{%- else -%}{ }{%- endif -%},
-        "fields": {{ it.fields | tojson }}
+        "headers": {{ (it.headers or []) | tojson }},
+        "method": "{{ (it.method or 'GET')|upper }}",
+        "attrs": [
+        {%- for a in it.attrs %}
+            {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+        {%- endfor %}
+        ]
     },
 {%- endfor %}
 ]
 
-_COMPILED = {
+# Computed parent dependencies (internal endpoints)
+_COMPUTED_PARENTS = [
+{%- for parent in computed_parents | default([], true) %}
+    {"name": "{{ parent.name }}", "endpoint": "{{ parent.endpoint }}/"},
+{%- endfor %}
+]
+
+# Compiled attribute expressions for THIS entity
+
+_COMPILED_ATTRS = {
 {%- for attr in computed_attrs %}
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
 {%- endfor %}
 }
 
-def _project(row: Dict[str, Any], keep: list[str] | None) -> Dict[str, Any]:
-    if not keep:
-        return row
-    return {k: row.get(k) for k in keep}
 
-@router.get("/", response_model=List[{{ entity.name }}], summary="List {{ entity.name }}")
-async def list_{{ entity.name | lower }}():
+@router.get("/", response_model=List[Dict[str, Any]])
+async def get_{{ endpoint.name | lower }}():
+    """Compute {{ entity.name }} from parent entities + external REST inputs."""
     client = get_http_client()
 
-    lists: Dict[str, list] = {}
-    for it in _REST_INPUTS:
-        r = await client.get(it["url"], headers=it["headers"])
-        if r.status_code >= 400:
-            raise HTTPException(status_code=502, detail={"upstream_status": r.status_code, "body": r.text})
+    try:
+        # ------------------------------
+        # 1) Build parent context
+        # ------------------------------
+        ctx: Dict[str, Any] = {}
 
-        ct = r.headers.get("content-type", "")
-        if "application/json" not in ct:
-            raise HTTPException(status_code=502, detail=f"Expected application/json, got {ct!r}")
+        # ---- a) Parents with ExternalREST (treat as 'raw-like' entities)
+        for ri in _REST_INPUTS:
+            try:
+                headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
+                response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
+                if response.status_code >= 400:
+                    raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
 
-        data = r.json()
-        rows = normalize_json_to_rows(data, it["fields"])
-        if not isinstance(rows, list) or (rows and not isinstance(rows[0], dict)):
-            raise HTTPException(status_code=502, detail="Upstream did not return a usable list of objects")
-        lists[it["alias"]] = [_project(d, it["fields"]) for d in rows]
+                payload = response.json()
+                print(f"[REST-FETCH] {ri['entity']} payload type={type(payload)} keys={list(payload) if isinstance(payload, dict) else 'n/a'}")
 
-    n = min((len(v) for v in lists.values()), default=0)
-    out_rows: list[Dict[str, Any]] = []
-    for i in range(n):
-        ctx = {alias: lists[alias][i] for alias in lists}
-        row: Dict[str, Any] = {}
-        for name, code in _COMPILED.items():
-            row[name] = eval(code, {"__builtins__": {}, "dsl_funcs": dsl_funcs}, {"ctx": ctx})
-        out_rows.append(row)
+                parent_attrs: Dict[str, Any] = {}
+                for a in (ri.get("attrs") or []):
+                    try:
+                        compiled = compile_safe(a["expr"])
+                        evaluation_context = {ri["alias"]: payload}  #  eval against alias
+                        print(f"[REST-EVAL] Entity={ri['entity']} Attr={a['name']} Expr={a['expr']}")
+                        value = eval(compiled, safe_globals, evaluation_context)
+                        print(f"[REST-EVAL] Result type={type(value)} sample={str(value)[:200]}")
+                        parent_attrs[a["name"]] = value
+                    except Exception:
+                        logger.error(f"Error computing parent attr {ri['entity']}.{a.get('name')}", exc_info=True)
+                        raise HTTPException(status_code=500, detail=f"Computation error in parent {ri['entity']}.{a.get('name')}")
 
-    return [{{ entity.name }}(**r) for r in out_rows]
+                if not parent_attrs:
+                    parent_attrs = {"raw": payload}
+
+                #  Bind under ENTITY name so downstream can do RealObjectsRaw.raw
+                ctx[ri["entity"]] = parent_attrs #  bind into ctx under entity name
+                logger.info(f"Fetched REST {ri['entity']}: shaped as {type(parent_attrs)}")
+
+            except HTTPException:
+                raise
+            except Exception:
+                logger.error(f"Error fetching {ri['name']}", exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Failed to fetch REST dependency: {ri['name']}")
+
+        # ---- b) Parents that are computed (internal endpoints)
+        for cp in _COMPUTED_PARENTS:
+            try:
+                response = await client.get(f"http://localhost:8080{cp['endpoint']}")
+                if response.status_code >= 400:
+                    raise HTTPException(status_code=502, detail=f"Failed to fetch computed parent {cp['name']}: {response.status_code}")
+
+                parent_json = response.json()
+
+                # Contract: internal routers return list[dict]; merge into a single dict
+                if isinstance(parent_json, list):
+                    merged: Dict[str, Any] = {}
+                    for item in parent_json:
+                        if isinstance(item, dict):
+                            merged.update(item)
+                        else:
+                            merged.setdefault("value", item)
+                    ctx[cp["name"]] = merged
+                elif isinstance(parent_json, dict):
+                    ctx[cp["name"]] = parent_json
+                else:
+                    ctx[cp["name"]] = {"value": parent_json}
+
+                logger.info(f"Fetched computed parent {cp['name']}: shaped as {type(ctx[cp['name']])}")
+
+            except HTTPException:
+                raise
+            except Exception:
+                logger.error(f"Error fetching computed parent {cp['name']}", exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
+
+        # ------------------------------
+        # 2) Evaluate THIS entity's attributes
+        # ------------------------------
+        computed_attrs: Dict[str, Any] = {}
+        # NOTE: We do NOT set a top-level 'response' here (ambiguity).
+        # Current entity expressions should refer to parents via 'ctx', e.g., ctx['RealObjectsRaw']['raw']
+        evaluation_context = {"ctx": ctx}
+
+        for attr_name, compiled_expr in _COMPILED_ATTRS.items():
+            try:
+                result = eval(compiled_expr, safe_globals, evaluation_context)
+                computed_attrs[attr_name] = result
+                logger.debug(f"Computed {attr_name}: {type(result)}")
+            except Exception:
+                logger.error(f"Error computing attribute {attr_name}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"Computation error: {attr_name}")
+
+        # Pretty debug
+        print("\n" * 8)
+        print(f"Computed Entity {{ entity.name }} returns this data:")
+        print([computed_attrs])
+        print("\n" * 8)
+
+        # Contract: list[dict]
+        return [computed_attrs]
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(f"Error computing {{ entity.name }}")
+        raise HTTPException(status_code=500, detail="Internal server error")

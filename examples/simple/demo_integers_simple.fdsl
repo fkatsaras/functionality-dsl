@@ -1,0 +1,53 @@
+// --- Server ----------------------------------------------------
+Server IntCompare
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// --- External REST sources -------------------------------------
+ExternalREST RandomA
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+ExternalREST RandomB
+  url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
+  verb: GET
+end
+
+// --- Raw entities ----------------------------------------------
+Entity IntARaw
+  source: RandomA
+  attributes:
+    - value: int = RandomA[0];
+end
+
+Entity IntBRaw
+  source: RandomB
+  attributes:
+    - value: int = RandomB[0];
+end
+
+// --- Computed entity -------------------------------------------
+Entity CompareInts(IntARaw,IntBRaw)
+  attributes:
+    - a_val: int       = IntARaw.value;
+    - b_val: int       = IntBRaw.value;
+    - delta: int       = IntBRaw.value - IntARaw.value;
+    - is_equal: bool   = IntARaw.value == IntBRaw.value;
+    - a_greater: bool  = IntARaw.value > IntBRaw.value;
+    - b_greater: bool  = IntBRaw.value > IntARaw.value;
+end
+
+// --- Internal endpoint -----------------------------------------
+InternalREST CompareIntsList
+  entity: CompareInts
+  path: "/api/compare"
+end
+
+// --- Component -------------------------------------------------
+Component<Table> IntComparisonTable
+  endpoint: CompareIntsList
+  colNames: ["First Num", "Second Num", "Diff", "Is equal?", "Is First Bigger?", "Is Second Bigger?"]
+end

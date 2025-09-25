@@ -4,7 +4,7 @@ Server GH
   cors: "http://localhost:3000"
 end
 
-RESTEndpoint SvelteIssues
+ExternalREST SvelteIssues
   url: "https://api.github.com/repos/sveltejs/svelte/issues?state=open&per_page=50"
   verb: GET
 end
@@ -22,17 +22,24 @@ Entity IssueStats
   inputs:
     - i: Issue
   attributes:
-    - id           = i.id
-    - number       = i.number
-    - title        = i.title
-    - title_len    = len(i.title)
-    - has_bug      = icontains(i.title, "bug")
-    - has_dom      = contains(i.title, "DOM")
-    - is_question  = icontains(i.title, "question") or endswith(i.title, "?")
+    - id: int          = i.id
+    - number: int      = i.number
+    - title: string        = i.title
+    - title_len: int    = len(i.title)
+    - has_bug: bool      = icontains(i.title, "bug")
+    - has_dom: bool      = contains(i.title, "DOM")
+    - is_question: bool  = icontains(i.title, "question") or endswith(i.title, "?")
+  where: self.has_bug or self.has_dom or self.is_question
 end
 
-Component<LiveTable> Issues
+// ------------------- Internal endpoint -------------------------
+InternalREST IssueStats
   entity: IssueStats
+  path: "/api/issues"
+end
+
+Component<Table> Issues
+  endpoint: IssueStats
   primaryKey: data.id
   columns: [data.number, data.title, data.title_len, data.has_dom, data.has_bug, data.is_question]
 end

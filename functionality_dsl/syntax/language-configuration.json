@@ -1,10 +1,19 @@
 {
   "comments": { "lineComment": "//" },
-  "brackets": [["{","}"], ["[","]"], ["(",")"], ["<",">"]],
+  "brackets": [
+    ["{","}"],
+    ["[","]"],
+    ["(",")"],
+    ["<",">"]           // for Component<…>
+  ],
   "autoClosingPairs": [
     {"open":"{","close":"}"},
     {"open":"[","close":"]"},
     {"open":"(","close":")"},
+    {"open":"<","close":">"},
     {"open":"\"","close":"\""}
+  ],
+  "surroundingPairs": [
+    ["{","}"],["[","]"],["(",")"],["<",">"],["\"","\""]
   ]
 }

@@ -1,52 +1,60 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { subscribe as wsSubscribe } from "../ws";
+  import RefreshButton from "./util/RefreshButton.svelte";
 
   const {
     name = "LineChart",
     url,
     wsUrl,
-    x,
-    y,
+    refreshMs = 0,
+    windowSize: _windowSize = 0,
+    height = 240,
     xLabel,
     yLabel,
-    windowSize: _windowSize = 0,
-    refreshMs = 0,
-    height = 1000,
     seriesLabels: _seriesLabels = null as null | string[],
     seriesColors: _seriesColors = null as null | string[],
   } = $props<{
     name?: string;
     url?: string;
     wsUrl?: string;
-    x: string;
-    y: string | string[];
+    refreshMs?: number;
+    windowSize?: number;
+    height?: number;
     xLabel?: string;
     yLabel?: string;
-    windowSize?: number | null;
-    refreshMs?: number;
-    height?: number;
     seriesLabels?: string[] | null;
     seriesColors?: string[] | null;
   }>();
 
-  const yKeys: string[] = Array.isArray(y) ? y : [y];
-  const windowSize = Number(_windowSize ?? 0);
-
-  // legend labels/colors
-  const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
-  const seriesLabels = _seriesLabels && _seriesLabels.length === yKeys.length
-    ? _seriesLabels
-    : yKeys.map(k => k.toUpperCase());
-  const seriesColors = _seriesColors && _seriesColors.length === yKeys.length
-    ? _seriesColors
-    : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length]);
+  let loading: boolean = $state(Boolean(url));
+  let xKey: string | null = $state(null);
+  let yKeys: string[] = $state([]);
 
   type Point = { t: number; y: number };
-  let series: Record<string, Point[]> = $state({} as Record<string, Point[]>);
-  for (const k of yKeys) series[k] = [];
+  let series: Record<string, Point[]> = $state({});
 
-  let error: string | null = null;
+  let error: string | null = $state(null);
+  const windowSize = $derived(Number(_windowSize ?? 0));
+  
+  // legend labels/colors
+  const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
+  const seriesLabels = $derived(
+    _seriesLabels && _seriesLabels.length === yKeys.length
+      ? _seriesLabels
+      : yKeys.map(k => k.toUpperCase())
+  );
+
+  const seriesColors = $derived(
+    _seriesColors && _seriesColors.length === yKeys.length
+      ? _seriesColors
+      : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length])
+);
+
+
+  function resetSeries() {
+    series = Object.fromEntries(yKeys.map(k => [k, []]));
+  }
 
   function normT(v: any): number | null {
     if (v == null) return null;
@@ -57,32 +65,96 @@
   }
 
   function pushRow(row: any) {
-    const t = normT(row?.[x]);
+    if (!xKey) return;
+    const t = normT(row?.[xKey]);
     if (t == null) return;
     for (const key of yKeys) {
       const v = Number(row?.[key]);
       if (Number.isFinite(v)) {
         const next = [...(series[key] || []), { t, y: v }];
-        series[key] = windowSize > 0 ? next.slice(-windowSize) : next;
+        series = { ...series, [key]: windowSize > 0 ? next.slice(-windowSize) : next };
       }
     }
   }
 
   function pushPayload(payload: any) {
-    const rows: any[] = Array.isArray(payload) ? payload : (payload ? [payload] : []);
-    for (const r of rows) pushRow(r);
+    // 0) Envelope normalize to an array of entity dicts
+    const entities: any[] =
+      Array.isArray(payload) ? payload :
+      (payload && typeof payload === "object" ? [payload] : []);
+    if (!entities.length) return;
+
+    // 1) CASE A: list-of-dicts (REST-style) nested under the first attr
+    let rows: any[] = [];
+    outer: for (const ent of entities) {
+      if (ent && typeof ent === "object") {
+        for (const v of Object.values(ent)) {
+          if (Array.isArray(v) && v.length && typeof v[0] === "object") {
+            rows = v;
+            break outer;
+          }
+        }
+      }
+    }
+    if (rows.length) {
+      if (!xKey || !yKeys.length) {
+        const first = rows[0];
+        if (first && typeof first === "object") {
+          const keys = Object.keys(first);
+          xKey = keys[0] ?? null;
+          yKeys = keys.slice(1);
+          series = Object.fromEntries(yKeys.map(k => [k, []]));
+        }
+      }
+      for (const r of rows) pushRow(r);
+      return;
+    }
+
+    // 2) CASE B: single-row dict (WS tick) like {tick:{t:..., btc:...}} or {t:..., btc:...}
+    let single: any = null;
+
+    // 2a) payload itself is the row
+    if (!Array.isArray(payload) && payload && typeof payload === "object") {
+      const vals = Object.values(payload);
+      // if it looks like { tick: {...} }, take that inner dict
+      if (vals.length === 1 && vals[0] && typeof vals[0] === "object" && !Array.isArray(vals[0])) {
+        single = vals[0];
+      } else {
+        // or just use payload if it smells like a row already
+        single = payload;
+      }
+    }
+
+    if (single && typeof single === "object" && !Array.isArray(single)) {
+      if (!xKey || !yKeys.length) {
+        const keys = Object.keys(single);
+        xKey = keys[0] ?? xKey;
+        yKeys = keys.slice(1);
+        series = Object.fromEntries(yKeys.map(k => [k, []]));
+      }
+      pushRow(single);
+    }
   }
 
-  async function fetchOnce() {
+
+  async function fetchOnce({ replace = false } = {}) {
     if (!url) return;
+    loading = true;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      pushPayload(await res.json());
+      const payload = await res.json();
+      console.log("raw payload from", url, payload);
+
+      if (replace) resetSeries();
+      pushPayload(payload);
     } catch (e: any) {
       error = e?.message ?? "Failed to load data.";
+    } finally {
+      loading = false;
     }
   }
+
 
   // ---- geometry helpers (shared x/y scales across all series)
   function allPoints(): Point[] {
@@ -180,7 +252,7 @@
   // ---- lifecycle
   let unsub: null | (() => void) = null;
   onMount(() => {
-    if (wsUrl) {
+    if (wsUrl && wsUrl !== "None") {
       unsub = wsSubscribe(wsUrl, pushPayload);
     } else if (url) {
       fetchOnce();
@@ -197,9 +269,31 @@
   <div class="w-4/5 space-y-4">
 
     <!-- 1) CARD: column flexbox : set height from the prop -->
-    <div class="rounded-xl2 shadow-card border table-border bg-[color:var(--card)] p-4 flex flex-col">
-      <div class="mb-3 text-center">
+    <div
+      class="rounded-xl2 shadow-card bg-[color:var(--card)] p-4 flex flex-col transition-colors"
+      class:border-dag-success={loading}
+      class:border-dag-danger={!loading}
+    >
+      <!-- Header -->
+      <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
+        <div class="flex items-center gap-2">
+          <!-- LIVE badge -->
+          <span
+            class="px-2 py-0.5 text-xs font-approachmono rounded border"
+            class:border-dag-success={loading}
+            class:border-dag-danger={!loading}
+            class:text-dag-success={loading}
+            class:text-dag-danger={!loading}
+          >
+            {loading ? "LIVE" : "OFF"}
+          </span>
+        
+          {#if !wsUrl}
+            <RefreshButton on:click={() => fetchOnce({ replace: true })} {loading} ariaLabel="Refresh chart" />
+          {/if}
+    </div>
+
       </div>
 
       <!-- Legend -->
@@ -305,11 +399,11 @@
 
       <!-- X axis label -->
       <div class="mt-2 text-center text-[11px] text-text/60 font-approachmono">
-        {xLabel || x}
+        {xLabel}
       </div>
 
-      {#if $error}
-        <div class="mt-2 text-xs text-red-500 font-approachmono">{$error}</div>
+      {#if error}
+        <div class="mt-2 text-xs text-red-500">{error}</div>
       {/if}
     </div>
   </div>
