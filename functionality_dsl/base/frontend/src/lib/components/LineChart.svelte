@@ -28,10 +28,15 @@
   }>();
 
   let loading: boolean = $state(Boolean(url));
-  let xKey: string | null = null;
-  let yKeys: string[] = [];
-  const windowSize = Number(_windowSize ?? 0);
+  let xKey: string | null = $state(null);
+  let yKeys: string[] = $state([]);
 
+  type Point = { t: number; y: number };
+  let series: Record<string, Point[]> = $state({});
+
+  let error: string | null = $state(null);
+  const windowSize = $derived(Number(_windowSize ?? 0));
+  
   // legend labels/colors
   const defaultPalette = ["#3b82f6", "#22c55e", "#f97316", "#e11d48", "#a855f7", "#14b8a6"];
   const seriesLabels = $derived(
@@ -45,11 +50,7 @@
       ? _seriesColors
       : yKeys.map((_, i) => defaultPalette[i % defaultPalette.length])
 );
-  type Point = { t: number; y: number };
-  let series: Record<string, Point[]> = $state({} as Record<string, Point[]>);
-  for (const k of yKeys) series[k] = [];
 
-  let error: string | null = null;
 
   function resetSeries() {
     series = Object.fromEntries(yKeys.map(k => [k, []]));
@@ -77,35 +78,41 @@
   }
 
   function pushPayload(payload: any) {
-    if (!Array.isArray(payload) || !payload.length) return;
+    // Accept array OR single object
+    const entities: any[] =
+      Array.isArray(payload) ? payload :
+      (payload && typeof payload === "object" ? [payload] : []);
+    if (!entities.length) return;
 
+    // Find first attribute that is a list of dicts
     let rows: any[] = [];
-
-    for (const obj of payload) {
-      for (const [key, value] of Object.entries(obj)) {
-        if (Array.isArray(value) && value.length && typeof value[0] === "object") {
-          rows = value;
-          break;
+    outer: for (const ent of entities) {
+      if (ent && typeof ent === "object") {
+        for (const v of Object.values(ent)) {
+          if (Array.isArray(v) && v.length && typeof v[0] === "object") {
+            rows = v;
+            break outer;
+          }
         }
       }
-      if (rows.length) break;
     }
-
     if (!rows.length) return;
 
-    // Infer keys
+    // Infer keys once (first key = x, rest = y series)
     if (!xKey || !yKeys.length) {
       const first = rows[0];
       if (first && typeof first === "object") {
-        const entries = Object.entries(first);
-        xKey = entries[0][0];
-        yKeys = entries.slice(1).map(([k]) => k);
-        series = Object.fromEntries(yKeys.map(k => [k, []]));
+        const keys = Object.keys(first);
+        xKey = keys[0] ?? null;
+        yKeys = keys.slice(1);
+        // (re)initialize reactive series store
+        series = Object.fromEntries(yKeys.map(k => [k, [] as Point[]]));
       }
     }
 
     for (const r of rows) pushRow(r);
   }
+
 
   async function fetchOnce({ replace = false } = {}) {
     if (!url) return;
