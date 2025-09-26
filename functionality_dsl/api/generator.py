@@ -259,42 +259,81 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         ent = getattr(iwep, "entity")
         route_prefix = _default_ws_prefix(iwep, ent)
 
-        computed_attrs = [
-            {"name": a.name, "pyexpr": getattr(a, "_py", "") or ""}
-            for a in (getattr(ent, "attributes", []) or [])
-            if hasattr(a, "expr") and a.expr is not None
-        ]
+        computed_attrs = []
+        # IMPORTANT: WS router evaluates computed attrs with {"ctx": ctx}
+        # so we must compile against "ctx" here, regardless of sources.
+        for a in (getattr(ent, "attributes", []) or []):
+            if hasattr(a, "expr") and a.expr is not None:
+                py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [ent.name] )
+                computed_attrs.append({"name": a.name, "pyexpr": py_code})
 
         ws_inputs = []
+
+        # A) current entity has ExternalWS
+        t_src = getattr(ent, "source", None)
+        if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
+            _normalize_ws_source(t_src)
+            # collect THIS entity's attrs (so we can shape from the raw payload)
+            ent_attrs = []
+            for a in (getattr(ent, "attributes", []) or []):
+                if hasattr(a, "expr") and a.expr is not None:
+                    py = compile_expr_to_python(a.expr, context=t_src.name, known_sources=all_sources)
+                    print(f"\n\n\n\n\n\n\n\n\n[GEN/WS_COMPILED_ATTR] {ent.name}.{a.name} expr='{a.expr}' -> {py}")
+                else:
+                    # default: raw payload
+                    py = f"{t_src.name}.get({a.name!r})" 
+                ent_attrs.append({"name": a.name, "pyexpr": py})
+
+            ws_inputs.append({
+                "entity": ent.name,                # bind result under entity name in ctx
+                "alias":  t_src.name,             # evaluate attrs against alias (external source name)
+                "url": t_src.url,
+                "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
+                "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
+                "protocol": getattr(t_src, "protocol", "json") or "json",
+                "attrs": ent_attrs,
+            })
+
+        # B) parents with ExternalWS
         for parent in getattr(ent, "parents", []) or []:
             if isinstance(parent, dict):
                 continue
-            t_src = getattr(parent, "source", None)
-            if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
-                _normalize_ws_source(t_src)
+            ps = getattr(parent, "source", None)
+            if ps and ps.__class__.__name__ == "ExternalWSEndpoint":
+                _normalize_ws_source(ps)
+                parent_attrs = []
+                for a in (getattr(parent, "attributes", []) or []):
+                    if hasattr(a, "expr") and a.expr is not None:
+                        py = compile_expr_to_python(a.expr, context=ps.name, known_sources=all_sources)
+                        print(f"\n\n\n\n\n\n\n\n\n[GEN/WS_COMPILED_ATTR] {parent.name}.{a.name} expr='{a.expr}' -> {py}")
+                    else:
+                        py = f"{ps.name}.get({a.name!r})"
+                    parent_attrs.append({"name": a.name, "pyexpr": py})
+
                 ws_inputs.append({
-                    "name": parent.name,
-                    "url": t_src.url,
-                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
-                    "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
-                    "protocol": getattr(t_src, "protocol", "json") or "json",
+                    "entity": parent.name,   # ctx[ParentEntity] = {shaped attrs}
+                    "alias":  ps.name,       # eval attrs against alias (external source name)
+                    "url": ps.url,
+                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)],
+                    "subprotocols": list(getattr(ps, "subprotocols", []) or []),
+                    "protocol": getattr(ps, "protocol", "json") or "json",
+                    "attrs": parent_attrs,
                 })
 
-        if not ws_inputs and getattr(ent, "_source_kind", None) != "external-ws":
+        # if no ws_inputs at all, skip generating this WS router
+        if not ws_inputs:
             continue
-
+        
         (routers_dir / f"{iwep.name.lower()}_stream.py").write_text(
             tpl_router_ws.render(
                 endpoint=iwep,
                 entity=ent,
-                computed_attrs=computed_attrs,
-                ws_inputs=ws_inputs,
-                ws_aliases=[wi["name"] for wi in ws_inputs],
-                route_prefix=route_prefix,
+                computed_attrs=computed_attrs,   # for THIS entity
+                ws_inputs=ws_inputs,             # now includes entity, alias, attrs
+                route_prefix=_default_ws_prefix(iwep, ent),
             ),
             encoding="utf-8",
         )
-
 
 # ---------------- server / env / docker rendering ----------------
 

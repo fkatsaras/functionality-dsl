@@ -40,6 +40,7 @@
   onMount(() => {
     if (!wsPath) { error = "No wsPath provided"; return; }
     unsubscribe = subscribe(wsPath, (msg: any) => {
+      console.log("Gauge message:", msg); 
       if (msg && msg.__meta === "open")  { connected = true;  return; }
       if (msg && msg.__meta === "close") { connected = false; return; }
         

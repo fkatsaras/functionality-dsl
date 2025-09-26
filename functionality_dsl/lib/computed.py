@@ -130,7 +130,15 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
         # ---------------- Literals ----------------
         if cls == "Literal":
             if getattr(node, "STRING", None) is not None:
-                return repr(node.STRING[1:-1])
+                s = node.STRING[1:-1]  # strip quotes
+                low = s.lower()
+                if low in {"none", "null"}:
+                    return "None"
+                if low == "true":
+                    return "True"
+                if low == "false":
+                    return "False"
+                return repr(s)
             if getattr(node, "FLOAT", None) is not None:
                 return str(node.FLOAT)
             if getattr(node, "INT", None) is not None:
@@ -144,6 +152,12 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 if isinstance(v, (int, float, bool)):
                     return to_py(v)
                 if isinstance(v, str):
+                    if v.lower() in {"none", "null"}:
+                        return "None"
+                    if v.lower() == "true":
+                        return "True"
+                    if v.lower() == "false":
+                        return "False"
                     return repr(v)
 
             inner = (
@@ -185,6 +199,10 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             alias = getattr(node, "alias", None)
             attr  = getattr(node, "attr", [])
             print(f"[COMPILE/REF] context={context} alias={alias} attr={attr}")
+            
+            alias = getattr(node, "alias", None)
+            if alias is None:
+                raise ValueError(f"Reference without alias in expr {expr!r}")
 
             # reserved keywords should never compile into ctx[…]
             if alias in RESERVED:
@@ -349,6 +367,12 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             # KEY FIX: if this Var is an external source name, emit it directly
             if context == "entity" and node.name in known_sources:
                 return node.name
+            if node.name in {"None", "null"}:
+                return "None"
+            if node.name == "True":
+                return "True"
+            if node.name == "False":
+                return "False"
             # otherwise, it’s an internal entity reference, go through ctx
             return f"ctx[{node.name!r}]"
 

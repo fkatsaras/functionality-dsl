@@ -11,21 +11,24 @@ ExternalWS WikiMonEN
 end
 
 // --- Raw entity ------------------------------------------------
+// Raw snapshot from the WS frame (map exact keys)
 Entity WikiEdit
   source: WikiMonEN
   attributes:
-    - title: string
-    - user: string
-    - delta: int
-    - is_bot: bool
-    - is_minor: bool
-    - wiki: string
+    - title:  string = WikiMonEN["page_title"];
+    - user:   string = WikiMonEN["user"];
+    - delta:  int    = WikiMonEN["change_size"];
+    - is_bot: bool   = WikiMonEN["is_bot"];
+    - is_minor: bool = WikiMonEN["is_minor"];
+    - wiki:   string = WikiMonEN["ns"];  // namespace string (e.g. "Main")
 end
 
 // --- Computed entity -------------------------------------------
 Entity EditGauge(WikiEdit)
   attributes:
-    - edit_size_abs: int = abs(WikiEdit.delta);
+    - edit_size_abs: int = (
+        abs(WikiEdit.delta) if WikiEdit.delta != None else 0
+      );
 end
 // --- Internal endpoint -----------------------------------------
 InternalWS EditGaugeStream
