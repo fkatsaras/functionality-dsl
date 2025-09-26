@@ -146,7 +146,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
-    tpl_router_computed_rest = env.get_template("router_computed_rest.jinja")
+    tpl_router_query_rest = env.get_template("router_query_rest.jinja")
     tpl_router_ws = env.get_template("router_ws.jinja")
 
     # -------- per-internal-endpoint generation --------
@@ -169,6 +169,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         # === A) Entity has its own ExternalREST source
         if ent_has_ext_rest:
             ent_attrs = []
+            
+            print(f"[DEBUG] Entity={ent.name} source={ent.source} type={type(ent.source)}")
+            if isinstance(ent.source, list):
+                for idx, s in enumerate(ent.source):
+                    print(f"[DEBUG]   source[{idx}] -> {s} ({type(s)})")
+                    
+                    
             for a in (getattr(ent, "attributes", []) or []):
                 if hasattr(a, "expr") and a.expr is not None:
                     raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
@@ -189,6 +196,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         for parent in getattr(ent, "parents", []) or []:
             if isinstance(parent, dict):
                 continue  # defensive: never treat pre-normalized dicts as Entity
+            
+            print(f"[DEBUG] Entity={parent.name} source={parent.source} type={type(parent.source)}")
+            if isinstance(parent.source, list):
+                for idx, s in enumerate(parent.source):
+                    print(f"[DEBUG]   source[{idx}] -> {s} ({type(s)})")
             
             t_src = getattr(parent, "source", None)
             print(f"[GEN/PARENT] {ent.name} <- {getattr(parent, 'name', str(parent))} src={t_src.__class__.__name__ if t_src else None}")
@@ -242,7 +254,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     
         # finally render...
         (routers_dir / f"{iep.name.lower()}.py").write_text(
-            tpl_router_computed_rest.render(
+            tpl_router_query_rest.render(
                 endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
                 entity=ent,
                 computed_attrs=computed_attrs,

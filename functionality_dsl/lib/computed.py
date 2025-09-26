@@ -411,7 +411,6 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
         raise ValueError(f"Unhandled node type: {cls}")
 
     py = to_py(expr).replace(" null ", " None ")
-    print("[DEBUG] compiling expr_str:", repr(py))
+    # print("[DEBUG] compiling expr_str:", repr(py))
     _assert_safe_python_expr(py)
-    print(py)
     return py

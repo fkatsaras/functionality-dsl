@@ -441,6 +441,20 @@ def entity_obj_processor(ent):
     # mark source kind for templates/macros
     src = getattr(ent, "source", None)
     kind = None
+    
+    if isinstance(src, list):
+        
+        print('[DEBUG] Entity Source is a list:')
+        if len(src) == 1:
+            ent.source = src[0]
+        elif len(src) == 0:
+            ent.source = None
+        else:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' has multiple sources, not supported.",
+                **get_location(ent)
+            )
+            
     if src is not None:
         t = src.__class__.__name__
         if t == "ExternalRESTEndpoint":

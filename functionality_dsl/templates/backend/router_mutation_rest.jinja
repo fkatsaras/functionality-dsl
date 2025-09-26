@@ -1,0 +1,61 @@
+from fastapi import APIRouter, HTTPException, Body
+from typing import Any, Dict
+import logging
+
+from app.core.http import get_http_client
+from app.core.utils import resolve_headers
+
+logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
+
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ endpoint.summary or endpoint.name }}"]
+)
+
+_TARGET = {
+    "url": "{{ target.url }}",
+    "method": "{{ (target.verb or 'POST')|upper }}",
+    "headers": {{ (target.headers or []) | tojson }},
+}
+
+# Upstream external REST sources for parents
+_REST_INPUTS = [
+{%- for it in rest_inputs %}
+    {
+        "entity": "{{ it.entity }}",
+        "alias":  "{{ it.alias }}",
+        "url": "{{ it.url }}",
+        "headers": {{ (it.headers or []) | tojson }},
+        "method": "{{ (it.method or 'GET')|upper }}",
+        "attrs": [
+        {%- for a in it.attrs %}
+            {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+        {%- endfor %}
+        ]
+    },
+{%- endfor %}
+]
+
+# Computed parent dependencies (internal endpoints)
+_COMPUTED_PARENTS = [
+{%- for parent in computed_parents | default([], true) %}
+    {"name": "{{ parent.name }}", "endpoint": "{{ parent.endpoint }}/"},
+{%- endfor %}
+]
+
+
+@router.post("/", response_model=Dict[str, Any])
+async def post_{{ endpoint.name|lower }}(payload: Dict[str, Any] = Body(...)):
+    """Forward incoming payload to external target {{ target.name }}"""
+    client = get_http_client()
+    try:
+        headers = resolve_headers([(h.get("key"), h.get("value")) for h in (_TARGET.get("headers") or [])])
+        response = await client.request(_TARGET["method"], _TARGET["url"], headers=headers, json=payload)
+        if response.status_code >= 400:
+            raise HTTPException(status_code=response.status_code, detail=f"Target failed: {response.text}")
+        return response.json()
+    except HTTPException:
+        raise
+    except Exception as ex:
+        logger.exception("Forwarding failed")
+        raise HTTPException(status_code=500, detail="Internal forwarding error")

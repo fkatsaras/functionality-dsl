@@ -32,6 +32,7 @@ Entity:
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
     ('source:' source=[ExternalSource])?
+    ('target:' source=[ExternalSource])?
     ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
     ('where:' where=Expr)?
   )#
