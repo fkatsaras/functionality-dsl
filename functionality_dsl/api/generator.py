@@ -403,7 +403,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
             
             # --- build the chain (start -> ... -> terminal), computed-only nodes ---
-            chain_entities = _collect_chain(ent, terminal_entity, model)
+            ancestors = _all_ancestors(terminal_entity, model)  # oldest-first
+            chain_entities = ancestors + [terminal_entity]
             
             compiled_chain = []
             for E in chain_entities:

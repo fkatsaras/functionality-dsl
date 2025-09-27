@@ -151,12 +151,12 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
         elif nname == "PostfixExpr":
             base = n.base
             tails = list(getattr(n, "tails", []) or [])
-        
+
             # Only care when base is a Var/Ref-like alias AND there is at least one tail
             if getattr(base, "var", None) is not None and tails:
                 alias_raw = base.var
                 alias = _as_id_str(alias_raw)
-        
+
                 if not alias or alias in RESERVED or alias in lvs:
                     continue  # skip reserved/loop vars
                 
@@ -169,7 +169,7 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
                 else:
                     # if the first tail is an index, we can’t tell the attr name; treat as jsonpath
                     attr_name = "__jsonpath__"
-        
+
                 yield alias, attr_name, n
 
                 
@@ -234,13 +234,7 @@ def _annotate_computed_attrs(model, metamodel=None):
                 # allow references to parent entities
                 matched_parent = next((p for p in parents if alias == p.name), None)
                 if matched_parent:
-                    tgt_attrs = target_attrs.get(matched_parent.name, set())
-                    
-                    print("DEBUGDEBUGDEBUGDEBUGDEBUGDEBUG")
-                    print(tgt_attrs)
-                    print(attr)
-                    print("DEBUGDEBUGDEBUGDEBUGDEBUGDEBUG")
-                    
+                    tgt_attrs = target_attrs.get(matched_parent.name, set())                    
                     
                     if attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
