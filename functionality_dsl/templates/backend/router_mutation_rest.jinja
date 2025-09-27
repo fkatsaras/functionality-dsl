@@ -42,12 +42,19 @@ _COMPUTED_PARENTS = [
 {%- endfor %}
 ]
 
-# ---  compiled attrs for the current InternalREST entity ---
-_COMPILED_SELF_ATTRS = {
-{%- for a in self_compiled_attrs or [] %}
-    "{{ a.name }}": compile_safe({{ a.pyexpr | tojson }}),
+# --- compiled attrs for the entity chain (from current -> terminal) ---
+_COMPILED_CHAIN = [
+{%- for ent in compiled_chain %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
 {%- endfor %}
-}
+]
 
 # --- compiled attrs for the TERMINAL entity (what we return/forward) ---
 _COMPILED_PAYLOAD_ATTRS = {
@@ -131,15 +138,16 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
                 logger.exception(f"Error fetching computed dependency {cp['name']}")
                 raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
 
-        # 2) --- NEW: compute the current entity (e.g., User) into ctx[User] ---
-        if _COMPILED_SELF_ATTRS:
-            self_out: Dict[str, Any] = {}
+        # 2) Compute each entity in the chain in order (parents first)
+        for ent in _COMPILED_CHAIN:
+            shaped = {}
             eval_ctx = {"ctx": ctx}
-            for attr_name, compiled_expr in _COMPILED_SELF_ATTRS.items():
-                self_out[attr_name] = eval(compiled_expr, safe_globals, eval_ctx)
-            ctx["{{ entity.name }}"] = self_out
+            for a in (ent.get("attrs") or []):
+                compiled = compile_safe(a["expr"])
+                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+            ctx[ent["name"]] = shaped
 
-        # 3) Compute TERMINAL entity payload (e.g., UserNormalized)
+        # 3) Compute TERMINAL entity payload
         payload_out: Dict[str, Any] = {}
         eval_ctx = {"ctx": ctx}
         for attr_name, compiled_expr in _COMPILED_PAYLOAD_ATTRS.items():

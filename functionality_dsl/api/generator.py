@@ -99,22 +99,33 @@ def _distance_up(from_node, to_ancestor) -> int | None:
 
 def _find_downstream_terminal_entity(ent, model):
     """
-    Return the nearest descendant entity (fewest parent-edges upward from it to 'ent')
-    that has a bound external target (ent.target set by back-link step).
-    If none, return None.
+    Return the nearest descendant entity (fewest edges upward from it to 'ent')
+    that has a bound external target. If none, return None.
     """
-    # candidates = any entity that has a .target and for which ent is an ancestor
     candidates = []
     for e2 in get_children_of_type("Entity", model):
         if getattr(e2, "target", None) is None:
             continue
-        dist = _distance_up(e2, ent)  # if e2 -> ... -> ent through parents
+        dist = _distance_up(e2, ent)
         if dist is not None:
             candidates.append((dist, e2))
     if not candidates:
         return None
-    candidates.sort(key=lambda t: t[0])  # pick the closest descendant
+    candidates.sort(key=lambda t: t[0])
     return candidates[0][1]
+
+def _is_ancestor(ancestor, node) -> bool:
+    return _distance_up(node, ancestor) is not None
+
+def _collect_chain(ent_start, ent_terminal, model):
+    """
+    All entities E such that ent_start is an ancestor of E and
+    E is an ancestor of ent_terminal, ordered by distance from ent_start (parents-first).
+    """
+    all_entities = get_children_of_type("Entity", model)
+    between = [E for E in all_entities if _is_ancestor(ent_start, E) and _is_ancestor(E, ent_terminal)]
+    between.sort(key=lambda E: _distance_up(E, ent_start) or 10**9)
+    return between
 
 
 # ---------------- route helpers ----------------
@@ -299,38 +310,46 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         else:
             # Mutation router → requires a target (usually ExternalREST)
             # --- choose terminal entity ---
-                terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
-
-                # compile current (self) entity attrs first
-                self_compiled_attrs = []
-                for a in (getattr(ent, "attributes", []) or []):
+            terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
+            
+            # --- build the chain (current → ... → terminal) ---
+            chain_entities = _collect_chain(ent, terminal_entity, model)
+            
+            # compile chain attrs
+            compiled_chain = []
+            for E in chain_entities:
+                attrs = []
+                for a in (getattr(E, "attributes", []) or []):
                     if hasattr(a, "expr") and a.expr is not None:
                         py_code = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
-                        self_compiled_attrs.append({"name": a.name, "pyexpr": py_code})
-
-                tgt = getattr(terminal_entity, "target", None)
-                target = None
-                if tgt:
-                    target = {
-                        "name": tgt.name,
-                        "url": tgt.url,
-                        "method": getattr(tgt, "verb", verb).upper(),
-                        "headers": _as_headers_list(tgt),
-                    }
-
-                (routers_dir / f"{iep.name.lower()}.py").write_text(
-                    tpl_router_mutation_rest.render(
-                        endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                        entity=ent,                        # InternalREST-bound entity (User)
-                        terminal=terminal_entity,          # SHOULD be UserNormalized now
-                        target=target,                     # None → echo; else forward
-                        rest_inputs=rest_inputs,
-                        computed_parents=computed_parents,
-                        route_prefix=route_prefix,
-                        self_compiled_attrs=self_compiled_attrs,
-                    ),
-                    encoding="utf-8",
-                )
+                        attrs.append({"name": a.name, "pyexpr": py_code})
+                compiled_chain.append({"name": E.name, "attrs": attrs})
+            
+            # target (if any)
+            tgt = getattr(terminal_entity, "target", None)
+            target = None
+            if tgt:
+                target = {
+                    "name": tgt.name,
+                    "url": tgt.url,
+                    "method": getattr(tgt, "verb", verb).upper(),
+                    "headers": _as_headers_list(tgt),
+                }
+            
+            # render
+            (routers_dir / f"{iep.name.lower()}.py").write_text(
+                tpl_router_mutation_rest.render(
+                    endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
+                    entity=ent,                         # InternalREST-bound entity
+                    terminal=terminal_entity,           # terminal entity (bound to ExternalREST)
+                    target=target,                      # None → echo; else forward
+                    rest_inputs=rest_inputs,
+                    computed_parents=computed_parents,
+                    route_prefix=route_prefix,
+                    compiled_chain=compiled_chain,      # << pass the whole chain
+                ),
+                encoding="utf-8",
+            )
 
 
     # INTERNAL WS endpoints

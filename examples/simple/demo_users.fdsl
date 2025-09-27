@@ -29,12 +29,28 @@ Entity User
     - job: string = CreateUserEndpoint.job;
 end
 
-// --- Targeted entities ; further compute or validate call ----------
-Entity UserNormalized(User) 
+Entity UserNormalized1(User) 
   attributes:
     - id: int = User.id;
     - name: string = lower(User.name);
     - job: string = lower(User.job);
+end
+
+Entity UserNormalized2(UserNormalized1, User) 
+  attributes:
+    - id: int = User.id;
+    - name: string = lower(User.name) + lower(UserNormalized1.name);
+    - job: string = lower(UserNormalized1.job);
+end
+
+
+
+// --- Targeted entities ; further compute or validate call ----------
+Entity UserNormalized3(UserNormalized2) 
+  attributes:
+    - id: int = UserNormalized2.id;
+    - name: string = lower(UserNormalized2.name);
+    - job: string = lower(UserNormalized2.job);
 end
 
 // --- External REST targets (ReqRes) ----------------------------
@@ -47,5 +63,5 @@ end
 ExternalREST UserCreate
   url: "https://httpbin.org/anything"
   verb: POST
-  entity: UserNormalized
+  entity: UserNormalized3
 end

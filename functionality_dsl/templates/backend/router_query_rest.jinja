@@ -49,7 +49,7 @@ _COMPILED_ATTRS = {
 
 
 @router.get("/", response_model=List[Dict[str, Any]])
-async def {{ endpoint.name|lower }}_{{ target.method.lower() }}():
+async def {{ endpoint.name|lower }}():
     """Compute {{ entity.name }} from parent entities + external REST inputs."""
     client = get_http_client()
 
