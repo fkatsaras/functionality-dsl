@@ -30,9 +30,20 @@ Entity EditGauge(WikiEdit)
         abs(WikiEdit.delta) if WikiEdit.delta != None else 0
       );
 end
+
+Entity EditGauge2(EditGauge)
+  attributes:
+    - edit_size_abs: int = EditGauge.edit_size_abs;
+end
+
+Entity EditGauge3(EditGauge2)
+  attributes:
+    - edit_size_abs: int = EditGauge2.edit_size_abs;
+end
+
 // --- Internal endpoint -----------------------------------------
 InternalWS EditGaugeStream
-  entity: EditGauge
+  entity: EditGauge3
   path: "/api/wiki/edits"
 end
 

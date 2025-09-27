@@ -45,12 +45,19 @@ _INPUT_ATTRS = {
 {%- endfor %}
 }
 
-# === Attributes for THIS entity (computed from ctx) ===
-_COMPILED_ATTRS = {
-{%- for attr in computed_attrs %}
-    "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
+# === Compiled entity chain (computed from ctx) ===
+_COMPILED_CHAIN = [
+{%- for ent in compiled_chain %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
 {%- endfor %}
-}
+]
 
 _latest: Dict[str, Any] = {}   # entity -> shaped dict (like REST)
 _started = False
@@ -117,36 +124,32 @@ def _compute_row() -> Dict[str, Any] | None:
     # Build ctx : ctx[EntityName] = shaped_parent_dict
     ctx: Dict[str, Any] = dict(_latest)
 
-    row: Dict[str, Any] = {}
     try:
-        # Evaluate THIS entity’s attributes against {"ctx": ctx}
-        for name, code in _COMPILED_ATTRS.items():
-           try:
-                logger.debug("attr_eval_start", extra={
-                    "attr": name,
-                    "code": str(code),
-                    "ctx_keys": list(ctx.keys())
-                })
-                row[name] = eval(code, safe_globals, {"ctx": ctx})
-                logger.debug("attr_eval_result", extra={
-            "attr": name,
-            "value_type": type(row[name]).__name__,
-            "value_preview": str(row[name])[:200]
-                })
-           except Exception as ex:
-                logger.error("attr_eval_error", extra={
-                    "attr": name,
-                    "code": str(code),
-                    "err": repr(ex),
-                    "ctx_keys": list(ctx.keys())
-                })
-                row[name] = None
-                continue
+        # Walk the chain in order (ancestors first, then terminal)
+        for ent in _COMPILED_CHAIN:
+            shaped: Dict[str, Any] = {}
+            eval_ctx = {"ctx": ctx}
+            for a in (ent.get("attrs") or []):
+                try:
+                    compiled = compile_safe(a["expr"])
+                    shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+                except Exception as ex:
+                    logger.error("attr_eval_error", extra={
+                        "entity": ent["name"],
+                        "attr": a["name"],
+                        "expr": a["expr"],
+                        "err": repr(ex),
+                        "ctx_keys": list(ctx.keys())
+                    })
+                    shaped[a["name"]] = None
+            ctx[ent["name"]] = shaped
+
+        # final payload = last entity in chain
+        return ctx[_COMPILED_CHAIN[-1]["name"]]
     except Exception as ex:
         sample = {k: (list(v.keys())[:6] if isinstance(v, dict) else type(v).__name__) for k, v in ctx.items()}
         logger.error("compute_error", extra={"err": repr(ex), "ctx_keys": sample})
         return None
-    return row
 
 
 async def _broadcast(msg: Any):

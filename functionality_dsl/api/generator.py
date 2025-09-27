@@ -450,15 +450,42 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         ent = getattr(iwep, "entity")
         route_prefix = _default_ws_prefix(iwep, ent)
 
-        computed_attrs = []
-        # IMPORTANT: WS router evaluates computed attrs with {"ctx": ctx}
-        # so we must compile against "ctx" here, regardless of sources.
-        for a in (getattr(ent, "attributes", []) or []):
-            if hasattr(a, "expr") and a.expr is not None:
-                py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [ent.name] )
-                computed_attrs.append({"name": a.name, "pyexpr": py_code})
+        # --- full chain (ancestors + this entity) ---
+        ancestors = _all_ancestors(ent, model)
+        chain_entities = ancestors + [ent]
 
+        compiled_chain = []
         ws_inputs = []
+
+        for E in chain_entities:
+            t_src = getattr(E, "source", None)
+            if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
+                _normalize_ws_source(t_src)
+                ent_attrs = []
+                for a in getattr(E, "attributes", []) or []:
+                    if hasattr(a, "expr") and a.expr is not None:
+                        py = compile_expr_to_python(a.expr, context=t_src.name, known_sources=all_sources)
+                    else:
+                        py = f"{t_src.name}.get({a.name!r})"
+                    ent_attrs.append({"name": a.name, "pyexpr": py})
+                ws_inputs.append({
+                    "entity": E.name,
+                    "alias":  t_src.name,
+                    "url": t_src.url,
+                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
+                    "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
+                    "protocol": getattr(t_src, "protocol", "json") or "json",
+                    "attrs": ent_attrs,
+                })
+            else:
+                # computed-only entity
+                attrs = []
+                for a in getattr(E, "attributes", []) or []:
+                    if hasattr(a, "expr") and a.expr is not None:
+                        py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
+                        attrs.append({"name": a.name, "pyexpr": py_code})
+                if attrs:
+                    compiled_chain.append({"name": E.name, "attrs": attrs})
 
         # A) current entity has ExternalWS
         t_src = getattr(ent, "source", None)
@@ -519,7 +546,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             tpl_router_ws.render(
                 endpoint=iwep,
                 entity=ent,
-                computed_attrs=computed_attrs,   # for THIS entity
+                compiled_chain=compiled_chain,   #  entity chain context
                 ws_inputs=ws_inputs,             # now includes entity, alias, attrs
                 route_prefix=_default_ws_prefix(iwep, ent),
             ),
