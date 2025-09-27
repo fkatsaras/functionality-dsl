@@ -1,6 +1,7 @@
 # generator.py
 from __future__ import annotations
 
+from collections import deque
 import re
 from pathlib import Path
 from shutil import copytree
@@ -78,6 +79,42 @@ def _normalize_ws_source(ws):
             ws.subprotocols = subs or []
     except Exception:
         ws.subprotocols = []
+        
+# --------------- Mutation flow helpers ---------
+
+def _distance_up(from_node, to_ancestor) -> int | None:
+    """edges from from_node up through parents to to_ancestor (if reachable)."""
+    q = deque([(from_node, 0)])
+    seen = set()
+    while q:
+        cur, d = q.popleft()
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        if cur is to_ancestor:
+            return d
+        for p in getattr(cur, "parents", []) or []:
+            q.append((p, d + 1))
+    return None
+
+def _find_downstream_terminal_entity(ent, model):
+    """
+    Return the nearest descendant entity (fewest parent-edges upward from it to 'ent')
+    that has a bound external target (ent.target set by back-link step).
+    If none, return None.
+    """
+    # candidates = any entity that has a .target and for which ent is an ancestor
+    candidates = []
+    for e2 in get_children_of_type("Entity", model):
+        if getattr(e2, "target", None) is None:
+            continue
+        dist = _distance_up(e2, ent)  # if e2 -> ... -> ent through parents
+        if dist is not None:
+            candidates.append((dist, e2))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0])  # pick the closest descendant
+    return candidates[0][1]
 
 
 # ---------------- route helpers ----------------
@@ -147,6 +184,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     routers_dir.mkdir(parents=True, exist_ok=True)
 
     tpl_router_query_rest = env.get_template("router_query_rest.jinja")
+    tpl_router_mutation_rest = env.get_template("router_mutation_rest.jinja")
     tpl_router_ws = env.get_template("router_ws.jinja")
 
     # -------- per-internal-endpoint generation --------
@@ -155,34 +193,26 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     for iep in _internal_rest_endpoints(model):
         ent = getattr(iep, "entity")
         route_prefix = _default_rest_prefix(iep, ent)
-        
-        ent_src = getattr(ent, "source", None)
-        ent_has_ext_rest = ent_src and ent_src.__class__.__name__ == "ExternalRESTEndpoint"
-        
-        
-        
+        verb = getattr(iep, "verb", "GET").upper()
+    
+        # Common accumulators
         computed_attrs = []
-        ws_inputs = []
         rest_inputs = []
         computed_parents = []
-        
+    
+        ent_src = getattr(ent, "source", None)
+        ent_has_ext_rest = ent_src and ent_src.__class__.__name__ == "ExternalRESTEndpoint"
+    
         # === A) Entity has its own ExternalREST source
         if ent_has_ext_rest:
             ent_attrs = []
-            
-            print(f"[DEBUG] Entity={ent.name} source={ent.source} type={type(ent.source)}")
-            if isinstance(ent.source, list):
-                for idx, s in enumerate(ent.source):
-                    print(f"[DEBUG]   source[{idx}] -> {s} ({type(s)})")
-                    
-                    
             for a in (getattr(ent, "attributes", []) or []):
                 if hasattr(a, "expr") and a.expr is not None:
                     raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
                 else:
                     raw = f"{ent_src.name}"
                 ent_attrs.append({"name": a.name, "pyexpr": raw})
-        
+    
             rest_inputs.append({
                 "entity": ent.name,           # <-- bind into ctx under entity name
                 "alias":  ent_src.name,       # <-- evaluate exprs against this alias
@@ -191,7 +221,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 "method": (getattr(ent_src, "verb", "GET") or "GET").upper(),
                 "attrs": ent_attrs,
             })
-        
+    
         # === B) Parents
         for parent in getattr(ent, "parents", []) or []:
             if isinstance(parent, dict):
@@ -209,7 +239,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 parent_attrs = []
                 for a in (getattr(parent, "attributes", []) or []):
                     if hasattr(a, "expr") and a.expr is not None:
-                        # FIXED: Use the actual compiled expression
                         py = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
                         print(f"[GEN/PARENT_ATTR] {parent.name}.{a.name} expr compiled to: {py}")
                     else:
@@ -221,16 +250,15 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 print(f"[GEN/REST_INPUT] {parent.name} attrs: {parent_attrs}")
         
                 rest_inputs.append({
-                    "entity": parent.name,          # <-- bind under parent entity name
-                    "alias":  t_src.name,           # <-- eval using parent entity alias (matches pyexpr)
+                    "entity": parent.name,
+                    "alias":  t_src.name,
                     "url": t_src.url,
                     "headers": _as_headers_list(t_src),
                     "method": (getattr(t_src, "verb", "GET") or "GET").upper(),
                     "attrs": parent_attrs,
                 })
-        
             else:
-                # computed parent (internal endpoint)
+                # Computed parent (internal endpoint)
                 parent_endpoint_path = None
                 for other_iep in _internal_rest_endpoints(model):
                     if getattr(other_iep, "entity").name == parent.name:
@@ -251,19 +279,58 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 if hasattr(a, "expr") and a.expr is not None:
                     py_code = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
                     computed_attrs.append({"name": a.name, "pyexpr": py_code})
-                    
-        # finally render...
-        (routers_dir / f"{iep.name.lower()}.py").write_text(
-            tpl_router_query_rest.render(
-                endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                entity=ent,
-                computed_attrs=computed_attrs,
-                rest_inputs=rest_inputs,
-                computed_parents=computed_parents,
-                route_prefix=route_prefix,
-            ),
-            encoding="utf-8",
-        )
+    
+        # ------------------------------------------------------
+        # Generate the router depending on verb
+        # ------------------------------------------------------
+        if verb == "GET":
+            # Query router
+            (routers_dir / f"{iep.name.lower()}.py").write_text(
+                tpl_router_query_rest.render(
+                    endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
+                    entity=ent,
+                    computed_attrs=computed_attrs,
+                    rest_inputs=rest_inputs,
+                    computed_parents=computed_parents,
+                    route_prefix=route_prefix,
+                ),
+                encoding="utf-8",
+            )
+        else:
+            # Mutation router → requires a target (usually ExternalREST)
+            # --- choose terminal entity ---
+                terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
+
+                # compile current (self) entity attrs first
+                self_compiled_attrs = []
+                for a in (getattr(ent, "attributes", []) or []):
+                    if hasattr(a, "expr") and a.expr is not None:
+                        py_code = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
+                        self_compiled_attrs.append({"name": a.name, "pyexpr": py_code})
+
+                tgt = getattr(terminal_entity, "target", None)
+                target = None
+                if tgt:
+                    target = {
+                        "name": tgt.name,
+                        "url": tgt.url,
+                        "method": getattr(tgt, "verb", verb).upper(),
+                        "headers": _as_headers_list(tgt),
+                    }
+
+                (routers_dir / f"{iep.name.lower()}.py").write_text(
+                    tpl_router_mutation_rest.render(
+                        endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
+                        entity=ent,                        # InternalREST-bound entity (User)
+                        terminal=terminal_entity,          # SHOULD be UserNormalized now
+                        target=target,                     # None → echo; else forward
+                        rest_inputs=rest_inputs,
+                        computed_parents=computed_parents,
+                        route_prefix=route_prefix,
+                        self_compiled_attrs=self_compiled_attrs,
+                    ),
+                    encoding="utf-8",
+                )
 
 
     # INTERNAL WS endpoints

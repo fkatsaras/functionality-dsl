@@ -1,0 +1,51 @@
+// --- Server ----------------------------------------------------
+Server UserServer
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// --- Components ------------------------------------------------
+Component<ActionForm> CreateUserForm
+  endpoint: CreateUserEndpoint
+  fields: [name, job]
+  submitLabel: "Create"
+end
+
+
+// --- Internal endpoints ----------------------------------------
+InternalREST CreateUserEndpoint
+  entity: User
+  path: "/api/users"
+  verb: POST
+end
+
+// --- Base entity ; consumes direct call ------------------------------
+Entity User
+  source: CreateUserEndpoint
+  attributes:
+    - id: int = 1;  // We can introduce another function for here: rand() or sth
+    - name: string = CreateUserEndpoint.name;
+    - job: string = CreateUserEndpoint.job;
+end
+
+// --- Targeted entities ; further compute or validate call ----------
+Entity UserNormalized(User) 
+  attributes:
+    - id: int = User.id;
+    - name: string = lower(User.name);
+    - job: string = lower(User.job);
+end
+
+// --- External REST targets (ReqRes) ----------------------------
+// ExternalREST UserCreate
+//   url: "https://reqres.in/api/users"
+//   verb: POST
+//   entity: UserNormalized
+// end
+
+ExternalREST UserCreate
+  url: "https://httpbin.org/anything"
+  verb: POST
+  entity: UserNormalized
+end

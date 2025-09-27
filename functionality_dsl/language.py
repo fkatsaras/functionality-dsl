@@ -340,6 +340,12 @@ def external_rest_endpoint_obj_processor(ep):
             f"ExternalREST '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
+    # NEW: must bind an entity for mutation verbs
+    if getattr(ep, "entity", None) is None and ep.verb.upper() != "GET":
+        raise TextXSemanticError(
+            f"ExternalREST '{ep.name}' with verb {ep.verb} must bind an 'entity:'.",
+            **get_location(ep),
+        )
 
 
 def external_ws_endpoint_obj_processor(ep):
@@ -364,10 +370,23 @@ def internal_rest_endpoint_obj_processor(iep):
     """
     InternalRESTEndpoint:
       - Must bind an entity
+      - Default verb = GET
     """
     if getattr(iep, "entity", None) is None:
         raise TextXSemanticError(
             "InternalREST must bind an 'entity:'.", **get_location(iep)
+        )
+
+    verb = getattr(iep, "verb", None)
+    if not verb:
+        iep.verb = "GET"
+    else:
+        iep.verb = iep.verb.upper()
+
+    if iep.verb not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+        raise TextXSemanticError(
+            f"InternalREST verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
+            **get_location(iep)
         )
 
 
@@ -442,6 +461,7 @@ def entity_obj_processor(ent):
     src = getattr(ent, "source", None)
     kind = None
     
+    # normalize source -------------- 
     if isinstance(src, list):
         
         print('[DEBUG] Entity Source is a list:')
@@ -453,6 +473,18 @@ def entity_obj_processor(ent):
             raise TextXSemanticError(
                 f"Entity '{ent.name}' has multiple sources, not supported.",
                 **get_location(ent)
+            )
+            
+    # normalize target -------------- 
+    tgt = getattr(ent, "target", None)
+    if isinstance(tgt, list):
+        if len(tgt) == 1:
+            ent.target = tgt[0]
+        elif len(tgt) == 0:
+            ent.target = None
+        else:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' has multiple targets, not supported.", **get_location(ent)
             )
             
     if src is not None:
@@ -478,6 +510,7 @@ def model_processor(model, metamodel=None):
     verify_components(model)
 
     _populate_aggregates(model)
+    _backlink_external_targets(model)
 
 
 def verify_unique_names(model):
@@ -545,6 +578,12 @@ def _validate_table_component(comp):
             **get_location(comp)
         )
 
+def _backlink_external_targets(model):
+    for er in get_children_of_type("ExternalRESTEndpoint", model):
+        e = getattr(er, "entity", None)
+        if e is not None:
+            # attach a back reference for generator convenience
+            setattr(e, "target", er)
 
 def _populate_aggregates(model):
     model.aggregated_servers = list(get_model_servers(model))

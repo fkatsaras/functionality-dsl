@@ -158,28 +158,28 @@ class LineChartComponent(_BaseComponent):
 @register_component
 class ActionFormComponent(_BaseComponent):
     """
-    Now binds to an InternalREST endpoint via 'action:' (grammar already changed).
+    Now binds to an InternalREST endpoint via 'endpoint:' (grammar already changed).
     """
-    def __init__(self, parent=None, name=None, action=None, fields=None, pathKey=None, submitLabel=None, method=None):
+    def __init__(self, parent=None, name=None, endpoint=None, fields=None, pathKey=None, submitLabel=None, method=None):
         super().__init__(parent, name, None)
 
-        self.action = action                  # the InternalRESTEndpoint node
+        self.endpoint = endpoint                  # the InternalRESTEndpoint node
         self.fields = fields or []
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
 
         # Choose HTTP verb: allow override, else default to GET (or future 'method' on InternalREST)
-        verb_from_action = getattr(action, "method", None) or "GET"
+        verb_from_action = getattr(endpoint, "verb", None) or "GET"
         self.method = (method or verb_from_action).upper()
 
-        if self.action is None:
-            raise ValueError(f"Component '{name}' must bind an 'action:' InternalREST endpoint.")
+        if self.endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' InternalREST endpoint.")
 
     def to_props(self):
         # The front-end should call the internal endpoint path. We expose just the suffix used by UI.
         # If your UI prefixes something (e.g., none now), adjust here accordingly.
         return {
-            "actionPath": getattr(self.action, "path", None) or f"/api/{self.action.name.lower()}",
+            "endpointPath": getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}",
             "fields": [str(f) for f in (self.fields or [])],
             "pathKey": self.pathKey,
             "submitLabel": self.submitLabel or "Submit",

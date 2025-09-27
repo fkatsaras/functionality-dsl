@@ -32,6 +32,14 @@ def _tofloat(x) -> Optional[float]:
         return float(x)
     except (TypeError, ValueError):
         return None
+    
+def _lower(x) -> Optional[str]:
+    if x is None:
+        return None
+    try:
+        return str(x).lower()
+    except Exception:
+        return None
 
 def _safe_str(fn):
     """Wrap string predicates so they return False on any exception."""
@@ -79,7 +87,8 @@ DSL_FUNCTIONS = {
     "icontains":  (_icontains,  (2, 2)),
     "startswith": (_startswith, (2, 2)),
     "endswith":   (_endswith,   (2, 2)),
-    "zip":        (_safe_zip,        (1, None)),
+    "lower":      (_lower,      (1, 1)),
+    "zip":        (_safe_zip,   (1, None)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}

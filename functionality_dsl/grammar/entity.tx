@@ -1,6 +1,5 @@
 import utils
 import expression
-import integration
 
 AttrType:
   'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
@@ -31,10 +30,71 @@ Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
-    ('source:' source=[ExternalSource])?
-    ('target:' source=[ExternalSource])?
+    ('source:' source=[Source])?
     ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
-    ('where:' where=Expr)?
   )#
   'end'
 ;
+
+
+// Entity sources / targets -------------------
+Source:
+      InternalRESTEndpoint
+    | InternalWSEndpoint
+    | ExternalRESTEndpoint
+    | ExternalWSEndpoint
+;
+
+
+// ---------- EXTERNAL (integration) ----------
+ExternalRESTEndpoint:
+  'ExternalREST' name=ID
+  (
+    'url:' url=STRING
+    'verb:' verb=HttpVerb
+    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+    ('entity:' entity=[Entity])?
+  )#
+  'end'
+;
+
+ExternalWSEndpoint:
+  'ExternalWS' name=ID
+  (
+    'url:' url=STRING
+    ('protocol:' protocol=STRING)?
+    ('subprotocols:' subprotocols=StringList)?
+    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+    ('subscribe:' subscribe=STRING)?
+    ('entity:' entity=[Entity])?
+  )#
+  'end'
+;
+
+// ---------- INTERNAL (presentation) ----------
+InternalRESTEndpoint:
+  'InternalREST' name=ID
+  (
+    'entity:' entity=[Entity]
+    'verb:' verb=HttpVerb
+    ('path:' path=STRING)?
+    ('summary:' summary=STRING)?
+  )#
+  'end'
+;
+
+InternalWSEndpoint:
+  'InternalWS' name=ID
+  (
+    'entity:' entity=[Entity]
+    ('path:' path=STRING)?
+    ('summary:' summary=STRING)?
+  )#
+  'end'
+;
+
+// ---------- COMMON ----------
+HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+
+StringList: '[' (items+=STRING (',' items+=STRING)*)? ']' ;
+Header: key=/[A-Za-z][A-Za-z0-9\-]*/ ':' value=STRING ;
