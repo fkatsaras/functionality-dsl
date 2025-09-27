@@ -47,6 +47,20 @@ _COMPILED_ATTRS = {
 {%- endfor %}
 }
 
+# Inline-computed ancestors (no ExternalREST / no InternalREST)
+_INLINE_CHAIN = [
+{%- for ent in inline_chain or [] %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
+{%- endfor %}
+]
+
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def {{ endpoint.name|lower }}():
@@ -127,6 +141,15 @@ async def {{ endpoint.name|lower }}():
                 logger.error(f"Error fetching computed parent {cp['name']}", exc_info=True)
                 raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
 
+        # ---- c) Inline-compute computed-only ancestors into ctx
+        for ent in _INLINE_CHAIN:
+            shaped = {}
+            eval_ctx = {"ctx": ctx}
+            for a in (ent.get("attrs") or []):
+                compiled = compile_safe(a["expr"])
+                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+            ctx[ent["name"]] = shaped
+            
         # ------------------------------
         # 2) Evaluate THIS entity's attributes
         # ------------------------------

@@ -80,7 +80,70 @@ def _normalize_ws_source(ws):
     except Exception:
         ws.subprotocols = []
         
-# --------------- Mutation flow helpers ---------
+# --- chain helpers -------------------------------------------------
+
+def _all_ancestors(entity, model):
+    """Return all ancestors of entity, in topological (oldest→newest) order."""
+    seen = set()
+    order = []
+    def visit(e):
+        if id(e) in seen:
+            return
+        seen.add(id(e))
+        for p in getattr(e, "parents", []) or []:
+            visit(p)
+        order.append(e)
+    visit(entity)
+    return [e for e in order if e is not entity]
+
+
+def _path_up(descendant, ancestor):
+    """Return a list [ancestor, ..., descendant] along one shortest path via .parents."""
+    from collections import deque
+    prev = {id(descendant): None}
+    q = deque([descendant])
+    target = None
+    while q:
+        n = q.popleft()
+        if n is ancestor:
+            target = n
+            break
+        for p in (getattr(n, "parents", []) or []):
+            if id(p) not in prev:
+                prev[id(p)] = n
+                q.append(p)
+    if target is None:
+        return []
+    # reconstruct: ancestor -> ... -> descendant
+    path = []
+    cur = ancestor
+    while cur is not None:
+        path.append(cur)
+        cur = prev.get(id(cur))
+    return path
+
+def _collect_chain(start_ent, terminal_ent, model):
+    """
+    Return entities from start_ent -> ... -> terminal_ent (inclusive), ONLY those that
+    do NOT have ExternalREST sources and do NOT have their own InternalREST endpoints.
+    These are the computed-only nodes we must inline.
+    """
+    # find the single path we care about
+    path = _path_up(terminal_ent, start_ent) or [start_ent]
+    # entities that have an internal endpoint (we will fetch them instead)
+    internal_ents = {getattr(iep, "entity") for iep in _internal_rest_endpoints(model)}
+    chain = []
+    for E in path:
+        if E in internal_ents and E is not start_ent:
+            # will be fetched via /api/... in the router, so skip
+            continue
+        src = getattr(E, "source", None)
+        if src and getattr(src, "__class__", type("x", (), {})).__name__ == "ExternalRESTEndpoint":
+            # will be fetched directly, so skip
+            continue
+        chain.append(E)
+    return chain
+
 
 def _distance_up(from_node, to_ancestor) -> int | None:
     """edges from from_node up through parents to to_ancestor (if reachable)."""
@@ -114,18 +177,7 @@ def _find_downstream_terminal_entity(ent, model):
     candidates.sort(key=lambda t: t[0])
     return candidates[0][1]
 
-def _is_ancestor(ancestor, node) -> bool:
-    return _distance_up(node, ancestor) is not None
 
-def _collect_chain(ent_start, ent_terminal, model):
-    """
-    All entities E such that ent_start is an ancestor of E and
-    E is an ancestor of ent_terminal, ordered by distance from ent_start (parents-first).
-    """
-    all_entities = get_children_of_type("Entity", model)
-    between = [E for E in all_entities if _is_ancestor(ent_start, E) and _is_ancestor(E, ent_terminal)]
-    between.sort(key=lambda E: _distance_up(E, ent_start) or 10**9)
-    return between
 
 
 # ---------------- route helpers ----------------
@@ -295,6 +347,43 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         # Generate the router depending on verb
         # ------------------------------------------------------
         if verb == "GET":
+            ancestors = _all_ancestors(ent, model)  # oldest-first
+
+            # collect inline-computed only (no ExternalREST, no InternalREST endpoint)
+            def _has_internal_rest_endpoint_for(e):
+                for other_iep in _internal_rest_endpoints(model):
+                    if getattr(other_iep, "entity").name == e.name:
+                        return True
+                return False
+
+            ancestors = _all_ancestors(ent, model)
+            inline_chain = []
+            for E in ancestors:
+                E_src = getattr(E, "source", None)
+                if E_src and E_src.__class__.__name__ == "ExternalRESTEndpoint":
+                    # treat like top-level ExternalREST input
+                    ent_attrs = []
+                    for a in getattr(E, "attributes", []) or []:
+                        py = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources) if getattr(a, "expr", None) else f"{E_src.name}"
+                        ent_attrs.append({"name": a.name, "pyexpr": py})
+                    rest_inputs.append({
+                        "entity": E.name,
+                        "alias":  E_src.name,
+                        "url": E_src.url,
+                        "headers": _as_headers_list(E_src),
+                        "method": (getattr(E_src, "verb", "GET") or "GET").upper(),
+                        "attrs": ent_attrs,
+                    })
+                elif not _has_internal_rest_endpoint_for(E):
+                    # inline compute
+                    attrs = []
+                    for a in (getattr(E, "attributes", []) or []):
+                        if getattr(a, "expr", None):
+                            py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
+                            attrs.append({"name": a.name, "pyexpr": py_code})
+                    inline_chain.append({"name": E.name, "attrs": attrs})
+
+                
             # Query router
             (routers_dir / f"{iep.name.lower()}.py").write_text(
                 tpl_router_query_rest.render(
@@ -304,6 +393,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     rest_inputs=rest_inputs,
                     computed_parents=computed_parents,
                     route_prefix=route_prefix,
+                    inline_chain=inline_chain,
                 ),
                 encoding="utf-8",
             )
@@ -312,18 +402,19 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             # --- choose terminal entity ---
             terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
             
-            # --- build the chain (current → ... → terminal) ---
+            # --- build the chain (start -> ... -> terminal), computed-only nodes ---
             chain_entities = _collect_chain(ent, terminal_entity, model)
             
-            # compile chain attrs
             compiled_chain = []
             for E in chain_entities:
                 attrs = []
                 for a in (getattr(E, "attributes", []) or []):
                     if hasattr(a, "expr") and a.expr is not None:
-                        py_code = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
+                        # IMPORTANT: compile against ctx
+                        py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
                         attrs.append({"name": a.name, "pyexpr": py_code})
                 compiled_chain.append({"name": E.name, "attrs": attrs})
+
             
             # target (if any)
             tgt = getattr(terminal_entity, "target", None)
@@ -350,6 +441,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 ),
                 encoding="utf-8",
             )
+
 
 
     # INTERNAL WS endpoints

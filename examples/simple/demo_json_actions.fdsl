@@ -56,25 +56,9 @@ Entity RealObjectsRows(RealObjectsRaw)
       } for x in RealObjectsRaw.raw];
 end
 
-Entity RealObjectsRaw1(RealObjectsRows)
-  attributes:
-    - raw: list = RealObjectsRows.raw;
-end
-
-Entity RealObjectsRaw2(RealObjectsRaw1)
-  attributes:
-    - raw: list = RealObjectsRaw1.raw;
-end
-
-Entity RealObjectsRaw3(RealObjectsRaw2)
-  attributes:
-    - raw: list = RealObjectsRaw2.raw;
-end
-
-
 // --- Internal endpoint -----------------------------------------
 InternalREST RealObjectsList
-  entity: RealObjectsRaw3
+  entity: RealObjectsRows
   path: "/api/objects"
   verb: GET
 end
