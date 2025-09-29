@@ -1,0 +1,41 @@
+Server EventServer
+  host: "localhost"
+  port: 8080
+end
+
+// --- Entity: chat message --------------------------------
+Entity ChatMessage
+  source: ChatSink  //  The publish endpoint IS the source
+  attributes:
+    - text: string = upper(ChatSink["text"]);  //  Extract from incoming payload
+end
+
+// --- Internal endpoints ----------------------------------
+
+// Sink: where messages are published (clients send here)
+InternalWS ChatSink
+  entity: ChatMessage
+  mode: publish
+  path: "/api/chat/send"
+end
+
+// Stream: where messages are broadcast (clients receive here)
+InternalWS ChatStream
+  entity: ChatMessage
+  mode: subscribe
+  path: "/api/chat/read"
+end
+
+// ---- UI components --------------------------------------
+Component<Input> ChatBox
+  endpoint: ChatSink
+  placeholder: "Type your message..."
+  label: "Chat"
+  submitLabel: "Send"
+end
+
+Component<LiveView> ChatFeed
+  endpoint: ChatStream
+  fields: ["text"]
+  label: "Messages"
+end

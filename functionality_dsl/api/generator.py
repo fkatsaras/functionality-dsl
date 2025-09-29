@@ -490,38 +490,30 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 and t_src.__class__.__name__ == "InternalWSEndpoint"
                 and getattr(t_src, "mode", None) == "publish"
             ):
+                # This entity gets data from an internal publish endpoint
+                # The publish router will push to the bus
+                # The subscribe router just needs to listen to the bus
+                # So we DON'T add any ws_inputs - just skip this source
+                
+                # Still compile the entity's attributes for the chain
+                # (in case there are computed attributes)
                 ent_attrs = []
                 for a in getattr(E, "attributes", []) or []:
                     if hasattr(a, "expr") and a.expr is not None:
-                        # Compile like REST: use "entity" context so DSL can reference ChatSink[...] etc.
                         py = compile_expr_to_python(
                             a.expr,
                             context="ctx",
                             known_sources=all_sources + [t_src.name]
                         )
-                    else:
-                        # Default: whole payload bound under alias name
-                        py = f"ctx[{t_src.name!r}]"
-                    ent_attrs.append({"name": a.name, "pyexpr": py})
-
-                compiled_chain.append({
-                    "name": E.name,
-                    "attrs": ent_attrs
-                })
+                        ent_attrs.append({"name": a.name, "pyexpr": py})
                 
-                server = _server_ctx(model)["server"]
-                scheme = "ws"
-                url = f"{scheme}://{server['host']}:{server['port']}{t_src.path}/sink"
+                if ent_attrs:
+                    compiled_chain.append({
+                        "name": E.name,
+                        "attrs": ent_attrs
+                    })
                 
-                ws_inputs.append({
-                    "entity": E.name,            # entity bound from this internal WS
-                    "alias":  t_src.name,        # alias = source name
-                    "url": url,  # its own fully qualified URL : ws// .. /api/... path
-                    "headers": [],
-                    "subprotocols": [],
-                    "protocol": "json",
-                    "attrs": ent_attrs,
-                })
+                # Do NOT add to ws_inputs - no upstream connection needed
 
         
             # Case 3: Computed-only entity
@@ -592,7 +584,23 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             if key not in unique:
                 unique[key] = w
         ws_inputs = list(unique.values())
-
+        
+        # --- Find external WS targets for publish mode ---
+        external_targets = []
+        if mode == "publish":
+            for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
+                # Check if this external WS declares it handles our entity
+                ext_entity = getattr(ext_ws, "entity", None)
+                if ext_entity and ext_entity.name == ent.name:
+                    ext_mode = getattr(ext_ws, "mode", None)
+                    if ext_mode == "publish":
+                        _normalize_ws_source(ext_ws)
+                        external_targets.append({
+                            "url": ext_ws.url,
+                            "headers": [(h["key"], h["value"]) for h in _as_headers_list(ext_ws)],
+                            "subprotocols": list(getattr(ext_ws, "subprotocols", []) or []),
+                            "protocol": getattr(ext_ws, "protocol", "json") or "json",
+                        })
         
         # choose template based on mode
         if mode == "subscribe":
@@ -611,6 +619,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 entity=ent,
                 compiled_chain=compiled_chain,   #  entity chain context
                 ws_inputs=ws_inputs,             # now includes entity, alias, attrs
+                external_targets=external_targets,
                 route_prefix=_default_ws_prefix(iwep, ent),
             ),
             encoding="utf-8",

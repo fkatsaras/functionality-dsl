@@ -9,13 +9,14 @@ end
 ExternalWS BTCUSDT
   url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
   protocol: "json"
+  mode: subscribe
 end
 
 // ------------------- Raw Entity (snapshot from WS) ----------------
 Entity BTCRaw
   source: BTCUSDT
   attributes:
-    - c: float     // last price in string number at key "c"
+    - c: float = BTCUSDT["c"];  // last price in string number at key "c"
 end
 
 // ------------------- Computed Entity -------------------
@@ -27,6 +28,7 @@ end
 // ------------------- Internal endpoint (UI consumes this) ---------
 InternalWS PricesStream
   entity: Prices
+  mode: subscribe
   path: "/api/prices"
 end
 

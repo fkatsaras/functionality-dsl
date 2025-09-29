@@ -40,6 +40,14 @@ def _lower(x) -> Optional[str]:
         return str(x).lower()
     except Exception:
         return None
+    
+def _upper(x) -> Optional[str]:
+    if x is None:
+        return None
+    try:
+        return str(x).upper()
+    except Exception:
+        return None
 
 def _safe_str(fn):
     """Wrap string predicates so they return False on any exception."""
@@ -88,6 +96,7 @@ DSL_FUNCTIONS = {
     "startswith": (_startswith, (2, 2)),
     "endswith":   (_endswith,   (2, 2)),
     "lower":      (_lower,      (1, 1)),
+    "upper":      (_upper,      (1, 1)),
     "zip":        (_safe_zip,   (1, None)),
 }
 
@@ -97,7 +106,7 @@ DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
 
 _ALLOWED_AST = {
     ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.IfExp,
-    ast.Compare, ast.Call, ast.Name, ast.Load, ast.Store,  # <--- add Store
+    ast.Compare, ast.Call, ast.Name, ast.Load, ast.Store,
     ast.Constant, ast.Subscript, ast.Tuple, ast.List, ast.Dict,
     ast.Index, ast.Slice, ast.Attribute,
     ast.And, ast.Or, ast.Not, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,

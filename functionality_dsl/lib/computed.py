@@ -40,6 +40,14 @@ def _lower(x) -> Optional[str]:
         return str(x).lower()
     except Exception:
         return None
+    
+def _upper(x) -> Optional[str]:
+    if x is None:
+        return None
+    try:
+        return str(x).upper()
+    except Exception:
+        return None
 
 def _safe_str(fn):
     """Wrap string predicates so they return False on any exception."""
@@ -88,6 +96,7 @@ DSL_FUNCTIONS = {
     "startswith": (_startswith, (2, 2)),
     "endswith":   (_endswith,   (2, 2)),
     "lower":      (_lower,      (1, 1)),
+    "upper":      (_upper,      (1, 1)),
     "zip":        (_safe_zip,   (1, None)),
 }
 
