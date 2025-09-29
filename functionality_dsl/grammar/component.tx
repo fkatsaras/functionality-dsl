@@ -11,7 +11,8 @@ Component:
   | LineChartComponent
   | ActionFormComponent
   | GaugeComponent
-  | PlotComponent
+  | InputComponent 
+  | LiveViewComponent
 ;
 
 TableComponent:
@@ -52,11 +53,22 @@ ActionFormComponent:
   'end'
 ;
 
+InputComponent:
+  'Component' '<' 'Input' '>' name=ID
+  'endpoint' ':' endpoint=[InternalWSEndpoint]
+  ( ('label:' label=STRING)
+  | ('placeholder:' placeholder=STRING)
+  | ('initial:' initial=STRING)
+  | ('submitLabel:' submitLabel=STRING)
+  )*
+  'end'
+;
 
-// TO BE DELETED
-PlotComponent:
-  'Component' '<' 'Plot' '>' name=ID
-  ('endpoint:' endpoint=[InternalRESTEndpoint])?
-  ( ('x:' x=AttrRef)? ('y:' y=AttrRef)? ('xLabel:' xLabel=STRING)? ('yLabel:' yLabel=STRING)? )#
+LiveViewComponent:
+  'Component' '<' 'LiveView' '>' name=ID
+  'endpoint' ':' endpoint=[InternalWSEndpoint]
+  'fields:' fields=StringList
+  ( ('label:' label=STRING)
+  )*
   'end'
 ;

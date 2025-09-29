@@ -1,0 +1,87 @@
+import uuid
+import json
+import logging
+from typing import Any, Dict
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.core.computed import compile_safe, safe_globals
+from app.core.logging import set_request_id
+
+logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
+
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ (endpoint.summary or endpoint.name) ~ ' (sink)' }}"]
+)
+
+# === Compiled entity chain ===
+_COMPILED_CHAIN = [
+{%- for ent in compiled_chain %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
+{%- endfor %}
+]
+
+def _compute_row(raw: str) -> Dict[str, Any] | None:
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        payload = raw
+
+    ctx: Dict[str, Any] = {
+        "{{ endpoint.name }}": payload
+    }
+
+    try:
+        if not _COMPILED_CHAIN:
+            # No computed chain: just return payload directly
+            if isinstance(payload, dict):
+                return payload
+            return {"raw": payload}
+
+        # Walk the chain in order
+        for ent in _COMPILED_CHAIN:
+            shaped: Dict[str, Any] = {}
+            eval_ctx = {"ctx": ctx}
+            for a in (ent.get("attrs") or []):
+                try:
+                    compiled = compile_safe(a["expr"])
+                    shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+                except Exception as ex:
+                    logger.error("attr_eval_error", extra={
+                        "entity": ent["name"],
+                        "attr": a["name"],
+                        "expr": a["expr"],
+                        "err": repr(ex),
+                        "ctx_keys": list(ctx.keys())
+                    })
+                    shaped[a["name"]] = None
+            ctx[ent["name"]] = shaped
+
+        return ctx[_COMPILED_CHAIN[-1]["name"]]
+    except Exception as ex:
+        logger.error("compute_error", extra={"err": repr(ex)})
+        return None
+
+@router.websocket("/sink")
+async def sink(ws: WebSocket):
+    rid = uuid.uuid4().hex
+    set_request_id(rid)
+    await ws.accept()
+    logger.info("client_connected", extra={"rid": rid, "path": str(ws.url)})
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            row = _compute_row(raw)
+            if row is not None:
+                logger.info("ingested_entity", extra={"rid": rid, "entity": row})
+                # TODO: forward to DB, queue, pipeline, etc.
+    except WebSocketDisconnect:
+        logger.info("client_disconnected", extra={"rid": rid})

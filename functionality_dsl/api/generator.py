@@ -248,7 +248,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
     tpl_router_query_rest = env.get_template("router_query_rest.jinja")
     tpl_router_mutation_rest = env.get_template("router_mutation_rest.jinja")
-    tpl_router_ws = env.get_template("router_ws.jinja")
+    tpl_router_ws_pub = env.get_template("router_ws_pub.jinja")
+    tpl_router_ws_sub = env.get_template("router_ws_sub.jinja")
 
     # -------- per-internal-endpoint generation --------
 
@@ -447,8 +448,12 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
     # INTERNAL WS endpoints
     for iwep in _internal_ws_endpoints(model):
+        
         ent = getattr(iwep, "entity")
         route_prefix = _default_ws_prefix(iwep, ent)
+        
+        # read mode or default
+        mode = getattr(iwep, "mode", None) or "subscribe"
 
         # --- full chain (ancestors + this entity) ---
         ancestors = _all_ancestors(ent, model)
@@ -459,6 +464,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         for E in chain_entities:
             t_src = getattr(E, "source", None)
+            # Case 1: External WS source
             if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
                 _normalize_ws_source(t_src)
                 ent_attrs = []
@@ -470,15 +476,56 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     ent_attrs.append({"name": a.name, "pyexpr": py})
                 ws_inputs.append({
                     "entity": E.name,
-                    "alias":  t_src.name,
+                    "alias": t_src.name,
                     "url": t_src.url,
                     "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
                     "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
                     "protocol": getattr(t_src, "protocol", "json") or "json",
                     "attrs": ent_attrs,
                 })
+        
+            # Case 2: Internal WS in publish mode → bind attributes to raw frame
+            elif (
+                t_src
+                and t_src.__class__.__name__ == "InternalWSEndpoint"
+                and getattr(t_src, "mode", None) == "publish"
+            ):
+                ent_attrs = []
+                for a in getattr(E, "attributes", []) or []:
+                    if hasattr(a, "expr") and a.expr is not None:
+                        # Compile like REST: use "entity" context so DSL can reference ChatSink[...] etc.
+                        py = compile_expr_to_python(
+                            a.expr,
+                            context="ctx",
+                            known_sources=all_sources + [t_src.name]
+                        )
+                    else:
+                        # Default: whole payload bound under alias name
+                        py = f"ctx[{t_src.name!r}]"
+                    ent_attrs.append({"name": a.name, "pyexpr": py})
+
+                compiled_chain.append({
+                    "name": E.name,
+                    "attrs": ent_attrs
+                })
+                
+                server = _server_ctx(model)["server"]
+                scheme = "ws"
+                url = f"{scheme}://{server['host']}:{server['port']}{t_src.path}/sink"
+                
+                ws_inputs.append({
+                    "entity": E.name,            # entity bound from this internal WS
+                    "alias":  t_src.name,        # alias = source name
+                    "url": url,  # its own fully qualified URL : ws// .. /api/... path
+                    "headers": [],
+                    "subprotocols": [],
+                    "protocol": "json",
+                    "attrs": ent_attrs,
+                })
+
+        
+            # Case 3: Computed-only entity
             else:
-                # computed-only entity
                 attrs = []
                 for a in getattr(E, "attributes", []) or []:
                     if hasattr(a, "expr") and a.expr is not None:
@@ -538,12 +585,28 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "attrs": parent_attrs,
                 })
 
-        # if no ws_inputs at all, skip generating this WS router
-        if not ws_inputs:
-            continue
+        # --- Deduplicate ws_inputs ---
+        unique = {}
+        for w in ws_inputs:
+            key = (w["alias"], w["url"])
+            if key not in unique:
+                unique[key] = w
+        ws_inputs = list(unique.values())
+
         
-        (routers_dir / f"{iwep.name.lower()}_stream.py").write_text(
-            tpl_router_ws.render(
+        # choose template based on mode
+        if mode == "subscribe":
+            tpl = tpl_router_ws_sub  # subscribe template
+            filename = f"{iwep.name.lower()}_sub.py"
+        elif mode == "publish":
+            tpl = tpl_router_ws_pub  # publish template
+            filename = f"{iwep.name.lower()}_pub.py"
+        else:
+            raise RuntimeError(f"Unknown WS mode: {mode}")
+        
+    
+        (routers_dir / filename).write_text(
+            tpl.render(
                 endpoint=iwep,
                 entity=ent,
                 compiled_chain=compiled_chain,   #  entity chain context

@@ -4,14 +4,19 @@ from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from textx import get_children_of_type
 
+from functionality_dsl.lib.component_types import COMPONENT_TYPES
+
+
 # ---------- helpers ----------
+
 def _components(model):
     cmps = getattr(model, "aggregated_components", None)
     if cmps is not None:
         return list(cmps)
+
     from textx import get_children_of_type as _gc
     nodes = []
-    for rule in ("TableComponent", "LineChartComponent", "ActionFormComponent"):
+    for rule in COMPONENT_TYPES.keys():
         nodes += list(_gc(rule, model))
     return nodes
 

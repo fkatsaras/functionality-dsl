@@ -65,8 +65,8 @@ ExternalWSEndpoint:
     ('protocol:' protocol=STRING)?
     ('subprotocols:' subprotocols=StringList)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('subscribe:' subscribe=STRING)?
     ('entity:' entity=[Entity])?
+    'mode:' mode=WSmode
   )#
   'end'
 ;
@@ -83,16 +83,20 @@ InternalRESTEndpoint:
   'end'
 ;
 
+WSmode:
+    'publish' | 'subscribe'
+;
+
 InternalWSEndpoint:
   'InternalWS' name=ID
   (
     'entity:' entity=[Entity]
+    'mode:' mode=WSmode
     ('path:' path=STRING)?
     ('summary:' summary=STRING)?
   )#
   'end'
 ;
-
 // ---------- COMMON ----------
 HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 

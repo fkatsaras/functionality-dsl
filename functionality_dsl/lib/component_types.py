@@ -70,8 +70,17 @@ class _BaseComponent:
 
 
 def _strip_quotes(s):
-    if isinstance(s, str) and len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
-        return s[1:-1]
+    if not s:
+        return s
+    # TextX sometimes gives a list of strings like ['Chat']
+    if isinstance(s, (list, tuple)) and len(s) == 1:
+        s = s[0]
+
+    if isinstance(s, str):
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+            return s[1:-1]
+        return s.strip().strip('"').strip("'")
+
     return s
 
 @register_component
@@ -227,32 +236,65 @@ class GaugeComponent(_BaseComponent):
 
 
 @register_component
-class PlotComponent(_BaseComponent):
+class InputComponent(_BaseComponent):
     """
-    <Component<Plot> ...>
-      endpoint: <InternalREST>          # required
-      x:  data.<attr>                   # required; MUST be a list of numbers
-      y:  data.<attr>                   # required; MUST be a list of numbers
-      xLabel: "string"                  # optional
-      yLabel: "string"                  # optional
+    <Component<Input> ...>
+      endpoint: <InternalWS (sink)>
+      label: optional label
+      placeholder: optional placeholder text
+      initial: optional initial value
     """
-    def __init__(self, parent=None, name=None, endpoint=None,
-                 x=None, y=None, xLabel=None, yLabel=None):
+    def __init__(self, parent=None, name=None, endpoint=None, label=None, placeholder=None, initial=None, submitLabel=None):
         super().__init__(parent, name, endpoint)
-        self.x = self._attr_name(x) if x is not None else None
-        self.y = self._attr_name(y) if y is not None else None
-        self.xLabel = _strip_quotes(xLabel)
-        self.yLabel = _strip_quotes(yLabel)
+        self.label = _strip_quotes(label)
+        self.placeholder = _strip_quotes(placeholder)
+        self.initial = _strip_quotes(initial)
+        self.submitLabel = _strip_quotes(submitLabel)
+
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' InternalWS endpoint.")
+
+    def to_props(self):
+        return {
+            "sinkPath": self._endpoint_path("/sink"),
+            "label": self.label or "",
+            "placeholder": self.placeholder or "",
+            "initial": self.initial or "",
+            "submitLabel": self.submitLabel or "Send",
+        }
+        
+
+@register_component
+class LiveViewComponent(_BaseComponent):
+    def __init__(self, parent=None, name=None, endpoint=None,
+                 fields=None, label=None, maxMessages=None):
+        super().__init__(parent, name, endpoint)
+        print("[DEBUG] maxMessages BEFORE =", repr(maxMessages))
+        # normalize fields
+        if hasattr(fields, "items"):
+            fields = fields.items
+        elif fields is None:
+            fields = []
+        elif isinstance(fields, (str, int)):
+            fields = [str(fields)]
+        elif not isinstance(fields, (list, tuple)):
+            fields = [str(fields)]
+        self.fields = [self._attr_name(f) for f in fields]
+
+        self.maxMessages = int(maxMessages) if maxMessages is not None else 50
+        
+        print("[DEBUG] maxMessages AFTER =", repr(maxMessages))
+
+        self.label = _strip_quotes(label) or ""
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if self.x is None:
-            raise ValueError(f"Component '{name}': 'x:' is required.")
-        if self.y is None:
-            raise ValueError(f"Component '{name}': 'y:' is required.")
 
     def to_props(self):
-        # The Svelte Plot expects object-of-arrays payload; it will read
-        # props.x / props.y as KEYS and take arrays from the fetched JSON.
-        return {"x": self.x, "y": self.y,
-                "xLabel": self.xLabel, "yLabel": self.yLabel}
+        print("[DEBUG] to_props maxMessages =", repr(self.maxMessages))
+        return {
+            "endpointPath": self._endpoint_path("/stream"),
+            "fields": self.fields,
+            "label": self.label,
+            "maxMessages": self.maxMessages,
+        }

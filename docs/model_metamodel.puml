@@ -45,10 +45,6 @@ class entity.Source <<abstract>> {
 }
 
 
-class entity.ExternalSource <<abstract>> {
-}
-
-
 class entity.ExternalRESTEndpoint  {
   name : ID
   url : STRING
@@ -64,12 +60,9 @@ class entity.ExternalWSEndpoint  {
 }
 
 
-class entity.InternalEndpoint <<abstract>> {
-}
-
-
 class entity.InternalRESTEndpoint  {
   name : ID
+  verb : HttpVerb
   path : STRING
   summary : STRING
 }
@@ -77,6 +70,7 @@ class entity.InternalRESTEndpoint  {
 
 class entity.InternalWSEndpoint  {
   name : ID
+  mode : WSmode
   path : STRING
   summary : STRING
 }
@@ -150,7 +144,10 @@ class server.Server  {
 
 model.FDSLModel *--> "1..*" utils.Import: imports
 model.FDSLModel *--> "1..*" server.Server: servers
-model.FDSLModel *--> "1..*" entity.Source: sources
+model.FDSLModel *--> "1..*" entity.InternalRESTEndpoint: internalrest
+model.FDSLModel *--> "1..*" entity.InternalWSEndpoint: internalws
+model.FDSLModel *--> "1..*" entity.ExternalRESTEndpoint: externalrest
+model.FDSLModel *--> "1..*" entity.ExternalWSEndpoint: externalws
 model.FDSLModel *--> "1..*" entity.Entity: entities
 model.FDSLModel *--> "1..*" component.Component: components
 entity.Attribute <|-- entity.ComputedAttribute
@@ -163,15 +160,11 @@ entity.Source <|-- entity.InternalRESTEndpoint
 entity.Source <|-- entity.InternalWSEndpoint
 entity.Source <|-- entity.ExternalRESTEndpoint
 entity.Source <|-- entity.ExternalWSEndpoint
-entity.ExternalSource <|-- entity.ExternalRESTEndpoint
-entity.ExternalSource <|-- entity.ExternalWSEndpoint
 entity.ExternalRESTEndpoint *--> "1..*" entity.Header: headers
 entity.ExternalRESTEndpoint -->  entity.Entity: entity
 entity.ExternalWSEndpoint *-->  entity.StringList: subprotocols
 entity.ExternalWSEndpoint *--> "1..*" entity.Header: headers
 entity.ExternalWSEndpoint -->  entity.Entity: entity
-entity.InternalEndpoint <|-- entity.InternalRESTEndpoint
-entity.InternalEndpoint <|-- entity.InternalWSEndpoint
 entity.InternalRESTEndpoint -->  entity.Entity: entity
 entity.InternalWSEndpoint -->  entity.Entity: entity
 component.AttrRef -->  entity.Attribute: attr
@@ -180,26 +173,27 @@ component.Component <|-- component.LineChartComponent
 component.Component <|-- component.ActionFormComponent
 component.Component <|-- component.GaugeComponent
 component.Component <|-- component.PlotComponent
-component.TableComponent -->  entity.InternalEndpoint: endpoint
+component.TableComponent -->  entity.InternalRESTEndpoint: endpoint
 component.TableComponent *-->  entity.StringList: colNames
-component.LineChartComponent -->  entity.InternalEndpoint: endpoint
+component.LineChartComponent -->  entity.InternalRESTEndpoint: endpoint
 component.LineChartComponent *-->  component.AttrRef: rows
-component.GaugeComponent -->  entity.InternalEndpoint: endpoint
+component.GaugeComponent -->  entity.InternalWSEndpoint: endpoint
 component.GaugeComponent *-->  component.AttrRef: value
-component.ActionFormComponent -->  entity.InternalEndpoint: endpoint
-component.PlotComponent -->  entity.InternalEndpoint: endpoint
+component.ActionFormComponent -->  entity.InternalRESTEndpoint: endpoint
+component.PlotComponent -->  entity.InternalRESTEndpoint: endpoint
 component.PlotComponent *-->  component.AttrRef: x
 component.PlotComponent *-->  component.AttrRef: y
 
 legend
   Match rules:
   |= Name  |= Rule details |
-  | AttrValue | STRING\|FLOAT\|INT |
   | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | AttrValue | STRING\|FLOAT\|INT |
+  | Comment | \\/\\/[^\\n]* |
   | FQN | ID (. ID)* |
   | Bool | true\|false |
-  | Comment | \\/\\/[^\\n]* |
   | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
+  | WSmode | publish\|subscribe |
 end legend
 
 @enduml

@@ -116,7 +116,6 @@ async def _ws_consumer(entity: str, alias: str, url: str, headers: list, subprot
             logger.warning("upstream_reconnect", extra={"feed": entity, "err": repr(ex)})
             await asyncio.sleep(1.0)
 
-
 def _compute_row() -> Dict[str, Any] | None:
     if not _latest:
         return None
@@ -125,6 +124,13 @@ def _compute_row() -> Dict[str, Any] | None:
     ctx: Dict[str, Any] = dict(_latest)
 
     try:
+        if not _COMPILED_CHAIN:
+            # fallback: just return first shaped dict
+            for k, v in ctx.items():
+                if isinstance(v, dict):
+                    return v
+            return None
+
         # Walk the chain in order (ancestors first, then terminal)
         for ent in _COMPILED_CHAIN:
             shaped: Dict[str, Any] = {}
@@ -150,6 +156,7 @@ def _compute_row() -> Dict[str, Any] | None:
         sample = {k: (list(v.keys())[:6] if isinstance(v, dict) else type(v).__name__) for k, v in ctx.items()}
         logger.error("compute_error", extra={"err": repr(ex), "ctx_keys": sample})
         return None
+
 
 
 async def _broadcast(msg: Any):

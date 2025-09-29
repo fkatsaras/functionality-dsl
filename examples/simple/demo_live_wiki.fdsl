@@ -8,6 +8,7 @@ end
 ExternalWS WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
+  mode: subscribe
 end
 
 // --- Raw entity ------------------------------------------------
@@ -31,23 +32,21 @@ Entity EditGauge(WikiEdit)
       );
 end
 
-Entity EditGauge2(EditGauge)
-  attributes:
-    - edit_size_abs: int = EditGauge.edit_size_abs;
-end
 
-Entity EditGauge3(EditGauge2)
-  attributes:
-    - edit_size_abs: int = EditGauge2.edit_size_abs;
-end
-
-// --- Internal endpoint -----------------------------------------
+// --- Internal endpoints -----------------------------------------
 InternalWS EditGaugeStream
-  entity: EditGauge3
+  entity: EditGauge
+  mode: subscribe
   path: "/api/wiki/edits"
 end
 
-// --- Component -------------------------------------------------
+InternalWS WikiEditsStream
+  entity: WikiEdit
+  mode: subscribe
+  path: "/api/wiki/edits/feed"
+end
+
+// --- Components -------------------------------------------------
 Component<Gauge> LiveEditSize
   endpoint: EditGaugeStream
   value: data.edit_size_abs
@@ -55,4 +54,10 @@ Component<Gauge> LiveEditSize
   max: 2000
   label: "Wikipedia edit size (abs bytes)"
   unit: "B"
+end
+
+Component<LiveView> WikiEditsFeed
+  endpoint: WikiEditsStream
+  fields: ["user", "title"]
+  label: "Who is editing what (live)"
 end

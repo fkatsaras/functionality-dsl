@@ -40,29 +40,16 @@ Entity CompareInts(IntARaw,IntBRaw)
     - b_greater: bool  = IntBRaw.value > IntARaw.value;
 end
 
-// Entity CompareLols(CompareInts)
-//   attributes:
-//     - lol: list        = [{"multiplied": CompareInts.a_val * 5}];
-// end
 
 // --- Internal endpoint -----------------------------------------
 InternalREST CompareIntsList
   entity: CompareInts
   path: "/api/compare"
+  verb: GET
 end
-
-// InternalREST Lolendpoint
-//   entity: CompareLols
-//   path: "/api/lol"
-// end
 
 // --- Component -------------------------------------------------
 Component<Table> IntComparisonTable
   endpoint: CompareIntsList
   colNames: ["First Num", "Second Num", "Diff", "Is equal?", "Is First Bigger?", "Is Second Bigger?"]
 end
-
-// Component<Table> LolComparisonTable
-//   endpoint: Lolendpoint
-//   colNames: ["lol"]
-// end
