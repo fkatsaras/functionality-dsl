@@ -22,7 +22,7 @@ _EXTERNAL_TARGETS = [
 {%- for tgt in external_targets %}
     {
         "url": "{{ tgt.url }}",
-        "headers": {{ (tgt.headers or []) | tojson }},
+        "headers": {{ tgt.headers}},
         "subprotocols": {{ (tgt.subprotocols or []) | tojson }},
         "protocol": "{{ tgt.protocol or 'json' }}"
     },
@@ -144,7 +144,7 @@ async def sink(ws: WebSocket):
 
     entity_name = "{{ compiled_chain[-1].name }}"
     {%- else %}
-    
+
     entity_name = "{{ entity.name }}"
     {%- endif %}
 

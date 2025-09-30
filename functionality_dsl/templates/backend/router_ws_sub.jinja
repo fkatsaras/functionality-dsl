@@ -29,7 +29,7 @@ _WS_INPUTS = [
         "entity": "{{ it.entity }}",
         "alias":  "{{ it.alias }}",
         "url": "{{ it.url }}",
-        "headers": {{ (it.headers or []) | tojson }},
+        "headers": {{ it.headers }},
         "subprotocols": {{ (it.subprotocols or []) | tojson }},
         "protocol": "{{ it.protocol or 'json' }}"
     },
@@ -225,7 +225,7 @@ async def stream(ws: WebSocket):
 
     entity_name = "{{ compiled_chain[-1].name }}"
     {%- else %}
-    
+
     entity_name = "{{ entity.name }}"
     {%- endif %}
     

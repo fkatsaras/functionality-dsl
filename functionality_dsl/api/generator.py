@@ -77,7 +77,7 @@ def _auth_headers(ext):
         if token.startswith("env:"):
             import os
             token = os.getenv(token.split(":", 1)[1], "")
-        return [{"key": "Authorization", "value": f"Bearer {token}"}]
+        return [("Authorization", f"Bearer {token}")]
 
     if kind == "basic":
         import base64, os
@@ -88,7 +88,7 @@ def _auth_headers(ext):
         if pw.startswith("env:"):
             pw = os.getenv(pw.split(":", 1)[1], "")
         creds = f"{user}:{pw}"
-        return [{"key": "Authorization", "value": "Basic " + base64.b64encode(creds.encode()).decode()}]
+        return [("Authorization", "Basic " + base64.b64encode(creds.encode()).decode())]
 
     if kind == "api_key":
         key = getattr(a, "key", "")
@@ -98,9 +98,10 @@ def _auth_headers(ext):
             import os
             val = os.getenv(val.split(":", 1)[1], "")
         if loc == "header":
-            return [{"key": key, "value": val}]
+            return [(key, val)]
         else:
-            return [{"key": "__queryparam__", "value": f"{key}={val}"}]
+            # For query injection we can keep a sentinel
+            return [("__queryparam__", f"{key}={val}")]
 
     return []
 
@@ -474,7 +475,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "entity": E.name,
                     "alias": t_src.name,
                     "url": t_src.url,
-                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
+                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)] + _auth_headers(t_src),
                     "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
                     "protocol": getattr(t_src, "protocol", "json") or "json",
                     "attrs": ent_attrs,
@@ -541,7 +542,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 "entity": ent.name,                # bind result under entity name in ctx
                 "alias":  t_src.name,             # evaluate attrs against alias (external source name)
                 "url": t_src.url,
-                "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)],
+                "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)] + _auth_headers(t_src),
                 "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
                 "protocol": getattr(t_src, "protocol", "json") or "json",
                 "attrs": ent_attrs,
@@ -567,7 +568,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "entity": parent.name,   # ctx[ParentEntity] = {shaped attrs}
                     "alias":  ps.name,       # eval attrs against alias (external source name)
                     "url": ps.url,
-                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)],
+                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)] + _auth_headers(ext_ws)  ,
                     "subprotocols": list(getattr(ps, "subprotocols", []) or []),
                     "protocol": getattr(ps, "protocol", "json") or "json",
                     "attrs": parent_attrs,
@@ -593,7 +594,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         _normalize_ws_source(ext_ws)
                         external_targets.append({
                             "url": ext_ws.url,
-                            "headers": [(h["key"], h["value"]) for h in _as_headers_list(ext_ws)],
+                            "headers": [(h["key"], h["value"]) for h in _as_headers_list(ext_ws)] + _auth_headers(ext_ws),
                             "subprotocols": list(getattr(ext_ws, "subprotocols", []) or []),
                             "protocol": getattr(ext_ws, "protocol", "json") or "json",
                         })

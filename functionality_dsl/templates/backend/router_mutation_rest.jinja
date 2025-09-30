@@ -25,7 +25,7 @@ _REST_INPUTS = [
         "entity": "{{ it.entity }}",
         "alias":  "{{ it.alias }}",
         "url": "{{ it.url }}",
-        "headers": {{ (it.headers or []) | tojson }},
+        "headers": {{ it.headers }},
         "method": "{{ (it.method or 'GET')|upper }}",
         "attrs": [
         {%- for a in it.attrs %}
@@ -97,11 +97,10 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
 
                 # Apply query param injection
                 url = ri["url"]
-                for h in (ri.get("headers") or []):
-                    if h.get("key") == "__queryparam__":
-                        qp = h.get("value")
+                for key, val in (ri.get("headers") or []):
+                    if key == "__queryparam__":
                         sep = "&" if "?" in url else "?"
-                        url = f"{url}{sep}{qp}"
+                        url = f"{url}{sep}{val}"
 
                 response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:
@@ -164,16 +163,14 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
 
         {% if target %}
         # 4) Forward to external target
-        t_headers = resolve_headers([(h.get("key"), h.get("value")) for h in (_TARGET.get("headers") or [])])
+        t_headers = resolve_headers(_TARGET.get("headers") or [])
         method = _TARGET.get("method", "POST").upper()
         url = _TARGET["url"]
 
-        # Apply query param injection
-        for h in (_TARGET.get("headers") or []):
-            if h.get("key") == "__queryparam__":
-                qp = h.get("value")
+        for key, val in (_TARGET.get("headers") or []):
+            if key == "__queryparam__":
                 sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}{qp}"
+                url = f"{url}{sep}{val}"
 
         kwargs = dict(headers=t_headers)
         if not (method == "DELETE" and not payload_out):

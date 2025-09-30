@@ -21,7 +21,7 @@ _REST_INPUTS = [
         "entity": "{{ it.entity }}",   # e.g. RealObjectsRaw
         "alias":  "{{ it.alias }}",    # e.g. RealObjects (or parent entity name)
         "url": "{{ it.url }}",
-        "headers": {{ (it.headers or []) | tojson }},
+        "headers": {{ it.headers }},
         "method": "{{ (it.method or 'GET')|upper }}",
         "attrs": [
         {%- for a in it.attrs %}
@@ -76,15 +76,14 @@ async def {{ endpoint.name|lower }}():
         # ---- a) Parents with ExternalREST (treat as 'raw-like' entities)
         for ri in _REST_INPUTS:
             try:
-                headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
+                headers = resolve_headers(ri.get("headers") or [])
 
                 # Apply query param injection
                 url = ri["url"]
-                for h in (ri.get("headers") or []):
-                    if h.get("key") == "__queryparam__":
-                        qp = h.get("value")
+                for key, val in (ri.get("headers") or []):
+                    if key == "__queryparam__":
                         sep = "&" if "?" in url else "?"
-                        url = f"{url}{sep}{qp}"
+                        url = f"{url}{sep}{val}"
 
                 response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:

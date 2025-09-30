@@ -78,6 +78,7 @@ ExternalWSEndpoint:
     ('protocol:' protocol=STRING)?
     ('subprotocols:' subprotocols=StringList)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+    ('auth:' auth=AuthBlock)?  
     ('entity:' entity=[Entity])?
     'mode:' mode=WSmode
   )#
