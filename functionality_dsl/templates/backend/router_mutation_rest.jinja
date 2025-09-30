@@ -94,6 +94,15 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
         for ri in _REST_INPUTS:
             try:
                 headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
+
+                # Apply query param injection
+                url = ri["url"]
+                for h in (ri.get("headers") or []):
+                    if h.get("key") == "__queryparam__":
+                        qp = h.get("value")
+                        sep = "&" if "?" in url else "?"
+                        url = f"{url}{sep}{qp}"
+
                 response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:
                     raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
@@ -158,6 +167,13 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
         t_headers = resolve_headers([(h.get("key"), h.get("value")) for h in (_TARGET.get("headers") or [])])
         method = _TARGET.get("method", "POST").upper()
         url = _TARGET["url"]
+
+        # Apply query param injection
+        for h in (_TARGET.get("headers") or []):
+            if h.get("key") == "__queryparam__":
+                qp = h.get("value")
+                sep = "&" if "?" in url else "?"
+                url = f"{url}{sep}{qp}"
 
         kwargs = dict(headers=t_headers)
         if not (method == "DELETE" and not payload_out):

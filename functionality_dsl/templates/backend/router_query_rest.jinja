@@ -77,6 +77,15 @@ async def {{ endpoint.name|lower }}():
         for ri in _REST_INPUTS:
             try:
                 headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
+
+                # Apply query param injection
+                url = ri["url"]
+                for h in (ri.get("headers") or []):
+                    if h.get("key") == "__queryparam__":
+                        qp = h.get("value")
+                        sep = "&" if "?" in url else "?"
+                        url = f"{url}{sep}{qp}"
+
                 response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:
                     raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
@@ -157,6 +166,10 @@ async def {{ endpoint.name|lower }}():
         # NOTE: We do NOT set a top-level 'response' here (ambiguity).
         # Current entity expressions should refer to parents via 'ctx', e.g., ctx['RealObjectsRaw']['raw']
         evaluation_context = {"ctx": ctx}
+        for ri in _REST_INPUTS:
+            alias = ri["alias"]
+            # expose alias directly in eval context (ExternalREST semantics)
+            evaluation_context[alias] = ctx.get(ri["entity"], {})
 
         for attr_name, compiled_expr in _COMPILED_ATTRS.items():
             try:

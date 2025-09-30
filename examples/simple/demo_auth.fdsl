@@ -1,0 +1,73 @@
+Server AuthJSON
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+
+// --- External REST sources with auth -------------------------
+ExternalREST BearerTest
+  url: "https://httpbin.org/bearer"
+  verb: GET
+  auth:
+    type: bearer
+    token: "test123"
+end
+
+
+ExternalREST BasicTest
+  url: "https://httpbin.org/basic-auth/user/pass"
+  verb: GET
+  auth:
+    type: basic
+    username: "user"
+    password: "pass"
+end
+
+ExternalREST ApiKeyQuery
+  url: "https://httpbin.org/get"
+  verb: GET
+  auth:
+    type: api_key
+    key: "apikey"
+    in: query
+    value: "mysecret"
+end
+
+// --- Entity wrapping -----------------------------------------
+Entity BearerEntity
+  source: BearerTest
+  attributes:
+    - raw: dict = BearerTest;
+end
+
+Entity BasicEntity
+  source: BasicTest
+  attributes:
+    - raw: dict = BasicTest;
+end
+
+Entity ApiKeyEntity
+  source: ApiKeyQuery
+  attributes:
+    - raw: dict = ApiKeyQuery;
+end
+
+// --- Internal endpoints --------------------------------------
+InternalREST BearerEndpoint
+  entity: BearerEntity
+  path: "/api/test/bearer"
+  verb: GET
+end
+
+InternalREST BasicEndpoint
+  entity: BasicEntity
+  path: "/api/test/basic"
+  verb: GET
+end
+
+InternalREST ApiKeyEndpoint
+  entity: ApiKeyEntity
+  path: "/api/test/apikey"
+  verb: GET
+end

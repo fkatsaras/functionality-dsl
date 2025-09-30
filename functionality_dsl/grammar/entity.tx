@@ -39,13 +39,25 @@ Entity:
 
 // Entity sources / targets -------------------
 Source:
-      InternalRESTEndpoint
-    | InternalWSEndpoint
-    | ExternalRESTEndpoint
-    | ExternalWSEndpoint
+    InternalRESTEndpoint
+  | InternalWSEndpoint
+  | ExternalRESTEndpoint
+  | ExternalWSEndpoint
 ;
 
+ApiKeyLoc: 'header' | 'query';
 
+AuthBlock:
+    'type:' kind='basic'
+    'username:' username=STRING
+    'password:' password=STRING
+  |  'type:' kind='bearer'
+    'token:' token=STRING
+  |  'type:' kind='api_key'
+    'key:' key=STRING
+    'in:' location=ApiKeyLoc
+    'value:' value=STRING
+;
 // ---------- EXTERNAL (integration) ----------
 ExternalRESTEndpoint:
   'ExternalREST' name=ID
@@ -53,8 +65,9 @@ ExternalRESTEndpoint:
     'url:' url=STRING
     'verb:' verb=HttpVerb
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
+    ('auth:' auth=AuthBlock)?  
     ('entity:' entity=[Entity])?
-  )#
+  )
   'end'
 ;
 

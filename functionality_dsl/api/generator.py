@@ -66,6 +66,44 @@ def _as_headers_list(obj):
 
     return out
 
+def _auth_headers(ext):
+    a = getattr(ext, "auth", None)
+    if not a:
+        return []
+
+    kind = getattr(a, "kind", "").lower()
+    if kind == "bearer":
+        token = getattr(a, "token", "")
+        if token.startswith("env:"):
+            import os
+            token = os.getenv(token.split(":", 1)[1], "")
+        return [{"key": "Authorization", "value": f"Bearer {token}"}]
+
+    if kind == "basic":
+        import base64, os
+        user = getattr(a, "username", "")
+        pw = getattr(a, "password", "")
+        if user.startswith("env:"):
+            user = os.getenv(user.split(":", 1)[1], "")
+        if pw.startswith("env:"):
+            pw = os.getenv(pw.split(":", 1)[1], "")
+        creds = f"{user}:{pw}"
+        return [{"key": "Authorization", "value": "Basic " + base64.b64encode(creds.encode()).decode()}]
+
+    if kind == "api_key":
+        key = getattr(a, "key", "")
+        val = getattr(a, "value", "")
+        loc = getattr(a, "location", "header")
+        if val.startswith("env:"):
+            import os
+            val = os.getenv(val.split(":", 1)[1], "")
+        if loc == "header":
+            return [{"key": key, "value": val}]
+        else:
+            return [{"key": "__queryparam__", "value": f"{key}={val}"}]
+
+    return []
+
 def _normalize_ws_source(ws):
     """Mutate ExternalWSEndpoint so templates have JSON-serializable attrs."""
     if ws is None:
@@ -95,55 +133,6 @@ def _all_ancestors(entity, model):
         order.append(e)
     visit(entity)
     return [e for e in order if e is not entity]
-
-
-def _path_up(descendant, ancestor):
-    """Return a list [ancestor, ..., descendant] along one shortest path via .parents."""
-    from collections import deque
-    prev = {id(descendant): None}
-    q = deque([descendant])
-    target = None
-    while q:
-        n = q.popleft()
-        if n is ancestor:
-            target = n
-            break
-        for p in (getattr(n, "parents", []) or []):
-            if id(p) not in prev:
-                prev[id(p)] = n
-                q.append(p)
-    if target is None:
-        return []
-    # reconstruct: ancestor -> ... -> descendant
-    path = []
-    cur = ancestor
-    while cur is not None:
-        path.append(cur)
-        cur = prev.get(id(cur))
-    return path
-
-def _collect_chain(start_ent, terminal_ent, model):
-    """
-    Return entities from start_ent -> ... -> terminal_ent (inclusive), ONLY those that
-    do NOT have ExternalREST sources and do NOT have their own InternalREST endpoints.
-    These are the computed-only nodes we must inline.
-    """
-    # find the single path we care about
-    path = _path_up(terminal_ent, start_ent) or [start_ent]
-    # entities that have an internal endpoint (we will fetch them instead)
-    internal_ents = {getattr(iep, "entity") for iep in _internal_rest_endpoints(model)}
-    chain = []
-    for E in path:
-        if E in internal_ents and E is not start_ent:
-            # will be fetched via /api/... in the router, so skip
-            continue
-        src = getattr(E, "source", None)
-        if src and getattr(src, "__class__", type("x", (), {})).__name__ == "ExternalRESTEndpoint":
-            # will be fetched directly, so skip
-            continue
-        chain.append(E)
-    return chain
-
 
 def _distance_up(from_node, to_ancestor) -> int | None:
     """edges from from_node up through parents to to_ancestor (if reachable)."""
@@ -252,6 +241,9 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     tpl_router_ws_sub = env.get_template("router_ws_sub.jinja")
 
     # -------- per-internal-endpoint generation --------
+    
+    for src in get_children_of_type("ExternalRESTEndpoint", model):
+        print(f"[DEBUG] ExternalREST {src.name} auth={getattr(src, 'auth', None)}")
 
     # INTERNAL REST endpoints
     for iep in _internal_rest_endpoints(model):
@@ -272,16 +264,19 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             ent_attrs = []
             for a in (getattr(ent, "attributes", []) or []):
                 if hasattr(a, "expr") and a.expr is not None:
-                    raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
+                    print('[DEBUG] HEREHERHEHRHEHRHEHRHEHRHERHEHREHREHRHERHEHREHRHERHERHH')
+                    raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources + [ent_src.name])
                 else:
                     raw = f"{ent_src.name}"
                 ent_attrs.append({"name": a.name, "pyexpr": raw})
+                
+                computed_attrs.append({"name": a.name, "pyexpr": raw})
     
             rest_inputs.append({
                 "entity": ent.name,           # <-- bind into ctx under entity name
                 "alias":  ent_src.name,       # <-- evaluate exprs against this alias
                 "url": ent_src.url,
-                "headers": _as_headers_list(ent_src),
+                "headers": _as_headers_list(ent_src) + _auth_headers(ent_src),
                 "method": (getattr(ent_src, "verb", "GET") or "GET").upper(),
                 "attrs": ent_attrs,
             })
@@ -317,7 +312,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "entity": parent.name,
                     "alias":  t_src.name,
                     "url": t_src.url,
-                    "headers": _as_headers_list(t_src),
+                    "headers": _as_headers_list(t_src) + _auth_headers(t_src),
                     "method": (getattr(t_src, "verb", "GET") or "GET").upper(),
                     "attrs": parent_attrs,
                 })
@@ -362,6 +357,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             for E in ancestors:
                 E_src = getattr(E, "source", None)
                 if E_src and E_src.__class__.__name__ == "ExternalRESTEndpoint":
+                    
                     # treat like top-level ExternalREST input
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
@@ -371,7 +367,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         "entity": E.name,
                         "alias":  E_src.name,
                         "url": E_src.url,
-                        "headers": _as_headers_list(E_src),
+                        "headers": _as_headers_list(E_src) + _auth_headers(E_src),
                         "method": (getattr(E_src, "verb", "GET") or "GET").upper(),
                         "attrs": ent_attrs,
                     })
@@ -426,7 +422,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "name": tgt.name,
                     "url": tgt.url,
                     "method": getattr(tgt, "verb", verb).upper(),
-                    "headers": _as_headers_list(tgt),
+                    "headers": _as_headers_list(tgt) + _auth_headers(tgt),
                 }
             
             # render
@@ -494,7 +490,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 # The publish router will push to the bus
                 # The subscribe router just needs to listen to the bus
                 # So we DON'T add any ws_inputs - just skip this source
-                
+
                 # Still compile the entity's attributes for the chain
                 # (in case there are computed attributes)
                 ent_attrs = []
@@ -506,13 +502,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                             known_sources=all_sources + [t_src.name]
                         )
                         ent_attrs.append({"name": a.name, "pyexpr": py})
-                
+
                 if ent_attrs:
                     compiled_chain.append({
                         "name": E.name,
                         "attrs": ent_attrs
                     })
-                
+
                 # Do NOT add to ws_inputs - no upstream connection needed
 
         
