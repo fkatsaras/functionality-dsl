@@ -3,70 +3,58 @@ Server EventServer
   port: 8080
 end
 
-// External duplex server
+// OUTBOUND CHAIN (what you send)
+Entity OutgoingRaw
+  source: ChatDup
+  attributes:
+    - raw: dict = ChatDup;
+end
+
+Entity OutgoingProcessed(OutgoingRaw)
+  attributes:
+    - text: string = upper(OutgoingRaw["raw"]);
+end
+
+// INBOUND CHAIN (what you receive)
+Entity EchoInOut
+  source: EchoWS
+  attributes:
+    - echo: dict = EchoWS;
+end
+
+Entity IncomingProcessed(EchoInOut)
+  attributes:
+    - text: string = lower(EchoInOut["echo"]);
+end
+
+// External duplex - handles OUTBOUND
 ExternalWS EchoWS
   url: "ws://host.docker.internal:8765"
   protocol: "json"
   auth:
     type: bearer
     token: "secret123"
-  entity: EchoInOut
+  entity: OutgoingProcessed
   mode: duplex
 end
 
-// ------------------ Entities ------------------
-
-// Chain towards publish → local → external
-Entity OutgoingRaw
-  source: ChatPub
-  attributes:
-    - raw: dict = ChatPub;
-end
-
-Entity OutgoingProcessed(OutgoingRaw)
-  attributes:
-    - text: string = upper(OutgoingRaw["raw"].text);
-end
-
-Entity EchoInOut
-  source: EchoWS
-  attributes:
-    - echo: dict = EchoWS;   // payload coming back from dummy server
-end
-
-// Chain towards subscribe → external → local
-Entity IncomingProcessed(EchoInOut)
-  attributes:
-    - text: string = lower(EchoInOut["echo"].text);
-end
-
-
-// ------------------ Internal endpoints ------------------
-
-// Clients send here → ends up at ExternalWS
-InternalWS ChatPub
-  entity: OutgoingProcessed
-  mode: publish
-  path: "/api/chat/send"
-end
-
-// Clients read here ← comes from ExternalWS
-InternalWS ChatSub
+// Internal duplex - handles INBOUND display
+InternalWS ChatDup
   entity: IncomingProcessed
-  mode: subscribe
-  path: "/api/chat/read"
+  mode: duplex
+  path: "/api/chat"
 end
 
 // ------------------ UI ------------------
 Component<Input> ChatBox
-  endpoint: ChatPub
+  endpoint: ChatDup
   placeholder: "Type your message..."
   label: "Chat"
   submitLabel: "Send"
 end
 
 Component<LiveView> ChatFeed
-  endpoint: ChatSub
+  endpoint: ChatDup
   fields: ["text"]
   label: "Messages"
 end

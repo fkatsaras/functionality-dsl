@@ -1,6 +1,6 @@
 {# components/Input.jinja #}
 {# Normalize value key: allow "data.foo" or "foo" #}
-{% set raw_value = props.get('value') or 'value' %}
+{% set raw_value = props.get('text') or 'text' %}
 {% set value_key = raw_value | replace('data.', '') %}
 
 {# Resolve WS sink path: explicit prop wins, else common.wsUrl #}

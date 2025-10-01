@@ -121,6 +121,21 @@ def _normalize_ws_source(ws):
         
 # --- chain helpers -------------------------------------------------
 
+def _resolve_source_alias(ent, ent_src):
+    """
+    Map DSL 'source' references to runtime context identifiers.
+    - If the source is an endpoint (InternalWS, ExternalWS, InternalREST, ExternalREST),
+      return the ENTITY name (because runtime seeds the entity).
+    - If the source is another entity, return its name directly.
+    """
+    if not ent_src:
+        return ent.name
+    cls = ent_src.__class__.__name__
+    if cls in ("InternalWSEndpoint", "ExternalWSEndpoint", "InternalRESTEndpoint", "ExternalRESTEndpoint"):
+        return ent.name  # entity gets seeded from endpoint payload
+    return ent_src.name
+
+
 def _all_ancestors(entity, model):
     """Return all ancestors of entity, in topological (oldest→newest) order."""
     seen = set()
@@ -444,26 +459,41 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
 
 
-    # INTERNAL WS endpoints
+        # INTERNAL WS endpoints
     for iwep in _internal_ws_endpoints(model):
         
         ent = getattr(iwep, "entity")
         route_prefix = _default_ws_prefix(iwep, ent)
         
-        # read mode or default
         mode = getattr(iwep, "mode", None) or "subscribe"
 
-        # --- full chain (ancestors + this entity) ---
-        ancestors = _all_ancestors(ent, model)
-        chain_entities = ancestors + [ent]
+        if mode == "duplex":
+            # inbound = internal entity (this iwep)
+            inbound_chain_entities = _all_ancestors(ent, model) + [ent]
+
+            # outbound = external duplex entity (find its entity)
+            outbound_chain_entities = []
+            for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
+                if getattr(ext_ws, "mode", None) == "duplex":
+                    out_ent = getattr(ext_ws, "entity", None)
+                    if out_ent:
+                        outbound_chain_entities = _all_ancestors(out_ent, model) + [out_ent]
+                        break
+        else:
+            chain_entities = _all_ancestors(ent, model) + [ent]
 
         compiled_chain_inbound = []
         compiled_chain_outbound = []
         ws_inputs = []
 
-        for E in chain_entities:
+        # ------------------ Inbound chain build ------------------
+        if mode == "duplex":
+            scan_entities = inbound_chain_entities
+        else:
+            scan_entities = chain_entities
+
+        for E in scan_entities:
             t_src = getattr(E, "source", None)
-            # Case 1: External WS source
             if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
                 _normalize_ws_source(t_src)
                 ent_attrs = []
@@ -482,20 +512,12 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "protocol": getattr(t_src, "protocol", "json") or "json",
                     "attrs": ent_attrs,
                 })
-        
-            # Case 2: Internal WS in publish mode → bind attributes to raw frame
             elif (
                 t_src
                 and t_src.__class__.__name__ == "InternalWSEndpoint"
                 and getattr(t_src, "mode", None) == "publish"
             ):
-                # This entity gets data from an internal publish endpoint
-                # The publish router will push to the bus
-                # The subscribe router just needs to listen to the bus
-                # So we DON'T add any ws_inputs - just skip this source
-
-                # Still compile the entity's attributes for the chain
-                # (in case there are computed attributes)
+                # Internal publish as source → skip ws_inputs
                 ent_attrs = []
                 for a in getattr(E, "attributes", []) or []:
                     if hasattr(a, "expr") and a.expr is not None:
@@ -505,18 +527,10 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                             known_sources=all_sources + [t_src.name]
                         )
                         ent_attrs.append({"name": a.name, "pyexpr": py})
-
                 if ent_attrs:
-                    compiled_chain_inbound.append({
-                        "name": E.name,
-                        "attrs": ent_attrs
-                    })
-
-                # Do NOT add to ws_inputs - no upstream connection needed
-
-        
-            # Case 3: Computed-only entity
+                    compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
             else:
+                # Computed-only
                 attrs = []
                 for a in getattr(E, "attributes", []) or []:
                     if hasattr(a, "expr") and a.expr is not None:
@@ -525,58 +539,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 if attrs:
                     compiled_chain_inbound.append({"name": E.name, "attrs": attrs})
 
-        # A) current entity has ExternalWS
-        t_src = getattr(ent, "source", None)
-        if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
-            _normalize_ws_source(t_src)
-            # collect THIS entity's attrs (so we can shape from the raw payload)
-            ent_attrs = []
-            for a in (getattr(ent, "attributes", []) or []):
-                if hasattr(a, "expr") and a.expr is not None:
-                    py = compile_expr_to_python(a.expr, context=t_src.name, known_sources=all_sources)
-                    print(f"\n\n\n\n\n\n\n\n\n[GEN/WS_COMPILED_ATTR] {ent.name}.{a.name} expr='{a.expr}' -> {py}")
-                else:
-                    # default: raw payload
-                    py = f"{t_src.name}.get({a.name!r})" 
-                ent_attrs.append({"name": a.name, "pyexpr": py})
-
-            ws_inputs.append({
-                "entity": ent.name,                # bind result under entity name in ctx
-                "alias":  t_src.name,             # evaluate attrs against alias (external source name)
-                "url": t_src.url,
-                "headers": [(h["key"], h["value"]) for h in _as_headers_list(t_src)] + _auth_headers(t_src),
-                "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
-                "protocol": getattr(t_src, "protocol", "json") or "json",
-                "attrs": ent_attrs,
-            })
-
-        # B) parents with ExternalWS
-        for parent in getattr(ent, "parents", []) or []:
-            if isinstance(parent, dict):
-                continue
-            ps = getattr(parent, "source", None)
-            if ps and ps.__class__.__name__ == "ExternalWSEndpoint":
-                _normalize_ws_source(ps)
-                parent_attrs = []
-                for a in (getattr(parent, "attributes", []) or []):
-                    if hasattr(a, "expr") and a.expr is not None:
-                        py = compile_expr_to_python(a.expr, context=ps.name, known_sources=all_sources)
-                        print(f"\n\n\n\n\n\n\n\n\n[GEN/WS_COMPILED_ATTR] {parent.name}.{a.name} expr='{a.expr}' -> {py}")
-                    else:
-                        py = f"{ps.name}.get({a.name!r})"
-                    parent_attrs.append({"name": a.name, "pyexpr": py})
-
-                ws_inputs.append({
-                    "entity": parent.name,   # ctx[ParentEntity] = {shaped attrs}
-                    "alias":  ps.name,       # eval attrs against alias (external source name)
-                    "url": ps.url,
-                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)] + _auth_headers(ps)  ,
-                    "subprotocols": list(getattr(ps, "subprotocols", []) or []),
-                    "protocol": getattr(ps, "protocol", "json") or "json",
-                    "attrs": parent_attrs,
-                })
-
-        # --- Deduplicate ws_inputs ---
+        # Deduplicate ws_inputs
         unique = {}
         for w in ws_inputs:
             key = (w["alias"], w["url"])
@@ -584,15 +547,14 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 unique[key] = w
         ws_inputs = list(unique.values())
         
-        # --- Find external WS targets for publish mode ---
+        # ------------------ External targets ------------------
         external_targets = []
-        if mode == "publish":
+        if mode in ("publish", "duplex"):
             for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
-                # Check if this external WS declares it handles our entity
                 ext_entity = getattr(ext_ws, "entity", None)
                 if ext_entity and ext_entity.name == ent.name:
                     ext_mode = getattr(ext_ws, "mode", None)
-                    if ext_mode == "publish":
+                    if ext_mode in ("publish", "duplex"):
                         _normalize_ws_source(ext_ws)
                         external_targets.append({
                             "url": ext_ws.url,
@@ -601,19 +563,28 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                             "protocol": getattr(ext_ws, "protocol", "json") or "json",
                         })
                         
-        # --- Outbound computation (for what this endpoint emits) ---
-        out_attrs = []
-        for a in getattr(ent, "attributes", []) or []:
-            if hasattr(a, "expr") and a.expr is not None:
-                py = compile_expr_to_python(
-                    a.expr,
-                    context="ctx",
-                    known_sources=all_sources + [ent.name]
-                )
-                out_attrs.append({"name": a.name, "pyexpr": py})
-        if out_attrs:
-            compiled_chain_outbound.append({"name": ent.name, "attrs": out_attrs})
+        # ------------------ Outbound chain build ------------------
+        if mode == "duplex":
+            scan_entities = outbound_chain_entities
+        else:
+            scan_entities = chain_entities
+
+        for E in scan_entities:
+            out_attrs = []
+            for a in getattr(E, "attributes", []) or []:
+                if hasattr(a, "expr") and a.expr is not None:
+                    py = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
+                    out_attrs.append({"name": a.name, "pyexpr": py})
+            if out_attrs:
+                compiled_chain_outbound.append({"name": E.name, "attrs": out_attrs})
+                
+        # ------------------ Outbound seed entity ------------------
+        outbound_seed_entity = None
+        if mode == "duplex" and outbound_chain_entities:
+            # Always use the FIRST entity in the outbound chain as seed
+            outbound_seed_entity = outbound_chain_entities[0].name
         
+        # ------------------ Template selection ------------------
         if mode == "subscribe":
             tpl = tpl_router_ws_sub
             filename = f"{iwep.name.lower()}_sub.py"
@@ -638,6 +609,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 "compiled_chain_outbound": compiled_chain_outbound,
                 "ws_inputs": ws_inputs,
                 "external_targets": external_targets,
+                "outbound_seed_entity": outbound_seed_entity,
             }
         else:
             raise RuntimeError(f"Unknown WS mode: {mode}")
@@ -651,6 +623,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             ),
             encoding="utf-8",
         )
+
 
 # ---------------- server / env / docker rendering ----------------
 

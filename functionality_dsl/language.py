@@ -564,10 +564,30 @@ def verify_endpoints(model):
     for iwep in get_model_internal_ws_endpoints(model):
         mode = getattr(iwep, "mode", None)
         ent = getattr(iwep, "entity", None)
+
         if mode == "duplex":
-            if not getattr(ent, "source", None):
+            # BFS through all parents until we find a source
+            queue = deque([ent])
+            visited = set()
+            found_source = False
+
+            while queue:
+                current = queue.popleft()
+                if id(current) in visited:
+                    continue
+                visited.add(id(current))
+
+                if getattr(current, "source", None) is not None:
+                    found_source = True
+                    break
+
+                parents = getattr(current, "parents", []) or []
+                queue.extend(parents)
+
+            if not found_source:
                 raise TextXSemanticError(
-                    f"Entity '{ent.name}' bound to duplex endpoint '{iwep.name}' must declare a 'source:'.",
+                    f"Entity '{ent.name}' bound to duplex endpoint '{iwep.name}' "
+                    f"must have a source (directly or via inheritance).",
                     **get_location(iwep),
                 )
     return
