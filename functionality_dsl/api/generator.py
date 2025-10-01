@@ -240,6 +240,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     tpl_router_mutation_rest = env.get_template("router_mutation_rest.jinja")
     tpl_router_ws_pub = env.get_template("router_ws_pub.jinja")
     tpl_router_ws_sub = env.get_template("router_ws_sub.jinja")
+    tpl_router_ws_duplex = env.get_template("router_ws_duplex.jinja")
 
     # -------- per-internal-endpoint generation --------
     
@@ -456,7 +457,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         ancestors = _all_ancestors(ent, model)
         chain_entities = ancestors + [ent]
 
-        compiled_chain = []
+        compiled_chain_inbound = []
+        compiled_chain_outbound = []
         ws_inputs = []
 
         for E in chain_entities:
@@ -505,7 +507,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         ent_attrs.append({"name": a.name, "pyexpr": py})
 
                 if ent_attrs:
-                    compiled_chain.append({
+                    compiled_chain_inbound.append({
                         "name": E.name,
                         "attrs": ent_attrs
                     })
@@ -521,7 +523,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
                         attrs.append({"name": a.name, "pyexpr": py_code})
                 if attrs:
-                    compiled_chain.append({"name": E.name, "attrs": attrs})
+                    compiled_chain_inbound.append({"name": E.name, "attrs": attrs})
 
         # A) current entity has ExternalWS
         t_src = getattr(ent, "source", None)
@@ -568,7 +570,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     "entity": parent.name,   # ctx[ParentEntity] = {shaped attrs}
                     "alias":  ps.name,       # eval attrs against alias (external source name)
                     "url": ps.url,
-                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)] + _auth_headers(ext_ws)  ,
+                    "headers": [(h["key"], h["value"]) for h in _as_headers_list(ps)] + _auth_headers(ps)  ,
                     "subprotocols": list(getattr(ps, "subprotocols", []) or []),
                     "protocol": getattr(ps, "protocol", "json") or "json",
                     "attrs": parent_attrs,
@@ -598,26 +600,54 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                             "subprotocols": list(getattr(ext_ws, "subprotocols", []) or []),
                             "protocol": getattr(ext_ws, "protocol", "json") or "json",
                         })
+                        
+        # --- Outbound computation (for what this endpoint emits) ---
+        out_attrs = []
+        for a in getattr(ent, "attributes", []) or []:
+            if hasattr(a, "expr") and a.expr is not None:
+                py = compile_expr_to_python(
+                    a.expr,
+                    context="ctx",
+                    known_sources=all_sources + [ent.name]
+                )
+                out_attrs.append({"name": a.name, "pyexpr": py})
+        if out_attrs:
+            compiled_chain_outbound.append({"name": ent.name, "attrs": out_attrs})
         
-        # choose template based on mode
         if mode == "subscribe":
-            tpl = tpl_router_ws_sub  # subscribe template
+            tpl = tpl_router_ws_sub
             filename = f"{iwep.name.lower()}_sub.py"
+            render_args = {
+                "compiled_chain": compiled_chain_inbound,
+                "ws_inputs": ws_inputs,
+                "external_targets": [],
+            }
         elif mode == "publish":
-            tpl = tpl_router_ws_pub  # publish template
+            tpl = tpl_router_ws_pub
             filename = f"{iwep.name.lower()}_pub.py"
+            render_args = {
+                "compiled_chain": compiled_chain_outbound,
+                "ws_inputs": [],
+                "external_targets": external_targets,
+            }
+        elif mode == "duplex":
+            tpl = tpl_router_ws_duplex
+            filename = f"{iwep.name.lower()}_duplex.py"
+            render_args = {
+                "compiled_chain_inbound": compiled_chain_inbound,
+                "compiled_chain_outbound": compiled_chain_outbound,
+                "ws_inputs": ws_inputs,
+                "external_targets": external_targets,
+            }
         else:
             raise RuntimeError(f"Unknown WS mode: {mode}")
-        
-    
+
         (routers_dir / filename).write_text(
             tpl.render(
                 endpoint=iwep,
                 entity=ent,
-                compiled_chain=compiled_chain,   #  entity chain context
-                ws_inputs=ws_inputs,             # now includes entity, alias, attrs
-                external_targets=external_targets,
                 route_prefix=_default_ws_prefix(iwep, ent),
+                **render_args
             ),
             encoding="utf-8",
         )

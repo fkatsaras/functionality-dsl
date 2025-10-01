@@ -30,9 +30,10 @@ InternalWS EchoPub
   path: "/api/ws/echo/send"
 end
 
-// Internal subscribe endpoint: clients listen here
-InternalWS EchoSub
-  entity: EchoEntity
-  mode: subscribe
-  path: "/api/ws/echo/stream"
+// ----- UI -----------------------------------
+Component<Input> ChatBox
+  endpoint: EchoPub
+  placeholder: "Type your message..."
+  label: "Chat"
+  submitLabel: "Send"
 end

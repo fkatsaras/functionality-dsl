@@ -98,7 +98,7 @@ InternalRESTEndpoint:
 ;
 
 WSmode:
-    'publish' | 'subscribe'
+    'publish' | 'subscribe' | 'duplex'
 ;
 
 InternalWSEndpoint:

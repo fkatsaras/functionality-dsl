@@ -405,13 +405,16 @@ def internal_rest_endpoint_obj_processor(iep):
 
 
 def internal_ws_endpoint_obj_processor(iep):
-    """
-    InternalWSEndpoint:
-      - Must bind an entity
-    """
     if getattr(iep, "entity", None) is None:
         raise TextXSemanticError(
             "InternalWS must bind an 'entity:'.", **get_location(iep)
+        )
+
+    mode = getattr(iep, "mode", "subscribe")
+    if mode not in {"publish", "subscribe", "duplex"}:
+        raise TextXSemanticError(
+            f"InternalWS mode must be publish/subscribe/duplex, got {mode}.",
+            **get_location(iep)
         )
 
 
@@ -510,6 +513,16 @@ def entity_obj_processor(ent):
     setattr(ent, "_source_kind", kind)
 
     setattr(ent, "_where_py", None)
+    
+    # --- Source sanity ---
+    src = getattr(ent, "source", None)
+    if src:
+        t = src.__class__.__name__
+        if t not in {"ExternalRESTEndpoint", "ExternalWSEndpoint", "InternalWSEndpoint"}:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' source must be an ExternalREST/ExternalWS/InternalWS, not {t}.",
+                **get_location(ent),
+            )
 
 
 # ------------------------------------------------------------------------------
@@ -548,6 +561,15 @@ def verify_unique_names(model):
 
 
 def verify_endpoints(model):
+    for iwep in get_model_internal_ws_endpoints(model):
+        mode = getattr(iwep, "mode", None)
+        ent = getattr(iwep, "entity", None)
+        if mode == "duplex":
+            if not getattr(ent, "source", None):
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' bound to duplex endpoint '{iwep.name}' must declare a 'source:'.",
+                    **get_location(iwep),
+                )
     return
 
 

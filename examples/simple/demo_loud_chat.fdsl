@@ -3,39 +3,70 @@ Server EventServer
   port: 8080
 end
 
-// --- Entity: chat message --------------------------------
-Entity ChatMessage
-  source: ChatSink  //  The publish endpoint IS the source
-  attributes:
-    - text: string = upper(ChatSink["text"]);  //  Extract from incoming payload
+// External duplex server
+ExternalWS EchoWS
+  url: "ws://host.docker.internal:8765"
+  protocol: "json"
+  auth:
+    type: bearer
+    token: "secret123"
+  entity: EchoInOut
+  mode: duplex
 end
 
-// --- Internal endpoints ----------------------------------
+// ------------------ Entities ------------------
 
-// Sink: where messages are published (clients send here)
-InternalWS ChatSink
-  entity: ChatMessage
+// Chain towards publish → local → external
+Entity OutgoingRaw
+  source: ChatPub
+  attributes:
+    - raw: dict = ChatPub;
+end
+
+Entity OutgoingProcessed(OutgoingRaw)
+  attributes:
+    - text: string = upper(OutgoingRaw["raw"].text);
+end
+
+Entity EchoInOut
+  source: EchoWS
+  attributes:
+    - echo: dict = EchoWS;   // payload coming back from dummy server
+end
+
+// Chain towards subscribe → external → local
+Entity IncomingProcessed(EchoInOut)
+  attributes:
+    - text: string = lower(EchoInOut["echo"].text);
+end
+
+
+// ------------------ Internal endpoints ------------------
+
+// Clients send here → ends up at ExternalWS
+InternalWS ChatPub
+  entity: OutgoingProcessed
   mode: publish
   path: "/api/chat/send"
 end
 
-// Stream: where messages are broadcast (clients receive here)
-InternalWS ChatStream
-  entity: ChatMessage
+// Clients read here ← comes from ExternalWS
+InternalWS ChatSub
+  entity: IncomingProcessed
   mode: subscribe
   path: "/api/chat/read"
 end
 
-// ---- UI components --------------------------------------
+// ------------------ UI ------------------
 Component<Input> ChatBox
-  endpoint: ChatSink
+  endpoint: ChatPub
   placeholder: "Type your message..."
   label: "Chat"
   submitLabel: "Send"
 end
 
 Component<LiveView> ChatFeed
-  endpoint: ChatStream
+  endpoint: ChatSub
   fields: ["text"]
   label: "Messages"
 end
