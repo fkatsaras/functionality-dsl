@@ -19,7 +19,7 @@ end
 Entity EchoInOut
   source: EchoWS
   attributes:
-    - echo: string = EchoWS["text"];
+    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo' and ping pongs back
 end
 
 Entity IncomingProcessed(EchoInOut)

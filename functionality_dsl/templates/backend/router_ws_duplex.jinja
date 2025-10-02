@@ -18,7 +18,7 @@ router = APIRouter(
     tags=["{{ (endpoint.summary or endpoint.name) ~ ' (duplex)' }}"]
 )
 
-# === External WS targets (optional persistence/integration layer) ===
+# === External WS targets (duplex connections) ===
 _EXTERNAL_TARGETS = [
 {%- for tgt in external_targets %}
     {
@@ -30,8 +30,7 @@ _EXTERNAL_TARGETS = [
 {%- endfor %}
 ]
 
-# === External WS sources for inbound (listen) ===
-# NOTE: `endpoint` is the *endpoint name* to seed in eval context.
+# === External WS sources (inbound mapping) ===
 _WS_INPUTS = [
 {%- for w in ws_inputs %}
     {
@@ -74,12 +73,79 @@ _COMPILED_CHAIN_OUTBOUND = [
 {%- endfor %}
 ]
 
-# Persistent external connections (for publish forwarding)
+# Persistent external connections
 _target_connections: List[Optional[Any]] = [None] * len(_EXTERNAL_TARGETS)
+_target_reader_started: List[bool] = [False] * len(_EXTERNAL_TARGETS)
 _target_lock = asyncio.Lock()
 
 
-async def _ensure_target_connection(idx: int):
+def _compute_row(payload, sender_id, chain, source_name):
+    ctx = {"ctx": {}, "__sender": sender_id}
+    eval_ctx = {"ctx": ctx, source_name: payload}
+
+    for ent in chain:
+        shaped = {}
+        ctx[ent["name"]] = shaped
+        eval_ctx[ent["name"]] = shaped
+
+        for a in ent.get("attrs") or []:
+            compiled = compile_safe(a["expr"])
+            try:
+                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+            except Exception as ex:
+                logger.exception(
+                    "attr_eval_error",
+                    extra={
+                        "entity": ent["name"],
+                        "attr": a["name"],
+                        "expr": a["expr"],
+                        "payload": payload,
+                        "ctx": ctx,
+                    },
+                )
+                raise
+
+        print("\n" * 5)
+        print("compute_start", str({"payload": payload, "source": source_name}))
+        print("compute_entity", str({"entity": ent["name"], "shaped": shaped}))
+        print("compute_done", str({"ctx": ctx}))
+        print("\n" * 5)
+
+    return ctx[chain[-1]["name"]] if chain else {source_name: payload}
+
+
+async def _start_reader_for_target(idx: int, inbound_entity_name: str):
+    """Read messages from the same external connection and run INBOUND chain."""
+    tgt = _EXTERNAL_TARGETS[idx]
+    inp = next((w for w in _WS_INPUTS if w["url"] == tgt["url"]), None)
+    if not inp:
+        logger.warning("no_ws_input_for_target", extra={"url": tgt["url"]})
+        return
+    bus_in = wsbus.get_bus(inbound_entity_name)
+
+    while True:
+        conn = _target_connections[idx]
+        if conn is None:
+            await asyncio.sleep(1)
+            continue
+        try:
+            async for raw in conn:
+                try:
+                    payload = json.loads(raw)
+                except Exception:
+                    payload = raw
+                row = _compute_row(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                print("upstream_raw", str({"raw": raw, "parsed": payload}))
+                print("upstream_row", str({"row": row}))
+                if row is not None:
+                    await bus_in.publish(row)
+        except Exception as ex:
+            logger.error("target_reader_failed", extra={"url": tgt["url"], "err": repr(ex)})
+            _target_connections[idx] = None
+            await asyncio.sleep(2)
+
+
+async def _ensure_target_connection(idx: int, inbound_entity_name: str):
     if idx >= len(_EXTERNAL_TARGETS):
         return
     tgt = _EXTERNAL_TARGETS[idx]
@@ -97,52 +163,17 @@ async def _ensure_target_connection(idx: int):
                 subprotocols=tgt["subprotocols"] or None
             )
             logger.info("target_connected", extra={"url": tgt["url"]})
+            if not _target_reader_started[idx]:
+                asyncio.create_task(_start_reader_for_target(idx, inbound_entity_name))
+                _target_reader_started[idx] = True
         except Exception as ex:
             logger.error("target_connect_failed", extra={"url": tgt["url"], "err": repr(ex)})
 
 
-def _compute_row(payload, sender_id, chain, source_name):
-    ctx = {"ctx": {}, "__sender": sender_id}
-    eval_ctx = {"ctx": ctx, source_name: payload}
-
-    for ent in chain:
-        shaped = {}
-        ctx[ent["name"]] = shaped
-        eval_ctx[ent["name"]] = shaped
-
-        for a in ent.get("attrs") or []:
-            compiled = compile_safe(a["expr"])
-            try:
-                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
-            except Exception as ex:
-                # Instead of swallowing:
-                logger.exception(
-                    "attr_eval_error",
-                    extra={
-                        "entity": ent["name"],
-                        "attr": a["name"],
-                        "expr": a["expr"],
-                        "payload": payload,
-                        "ctx": ctx,
-                    },
-                )
-                raise   # <---- propagate error so you see it in console
-
-        # shaped is now populated, already in eval_ctx
-        print("\n" * 5)
-        print("compute_start", str({"payload": payload, "source": source_name}))
-        print("compute_entity", str({"entity": ent["name"], "shaped": shaped}))
-        print("compute_done", str({"ctx": ctx}))
-        print("\n" * 5)
-
-    return ctx[chain[-1]["name"]] if chain else {source_name: payload}
-
-            
-
-async def _forward_to_targets(row: Dict[str, Any]):
+async def _forward_to_targets(row: Dict[str, Any], inbound_entity_name: str):
     for idx, tgt in enumerate(_EXTERNAL_TARGETS):
         logger.debug("forward_row", extra={"target": tgt["url"], "row": row})
-        await _ensure_target_connection(idx)
+        await _ensure_target_connection(idx, inbound_entity_name)
         conn = _target_connections[idx]
         if conn:
             try:
@@ -169,16 +200,10 @@ async def duplex(ws: WebSocket):
     inbound_entity  = "{{ entity_in.name if entity_in else (compiled_chain_inbound[0].name if compiled_chain_inbound else '') }}"
     outbound_entity = "{{ entity_out.name if entity_out else (compiled_chain_outbound[-1].name if compiled_chain_outbound else '') }}"
 
-
-    # internal buses
     bus_in  = wsbus.get_bus(inbound_entity)
     bus_out = wsbus.get_bus(outbound_entity)
 
-    # The internal endpoint name is the outbound *source* name
-    outbound_source_name = "{{ endpoint.name }}"
-
     async def inbound_loop():
-        # CLIENT → SERVER: use OUTBOUND chain (what client sends OUT)
         while True:
             raw = await ws.receive_text()
             print(">>> got message:", raw)
@@ -187,7 +212,6 @@ async def duplex(ws: WebSocket):
             except Exception:
                 payload = raw
 
-            # FIX: seed with the internal endpoint name, use OUTBOUND chain
             row = _compute_row(payload, rid, _COMPILED_CHAIN_OUTBOUND, "{{ endpoint.name }}")
 
             print("\n\n" * 4)
@@ -197,10 +221,9 @@ async def duplex(ws: WebSocket):
             if row is not None:
                 await bus_out.publish(row)
                 if _EXTERNAL_TARGETS:
-                    await _forward_to_targets(row)
+                    await _forward_to_targets(row, inbound_entity)
 
     async def outbound_loop():
-        # SERVER → CLIENT: subscribe to INBOUND bus
         logger.debug("outbound_subscribed", extra={"entity": inbound_entity})
         await bus_in.add_ws(ws)
         try:
@@ -209,38 +232,10 @@ async def duplex(ws: WebSocket):
         finally:
             await bus_in.remove_ws(ws)
 
-    async def upstream_loop():
-        # EXTERNAL → SERVER → CLIENT: listen to external, use INBOUND chain
-        
-        for inp in _WS_INPUTS:
-            try:
-                async with websockets.connect(
-                    inp["url"],
-                    extra_headers=inp["headers"],
-                    subprotocols=inp["subprotocols"] or None
-                ) as ext_ws:
-                    async for raw in ext_ws:
-                        try:
-                            payload = json.loads(raw)
-                        except Exception:
-                            payload = raw
-                        # FIX: seed with the external endpoint name
-                        
-                        row = _compute_row(payload, rid, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
-
-                        print("upstream_raw", str({"raw": raw, "parsed": payload}))
-                        print("upstream_row", str({"row": row}))
-                        if row is not None:
-                            await bus_in.publish(row)
-            except Exception as ex:
-                logger.error("upstream_failed", extra={"url": inp["url"], "err": repr(ex)})
-                await asyncio.sleep(5)
-
     try:
         await asyncio.gather(
             inbound_loop(),
             outbound_loop(),
-            upstream_loop(),
         )
     except WebSocketDisconnect:
         logger.info("client_disconnected", extra={"rid": rid})
