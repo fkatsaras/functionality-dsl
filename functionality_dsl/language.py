@@ -361,11 +361,11 @@ def external_rest_endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
-
 def external_ws_endpoint_obj_processor(ep):
     """
     ExternalWSEndpoint:
-      - Must have ws(s) url (or any scheme you choose)
+      - must have ws/wss url
+      - require entity_in/entity_out per mode
     """
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
@@ -378,6 +378,35 @@ def external_ws_endpoint_obj_processor(ep):
             f"ExternalWS '{ep.name}' url must start with ws:// or wss://.",
             **get_location(ep),
         )
+
+    mode = getattr(ep, "mode", None) or "subscribe"
+    if mode not in {"publish", "subscribe", "duplex"}:
+        raise TextXSemanticError(
+            f"ExternalWS mode must be publish/subscribe/duplex, got {mode}.",
+            **get_location(ep)
+        )
+
+    ent_in  = getattr(ep, "entity_in", None)   # what we SEND to external
+    ent_out = getattr(ep, "entity_out", None)  # what we RECEIVE from external
+
+    if mode == "subscribe":
+        if ent_out is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=subscribe must define 'entity_out:'.",
+                **get_location(ep)
+            )
+    elif mode == "publish":
+        if ent_in is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=publish must define 'entity_in:'.",
+                **get_location(ep)
+            )
+    elif mode == "duplex":
+        if ent_in is None or ent_out is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=duplex must define both 'entity_in:' and 'entity_out:'.",
+                **get_location(ep)
+            )
 
 
 def internal_rest_endpoint_obj_processor(iep):
@@ -405,17 +434,47 @@ def internal_rest_endpoint_obj_processor(iep):
 
 
 def internal_ws_endpoint_obj_processor(iep):
-    if getattr(iep, "entity", None) is None:
-        raise TextXSemanticError(
-            "InternalWS must bind an 'entity:'.", **get_location(iep)
-        )
-
-    mode = getattr(iep, "mode", "subscribe")
+    """
+    InternalWSEndpoint:
+      - require entity_in / entity_out per mode
+      - set a compatibility alias `entity` so components and scope work
+    """
+    mode = getattr(iep, "mode", None) or "subscribe"
     if mode not in {"publish", "subscribe", "duplex"}:
         raise TextXSemanticError(
             f"InternalWS mode must be publish/subscribe/duplex, got {mode}.",
             **get_location(iep)
         )
+
+    ent_in  = getattr(iep, "entity_in", None)
+    ent_out = getattr(iep, "entity_out", None)
+
+    if mode == "subscribe":
+        if ent_in is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=subscribe must define 'entity_in:'.",
+                **get_location(iep)
+            )
+        # components expect endpoint.entity
+        iep.entity = ent_in
+
+    elif mode == "publish":
+        if ent_out is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=publish must define 'entity_out:'.",
+                **get_location(iep)
+            )
+        # publishing UI (e.g., forms) can still rely on endpoint.entity
+        iep.entity = ent_out
+
+    elif mode == "duplex":
+        if ent_in is None or ent_out is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=duplex must define both 'entity_in:' and 'entity_out:'.",
+                **get_location(iep)
+            )
+        # for display components (LiveView/Gauge) we want inbound shape by default
+        iep.entity = ent_in
 
 
 def entity_obj_processor(ent):
@@ -515,14 +574,14 @@ def entity_obj_processor(ent):
     setattr(ent, "_where_py", None)
     
     # --- Source sanity ---
-    src = getattr(ent, "source", None)
-    if src:
-        t = src.__class__.__name__
-        if t not in {"ExternalRESTEndpoint", "ExternalWSEndpoint", "InternalWSEndpoint"}:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' source must be an ExternalREST/ExternalWS/InternalWS, not {t}.",
-                **get_location(ent),
-            )
+    # src = getattr(ent, "source", None)
+    # if src:
+    #     t = src.__class__.__name__
+    #     if t not in {"ExternalRESTEndpoint", "ExternalWSEndpoint", "InternalWSEndpoint"}:
+    #         raise TextXSemanticError(
+    #             f"Entity '{ent.name}' source must be an ExternalREST/ExternalWS/InternalWS, not {t}.",
+    #             **get_location(ent),
+    #         ) TODO: conflict with REST / WS
 
 
 # ------------------------------------------------------------------------------
@@ -668,10 +727,18 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
         )
 
     iep = comp.endpoint
-    entity = getattr(iep, "entity", None)
+
+    # 🔑 FIX: prefer `.entity`, but fall back to `.entity_in` or `.entity_out`
+    entity = (
+        getattr(iep, "entity", None)
+        or getattr(iep, "entity_in", None)
+        or getattr(iep, "entity_out", None)
+    )
+
     if entity is None:
         raise TextXSemanticError(
-            "Internal endpoint has no 'entity:' bound.", **get_location(attr_ref)
+            "Internal endpoint has no bound entity (entity/entity_in/entity_out).",
+            **get_location(attr_ref)
         )
 
     # Build once per entity

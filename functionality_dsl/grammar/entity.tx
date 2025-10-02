@@ -79,7 +79,8 @@ ExternalWSEndpoint:
     ('subprotocols:' subprotocols=StringList)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
     ('auth:' auth=AuthBlock)?  
-    ('entity:' entity=[Entity])?
+    ('entity_in:' entity_in=[Entity])?
+    ('entity_out:' entity_out=[Entity])?
     'mode:' mode=WSmode
   )#
   'end'
@@ -104,7 +105,8 @@ WSmode:
 InternalWSEndpoint:
   'InternalWS' name=ID
   (
-    'entity:' entity=[Entity]
+    'entity_in:' entity_in=[Entity]
+    'entity_out:' entity_out=[Entity]
     'mode:' mode=WSmode
     ('path:' path=STRING)?
     ('summary:' summary=STRING)?

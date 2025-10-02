@@ -7,7 +7,7 @@ end
 Entity OutgoingRaw
   source: ChatDup
   attributes:
-    - raw: dict = ChatDup;
+    - raw: string = ChatDup["text"];
 end
 
 Entity OutgoingProcessed(OutgoingRaw)
@@ -19,7 +19,7 @@ end
 Entity EchoInOut
   source: EchoWS
   attributes:
-    - echo: dict = EchoWS;
+    - echo: string = EchoWS["text"];
 end
 
 Entity IncomingProcessed(EchoInOut)
@@ -34,13 +34,15 @@ ExternalWS EchoWS
   auth:
     type: bearer
     token: "secret123"
-  entity: OutgoingProcessed
+  entity_in: OutgoingProcessed
+  entity_out: EchoInOut
   mode: duplex
 end
 
 // Internal duplex - handles INBOUND display
 InternalWS ChatDup
-  entity: IncomingProcessed
+  entity_in: IncomingProcessed
+  entity_out: OutgoingRaw
   mode: duplex
   path: "/api/chat"
 end

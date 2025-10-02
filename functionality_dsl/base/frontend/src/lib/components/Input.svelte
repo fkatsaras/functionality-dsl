@@ -106,7 +106,7 @@
         />
         <button
           class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-          on:click={send}
+          on:click={() => send()}
           disabled={!connected}
         >
           {submitLabel}
