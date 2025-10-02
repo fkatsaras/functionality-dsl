@@ -1,0 +1,175 @@
+import uuid
+import json
+import logging
+import asyncio
+import websockets
+from typing import Any, Dict, Optional, List
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.core.computed import compile_safe, safe_globals
+from app.core.logging import set_request_id
+from app.core import wsbus
+
+logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
+
+router = APIRouter(
+    prefix="{{ route_prefix }}",
+    tags=["{{ (endpoint.summary or endpoint.name) ~ ' (sink)' }}"]
+)
+
+# === External WS targets (persistence layer) ===
+_EXTERNAL_TARGETS = [
+{%- for tgt in external_targets %}
+    {
+        "url": "{{ tgt.url }}",
+        "headers": {{ tgt.headers}},
+        "subprotocols": {{ (tgt.subprotocols or []) | tojson }},
+        "protocol": "{{ tgt.protocol or 'json' }}"
+    },
+{%- endfor %}
+]
+
+# === Compiled entity chain ===
+_COMPILED_CHAIN = [
+{%- for ent in compiled_chain %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
+{%- endfor %}
+]
+
+# Persistent connections to external targets
+_target_connections: List[Optional[Any]] = [None] * len(_EXTERNAL_TARGETS)
+_target_lock = asyncio.Lock()
+
+async def _ensure_target_connection(idx: int):
+    """Maintain persistent connection to external WS target at index"""
+    if idx >= len(_EXTERNAL_TARGETS):
+        return
+    
+    tgt = _EXTERNAL_TARGETS[idx]
+    async with _target_lock:
+        if _target_connections[idx] is not None:
+            try:
+                await _target_connections[idx].ping()
+                return  # Connection alive
+            except Exception:
+                _target_connections[idx] = None
+        
+        # Reconnect
+        try:
+            _target_connections[idx] = await websockets.connect(
+                tgt["url"],
+                extra_headers=tgt["headers"] or [],
+                subprotocols=tgt["subprotocols"] or None
+            )
+            logger.info("target_connected", extra={"url": tgt["url"]})
+        except Exception as ex:
+            logger.error("target_connect_failed", extra={"url": tgt["url"], "err": repr(ex)})
+
+def _compute_row(raw: str, sender_id: str) -> Dict[str, Any] | None:
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        payload = raw
+
+    {% set source_name = entity.source.name if entity.source else endpoint.name %}
+    ctx: Dict[str, Any] = {
+        "{{ source_name }}": payload,
+        "__sender": sender_id
+    }
+
+    try:
+        if not _COMPILED_CHAIN:
+            if isinstance(payload, dict):
+                return payload
+            return {"raw": payload}
+
+        
+        # Walk the chain in order
+        for ent in _COMPILED_CHAIN:
+            shaped: Dict[str, Any] = {}
+            eval_ctx = {"ctx": ctx}
+            for a in (ent.get("attrs") or []):
+                try:
+                    compiled = compile_safe(a["expr"])
+                    shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+                except Exception as ex:
+                    logger.error("attr_eval_error", extra={
+                        "entity": ent["name"],
+                        "attr": a["name"],
+                        "expr": a["expr"],
+                        "err": repr(ex),
+                        "ctx_keys": list(ctx.keys())
+                    })
+                    shaped[a["name"]] = None
+            ctx[ent["name"]] = shaped
+
+        return ctx[_COMPILED_CHAIN[-1]["name"]]
+    except Exception as ex:
+        logger.error("compute_error", extra={"err": repr(ex)})
+        return None
+
+async def _forward_to_targets(row: Dict[str, Any]):
+    """Forward computed entity to all external targets"""
+    for idx, tgt in enumerate(_EXTERNAL_TARGETS):
+        await _ensure_target_connection(idx)
+        
+        conn = _target_connections[idx]
+        if conn:
+            try:
+                protocol = tgt["protocol"]
+                if protocol == "json":
+                    await conn.send(json.dumps(row))
+                elif protocol == "text":
+                    await conn.send(str(row))
+                else:
+                    await conn.send(json.dumps(row))
+                logger.debug("forwarded_to_target", extra={"url": tgt["url"], "data": row})
+            except Exception as ex:
+                logger.error("target_forward_failed", extra={"url": tgt["url"], "err": repr(ex)})
+                _target_connections[idx] = None
+
+@router.websocket("/sink")
+async def sink(ws: WebSocket):
+    rid = uuid.uuid4().hex
+    set_request_id(rid)
+    await ws.accept()
+    logger.info("client_connected", extra={"rid": rid, "path": str(ws.url)})
+
+    {%- if compiled_chain %}
+
+    entity_name = "{{ compiled_chain[-1].name }}"
+    {%- else %}
+
+    entity_name = "{{ entity.name }}"
+    {%- endif %}
+
+    bus = wsbus.get_bus(entity_name)
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            row = _compute_row(raw, rid)
+            
+            if row is not None:
+                logger.info("ingested_entity", extra={
+                    "rid": rid, 
+                    "entity": entity_name,
+                    "data": row
+                })
+                
+                # 1. Publish to internal bus (for subscribe endpoints)
+                await bus.publish(row)
+                
+                # 2. Forward to external targets (persistence/DB)
+                if _EXTERNAL_TARGETS:
+                    await _forward_to_targets(row)
+                
+    except WebSocketDisconnect:
+        logger.info("client_disconnected", extra={"rid": rid})

@@ -3,14 +3,14 @@
 
   const {
     name = "ActionForm",
-    action,
+    url,
     method = "POST",
     fields = [] as string[],
     pathKey = null as string | null,
     submitLabel = "Submit",
   } = $props<{
     name?: string;
-    action: string;
+    url: string;
     method?: "POST" | "PUT" | "PATCH" | "DELETE" | "GET";
     fields?: string[];
     pathKey?: string | null;
@@ -25,7 +25,7 @@
   let ok = $state<string | null>(null);
 
   function endpoint(): string {
-    const base = `/api/external${action.toLowerCase()}`;
+    const base = url.replace(/\/+$/, ""); // strip trailing slash if present
     const pathVal = pathKey ? model[pathKey] : null;
     return pathVal != null && `${pathVal}` !== "" ? `${base}/${pathVal}` : base;
   }

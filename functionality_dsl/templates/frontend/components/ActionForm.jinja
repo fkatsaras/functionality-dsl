@@ -1,7 +1,7 @@
 {# expects: actionPath, fields[]; optional: method, pathKey, submitLabel #}
 <ActionForm
   name="{{ common.name }}"
-  action="{{ (props.get('actionPath') or '').rstrip('/') }}/"
+  url="{{ (props.get('endpointPath') or '').rstrip('/') }}"
   method="{{ props.get('method', 'POST') }}"
   fields={{ "{" }}{{ (props.get('fields') or []) | tojson }}{{ "}" }}{% if props.get('pathKey') %}
   pathKey="{{ props['pathKey'] }}"{% endif %}

@@ -8,32 +8,46 @@ end
 ExternalWS WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
+  mode: duplex
+  entity_out: WikiEdit
 end
 
 // --- Raw entity ------------------------------------------------
+// Raw snapshot from the WS frame (map exact keys)
 Entity WikiEdit
   source: WikiMonEN
   attributes:
-    - title: string
-    - user: string
-    - delta: int
-    - is_bot: bool
-    - is_minor: bool
-    - wiki: string
+    - title:  string = WikiMonEN["page_title"];
+    - user:   string = WikiMonEN["user"];
+    - delta:  int    = WikiMonEN["change_size"];
+    - is_bot: bool   = WikiMonEN["is_bot"];
+    - is_minor: bool = WikiMonEN["is_minor"];
+    - wiki:   string = WikiMonEN["ns"];  // namespace string (e.g. "Main")
 end
 
 // --- Computed entity -------------------------------------------
 Entity EditGauge(WikiEdit)
   attributes:
-    - edit_size_abs: int = abs(WikiEdit.delta);
+    - edit_size_abs: int = (
+        abs(WikiEdit.delta) if WikiEdit.delta != None else 0
+      );
 end
-// --- Internal endpoint -----------------------------------------
+
+
+// --- Internal endpoints -----------------------------------------
 InternalWS EditGaugeStream
-  entity: EditGauge
+  entity_in: EditGauge
+  mode: duplex
   path: "/api/wiki/edits"
 end
 
-// --- Component -------------------------------------------------
+InternalWS WikiEditsStream
+  entity_in: WikiEdit
+  mode: duplex
+  path: "/api/wiki/edits/feed"
+end
+
+// --- Components -------------------------------------------------
 Component<Gauge> LiveEditSize
   endpoint: EditGaugeStream
   value: data.edit_size_abs
@@ -41,4 +55,10 @@ Component<Gauge> LiveEditSize
   max: 2000
   label: "Wikipedia edit size (abs bytes)"
   unit: "B"
+end
+
+Component<LiveView> WikiEditsFeed
+  endpoint: WikiEditsStream
+  fields: ["user", "title"]
+  label: "Who is editing what (live)"
 end

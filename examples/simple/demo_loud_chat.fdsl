@@ -1,0 +1,62 @@
+Server EventServer
+  host: "localhost"
+  port: 8080
+end
+
+// OUTBOUND CHAIN (what you send)
+Entity OutgoingRaw
+  source: ChatDup
+  attributes:
+    - raw: string = ChatDup["text"];
+end
+
+Entity OutgoingProcessed(OutgoingRaw)
+  attributes:
+    - text: string = upper(OutgoingRaw["raw"]);
+end
+
+// INBOUND CHAIN (what you receive)
+Entity EchoInOut
+  source: EchoWS
+  attributes:
+    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo' and ping pongs back
+end
+
+Entity IncomingProcessed(EchoInOut)
+  attributes:
+    - text: string = lower(EchoInOut["echo"]);
+end
+
+// External duplex - handles OUTBOUND
+ExternalWS EchoWS
+  url: "ws://host.docker.internal:8765"
+  protocol: "json"
+  auth:
+    type: bearer
+    token: "secret123"
+  entity_in: OutgoingProcessed
+  entity_out: EchoInOut
+  mode: duplex
+end
+
+// Internal duplex - handles INBOUND display
+InternalWS ChatDup
+  entity_in: IncomingProcessed
+  entity_out: OutgoingRaw
+  mode: duplex
+  path: "/api/chat"
+end
+
+// ------------------ UI ------------------
+Component<Input> ChatBox
+  endpoint: ChatDup
+  placeholder: "Type your message..."
+  label: "Chat"
+  submitLabel: "Send"
+end
+
+Component<LiveView> ChatFeed
+  endpoint: ChatDup
+  fields: ["text"]
+  label: "Messages"
+end

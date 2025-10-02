@@ -1,6 +1,4 @@
 import utils
-import integration
-import endpoints
 import entity
 import component
 import server
@@ -9,9 +7,11 @@ FDSLModel:
     (imports+=Import)*
     (
         (servers+=Server)*
-        (external+=ExternalSource)*
+        (internalrest+=InternalRESTEndpoint)*
+        (internalws+=InternalWSEndpoint)*
+        (externalrest+=ExternalRESTEndpoint)*
+        (externalws+=ExternalWSEndpoint)*
         (entities+=Entity)*
-        (internal+=InternalEndpoint)*
         (components+=Component)*
     )#
 ;

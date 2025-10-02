@@ -41,8 +41,10 @@ function connect(state: SocketState): string | undefined {
         };
 
         state.ws.onmessage = (ev) => {
+
             let msg: any = ev.data;
             if (typeof msg === "string") {
+                console.debug("[socket][onmessage]", msg);
                 try { msg = JSON.parse(msg); } catch { /* Ignore non JSON */ }
             }
 

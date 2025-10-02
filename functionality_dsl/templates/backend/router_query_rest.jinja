@@ -21,7 +21,7 @@ _REST_INPUTS = [
         "entity": "{{ it.entity }}",   # e.g. RealObjectsRaw
         "alias":  "{{ it.alias }}",    # e.g. RealObjects (or parent entity name)
         "url": "{{ it.url }}",
-        "headers": {{ (it.headers or []) | tojson }},
+        "headers": {{ it.headers }},
         "method": "{{ (it.method or 'GET')|upper }}",
         "attrs": [
         {%- for a in it.attrs %}
@@ -47,9 +47,23 @@ _COMPILED_ATTRS = {
 {%- endfor %}
 }
 
+# Inline-computed ancestors (no ExternalREST / no InternalREST)
+_INLINE_CHAIN = [
+{%- for ent in inline_chain or [] %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ]
+  },
+{%- endfor %}
+]
+
 
 @router.get("/", response_model=List[Dict[str, Any]])
-async def get_{{ endpoint.name | lower }}():
+async def {{ endpoint.name|lower }}():
     """Compute {{ entity.name }} from parent entities + external REST inputs."""
     client = get_http_client()
 
@@ -62,7 +76,15 @@ async def get_{{ endpoint.name | lower }}():
         # ---- a) Parents with ExternalREST (treat as 'raw-like' entities)
         for ri in _REST_INPUTS:
             try:
-                headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
+                headers = resolve_headers(ri.get("headers") or [])
+
+                # Apply query param injection
+                url = ri["url"]
+                for key, val in (ri.get("headers") or []):
+                    if key == "__queryparam__":
+                        sep = "&" if "?" in url else "?"
+                        url = f"{url}{sep}{val}"
+
                 response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
                 if response.status_code >= 400:
                     raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
@@ -127,6 +149,15 @@ async def get_{{ endpoint.name | lower }}():
                 logger.error(f"Error fetching computed parent {cp['name']}", exc_info=True)
                 raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
 
+        # ---- c) Inline-compute computed-only ancestors into ctx
+        for ent in _INLINE_CHAIN:
+            shaped = {}
+            eval_ctx = {"ctx": ctx}
+            for a in (ent.get("attrs") or []):
+                compiled = compile_safe(a["expr"])
+                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+            ctx[ent["name"]] = shaped
+            
         # ------------------------------
         # 2) Evaluate THIS entity's attributes
         # ------------------------------
@@ -134,6 +165,10 @@ async def get_{{ endpoint.name | lower }}():
         # NOTE: We do NOT set a top-level 'response' here (ambiguity).
         # Current entity expressions should refer to parents via 'ctx', e.g., ctx['RealObjectsRaw']['raw']
         evaluation_context = {"ctx": ctx}
+        for ri in _REST_INPUTS:
+            alias = ri["alias"]
+            # expose alias directly in eval context (ExternalREST semantics)
+            evaluation_context[alias] = ctx.get(ri["entity"], {})
 
         for attr_name, compiled_expr in _COMPILED_ATTRS.items():
             try:

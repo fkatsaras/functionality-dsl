@@ -1,0 +1,18 @@
+{# components/Input.jinja #}
+{# Normalize value key: allow "data.foo" or "foo" #}
+{% set raw_value = props.get('text') or 'text' %}
+{% set value_key = raw_value | replace('data.', '') %}
+
+{# Resolve WS sink path: explicit prop wins, else common.wsUrl #}
+{% set sink_path = props.get('sinkPath') or props.get('wsPath') or common.wsUrl %}
+
+<Input
+  name="{{ common.name }}"
+  {% if sink_path %}
+  wsPath="{{ sink_path }}"
+  {% endif %}
+  valueKey="{{ value_key }}"
+  placeholder="{{ props.get('placeholder') or '' }}"
+  label="{{ props.get('label') or '' }}"
+  submitLabel="{{ props.get('submitLabel') or 'Send' }}"
+/>

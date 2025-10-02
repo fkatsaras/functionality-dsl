@@ -151,14 +151,27 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
         elif nname == "PostfixExpr":
             base = n.base
             tails = list(getattr(n, "tails", []) or [])
+
+            # Only care when base is a Var/Ref-like alias AND there is at least one tail
             if getattr(base, "var", None) is not None and tails:
                 alias_raw = base.var
                 alias = _as_id_str(alias_raw)
 
                 if not alias or alias in RESERVED or alias in lvs:
-                    continue  # skip reserved and loop vars
+                    continue  # skip reserved/loop vars
+                
+                # Use the FIRST tail if it's a member access as the entity attribute name
+                first = tails[0]
+                if getattr(first, "member", None) is not None:
+                    attr_name = getattr(first.member, "name", None)
+                    if not attr_name:
+                        attr_name = "__jsonpath__"
+                else:
+                    # if the first tail is an index, we can’t tell the attr name; treat as jsonpath
+                    attr_name = "__jsonpath__"
 
-                yield alias, "__jsonpath__", n
+                yield alias, attr_name, n
+
                 
 def _collect_calls(expr):
     """
@@ -221,7 +234,8 @@ def _annotate_computed_attrs(model, metamodel=None):
                 # allow references to parent entities
                 matched_parent = next((p for p in parents if alias == p.name), None)
                 if matched_parent:
-                    tgt_attrs = target_attrs.get(matched_parent.name, set())
+                    tgt_attrs = target_attrs.get(matched_parent.name, set())                    
+                    
                     if attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
                             f"'{alias}.{attr}' not found on entity '{matched_parent.name}'.",
@@ -340,12 +354,18 @@ def external_rest_endpoint_obj_processor(ep):
             f"ExternalREST '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
-
+    # NEW: must bind an entity for mutation verbs
+    if getattr(ep, "entity", None) is None and ep.verb.upper() != "GET":
+        raise TextXSemanticError(
+            f"ExternalREST '{ep.name}' with verb {ep.verb} must bind an 'entity:'.",
+            **get_location(ep),
+        )
 
 def external_ws_endpoint_obj_processor(ep):
     """
     ExternalWSEndpoint:
-      - Must have ws(s) url (or any scheme you choose)
+      - must have ws/wss url
+      - require entity_in/entity_out per mode
     """
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
@@ -359,27 +379,102 @@ def external_ws_endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
+    mode = getattr(ep, "mode", None) or "subscribe"
+    if mode not in {"publish", "subscribe", "duplex"}:
+        raise TextXSemanticError(
+            f"ExternalWS mode must be publish/subscribe/duplex, got {mode}.",
+            **get_location(ep)
+        )
+
+    ent_in  = getattr(ep, "entity_in", None)   # what we SEND to external
+    ent_out = getattr(ep, "entity_out", None)  # what we RECEIVE from external
+
+    if mode == "subscribe":
+        if ent_out is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=subscribe must define 'entity_out:'.",
+                **get_location(ep)
+            )
+    elif mode == "publish":
+        if ent_in is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=publish must define 'entity_in:'.",
+                **get_location(ep)
+            )
+    elif mode == "duplex":
+        if ent_in is None and ent_out is None:
+            raise TextXSemanticError(
+                f"ExternalWS '{ep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
+                **get_location(ep)
+            )
+
 
 def internal_rest_endpoint_obj_processor(iep):
     """
     InternalRESTEndpoint:
       - Must bind an entity
+      - Default verb = GET
     """
     if getattr(iep, "entity", None) is None:
         raise TextXSemanticError(
             "InternalREST must bind an 'entity:'.", **get_location(iep)
         )
 
+    verb = getattr(iep, "verb", None)
+    if not verb:
+        iep.verb = "GET"
+    else:
+        iep.verb = iep.verb.upper()
+
+    if iep.verb not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+        raise TextXSemanticError(
+            f"InternalREST verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
+            **get_location(iep)
+        )
+
 
 def internal_ws_endpoint_obj_processor(iep):
     """
     InternalWSEndpoint:
-      - Must bind an entity
+      - require entity_in / entity_out per mode
+      - set a compatibility alias `entity` so components and scope work
     """
-    if getattr(iep, "entity", None) is None:
+    mode = getattr(iep, "mode", None) or "subscribe"
+    if mode not in {"publish", "subscribe", "duplex"}:
         raise TextXSemanticError(
-            "InternalWS must bind an 'entity:'.", **get_location(iep)
+            f"InternalWS mode must be publish/subscribe/duplex, got {mode}.",
+            **get_location(iep)
         )
+
+    ent_in  = getattr(iep, "entity_in", None)
+    ent_out = getattr(iep, "entity_out", None)
+
+    if mode == "subscribe":
+        if ent_in is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=subscribe must define 'entity_in:'.",
+                **get_location(iep)
+            )
+        # components expect endpoint.entity
+        iep.entity = ent_in
+
+    elif mode == "publish":
+        if ent_out is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=publish must define 'entity_out:'.",
+                **get_location(iep)
+            )
+        # publishing UI (e.g., forms) can still rely on endpoint.entity
+        iep.entity = ent_out
+
+    elif mode == "duplex":
+        if ent_in is None and ent_out is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
+                **get_location(iep)
+            )
+        # for display components (LiveView/Gauge) we want inbound shape by default
+        iep.entity = ent_in
 
 
 def entity_obj_processor(ent):
@@ -441,6 +536,33 @@ def entity_obj_processor(ent):
     # mark source kind for templates/macros
     src = getattr(ent, "source", None)
     kind = None
+    
+    # normalize source -------------- 
+    if isinstance(src, list):
+        
+        print('[DEBUG] Entity Source is a list:')
+        if len(src) == 1:
+            ent.source = src[0]
+        elif len(src) == 0:
+            ent.source = None
+        else:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' has multiple sources, not supported.",
+                **get_location(ent)
+            )
+            
+    # normalize target -------------- 
+    tgt = getattr(ent, "target", None)
+    if isinstance(tgt, list):
+        if len(tgt) == 1:
+            ent.target = tgt[0]
+        elif len(tgt) == 0:
+            ent.target = None
+        else:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' has multiple targets, not supported.", **get_location(ent)
+            )
+            
     if src is not None:
         t = src.__class__.__name__
         if t == "ExternalRESTEndpoint":
@@ -450,6 +572,16 @@ def entity_obj_processor(ent):
     setattr(ent, "_source_kind", kind)
 
     setattr(ent, "_where_py", None)
+    
+    # --- Source sanity ---
+    # src = getattr(ent, "source", None)
+    # if src:
+    #     t = src.__class__.__name__
+    #     if t not in {"ExternalRESTEndpoint", "ExternalWSEndpoint", "InternalWSEndpoint"}:
+    #         raise TextXSemanticError(
+    #             f"Entity '{ent.name}' source must be an ExternalREST/ExternalWS/InternalWS, not {t}.",
+    #             **get_location(ent),
+    #         ) TODO: conflict with REST / WS
 
 
 # ------------------------------------------------------------------------------
@@ -464,6 +596,7 @@ def model_processor(model, metamodel=None):
     verify_components(model)
 
     _populate_aggregates(model)
+    _backlink_external_targets(model)
 
 
 def verify_unique_names(model):
@@ -487,6 +620,35 @@ def verify_unique_names(model):
 
 
 def verify_endpoints(model):
+    for iwep in get_model_internal_ws_endpoints(model):
+        mode = getattr(iwep, "mode", None)
+        ent = getattr(iwep, "entity", None)
+
+        if mode == "duplex":
+            # BFS through all parents until we find a source
+            queue = deque([ent])
+            visited = set()
+            found_source = False
+
+            while queue:
+                current = queue.popleft()
+                if id(current) in visited:
+                    continue
+                visited.add(id(current))
+
+                if getattr(current, "source", None) is not None:
+                    found_source = True
+                    break
+
+                parents = getattr(current, "parents", []) or []
+                queue.extend(parents)
+
+            if not found_source:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' bound to duplex endpoint '{iwep.name}' "
+                    f"must have a source (directly or via inheritance).",
+                    **get_location(iwep),
+                )
     return
 
 
@@ -531,6 +693,12 @@ def _validate_table_component(comp):
             **get_location(comp)
         )
 
+def _backlink_external_targets(model):
+    for er in get_children_of_type("ExternalRESTEndpoint", model):
+        e = getattr(er, "entity", None)
+        if e is not None:
+            # attach a back reference for generator convenience
+            setattr(e, "target", er)
 
 def _populate_aggregates(model):
     model.aggregated_servers = list(get_model_servers(model))
@@ -559,10 +727,18 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
         )
 
     iep = comp.endpoint
-    entity = getattr(iep, "entity", None)
+
+    # 🔑 FIX: prefer `.entity`, but fall back to `.entity_in` or `.entity_out`
+    entity = (
+        getattr(iep, "entity", None)
+        or getattr(iep, "entity_in", None)
+        or getattr(iep, "entity_out", None)
+    )
+
     if entity is None:
         raise TextXSemanticError(
-            "Internal endpoint has no 'entity:' bound.", **get_location(attr_ref)
+            "Internal endpoint has no bound entity (entity/entity_in/entity_out).",
+            **get_location(attr_ref)
         )
 
     # Build once per entity

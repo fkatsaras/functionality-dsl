@@ -10,20 +10,20 @@ ExternalREST RealObjects
   verb: GET
 end
 
-ExternalREST RealCreate
-  url: "https://api.restful-api.dev/objects"  
-  verb: POST
-end
+// ExternalREST RealCreate
+//   url: "https://api.restful-api.dev/objects"  
+//   verb: POST
+// end
 
-ExternalREST RealUpdate
-  url: "https://api.restful-api.dev/objects"
-  verb: PUT
-end
+// ExternalREST RealUpdate
+//   url: "https://api.restful-api.dev/objects"
+//   verb: PUT
+// end
 
-ExternalREST RealDelete
-  url: "https://api.restful-api.dev/objects"
-  verb: DELETE
-end
+// ExternalREST RealDelete
+//   url: "https://api.restful-api.dev/objects"
+//   verb: DELETE
+// end
 
 // --- Entity ----------------------------------------------------
 // Upstream JSON looks like:
@@ -60,6 +60,7 @@ end
 InternalREST RealObjectsList
   entity: RealObjectsRows
   path: "/api/objects"
+  verb: GET
 end
 
 // --- Components ------------------------------------------------
@@ -68,22 +69,22 @@ Component<Table> ObjectsTable
   colNames: ["id", "name", "color", "capacity", "price", "year"]
 end
 
-Component<ActionForm> NewObject
-  action: RealCreate
-  fields: [name, data]
-  submitLabel: "Create Object"
-end
+// Component<ActionForm> NewObject
+//   action: RealCreate
+//   fields: [name, data]
+//   submitLabel: "Create Object"
+// end
 
-Component<ActionForm> EditObject
-  action: RealUpdate
-  fields: [id, name, data]
-  pathKey: id
-  submitLabel: "Update Object"
-end
+// Component<ActionForm> EditObject
+//   action: RealUpdate
+//   fields: [id, name, data]
+//   pathKey: id
+//   submitLabel: "Update Object"
+// end
 
-Component<ActionForm> DeleteObject
-  action: RealDelete
-  fields: [id]
-  pathKey: id
-  submitLabel: "Delete Object"
-end
+// Component<ActionForm> DeleteObject
+//   action: RealDelete
+//   fields: [id]
+//   pathKey: id
+//   submitLabel: "Delete Object"
+// end

@@ -57,6 +57,7 @@ end
 InternalREST CoffeeStats
   entity: CoffeeStatsList
   path: "/api/coffee/stats"
+  verb: GET
 end
 
 // ----------- Components (UI bindings) -----------

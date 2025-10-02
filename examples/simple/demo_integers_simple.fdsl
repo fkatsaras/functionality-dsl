@@ -40,10 +40,12 @@ Entity CompareInts(IntARaw,IntBRaw)
     - b_greater: bool  = IntBRaw.value > IntARaw.value;
 end
 
+
 // --- Internal endpoint -----------------------------------------
 InternalREST CompareIntsList
   entity: CompareInts
   path: "/api/compare"
+  verb: GET
 end
 
 // --- Component -------------------------------------------------
