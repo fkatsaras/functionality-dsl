@@ -472,30 +472,34 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         ent_out = getattr(iwep, "entity_out", None)
 
         route_prefix = _default_ws_prefix(iwep, ent_in or ent_out)
-        mode = getattr(iwep, "mode", None) or "subscribe"
 
-        compiled_chain_inbound = []
-        compiled_chain_outbound = []
-        ws_inputs = []
+        compiled_chain_inbound: list[dict] = []
+        compiled_chain_outbound: list[dict] = []
+        ws_inputs: list[dict] = []
 
-        # -------- Inbound chain build --------
-        if mode in ("subscribe", "duplex") and ent_in:
+        # -------- Inbound chain build (entity_in present) --------
+        if ent_in:
             inbound_chain_entities = _all_ancestors(ent_in, model) + [ent_in]
             for E in inbound_chain_entities:
                 t_src = getattr(E, "source", None)
+
                 if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
                     _normalize_ws_source(t_src)
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         if hasattr(a, "expr") and a.expr is not None:
-                            py = compile_expr_to_python(a.expr, context="entity",
-                                                        known_sources=[t_src.name])
+                            py = compile_expr_to_python(
+                                a.expr, context="entity", known_sources=[t_src.name]
+                            )
                         else:
                             py = f"{t_src.name}"
                         ent_attrs.append({"name": a.name, "pyexpr": py})
+
                     ws_inputs.append({
                         "entity": E.name,
                         "endpoint": t_src.name,
+                        # optional alias (safe default = endpoint name)
+                        "alias": t_src.name,
                         "url": t_src.url,
                         "headers": _as_headers_list(t_src) + _auth_headers(t_src),
                         "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
@@ -503,25 +507,33 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         "attrs": ent_attrs,
                     })
                     if ent_attrs:
-                        compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})     # include this entity in the inbound pipeline
-                elif t_src and t_src.__class__.__name__ == "InternalWSEndpoint" and getattr(t_src, "mode", None) == "publish":
+                        compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
+
+                elif t_src and t_src.__class__.__name__ == "InternalWSEndpoint":
+                    # Internal source (no mode checks — duplex handles all)
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         if hasattr(a, "expr") and a.expr is not None:
-                            py = compile_expr_to_python(a.expr, context="entity", known_sources=[t_src.name])
+                            py = compile_expr_to_python(
+                                a.expr, context="entity", known_sources=[t_src.name]
+                            )
                             ent_attrs.append({"name": a.name, "pyexpr": py})
                     if ent_attrs:
                         compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
+
                 else:
+                    # Pure computed (no explicit source)
                     attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         if hasattr(a, "expr") and a.expr is not None:
-                            py_code = compile_expr_to_python(a.expr, context="entity", known_sources=[E.name])
+                            py_code = compile_expr_to_python(
+                                a.expr, context="entity", known_sources=[E.name]
+                            )
                             attrs.append({"name": a.name, "pyexpr": py_code})
                     if attrs:
                         compiled_chain_inbound.append({"name": E.name, "attrs": attrs})
 
-            # Deduplicate ws_inputs
+            # Deduplicate ws_inputs by (endpoint, url)
             unique = {}
             for w in ws_inputs:
                 key = (w["endpoint"], w["url"])
@@ -529,14 +541,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     unique[key] = w
             ws_inputs = list(unique.values())
 
-        # -------- External targets (for publish/duplex) --------
-        external_targets = []
-        if mode in ("publish", "duplex") and ent_out:
+        # -------- External targets (entity_out present) --------
+        external_targets: list[dict] = []
+        if ent_out:
             for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
-                if getattr(ext_ws, "mode", None) not in ("publish", "duplex"):
-                    continue
-                out_ent = getattr(ext_ws, "entity_in", None)  # external consumes with entity_in
-                if out_ent and _is_downstream_of_this_internal(out_ent, iwep):
+                out_ent = getattr(ext_ws, "entity_in", None)
+                # include if ext_ws consumes ent_out (or any of its descendants)
+                if out_ent and _distance_up(out_ent, ent_out) is not None:
                     _normalize_ws_source(ext_ws)
                     external_targets.append({
                         "url": ext_ws.url,
@@ -545,8 +556,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         "protocol": getattr(ext_ws, "protocol", "json") or "json",
                     })
 
-        # -------- Outbound chain build --------
-        if mode in ("publish", "duplex") and ent_out:
+        # -------- Outbound chain build (entity_out present) --------
+        if ent_out:
             terminal = _find_terminal_for_internal_out(ent_out, model)
             outbound_chain_entities = _all_ancestors(terminal, model) + [terminal]
             known_sources = [iwep.name] + [E.name for E in outbound_chain_entities]
@@ -555,42 +566,21 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 for a in getattr(E, "attributes", []) or []:
                     if hasattr(a, "expr") and a.expr is not None:
                         py = compile_expr_to_python(
-                            a.expr,
-                            context="entity",
-                            known_sources=known_sources
+                            a.expr, context="entity", known_sources=known_sources
                         )
                         out_attrs.append({"name": a.name, "pyexpr": py})
                 if out_attrs:
                     compiled_chain_outbound.append({"name": E.name, "attrs": out_attrs})
 
-        # -------- Template selection --------
-        if mode == "subscribe":
-            tpl = tpl_router_ws_sub
-            filename = f"{iwep.name.lower()}_sub.py"
-            render_args = {
-                "compiled_chain": compiled_chain_inbound,
-                "ws_inputs": ws_inputs,
-                "external_targets": [],
-            }
-        elif mode == "publish":
-            tpl = tpl_router_ws_pub
-            filename = f"{iwep.name.lower()}_pub.py"
-            render_args = {
-                "compiled_chain": compiled_chain_outbound,
-                "ws_inputs": [],
-                "external_targets": external_targets,
-            }
-        elif mode == "duplex":
-            tpl = tpl_router_ws_duplex
-            filename = f"{iwep.name.lower()}_duplex.py"
-            render_args = {
-                "compiled_chain_inbound": compiled_chain_inbound,
-                "compiled_chain_outbound": compiled_chain_outbound,
-                "ws_inputs": ws_inputs,
-                "external_targets": external_targets,
-            }
-        else:
-            raise RuntimeError(f"Unknown WS mode: {mode}")
+        # -------- Single (duplex) template for all cases --------
+        tpl = tpl_router_ws_duplex
+        filename = f"{iwep.name.lower()}.py"
+        render_args = {
+            "compiled_chain_inbound": compiled_chain_inbound,
+            "compiled_chain_outbound": compiled_chain_outbound,
+            "ws_inputs": ws_inputs,
+            "external_targets": external_targets,
+        }
 
         (routers_dir / filename).write_text(
             tpl.render(
@@ -602,6 +592,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             ),
             encoding="utf-8",
         )
+
 # ---------------- server / env / docker rendering ----------------
 
 def _server_ctx(model):

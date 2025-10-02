@@ -10,6 +10,7 @@ ExternalWS BTCUSDT
   url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
   protocol: "json"
   mode: subscribe
+  entity_out: BTCRaw
 end
 
 // ------------------- Raw Entity (snapshot from WS) ----------------
@@ -27,7 +28,7 @@ end
 
 // ------------------- Internal endpoint (UI consumes this) ---------
 InternalWS PricesStream
-  entity: Prices
+  entity_in: Prices
   mode: subscribe
   path: "/api/prices"
 end

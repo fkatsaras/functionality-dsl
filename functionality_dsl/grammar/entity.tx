@@ -105,8 +105,8 @@ WSmode:
 InternalWSEndpoint:
   'InternalWS' name=ID
   (
-    'entity_in:' entity_in=[Entity]
-    'entity_out:' entity_out=[Entity]
+    ('entity_in:' entity_in=[Entity])?
+    ('entity_out:' entity_out=[Entity])?
     'mode:' mode=WSmode
     ('path:' path=STRING)?
     ('summary:' summary=STRING)?

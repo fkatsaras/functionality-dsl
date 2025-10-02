@@ -402,9 +402,9 @@ def external_ws_endpoint_obj_processor(ep):
                 **get_location(ep)
             )
     elif mode == "duplex":
-        if ent_in is None or ent_out is None:
+        if ent_in is None and ent_out is None:
             raise TextXSemanticError(
-                f"ExternalWS '{ep.name}' with mode=duplex must define both 'entity_in:' and 'entity_out:'.",
+                f"ExternalWS '{ep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
                 **get_location(ep)
             )
 
@@ -468,9 +468,9 @@ def internal_ws_endpoint_obj_processor(iep):
         iep.entity = ent_out
 
     elif mode == "duplex":
-        if ent_in is None or ent_out is None:
+        if ent_in is None and ent_out is None:
             raise TextXSemanticError(
-                f"InternalWS '{iep.name}' with mode=duplex must define both 'entity_in:' and 'entity_out:'.",
+                f"InternalWS '{iep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
                 **get_location(iep)
             )
         # for display components (LiveView/Gauge) we want inbound shape by default

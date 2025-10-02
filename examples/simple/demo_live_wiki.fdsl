@@ -8,7 +8,8 @@ end
 ExternalWS WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
-  mode: subscribe
+  mode: duplex
+  entity_out: WikiEdit
 end
 
 // --- Raw entity ------------------------------------------------
@@ -35,14 +36,14 @@ end
 
 // --- Internal endpoints -----------------------------------------
 InternalWS EditGaugeStream
-  entity: EditGauge
-  mode: subscribe
+  entity_in: EditGauge
+  mode: duplex
   path: "/api/wiki/edits"
 end
 
 InternalWS WikiEditsStream
-  entity: WikiEdit
-  mode: subscribe
+  entity_in: WikiEdit
+  mode: duplex
   path: "/api/wiki/edits/feed"
 end
 

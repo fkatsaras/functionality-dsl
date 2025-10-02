@@ -160,7 +160,7 @@ class LineChartComponent(_BaseComponent):
             "height": self.height,
         }
         if self.endpoint.__class__.__name__ == "InternalWSEndpoint":
-            base["streamPath"] = self._endpoint_path("/duplex")
+            base["streamPath"] = self._endpoint_path("")
         return base
 
 
@@ -226,7 +226,7 @@ class GaugeComponent(_BaseComponent):
 
     def to_props(self):
         return {
-            "streamPath":   self._endpoint_path("/duplex"),
+            "streamPath":   self._endpoint_path(""),
             "value": self.value,
             "min": float(self.min),
             "max": float(self.max),
@@ -256,7 +256,7 @@ class InputComponent(_BaseComponent):
 
     def to_props(self):
         return {
-            "sinkPath": self._endpoint_path("/duplex"),
+            "sinkPath": self._endpoint_path(""),
             "label": self.label or "",
             "placeholder": self.placeholder or "",
             "initial": self.initial or "",
@@ -293,7 +293,7 @@ class LiveViewComponent(_BaseComponent):
     def to_props(self):
         print("[DEBUG] to_props maxMessages =", repr(self.maxMessages))
         return {
-            "endpointPath": self._endpoint_path("/duplex"),
+            "endpointPath": self._endpoint_path(""),
             "fields": self.fields,
             "label": self.label,
             "maxMessages": self.maxMessages,
