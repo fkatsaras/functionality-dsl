@@ -26,7 +26,7 @@ Entity Prices(BTCRaw)
     - tick: dict = { "t": now(), "btc": BTCRaw.c };
 end
 
-// ------------------- Internal endpoint (UI consumes this) ---------
+// ------------------- Internal endpoint ---------
 InternalWS PricesStream
   entity_in: Prices
   mode: subscribe

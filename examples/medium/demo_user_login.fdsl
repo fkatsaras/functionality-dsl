@@ -1,0 +1,90 @@
+Server AuthServer
+  host: "localhost"
+  port: 8081
+  cors: "http://localhost:3000"
+end
+
+ExternalREST UserInsert
+  url: "http://localhost:9000/db/users"
+  verb: POST
+end
+
+ExternalREST UserList
+  url: "http://localhost:9000/db/users"
+  verb: GET
+end
+
+// DB snapshot
+Entity ExistingUsers
+  source: UserList
+  attributes:
+    - users: list = UserList;
+end
+
+// ---- Register flow ----
+InternalREST UserRegister
+  verb: POST
+  path: "/api/auth/register"
+  entity: NewUser
+end
+
+Entity RegisterPayload
+  source: UserRegister
+  attributes:
+    - username: string = UserRegister.username;
+    - email:    string = UserRegister.email;
+    - password: string = UserRegister.password;
+end
+
+Entity NewUser(RegisterPayload, ExistingUsers)
+  attributes:
+    - user: dict = {
+        "username": RegisterPayload.username,
+        "email":    RegisterPayload.email,
+        "password": RegisterPayload.password    // demo only (no hashing)
+      };
+  validate:
+    - require len(RegisterPayload.username) >= 3 "Username too short";
+    - require len(RegisterPayload.password) >= 8 "Password too short";
+    - 400 "Username already exists" if (len([u for u in ExistingUsers.users if u["username"] == RegisterPayload.username]) > 0);
+end
+
+// ---- Login flow ----
+InternalREST UserLogin
+  verb: POST
+  path: "/api/auth/login"
+  entity: LoginResponse
+end
+
+Entity LoginPayload
+  source: UserLogin
+  attributes:
+    - username: string = UserLogin.username;
+    - password: string = UserLogin.password;
+end
+
+Entity LoginCandidates(LoginPayload, ExistingUsers)
+  attributes:
+    - candidates: list = [u for u in ExistingUsers.users if u["username"] == LoginPayload.username and u["password"] == LoginPayload.password];
+    - match: dict = (candidates[0] if len(candidates) > 0 else None);
+  validate:
+    - 401 "Invalid credentials" if (len(candidates) == 0);
+end
+
+Entity LoginResponse(LoginCandidates)
+  attributes:
+    - token: string = (LoginCandidates.match["username"] + "-token"); // should support hashing later
+end
+
+// ---- UI ----
+Component<ActionForm> RegisterForm
+  endpoint: UserRegister
+  fields: [username, email, password]
+  submitLabel: "Register"
+end
+
+Component<ActionForm> LoginForm
+  endpoint: UserLogin
+  fields: [username, password]
+  submitLabel: "Login"
+end

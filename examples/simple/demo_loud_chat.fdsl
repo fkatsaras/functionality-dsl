@@ -3,6 +3,7 @@ Server EventServer
   port: 8080
 end
 
+
 // OUTBOUND CHAIN (what you send)
 Entity OutgoingRaw
   source: ChatDup
@@ -38,6 +39,7 @@ ExternalWS EchoWS
   entity_out: EchoInOut
   mode: duplex
 end
+
 
 // Internal duplex - handles INBOUND display
 InternalWS ChatDup
