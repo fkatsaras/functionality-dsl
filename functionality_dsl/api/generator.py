@@ -299,56 +299,80 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 "attrs": ent_attrs,
             })
     
-        # === B) Parents
-        for parent in getattr(ent, "parents", []) or []:
-            if isinstance(parent, dict):
-                continue  # defensive: never treat pre-normalized dicts as Entity
+        # === B) Dependencies: resolve ALL ancestors up to their sources
+        seen_rest_keys: set[tuple[str, str]] = set()      # (entity_name, url)
+        seen_comp_names: set[str] = set()                 # entity_name
+
+        ancestors = _all_ancestors(ent, model)  # oldest → newest
+        for ancestor in ancestors:
+            if isinstance(ancestor, dict):
+                continue  # defensive
             
-            print(f"[DEBUG] Entity={parent.name} source={parent.source} type={type(parent.source)}")
-            if isinstance(parent.source, list):
-                for idx, s in enumerate(parent.source):
-                    print(f"[DEBUG]   source[{idx}] -> {s} ({type(s)})")
-            
-            t_src = getattr(parent, "source", None)
-            print(f"[GEN/PARENT] {ent.name} <- {getattr(parent, 'name', str(parent))} src={t_src.__class__.__name__ if t_src else None}")
-        
-            if t_src and t_src.__class__.__name__ == "ExternalRESTEndpoint":
-                parent_attrs = []
-                for a in (getattr(parent, "attributes", []) or []):
+            a_src = getattr(ancestor, "source", None)
+            src_cls = a_src.__class__.__name__ if a_src is not None else None
+            print(f"[GEN/ANC] {ent.name} depends on {ancestor.name} (src={src_cls})")
+
+            # --- ExternalREST ancestors → fetch & shape into ctx under ancestor.name
+            if a_src and src_cls == "ExternalRESTEndpoint":
+                # de-dup by (entity_name, url)
+                rest_key = (ancestor.name, a_src.url)
+                if rest_key in seen_rest_keys:
+                    print(f"[GEN/ANC] skip duplicate REST input for {ancestor.name} @ {a_src.url}")
+                    continue
+                seen_rest_keys.add(rest_key)
+
+                # build attribute shapers; default to full source payload when no expr
+                ancestor_attrs = []
+                for a in (getattr(ancestor, "attributes", []) or []):
                     if hasattr(a, "expr") and a.expr is not None:
-                        py = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
-                        print(f"[GEN/PARENT_ATTR] {parent.name}.{a.name} expr compiled to: {py}")
+                        py = compile_expr_to_python(
+                            a.expr,
+                            context="entity",
+                            known_sources=all_sources + [a_src.name],
+                        )
+                        print(f"[GEN/ANC_ATTR] {ancestor.name}.{a.name} -> {py}")
                     else:
-                        # FIXED: Default to full source payload
-                        py = f"{t_src.name}"
-                        print(f"[GEN/PARENT_ATTR] {parent.name}.{a.name} defaulting to: {py}")
-                    parent_attrs.append({"name": a.name, "pyexpr": py})
-        
-                print(f"[GEN/REST_INPUT] {parent.name} attrs: {parent_attrs}")
-        
+                        # default: entire external payload
+                        py = f"{a_src.name}"
+                        print(f"[GEN/ANC_ATTR] {ancestor.name}.{a.name} default -> {py}")
+                    ancestor_attrs.append({"name": a.name, "pyexpr": py})
+
                 rest_inputs.append({
-                    "entity": parent.name,
-                    "alias":  t_src.name,
-                    "url": t_src.url,
-                    "headers": _as_headers_list(t_src) + _auth_headers(t_src),
-                    "method": (getattr(t_src, "verb", "GET") or "GET").upper(),
-                    "attrs": parent_attrs,
+                    "entity":  ancestor.name,                  # where to place in ctx
+                    "alias":   a_src.name,                     # alias used by compiled exprs
+                    "url":     a_src.url,
+                    "headers": _as_headers_list(a_src) + _auth_headers(a_src),
+                    "method":  (getattr(a_src, "verb", "GET") or "GET").upper(),
+                    "attrs":   ancestor_attrs,
                 })
-            else:
-                # Computed parent (internal endpoint)
+                print(f"[GEN/REST_INPUT] + {ancestor.name} ({a_src.url})")
+
+            # --- InternalREST ancestors → call their internal route first
+            elif a_src and src_cls == "InternalRESTEndpoint":
+                if ancestor.name in seen_comp_names:
+                    print(f"[GEN/ANC] skip duplicate computed parent {ancestor.name}")
+                    continue
+                seen_comp_names.add(ancestor.name)
+
                 parent_endpoint_path = None
                 for other_iep in _internal_rest_endpoints(model):
-                    if getattr(other_iep, "entity").name == parent.name:
+                    if getattr(other_iep, "entity").name == ancestor.name:
                         parent_endpoint_path = _default_rest_prefix(other_iep, getattr(other_iep, "entity"))
                         break
+                    
                 if parent_endpoint_path:
                     computed_parents.append({
-                        "name": parent.name,
-                        "endpoint": parent_endpoint_path
+                        "name": ancestor.name,
+                        "endpoint": parent_endpoint_path,
                     })
-                    print(f"[GEN/COMPUTED_DEP] {ent.name} <- {parent.name} via {parent_endpoint_path}")
+                    print(f"[GEN/COMPUTED_DEP] + {ancestor.name} via {parent_endpoint_path}")
                 else:
-                    print(f"[GEN/WARNING] Could not find endpoint for computed parent {parent.name}")
+                    print(f"[GEN/WARNING] No internal route found for computed parent {ancestor.name}")
+
+            else:
+                # Pure computed ancestor (no direct ExternalREST/InternalREST source):
+                # nothing to fetch here; its values will be computed later in the chain.
+                print(f"[GEN/ANC] {ancestor.name} has no external/internal source; computed inline later.")
         
         # === C) Populate computed attrs for entities WITHOUT an external REST source
         if not ent_has_ext_rest:

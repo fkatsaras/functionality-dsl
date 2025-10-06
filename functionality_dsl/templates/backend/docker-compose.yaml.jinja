@@ -1,6 +1,10 @@
 # docker-compose.yml.jinja
 version: "3.9"
 
+networks:
+  fdsl_net:
+    driver: bridge
+
 services:
   backend:
     build: .
@@ -10,6 +14,8 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - fdsl_net
 
   frontend:
     {% if server.env == 'dev' %}
@@ -33,6 +39,8 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - fdsl_net
     {% else %}
     # ===================== PROD =====================
     build:
@@ -45,4 +53,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - fdsl_net
     {% endif %}

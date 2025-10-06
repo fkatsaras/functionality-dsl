@@ -56,8 +56,8 @@ end
 // REST: expose computed CoffeeStats
 InternalREST CoffeeStats
   entity: CoffeeStatsList
-  path: "/api/coffee/stats"
   verb: GET
+  path: "/api/coffee/stats"
 end
 
 // ----------- Components (UI bindings) -----------

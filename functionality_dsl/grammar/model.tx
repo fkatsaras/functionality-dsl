@@ -5,13 +5,14 @@ import server
 
 FDSLModel:
     (imports+=Import)*
+
     (
-        (servers+=Server)*
-        (internalrest+=InternalRESTEndpoint)*
-        (internalws+=InternalWSEndpoint)*
-        (externalrest+=ExternalRESTEndpoint)*
-        (externalws+=ExternalWSEndpoint)*
-        (entities+=Entity)*
-        (components+=Component)*
-    )#
+        servers+=Server
+    |   internalrest+=InternalRESTEndpoint
+    |   internalws+=InternalWSEndpoint
+    |   externalrest+=ExternalRESTEndpoint
+    |   externalws+=ExternalWSEndpoint
+    |   entities+=Entity
+    |   components+=Component
+    )+
 ;

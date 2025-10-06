@@ -94,7 +94,7 @@ InternalRESTEndpoint:
     'verb:' verb=HttpVerb
     ('path:' path=STRING)?
     ('summary:' summary=STRING)?
-  )#
+  )
   'end'
 ;
 
@@ -110,7 +110,7 @@ InternalWSEndpoint:
     'mode:' mode=WSmode
     ('path:' path=STRING)?
     ('summary:' summary=STRING)?
-  )#
+  )
   'end'
 ;
 // ---------- COMMON ----------

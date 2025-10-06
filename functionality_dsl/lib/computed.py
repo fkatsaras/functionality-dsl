@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import ast
 import time
+
 from typing import Optional
 from functools import wraps
+
+from fastapi import HTTPException
 
 RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
 
@@ -68,6 +71,10 @@ def _safe_zip(*args):
             iters.append(a)
     return zip(*iters)
 
+def _error(status: int, message: str):
+    """Raise a FastAPI HTTPException from inside a DSL expression."""
+    raise HTTPException(status_code=status, detail={"error": message})
+
 @_safe_str
 def _contains(s, sub):    return sub in s
 
@@ -98,6 +105,7 @@ DSL_FUNCTIONS = {
     "lower":      (_lower,      (1, 1)),
     "upper":      (_upper,      (1, 1)),
     "zip":        (_safe_zip,   (1, None)),
+    "error":      (_error, (2, 2)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}

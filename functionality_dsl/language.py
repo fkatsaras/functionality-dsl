@@ -200,6 +200,24 @@ def _validate_func(name, argc, node):
             **get_location(node),
         )
 
+    # --- Extra semantic validation for error() ---
+    if name == "error":
+        args = getattr(node, "args", []) or []
+        if len(args) >= 1:
+            first = getattr(args[0], "literal", None)
+            if first is not None and not hasattr(first, "INT"):
+                raise TextXSemanticError(
+                    "error() first argument must be an integer literal HTTP code.",
+                    **get_location(node),
+                )
+        if len(args) >= 2:
+            second = getattr(args[1], "literal", None)
+            if second is not None and not hasattr(second, "STRING"):
+                raise TextXSemanticError(
+                    "error() second argument must be a string literal message.",
+                    **get_location(node),
+                )
+
 
 def _annotate_computed_attrs(model, metamodel=None):
     """
