@@ -36,14 +36,12 @@ ExternalWS EchoWS
     token: "secret123"
   entity_in: OutgoingProcessed
   entity_out: EchoInOut
-  mode: duplex
 end
 
 // Internal duplex - handles INBOUND display
 InternalWS ChatDup
   entity_in: IncomingProcessed
   entity_out: OutgoingRaw
-  mode: duplex
   path: "/api/chat"
 end
 

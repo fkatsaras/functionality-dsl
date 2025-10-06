@@ -254,8 +254,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
     tpl_router_query_rest = env.get_template("router_query_rest.jinja")
     tpl_router_mutation_rest = env.get_template("router_mutation_rest.jinja")
-    tpl_router_ws_pub = env.get_template("router_ws_pub.jinja")
-    tpl_router_ws_sub = env.get_template("router_ws_sub.jinja")
     tpl_router_ws_duplex = env.get_template("router_ws_duplex.jinja")
 
     # -------- per-internal-endpoint generation --------
@@ -282,7 +280,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             ent_attrs = []
             for a in (getattr(ent, "attributes", []) or []):
                 if hasattr(a, "expr") and a.expr is not None:
-                    print('[DEBUG] HEREHERHEHRHEHRHEHRHEHRHERHEHREHREHRHERHEHREHRHERHERHH')
                     raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources + [ent_src.name])
                 else:
                     raw = f"{ent_src.name}"
@@ -460,12 +457,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
 
     # ---------------- INTERNAL WS endpoints ----------------
-    def _is_downstream_of_this_internal(target_entity, iwep) -> bool:
-        # true if some ancestor of `target_entity` is an entity whose `source` is `iwep`
-        for anc in _all_ancestors(target_entity, model):
-            if getattr(anc, "source", None) is iwep:
-                return True
-        return False
 
     for iwep in _internal_ws_endpoints(model):
         ent_in  = getattr(iwep, "entity_in", None)

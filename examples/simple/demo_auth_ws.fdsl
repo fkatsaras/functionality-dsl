@@ -14,8 +14,8 @@ ExternalWS EchoBearer
     type: bearer
     token: "secret123"
   entity_in: EchoEntity
-  mode: publish
 end
+
 
 Entity EchoEntity
   source: EchoPub
@@ -23,10 +23,10 @@ Entity EchoEntity
     - raw: dict = EchoPub.text;
 end
 
+
 // Internal publish endpoint: clients send here
 InternalWS EchoPub
   entity_out: EchoEntity
-  mode: publish
   path: "/api/ws/echo/send"
 end
 
