@@ -183,7 +183,30 @@ def _find_downstream_terminal_entity(ent, model):
     candidates.sort(key=lambda t: t[0])
     return candidates[0][1]
 
+def _collect_external_sources(entity, model, seen=None):
+    """
+    Recursively collect all (Entity, ExternalRESTEndpoint) pairs that are reachable
+    from the given entity by following its parents. Ensures that any entity that
+    depends on another entity with an ExternalREST source gets its data fetched.
+    """
+    if seen is None:
+        seen = set()
+    results = []
 
+    # Direct source on this entity
+    src = getattr(entity, "source", None)
+    if src and src.__class__.__name__ == "ExternalRESTEndpoint":
+        key = (entity.name, src.url)
+        if key not in seen:
+            results.append((entity, src))
+            seen.add(key)
+
+    # Recurse through parents
+    for parent in getattr(entity, "parents", []) or []:
+        for pair in _collect_external_sources(parent, model, seen):
+            results.append(pair)
+
+    return results
 
 
 # ---------------- route helpers ----------------
@@ -374,12 +397,41 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 # nothing to fetch here; its values will be computed later in the chain.
                 print(f"[GEN/ANC] {ancestor.name} has no external/internal source; computed inline later.")
         
-        # === C) Populate computed attrs for entities WITHOUT an external REST source
-        if not ent_has_ext_rest:
-            for a in (getattr(ent, "attributes", []) or []):
-                if hasattr(a, "expr") and a.expr is not None:
-                    py_code = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources)
-                    computed_attrs.append({"name": a.name, "pyexpr": py_code})
+        # --- UNIVERSAL RESOLVER: ensure ALL reachable external sources are fetched ---
+        # Walk the full ancestor chain up to the terminal entity (for POST)
+        target_root = _find_downstream_terminal_entity(ent, model) or ent
+        all_related_entities = [ent] + _all_ancestors(target_root, model)
+        seen_rest_keys = set()
+        
+        for related in all_related_entities:
+            extra_sources = _collect_external_sources(related, model)
+            for dep_entity, dep_src in extra_sources:
+                rest_key = (dep_entity.name, dep_src.url)
+                if rest_key in seen_rest_keys:
+                    continue
+                seen_rest_keys.add(rest_key)
+        
+                dep_attrs = []
+                for a in getattr(dep_entity, "attributes", []) or []:
+                    if getattr(a, "expr", None):
+                        py = compile_expr_to_python(
+                            a.expr,
+                            context="entity",
+                            known_sources=all_sources + [dep_src.name],
+                        )
+                    else:
+                        py = f"{dep_src.name}"
+                    dep_attrs.append({"name": a.name, "pyexpr": py})
+        
+                rest_inputs.append({
+                    "entity": dep_entity.name,
+                    "alias": dep_src.name,
+                    "url": dep_src.url,
+                    "headers": _as_headers_list(dep_src) + _auth_headers(dep_src),
+                    "method": (getattr(dep_src, "verb", "GET") or "GET").upper(),
+                    "attrs": dep_attrs,
+                })
+                print(f"[GEN/UNIVERSAL_SRC] + {dep_entity.name} ({dep_src.url})")
     
         # ------------------------------------------------------
         # Generate the router depending on verb

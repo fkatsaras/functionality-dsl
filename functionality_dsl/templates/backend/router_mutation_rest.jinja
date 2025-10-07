@@ -114,7 +114,8 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
                 if not shaped:
                     shaped = {"raw": payload}
 
-                ctx[ri["entity"]] = shaped
+                ctx[ri["entity"]] = shaped # Store shaped data under entity name
+                ctx[ri["alias"]] = payload # Store raw payload under source alias
             except HTTPException:
                 raise
             except Exception:
@@ -149,17 +150,15 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
         # 2) Compute each entity in the chain in order (parents first)
         for ent in _COMPILED_CHAIN:
             shaped = {}
-            eval_ctx = {"ctx": ctx}
             for a in (ent.get("attrs") or []):
                 compiled = compile_safe(a["expr"])
-                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+                shaped[a["name"]] = eval(compiled, {**safe_globals, "ctx": ctx}, {})
             ctx[ent["name"]] = shaped
 
         # 3) Compute TERMINAL entity payload
         payload_out: Dict[str, Any] = {}
-        eval_ctx = {"ctx": ctx}
         for attr_name, compiled_expr in _COMPILED_PAYLOAD_ATTRS.items():
-            payload_out[attr_name] = eval(compiled_expr, safe_globals, eval_ctx)
+            payload_out[attr_name] = eval(compiled_expr, {**safe_globals, "ctx": ctx}, {})
 
         {% if target %}
         # 4) Forward to external target

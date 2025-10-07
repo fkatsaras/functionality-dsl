@@ -5,7 +5,7 @@ Server AuthServer
   cors: "http://localhost:3000"
 end
 
-// --- External Endpoints ----------------------------------------
+// --- External Endpoints (requires a custom dummy db container) -
 ExternalREST UserRegisterExternal
   url: "http://dummydb:9000/db/users/register"
   verb: POST
@@ -32,6 +32,7 @@ Entity ExistingUsers
     - users: list = UserList;
 end
 
+
 // ---------------- REGISTER FLOW ----------------
 InternalREST UserRegister
   entity: RegisterPayload
@@ -44,7 +45,7 @@ Entity RegisterPayload
   attributes:
     - username: string = UserRegister.username;
     - email:    string = UserRegister.email;
-    - password: string = UserRegister.password;
+    - password: string = UserRegister.password if len(UserRegister.password) > 5 else error();
 end
 
 Entity NewUser(RegisterPayload)

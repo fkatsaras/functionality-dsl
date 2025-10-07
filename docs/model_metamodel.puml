@@ -45,6 +45,17 @@ class entity.Source <<abstract>> {
 }
 
 
+class entity.AuthBlock  {
+  kind : STRING
+  username : STRING
+  password : STRING
+  token : STRING
+  key : STRING
+  location : ApiKeyLoc
+  value : STRING
+}
+
+
 class entity.ExternalRESTEndpoint  {
   name : ID
   url : STRING
@@ -56,7 +67,7 @@ class entity.ExternalWSEndpoint  {
   name : ID
   url : STRING
   protocol : STRING
-  subscribe : STRING
+  mode : WSmode
 }
 
 
@@ -125,10 +136,18 @@ class component.ActionFormComponent  {
 }
 
 
-class component.PlotComponent  {
+class component.InputComponent  {
   name : ID
-  xLabel : STRING
-  yLabel : STRING
+  label : optional<list[STRING]>
+  placeholder : optional<list[STRING]>
+  initial : optional<list[STRING]>
+  submitLabel : optional<list[STRING]>
+}
+
+
+class component.LiveViewComponent  {
+  name : ID
+  label : optional<list[STRING]>
 }
 
 
@@ -161,39 +180,45 @@ entity.Source <|-- entity.InternalWSEndpoint
 entity.Source <|-- entity.ExternalRESTEndpoint
 entity.Source <|-- entity.ExternalWSEndpoint
 entity.ExternalRESTEndpoint *--> "1..*" entity.Header: headers
+entity.ExternalRESTEndpoint *-->  entity.AuthBlock: auth
 entity.ExternalRESTEndpoint -->  entity.Entity: entity
 entity.ExternalWSEndpoint *-->  entity.StringList: subprotocols
 entity.ExternalWSEndpoint *--> "1..*" entity.Header: headers
-entity.ExternalWSEndpoint -->  entity.Entity: entity
+entity.ExternalWSEndpoint *-->  entity.AuthBlock: auth
+entity.ExternalWSEndpoint -->  entity.Entity: entity_in
+entity.ExternalWSEndpoint -->  entity.Entity: entity_out
 entity.InternalRESTEndpoint -->  entity.Entity: entity
-entity.InternalWSEndpoint -->  entity.Entity: entity
+entity.InternalWSEndpoint -->  entity.Entity: entity_in
+entity.InternalWSEndpoint -->  entity.Entity: entity_out
 component.AttrRef -->  entity.Attribute: attr
 component.Component <|-- component.TableComponent
 component.Component <|-- component.LineChartComponent
 component.Component <|-- component.ActionFormComponent
 component.Component <|-- component.GaugeComponent
-component.Component <|-- component.PlotComponent
+component.Component <|-- component.InputComponent
+component.Component <|-- component.LiveViewComponent
 component.TableComponent -->  entity.InternalRESTEndpoint: endpoint
 component.TableComponent *-->  entity.StringList: colNames
-component.LineChartComponent -->  entity.InternalRESTEndpoint: endpoint
+component.LineChartComponent -->  entity.InternalWSEndpoint: endpoint
 component.LineChartComponent *-->  component.AttrRef: rows
 component.GaugeComponent -->  entity.InternalWSEndpoint: endpoint
 component.GaugeComponent *-->  component.AttrRef: value
 component.ActionFormComponent -->  entity.InternalRESTEndpoint: endpoint
-component.PlotComponent -->  entity.InternalRESTEndpoint: endpoint
-component.PlotComponent *-->  component.AttrRef: x
-component.PlotComponent *-->  component.AttrRef: y
+component.InputComponent -->  entity.InternalWSEndpoint: endpoint
+component.LiveViewComponent -->  entity.InternalWSEndpoint: endpoint
+component.LiveViewComponent *-->  entity.StringList: fields
 
 legend
   Match rules:
   |= Name  |= Rule details |
-  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
-  | AttrValue | STRING\|FLOAT\|INT |
   | Comment | \\/\\/[^\\n]* |
-  | FQN | ID (. ID)* |
-  | Bool | true\|false |
   | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
-  | WSmode | publish\|subscribe |
+  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | FQN | ID (. ID)* |
+  | WSmode | publish\|subscribe\|duplex |
+  | AttrValue | STRING\|FLOAT\|INT |
+  | Bool | true\|false |
+  | ApiKeyLoc | header\|query |
 end legend
 
 @enduml
