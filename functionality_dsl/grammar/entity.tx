@@ -5,19 +5,6 @@ AttrType:
   'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
 ;
 
-AttrValue:
-  STRING | FLOAT | INT | Bool
-;
-
-Attribute:
-    ComputedAttribute | SchemaAttribute  
-;
-
-SchemaAttribute:
-  name=ID ':' type=AttrType (optional?='?')?
-  ('default=' default=AttrValue)?
-;
-
 ComputedAttribute:
   name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr ';'
 ;
@@ -31,7 +18,7 @@ Entity:
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
     ('source:' source=[Source])?
-    ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
+    ('attributes:' '-' attributes+=ComputedAttribute ('-' attributes+=ComputedAttribute)*)?
   )#
   'end'
 ;
