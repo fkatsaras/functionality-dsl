@@ -11,9 +11,9 @@ echo "📁 Deleting generated/ folder..."
 rm -rf /mnt/c/Users/FotisKatsaras/Desktop/Personal/AUTh/DIPLOMATIKI/functionality-dsl/generated
 
 # Remove dummy DB container and image
-echo "🧱 Removing dummy DB container/image..."
-docker ps -a --format '{{.Names}}' | grep -E 'dummydb' | xargs -r docker rm -f
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'dummydb' | xargs -r docker rmi -f
+echo "🧱 Removing dummy container/image..."
+docker ps -a --format '{{.Names}}' | grep 'dummy' | xargs -r docker rm -f
+docker images --format '{{.Repository}}:{{.Tag}}' | grep 'dummy' | xargs -r docker rmi -f
 
 # Remove network if exists and unused
 NETWORK_NAME="thesis_fdsl_net"

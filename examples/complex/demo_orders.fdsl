@@ -1,0 +1,144 @@
+// --- Server ----------------------------------------------------
+Server OrderServer
+  host: "localhost"
+  port: 8090
+  cors: "http://localhost:5173"
+end
+
+
+// --- External REST Endpoints ----------------------------------
+
+ExternalREST ProductCatalog
+  url: "http://dummyorders:9000/api/products"
+  verb: GET
+end
+
+ExternalREST UserProfiles
+  url: "http://dummyorders:9100/api/users"
+  verb: GET
+end
+
+ExternalREST PlaceOrderExternal
+  url: "http://dummyorders:9200/api/orders"
+  verb: POST
+  entity: OrderRequestValidated
+end
+
+ExternalREST OrderLogsExternal
+  url: "http://dummyorders:9400/api/logs"
+  verb: POST
+  entity: OrderLogEntry
+end
+
+
+// --- ENTITIES --------------------------------------------------
+
+// Snapshot of available products
+Entity Products
+  source: ProductCatalog
+  attributes:
+    - products: list = ProductCatalog;
+end
+
+// Snapshot of users
+Entity Users
+  source: UserProfiles
+  attributes:
+    - users: list = UserProfiles;
+end
+
+
+// --- ORDER CREATION FLOW ---------------------------------------
+
+// Step 1: Internal endpoint entry
+InternalREST CreateOrder
+  entity: OrderPayload
+  verb: POST
+  path: "/api/order/create"
+end
+
+Entity OrderPayload
+  source: CreateOrder
+  attributes:
+    - user_id: string  = CreateOrder.user_id;
+    - product_id: string = CreateOrder.product_id;
+    - quantity: int = CreateOrder.quantity if CreateOrder.quantity > 0 else error(400, "Quantity must be positive");
+end
+
+
+// Step 2: Resolve user info and product info
+Entity UserContext(OrderPayload, Users)
+  attributes:
+    - user: dict = (
+        [u for u in Users.users if u["id"] == OrderPayload.user_id][0]
+        if len([u for u in Users.users if u["id"] == OrderPayload.user_id]) > 0
+        else error(404, "User not found")
+      );
+end
+
+Entity ProductContext(OrderPayload, Products)
+  attributes:
+    - product: dict = (
+        [p for p in Products.products if p["id"] == OrderPayload.product_id][0]
+        if len([p for p in Products.products if p["id"] == OrderPayload.product_id]) > 0
+        else error(404, "Product not found")
+      );
+end
+
+
+// Step 3: Compute discount eligibility and final price
+Entity Pricing(UserContext, ProductContext)
+  attributes:
+    - base_price: float = ProductContext.product["price"];
+    - tier: string = UserContext.user["tier"];
+    - discount_pct: float = (
+        0.10 if tier == "gold"
+        else 0.05 if tier == "silver"
+        else 0.0
+      );
+    - final_price: float = base_price * (1 - discount_pct);
+end
+
+
+// Step 4: Validate stock and compute total
+Entity StockValidated(ProductContext, OrderPayload)
+  attributes:
+    - available: int = ProductContext.product["stock"];
+    - valid: bool = available >= OrderPayload.quantity;
+    - message: string = (
+        "OK" if valid else error(409, "Insufficient stock")
+      );
+end
+
+
+// Step 5: Prepare final payload to external order service
+Entity OrderRequestValidated(OrderPayload, Pricing, StockValidated)
+  attributes:
+    - order: dict = {
+        "user_id": OrderPayload.user_id,
+        "product_id": OrderPayload.product_id,
+        "quantity": OrderPayload.quantity,
+        "price": Pricing.final_price,
+        "timestamp": now()
+      };
+end
+
+
+// Step 6: Log successful order in external logs
+Entity OrderLogEntry(OrderRequestValidated)
+  attributes:
+    - log: dict = {
+        "event": "ORDER_PLACED",
+        "payload": OrderRequestValidated.order,
+        "created_at": now()
+      };
+end
+
+
+// --- UI COMPONENTS ---------------------------------------------
+
+Component<ActionForm> OrderForm
+  endpoint: CreateOrder
+  fields: [user_id, product_id, quantity]
+  submitLabel: "Place Order"
+end

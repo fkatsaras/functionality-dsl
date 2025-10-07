@@ -24,14 +24,11 @@ ExternalREST UserList
 end
 
 // --- Entities --------------------------------------------------
-
-// Snapshot of users from dummy DB
 Entity ExistingUsers
   source: UserList
   attributes:
     - users: list = UserList;
 end
-
 
 // ---------------- REGISTER FLOW ----------------
 InternalREST UserRegister
@@ -45,7 +42,7 @@ Entity RegisterPayload
   attributes:
     - username: string = UserRegister.username;
     - email:    string = UserRegister.email;
-    - password: string = UserRegister.password if len(UserRegister.password) > 5 else error();
+    - password: string = UserRegister.password if len(UserRegister.password) > 5 else error(400, "Weak password");
 end
 
 Entity NewUser(RegisterPayload)
