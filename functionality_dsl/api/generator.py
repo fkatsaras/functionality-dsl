@@ -121,6 +121,23 @@ def _normalize_ws_source(ws):
         
 # --- chain helpers -------------------------------------------------
 
+# --------  Simple sync detection --------
+def _get_ws_source_parents(entity, model):
+    """Return list of ExternalWS *endpoint names* found in all ancestors."""
+    feeds = []
+    for anc in _all_ancestors(entity, model):
+        src = getattr(anc, "source", None)
+        if src and src.__class__.__name__ == "ExternalWSEndpoint":
+            feeds.append(src.name)  # <<< IMPORTANT: use feed/endpoint name, not entity name
+    # dedupe, keep stable order
+    seen = set()
+    out = []
+    for f in feeds:
+        if f not in seen:
+            seen.add(f)
+            out.append(f)
+    return out
+
 def _find_terminal_for_internal_out(ent_out, model):
     """
     Starting from an InternalWS.entity_out, walk forward to the ExternalWS.entity_in
@@ -657,6 +674,14 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             "ws_inputs": ws_inputs,
             "external_targets": external_targets,
         }
+        
+        sync_config_inbound = None
+
+        if ent_in:
+            ws_parents = _get_ws_source_parents(ent_in, model)
+            if len(ws_parents) > 1:
+                sync_config_inbound = {"required_parents": ws_parents}
+                print(f"[GEN/SYNC] {ent_in.name} requires sync: {ws_parents}")
 
         (routers_dir / filename).write_text(
             tpl.render(
@@ -664,6 +689,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 entity_in=ent_in,
                 entity_out=ent_out,
                 route_prefix=_default_ws_prefix(iwep, ent_in or ent_out),
+                sync_config_inbound=sync_config_inbound, 
                 **render_args
             ),
             encoding="utf-8",

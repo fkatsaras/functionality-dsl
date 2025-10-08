@@ -291,9 +291,8 @@ class LiveViewComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
 
     def to_props(self):
-        print("[DEBUG] to_props maxMessages =", repr(self.maxMessages))
         return {
-            "endpointPath": self._endpoint_path(""),
+            "streamPath":   self._endpoint_path(""),
             "fields": self.fields,
             "label": self.label,
             "maxMessages": self.maxMessages,

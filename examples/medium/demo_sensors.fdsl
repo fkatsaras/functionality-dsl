@@ -102,12 +102,13 @@ end
 Entity TelemetryCombined(Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw)
   attributes:
     - readings: list = [Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw];
+    - ts: int = Sensor1Raw.timestamp;
 end
 
 // Computed metrics
 Entity TelemetryComputed(TelemetryCombined)
   attributes:
-    - all_readings: list = TelemetryCombined.readings;
+    - t: int = TelemetryCombined.ts;
     - avg_temp: float = avg([r["temperature"] for r in TelemetryCombined.readings]);
     - avg_hum:  float = avg([r["humidity"] for r in TelemetryCombined.readings]);
     - avg_heat: float = avg([r["temperature"] + 0.2 * r["humidity"] for r in TelemetryCombined.readings]);
@@ -131,7 +132,7 @@ end
 // Live table of all sensors
 Component<LiveView> TelemetryTable
   endpoint: TelemetryStream
-  fields: ["device_id", "temperature", "humidity"]
+  fields: ["t", "avg_temp", "avg_hum", "avg_heat"]
   label: "Live Sensor Telemetry"
 end
 

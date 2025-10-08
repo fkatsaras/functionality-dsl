@@ -10,13 +10,15 @@
 {% endfor %}
 
 <script lang="ts">
-  {%- for k in uniq.kinds %}
+  {% for k in uniq.kinds %}
   import {{ k }} from "$lib/components/{{ k }}.svelte";
-  {%- endfor %}
+  {% endfor %}
 </script>
 
-<div class="space-y-6">
+<div class="flex flex-wrap gap-6 justify-center items-start">
   {% for cmp in components %}
-    {{ macros.render_component(cmp) }}
+    <div class="flex-1 min-w-[300px] max-w-[600px]">
+      {{ macros.render_component(cmp) }}
+    </div>
   {% endfor %}
 </div>

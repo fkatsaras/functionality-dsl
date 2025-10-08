@@ -73,6 +73,13 @@ _COMPILED_CHAIN_OUTBOUND = [
 {%- endfor %}
 ]
 
+{% if sync_config_inbound %}
+# === SYNC BUFFER CONFIG ===
+_SYNC_REQUIRED_SOURCES = {{ sync_config_inbound.required_parents | tojson }}
+_parent_buffer: Dict[str, Any] = {}   # key = endpoint/feed name, value = last payload
+_buffer_lock = asyncio.Lock()
+{% endif %}
+
 # Persistent external connections (for targets)
 _target_connections: List[Optional[Any]] = [None] * len(_EXTERNAL_TARGETS)
 _target_reader_started: List[bool] = [False] * len(_EXTERNAL_TARGETS)
@@ -113,6 +120,42 @@ def _compute_row(payload, sender_id, chain, source_name):
 
     return ctx[chain[-1]["name"]] if chain else {source_name: payload}
 
+{% if sync_config_inbound %}
+async def _compute_row_with_sync(payload, sender_id, chain, source_name):
+    """
+    Buffer inbound frames by their *feed/endpoint* name (e.g., 'Sensor1Feed').
+    Only compute once we have at least one payload from each required source.
+    """
+    async with _buffer_lock:
+        _parent_buffer[source_name] = payload
+
+        # If any required source missing, skip compute for now
+        if any(src not in _parent_buffer for src in _SYNC_REQUIRED_SOURCES):
+            return None
+
+        # Build eval context that exposes *all* feed names
+        ctx = {"ctx": {}, "__sender": sender_id}
+        eval_ctx = {"ctx": ctx}
+        for src in _SYNC_REQUIRED_SOURCES:
+            eval_ctx[src] = _parent_buffer[src]
+
+        # Run the compiled chain with full context
+        for ent in chain:
+            shaped = {}
+            ctx[ent["name"]] = shaped
+            eval_ctx[ent["name"]] = shaped
+            for a in ent.get("attrs") or []:
+                compiled = compile_safe(a["expr"])
+                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
+
+            print("\n" * 5)
+            print("compute_start", str({"payload": payload, "source": source_name}))
+            print("compute_entity", str({"entity": ent["name"], "shaped": shaped}))
+            print("compute_done", str({"ctx": ctx}))
+            print("\n" * 5)
+
+        return ctx[chain[-1]["name"]] if chain else {}
+{% endif %}
 
 async def _start_reader_for_target(idx: int, inbound_entity_name: str):
     """Read messages from the same external connection and run INBOUND chain."""
@@ -134,7 +177,12 @@ async def _start_reader_for_target(idx: int, inbound_entity_name: str):
                     payload = json.loads(raw)
                 except Exception:
                     payload = raw
+
+                {% if sync_config_inbound %}
+                row = await _compute_row_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                {% else %}
                 row = _compute_row(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                {% endif %}
                 print("upstream_raw", str({"raw": raw, "parsed": payload}))
                 print("upstream_row", str({"row": row}))
                 if row is not None:
@@ -233,7 +281,11 @@ async def _ws_input_consumer(inp: dict, bus_in):
                     except Exception:
                         payload = raw
 
+                    {% if sync_config_inbound %}
+                    row = await _compute_row_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    {% else %}
                     row = _compute_row(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    {% endif %}
                     if row is not None and bus_in:
                         await bus_in.publish(row)
         except Exception as ex:
