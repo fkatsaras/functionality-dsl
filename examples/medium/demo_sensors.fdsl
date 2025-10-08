@@ -1,0 +1,163 @@
+// =============================================================
+//                     SERVER CONFIG
+// =============================================================
+Server IoTServer
+  host: "localhost"
+  port: 8085
+  cors: "http://localhost:3000"
+end
+
+
+// =============================================================
+//                     EXTERNAL SERVICES (LIVE)
+// =============================================================
+
+// Device list metadata (static REST)
+ExternalREST DevicesAPI
+  url: "http://dummyiot:9500/api/devices"
+  verb: GET
+end
+
+// --- Individual live sensor WebSocket feeds ---
+ExternalWS Sensor1Feed
+  entity_out: Sensor1Raw
+  mode: duplex
+  url: "ws://dummyiot:9601"
+  protocol: "json"
+end
+
+ExternalWS Sensor2Feed
+  entity_out: Sensor2Raw
+  mode: duplex
+  url: "ws://dummyiot:9602"
+  protocol: "json"
+end
+
+ExternalWS Sensor3Feed
+  entity_out: Sensor3Raw
+  mode: duplex
+  url: "ws://dummyiot:9603"
+  protocol: "json"
+end
+
+ExternalWS Sensor4Feed
+  entity_out: Sensor4Raw
+  mode: duplex
+  url: "ws://dummyiot:9604"
+  protocol: "json"
+end
+
+
+// =============================================================
+//                     DEVICE SNAPSHOT
+// =============================================================
+Entity DeviceList
+  source: DevicesAPI
+  attributes:
+    - devices: list = DevicesAPI;
+end
+
+// =============================================================
+//                     LIVE TELEMETRY (WS)
+// =============================================================
+
+// Each raw entity normalizes WS frame shape
+Entity Sensor1Raw
+  source: Sensor1Feed
+  attributes:
+    - device_id: string = "sensor1";
+    - temperature: float = Sensor1Feed["temp"];
+    - humidity: float = Sensor1Feed["hum"];
+    - timestamp: int = Sensor1Feed["ts"];
+end
+
+Entity Sensor2Raw
+  source: Sensor2Feed
+  attributes:
+    - device_id: string = "sensor2";
+    - temperature: float = Sensor2Feed["temp"];
+    - humidity: float = Sensor2Feed["hum"];
+    - timestamp: int = Sensor2Feed["ts"];
+end
+
+Entity Sensor3Raw
+  source: Sensor3Feed
+  attributes:
+    - device_id: string = "sensor3";
+    - temperature: float = Sensor3Feed["temp"];
+    - humidity: float = Sensor3Feed["hum"];
+    - timestamp: int = Sensor3Feed["ts"];
+end
+
+Entity Sensor4Raw
+  source: Sensor4Feed
+  attributes:
+    - device_id: string = "sensor4";
+    - temperature: float = Sensor4Feed["temp"];
+    - humidity: float = Sensor4Feed["hum"];
+    - timestamp: int = Sensor4Feed["ts"];
+end
+
+// Combine all into unified Telemetry stream
+Entity TelemetryCombined(Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw)
+  attributes:
+    - readings: list = [Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw];
+end
+
+// Computed metrics
+Entity TelemetryComputed(TelemetryCombined)
+  attributes:
+    - all_readings: list = TelemetryCombined.readings;
+    - avg_temp: float = avg([r["temperature"] for r in TelemetryCombined.readings]);
+    - avg_hum:  float = avg([r["humidity"] for r in TelemetryCombined.readings]);
+    - avg_heat: float = avg([r["temperature"] + 0.2 * r["humidity"] for r in TelemetryCombined.readings]);
+end
+
+
+// =============================================================
+//                     INTERNAL STREAMS
+// =============================================================
+InternalWS TelemetryStream
+  entity_in: TelemetryComputed
+  mode: duplex
+  path: "/api/telemetry/live"
+end
+
+
+// =============================================================
+//                     UI COMPONENTS
+// =============================================================
+
+// Live table of all sensors
+Component<LiveView> TelemetryTable
+  endpoint: TelemetryStream
+  fields: ["device_id", "temperature", "humidity"]
+  label: "Live Sensor Telemetry"
+end
+
+// Gauges for averages
+Component<Gauge> AverageTemperature
+  endpoint: TelemetryStream
+  value: data.avg_temp
+  min: 0
+  max: 100
+  label: "Average Temperature"
+  unit: "°C"
+end
+
+Component<Gauge> AverageHumidity
+  endpoint: TelemetryStream
+  value: data.avg_hum
+  min: 0
+  max: 100
+  label: "Average Humidity"
+  unit: "%"
+end
+
+Component<LineChart> HeatIndexTrend
+  endpoint: TelemetryStream
+  rows: data.avg_heat
+  seriesLabels: ["Avg Heat Index"]
+  xLabel: "Time"
+  yLabel: "Heat Index"
+end
