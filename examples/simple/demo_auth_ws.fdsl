@@ -14,7 +14,6 @@ ExternalWS EchoBearer
     type: bearer
     token: "secret123"
   entity_in: EchoEntity
-  mode: publish
 end
 
 Entity EchoEntity
@@ -25,9 +24,8 @@ end
 
 // Internal publish endpoint: clients send here
 InternalWS EchoPub
-  entity_out: EchoEntity
-  mode: publish
   path: "/api/ws/echo/send"
+  entity_out: EchoEntity
 end
 
 // ----- UI -----------------------------------

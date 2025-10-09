@@ -64,9 +64,9 @@ ExternalRESTEndpoint:
   (
     'url:' url=STRING
     'verb:' verb=HttpVerb
+    ('entity:' entity=[Entity])?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
     ('auth:' auth=AuthBlock)?  
-    ('entity:' entity=[Entity])?
   )
   'end'
 ;
@@ -75,13 +75,12 @@ ExternalWSEndpoint:
   'ExternalWS' name=ID
   (
     'url:' url=STRING
+    ('entity_in:' entity_in=[Entity])?
+    ('entity_out:' entity_out=[Entity])?
     ('protocol:' protocol=STRING)?
     ('subprotocols:' subprotocols=StringList)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
     ('auth:' auth=AuthBlock)?  
-    ('entity_in:' entity_in=[Entity])?
-    ('entity_out:' entity_out=[Entity])?
-    'mode:' mode=WSmode
   )#
   'end'
 ;
@@ -90,26 +89,22 @@ ExternalWSEndpoint:
 InternalRESTEndpoint:
   'InternalREST' name=ID
   (
-    'entity:' entity=[Entity]
+    'path:' path=STRING
     'verb:' verb=HttpVerb
-    ('path:' path=STRING)?
+    'entity:' entity=[Entity]
     ('summary:' summary=STRING)?
   )
   'end'
 ;
 
-WSmode:
-    'publish' | 'subscribe' | 'duplex'
-;
-
 InternalWSEndpoint:
   'InternalWS' name=ID
   (
+    'path:' path=STRING
     ('entity_in:' entity_in=[Entity])?
     ('entity_out:' entity_out=[Entity])?
-    'mode:' mode=WSmode
-    ('path:' path=STRING)?
-    ('summary:' summary=STRING)?
+    ('auth:' auth=AuthBlock)? 
+    ('summary:' summary=STRING)? 
   )
   'end'
 ;

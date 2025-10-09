@@ -21,28 +21,24 @@ end
 // --- Individual live sensor WebSocket feeds ---
 ExternalWS Sensor1Feed
   entity_out: Sensor1Raw
-  mode: duplex
   url: "ws://dummyiot:9601"
   protocol: "json"
 end
 
 ExternalWS Sensor2Feed
   entity_out: Sensor2Raw
-  mode: duplex
   url: "ws://dummyiot:9602"
   protocol: "json"
 end
 
 ExternalWS Sensor3Feed
   entity_out: Sensor3Raw
-  mode: duplex
   url: "ws://dummyiot:9603"
   protocol: "json"
 end
 
 ExternalWS Sensor4Feed
   entity_out: Sensor4Raw
-  mode: duplex
   url: "ws://dummyiot:9604"
   protocol: "json"
 end
@@ -119,9 +115,8 @@ end
 //                     INTERNAL STREAMS
 // =============================================================
 InternalWS TelemetryStream
-  entity_in: TelemetryComputed
-  mode: duplex
   path: "/api/telemetry/live"
+  entity_in: TelemetryComputed
 end
 
 

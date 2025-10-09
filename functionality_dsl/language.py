@@ -383,7 +383,7 @@ def external_ws_endpoint_obj_processor(ep):
     """
     ExternalWSEndpoint:
       - must have ws/wss url
-      - require entity_in/entity_out per mode
+      - require entity_in/entity_out
     """
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
@@ -397,34 +397,14 @@ def external_ws_endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
-    mode = getattr(ep, "mode", None) or "subscribe"
-    if mode not in {"publish", "subscribe", "duplex"}:
-        raise TextXSemanticError(
-            f"ExternalWS mode must be publish/subscribe/duplex, got {mode}.",
-            **get_location(ep)
-        )
-
     ent_in  = getattr(ep, "entity_in", None)   # what we SEND to external
     ent_out = getattr(ep, "entity_out", None)  # what we RECEIVE from external
 
-    if mode == "subscribe":
-        if ent_out is None:
-            raise TextXSemanticError(
-                f"ExternalWS '{ep.name}' with mode=subscribe must define 'entity_out:'.",
-                **get_location(ep)
-            )
-    elif mode == "publish":
-        if ent_in is None:
-            raise TextXSemanticError(
-                f"ExternalWS '{ep.name}' with mode=publish must define 'entity_in:'.",
-                **get_location(ep)
-            )
-    elif mode == "duplex":
-        if ent_in is None and ent_out is None:
-            raise TextXSemanticError(
-                f"ExternalWS '{ep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
-                **get_location(ep)
-            )
+    if ent_in is None and ent_out is None:
+        raise TextXSemanticError(
+            f"ExternalWS '{ep.name}' must define 'entity_in:' or 'entity_out:'.",
+            **get_location(ep)
+        )
 
 
 def internal_rest_endpoint_obj_processor(iep):
@@ -454,45 +434,17 @@ def internal_rest_endpoint_obj_processor(iep):
 def internal_ws_endpoint_obj_processor(iep):
     """
     InternalWSEndpoint:
-      - require entity_in / entity_out per mode
+      - require entity_in / entity_out
       - set a compatibility alias `entity` so components and scope work
     """
-    mode = getattr(iep, "mode", None) or "subscribe"
-    if mode not in {"publish", "subscribe", "duplex"}:
-        raise TextXSemanticError(
-            f"InternalWS mode must be publish/subscribe/duplex, got {mode}.",
-            **get_location(iep)
-        )
-
     ent_in  = getattr(iep, "entity_in", None)
     ent_out = getattr(iep, "entity_out", None)
-
-    if mode == "subscribe":
-        if ent_in is None:
-            raise TextXSemanticError(
-                f"InternalWS '{iep.name}' with mode=subscribe must define 'entity_in:'.",
-                **get_location(iep)
-            )
-        # components expect endpoint.entity
-        iep.entity = ent_in
-
-    elif mode == "publish":
-        if ent_out is None:
-            raise TextXSemanticError(
-                f"InternalWS '{iep.name}' with mode=publish must define 'entity_out:'.",
-                **get_location(iep)
-            )
-        # publishing UI (e.g., forms) can still rely on endpoint.entity
-        iep.entity = ent_out
-
-    elif mode == "duplex":
-        if ent_in is None and ent_out is None:
-            raise TextXSemanticError(
-                f"InternalWS '{iep.name}' with mode=duplex must define 'entity_in:' or 'entity_out:'.",
-                **get_location(iep)
-            )
-        # for display components (LiveView/Gauge) we want inbound shape by default
-        iep.entity = ent_in
+    
+    if ent_in is None and ent_out is None:
+        raise TextXSemanticError(
+            f"InternalWS '{iep.name}' must define 'entity_in:' or 'entity_out:'.",
+            **get_location(iep)
+        )
 
 
 def entity_obj_processor(ent):
@@ -589,19 +541,6 @@ def entity_obj_processor(ent):
             kind = "external-ws"
     setattr(ent, "_source_kind", kind)
 
-    setattr(ent, "_where_py", None)
-    
-    # --- Source sanity ---
-    # src = getattr(ent, "source", None)
-    # if src:
-    #     t = src.__class__.__name__
-    #     if t not in {"ExternalRESTEndpoint", "ExternalWSEndpoint", "InternalWSEndpoint"}:
-    #         raise TextXSemanticError(
-    #             f"Entity '{ent.name}' source must be an ExternalREST/ExternalWS/InternalWS, not {t}.",
-    #             **get_location(ent),
-    #         ) TODO: conflict with REST / WS
-
-
 # ------------------------------------------------------------------------------
 # Model validation
 def model_processor(model, metamodel=None):
@@ -638,11 +577,28 @@ def verify_unique_names(model):
 
 
 def verify_endpoints(model):
+    """
+    For each InternalWS endpoint:
+      - If it has entity_in and/or entity_out, ensure each one
+        eventually traces back to an entity with a 'source:'.
+      - Raise error if neither entity_in nor entity_out is defined.
+    """
     for iwep in get_model_internal_ws_endpoints(model):
-        mode = getattr(iwep, "mode", None)
-        ent = getattr(iwep, "entity", None)
+        ent_in  = getattr(iwep, "entity_in", None)
+        ent_out = getattr(iwep, "entity_out", None)
 
-        if mode == "duplex":
+        # Must have at least one entity bound
+        if ent_in is None and ent_out is None:
+            raise TextXSemanticError(
+                f"InternalWS '{iwep.name}' must define 'entity_in:' or 'entity_out:'.",
+                **get_location(iwep),
+            )
+
+        # Check both directions if they exist
+        for direction, ent in (("entity_in", ent_in), ("entity_out", ent_out)):
+            if ent is None:
+                continue  # skip missing direction
+
             # BFS through all parents until we find a source
             queue = deque([ent])
             visited = set()
@@ -653,21 +609,18 @@ def verify_endpoints(model):
                 if id(current) in visited:
                     continue
                 visited.add(id(current))
-
                 if getattr(current, "source", None) is not None:
                     found_source = True
                     break
-
                 parents = getattr(current, "parents", []) or []
                 queue.extend(parents)
 
             if not found_source:
                 raise TextXSemanticError(
-                    f"Entity '{ent.name}' bound to duplex endpoint '{iwep.name}' "
+                    f"Entity '{ent.name}' (from {direction}) bound to duplex endpoint '{iwep.name}' "
                     f"must have a source (directly or via inheritance).",
                     **get_location(iwep),
                 )
-    return
 
 
 def verify_entities(model):

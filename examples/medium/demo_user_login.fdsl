@@ -32,9 +32,9 @@ end
 
 // ---------------- REGISTER FLOW ----------------
 InternalREST UserRegister
-  entity: RegisterPayload
-  verb: POST
   path: "/api/auth/register"
+  verb: POST
+  entity: RegisterPayload
 end
 
 Entity RegisterPayload
@@ -56,9 +56,9 @@ end
 
 // ---------------- LOGIN FLOW ----------------
 InternalREST UserLogin
-  entity: LoginPayload
-  verb: POST
   path: "/api/auth/login"
+  verb: POST
+  entity: LoginPayload
 end
 
 Entity LoginPayload

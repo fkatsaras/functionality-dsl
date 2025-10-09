@@ -43,9 +43,9 @@ end
 
 // --- Internal endpoint -----------------------------------------
 InternalREST CompareIntsList
-  entity: CompareInts
   path: "/api/compare"
   verb: GET
+  entity: CompareInts
 end
 
 // --- Component -------------------------------------------------

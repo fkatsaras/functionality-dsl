@@ -3,8 +3,7 @@ Server EventServer
   port: 8080
 end
 
-
-// OUTBOUND CHAIN (what you send)
+// OUTBOUND CHAIN (what we send)
 Entity OutgoingRaw
   source: ChatDup
   attributes:
@@ -16,11 +15,11 @@ Entity OutgoingProcessed(OutgoingRaw)
     - text: string = upper(OutgoingRaw["raw"]);
 end
 
-// INBOUND CHAIN (what you receive)
+// INBOUND CHAIN (what we receive)
 Entity EchoInOut
   source: EchoWS
   attributes:
-    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo' and ping pongs back
+    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo' 
 end
 
 Entity IncomingProcessed(EchoInOut)
@@ -37,16 +36,13 @@ ExternalWS EchoWS
     token: "secret123"
   entity_in: OutgoingProcessed
   entity_out: EchoInOut
-  mode: duplex
 end
-
 
 // Internal duplex - handles INBOUND display
 InternalWS ChatDup
+  path: "/api/chat"
   entity_in: IncomingProcessed
   entity_out: OutgoingRaw
-  mode: duplex
-  path: "/api/chat"
 end
 
 // ------------------ UI ------------------

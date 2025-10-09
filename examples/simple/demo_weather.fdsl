@@ -64,15 +64,15 @@ end
 
 // --- Internal endpoints ----------------------------------------
 InternalREST WeatherCompareAPI
-  entity: WeatherCompare
   path: "/api/weather/compare"
   verb: GET
+  entity: WeatherCompare
 end
 
 InternalREST WeatherStatsAPI
-  entity: WeatherStats
   path: "/api/weather/stats"
   verb: GET
+  entity: WeatherStats
 end
 
 // --- Components ------------------------------------------------

@@ -553,13 +553,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
 
     # ---------------- INTERNAL WS endpoints ----------------
-    def _is_downstream_of_this_internal(target_entity, iwep) -> bool:
-        # true if some ancestor of `target_entity` is an entity whose `source` is `iwep`
-        for anc in _all_ancestors(target_entity, model):
-            if getattr(anc, "source", None) is iwep:
-                return True
-        return False
-
     for iwep in _internal_ws_endpoints(model):
         ent_in  = getattr(iwep, "entity_in", None)
         ent_out = getattr(iwep, "entity_out", None)
@@ -603,7 +596,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                         compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
 
                 elif t_src and t_src.__class__.__name__ == "InternalWSEndpoint":
-                    # Internal source (no mode checks — duplex handles all)
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         if hasattr(a, "expr") and a.expr is not None:

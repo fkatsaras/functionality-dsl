@@ -55,19 +55,19 @@ end
 
 // --- Internal endpoints --------------------------------------
 InternalREST BearerEndpoint
-  entity: BearerEntity
   path: "/api/test/bearer"
   verb: GET
+  entity: BearerEntity
 end
 
 InternalREST BasicEndpoint
-  entity: BasicEntity
   path: "/api/test/basic"
   verb: GET
+  entity: BasicEntity
 end
 
 InternalREST ApiKeyEndpoint
-  entity: ApiKeyEntity
   path: "/api/test/apikey"
   verb: GET
+  entity: ApiKeyEntity
 end

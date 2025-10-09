@@ -15,9 +15,9 @@ end
 
 // --- Internal endpoints ----------------------------------------
 InternalREST CreateUserEndpoint
-  entity: User
-  verb: POST
   path: "/api/users"
+  verb: POST
+  entity: User
 end
 
 // --- Base entity ; consumes direct call ------------------------------

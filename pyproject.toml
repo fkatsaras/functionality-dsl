@@ -12,6 +12,8 @@ dependencies = [
     "textX>=4.0",
     "click>=8.0",
     "rich>=13.0",
+    "jinja2",
+    "fastapi",
 ]
 
 [project.scripts]
