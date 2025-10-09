@@ -265,157 +265,145 @@
   onDestroy(() => { if (unsub) unsub(); });
 </script>
 
-<div class="w-full flex justify-center">
-  <div class="w-4/5 space-y-4">
 
-    <!-- 1) CARD: column flexbox : set height from the prop -->
-    <div
-      class="rounded-xl2 shadow-card bg-[color:var(--card)] p-4 flex flex-col transition-colors"
-      class:border-dag-success={loading}
-      class:border-dag-danger={!loading}
-    >
-      <!-- Header -->
-      <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
-        <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
-        <div class="flex items-center gap-2">
-          <!-- LIVE badge -->
-          <span
-            class="px-2 py-0.5 text-xs font-approachmono rounded border"
-            class:border-dag-success={loading}
-            class:border-dag-danger={!loading}
-            class:text-dag-success={loading}
-            class:text-dag-danger={!loading}
-          >
-            {loading ? "LIVE" : "OFF"}
-          </span>
-        
-          {#if !wsUrl}
-            <RefreshButton on:click={() => fetchOnce({ replace: true })} {loading} ariaLabel="Refresh chart" />
-          {/if}
+<div class="flex justify-center items-center w-full">
+  <div
+    class="rounded-2xl border bg-[color:var(--card)] p-6 flex flex-col transition-colors"
+    style="width: 1600px; height: 500px;"
+    class:border-dag-success={loading}
+    class:border-dag-danger={!loading}
+  >
+    <!-- Header -->
+    <div class="pb-3 w-full flex items-center justify-between gap-3">
+      <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
+
+      <!-- LIVE indicator (same style as InputBox) -->
+      <div
+        class="flex items-center gap-2 px-2 py-1 rounded-md border"
+        class:border-dag-success={loading}
+        class:border-dag-danger={!loading}
+      >
+        <svg
+          class="w-4 h-4"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+          class:text-dag-success={loading}
+          class:text-dag-danger={!loading}
+        >
+          <circle cx="10" cy="10" r="8.5" />
+        </svg>
+        <span
+          class="text-xs font-approachmono"
+          class:text-dag-success={loading}
+          class:text-dag-danger={!loading}
+        >
+          {loading ? "LIVE" : "OFF"}
+        </span>
+      </div>
     </div>
 
-      </div>
-
-      <!-- Legend -->
-      <div class="flex flex-wrap items-center gap-4 mb-2 font-approachmono text-sm">
-        {#each yKeys as key, i}
-          <div class="flex items-center gap-2">
-            <span class="inline-block w-3 h-3 rounded" style="background:{seriesColors[i]}"></span>
-            <span class="opacity-80">{seriesLabels[i]}:</span>
-            <span class="font-medium">
-              {#if (series[key] && series[key].length)} {fmt(series[key][series[key].length - 1].y)} {:else} — {/if}
-            </span>
-          </div>
-        {/each}
-      </div>
-
-      <!-- 2) GRID -->
-      <div class="flex-1">
-        <div
-          class="grid h-[inherit]"
-          style={`height:${height}px; grid-template-columns: auto ${GUTTER_Y_WIDTH}px 1fr; grid-template-rows: 1fr ${GUTTER_X_HEIGHT}px; column-gap: 8px; row-gap: 4px;`}
-        > 
-          <!-- Y axis label -->
-          <div class="flex items-center justify-center">
-            <div class="text-[11px] text-text/60 font-approachmono"
-                 style="transform: rotate(-90deg); transform-origin: center;">
-              {yLabel || "Value"}
-            </div>
-          </div>
-
-          <!-- Y ticks + labels  -->
-          <div class="relative h-full min-h-0">
-            {#if allPoints().length}
-              {#await Promise.resolve(extentY()) then yExt}
-                {#each makeTicks(yExt.min, yExt.max, 4) as ty}
-                  <div
-                    class="absolute right-0 flex items-center gap-1 pr-1 select-none"
-                    style={`top:${yPct(ty, yExt)}%; transform:translateY(-50%);`}
-                  >
-                    <div class="text-[11px] font-approachmono text-white/85 leading-none">{fmt(ty)}</div>
-                    <div class="h-px bg-white/85" style={`width:${TICK_MARK_W}px`}></div>
-                  </div>
-                {/each}
-              {/await}
-            {/if}
-          </div>
-
-          <!-- Plot (dotted background) -->
-          <div class="chart-area rounded-lg overflow-hidden relative" style="height: 100%;">
-            {#key allPoints().length}
-              {#if allPoints().length}
-                {#await Promise.resolve(extentX()) then xExt}
-                  {#await Promise.resolve(extentY()) then yExt}
-                    <svg 
-                      viewBox="0 0 {VB_W} {VB_H}" 
-                      class="absolute inset-0 w-full h-full"
-                      preserveAspectRatio="none"
-                    >
-                      {#each yKeys as key, i}
-                        {#if series[key] && series[key].length}
-                          <polyline
-                            fill="none"
-                            stroke={seriesColors[i]}
-                            stroke-width="0.2"
-                            points={pointsString(series[key], xExt, yExt)}
-                          />
-                        {/if}
-                      {/each}
-                    </svg>
-                  {/await}
-                {/await}
-              {:else}
-                <div class="absolute inset-0 flex items-center justify-center">
-                  <div class="text-sm text-text/60 font-approachmono">No data yet...</div>
-                </div>
-              {/if}
-            {/key}
-          </div>
-
-          <!-- spacer under Y label -->
-          <div></div>
-
-          <!-- X gutter (under the plot) -->
-          <div></div>
-          <div class="relative">
-            {#if allPoints().length}
-              {#await Promise.resolve(extentX()) then xExt}
-                {#each makeTicks(xExt.min, xExt.max, 5) as tx}
-                  <div
-                    class="absolute top-0 flex flex-col items-center select-none"
-                    style={`left:${xPct(tx, xExt)}%; transform:translateX(-50%);`}
-                  >
-                    <div class="w-px bg-white/85" style={`height:${TICK_MARK_H}px`}></div>
-                    <div class="text-[11px] font-approachmono text-white/85 leading-none mt-1">
-                      {fmtTimeTick(tx, Math.max(1e-9, xExt.max - xExt.min))}
-                    </div>
-                  </div>
-                {/each}
-              {/await}
-            {/if}
-          </div>
+    <!-- Legend -->
+    <div class="flex flex-wrap items-center gap-4 mb-4 font-approachmono text-sm">
+      {#each yKeys as key, i}
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-3 h-3 rounded" style="background:{seriesColors[i]}"></span>
+          <span class="opacity-80">{seriesLabels[i]}:</span>
+          <span class="font-medium">
+            {#if (series[key] && series[key].length)} {fmt(series[key][series[key].length - 1].y)} {:else} — {/if}
+          </span>
         </div>
+      {/each}
+    </div>
+
+    <!-- Chart area -->
+    <div
+      class="relative"
+      style="flex:1; height:380px; display:grid;
+             grid-template-columns: 80px 1fr;   /* wider left gutter for Y labels */
+             grid-template-rows: 1fr 60px;      /* taller bottom gutter for X labels */
+             column-gap: 16px; row-gap: 12px;"
+    >
+      <!-- Y axis + ticks -->
+      <div class="relative">
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 rotate-[-90deg] text-[13px] text-text/70 font-approachmono font-bold">
+          {yLabel || "Value"}
+        </div>
+
+        {#if allPoints().length}
+          {#await Promise.resolve(extentY()) then yExt}
+            {#each makeTicks(yExt.min, yExt.max, 5) as ty}
+              <div
+                class="absolute right-0 pr-2 flex items-center gap-2 select-none"
+                style={`top:${yPct(ty, yExt)}%; transform:translateY(-50%);`}
+              >
+                <div class="text-[13px] font-approachmono font-bold text-white leading-none">{fmt(ty)}</div>
+                <div class="h-px bg-white/85" style="width:10px;"></div>
+              </div>
+            {/each}
+          {/await}
+        {/if}
       </div>
 
-      <!-- X axis label -->
-      <div class="mt-2 text-center text-[11px] text-text/60 font-approachmono">
-        {xLabel}
+      <!-- Plot -->
+      <div class="chart-area rounded-lg overflow-hidden relative border-4 border-white" style="height:100%;">
+        {#if allPoints().length}
+          {#await Promise.resolve(extentX()) then xExt}
+            {#await Promise.resolve(extentY()) then yExt}
+              <svg viewBox="0 0 {VB_W} {VB_H}" class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                {#each yKeys as key, i}
+                  {#if series[key] && series[key].length}
+                    <polyline
+                      fill="none"
+                      stroke={seriesColors[i]}
+                      stroke-width="0.35"
+                      points={pointsString(series[key], xExt, yExt)}
+                    />
+                  {/if}
+                {/each}
+              </svg>
+            {/await}
+          {/await}
+        {:else}
+          <div class="absolute inset-0 flex items-center justify-center text-text/60 font-approachmono text-sm">
+            No data yet...
+          </div>
+        {/if}
       </div>
 
-      {#if error}
-        <div class="mt-2 text-xs text-red-500">{error}</div>
-      {/if}
+      <!-- Spacer -->
+      <div></div>
+
+      <!-- X ticks + label -->
+      <div class="relative">
+        {#if allPoints().length}
+          {#await Promise.resolve(extentX()) then xExt}
+            {#each makeTicks(xExt.min, xExt.max, 7) as tx}
+              <div
+                class="absolute top-0 flex flex-col items-center select-none"
+                style={`left:${xPct(tx, xExt)}%; transform:translateX(-50%);`}
+              >
+                <div class="w-px bg-white/85" style="height:10px;"></div>
+                <div class="text-[13px] font-approachmono font-bold text-white leading-none mt-2">
+                  {fmtTimeTick(tx, Math.max(1e-9, xExt.max - xExt.min))}
+                </div>
+              </div>
+            {/each}
+          {/await}
+        {/if}
+
+        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 mt-6 text-[13px] text-text/70 font-approachmono font-bold">{xLabel}</div>
+      </div>
     </div>
   </div>
 </div>
-
 
 <style>
   .font-approachmono {
     font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
-  .thin-border, .table-border { border-color: var(--edge); }
-
   .chart-area {
     background-color: var(--card);
     background-image:
@@ -423,3 +411,4 @@
     background-size: 20px 20px;
   }
 </style>
+
