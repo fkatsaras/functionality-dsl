@@ -16,7 +16,7 @@ class _BaseComponent:
     def __init__(self, parent=None, name=None, endpoint=None):
         self.parent = parent
         self.name = name
-        self.endpoint = endpoint  # InternalEndpoint node (InternalREST/InternalWS)
+        self.endpoint = endpoint  # InternalEndpoint node (APIEndpoint<REST>/APIEndpoint<WS>)
 
     @property
     def kind(self):
@@ -159,7 +159,7 @@ class LineChartComponent(_BaseComponent):
             "windowSize": self.windowSize,
             "height": self.height,
         }
-        if self.endpoint.__class__.__name__ == "InternalWSEndpoint":
+        if self.endpoint.__class__.__name__ == "APIEndpointWS":
             base["streamPath"] = self._endpoint_path("")
         return base
 
@@ -167,22 +167,22 @@ class LineChartComponent(_BaseComponent):
 @register_component
 class ActionFormComponent(_BaseComponent):
     """
-    Now binds to an InternalREST endpoint via 'endpoint:' (grammar already changed).
+    Now binds to an APIEndpoint<REST> endpoint via 'endpoint:' (grammar already changed).
     """
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, pathKey=None, submitLabel=None, method=None):
         super().__init__(parent, name, None)
 
-        self.endpoint = endpoint                  # the InternalRESTEndpoint node
+        self.endpoint = endpoint                  # the APIEndpointREST node
         self.fields = fields or []
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
 
-        # Choose HTTP verb: allow override, else default to GET (or future 'method' on InternalREST)
+        # Choose HTTP verb: allow override, else default to GET (or future 'method' on APIEndpoint<REST>)
         verb_from_action = getattr(endpoint, "verb", None) or "GET"
         self.method = (method or verb_from_action).upper()
 
         if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' InternalREST endpoint.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint.")
 
     def to_props(self):
         # The front-end should call the internal endpoint path. We expose just the suffix used by UI.
@@ -200,7 +200,7 @@ class ActionFormComponent(_BaseComponent):
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>
-      endpoint: <InternalWS or InternalREST exposing computed entity>
+      endpoint: <APIEndpoint<WS> or APIEndpoint<REST> exposing computed entity>
       value:  data.<attr>           # required
       min/max/label/unit: optional
     """
@@ -239,7 +239,7 @@ class GaugeComponent(_BaseComponent):
 class InputComponent(_BaseComponent):
     """
     <Component<Input> ...>
-      endpoint: <InternalWS (sink)>
+      endpoint: <APIEndpoint<WS> (sink)>
       label: optional label
       placeholder: optional placeholder text
       initial: optional initial value
@@ -252,7 +252,7 @@ class InputComponent(_BaseComponent):
         self.submitLabel = _strip_quotes(submitLabel)
 
         if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' InternalWS endpoint.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<WS> endpoint.")
 
     def to_props(self):
         return {

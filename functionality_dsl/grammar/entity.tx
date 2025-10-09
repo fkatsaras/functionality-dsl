@@ -39,10 +39,10 @@ Entity:
 
 // Entity sources / targets -------------------
 Source:
-    InternalRESTEndpoint
-  | InternalWSEndpoint
-  | ExternalRESTEndpoint
-  | ExternalWSEndpoint
+    APIEndpointREST
+  | APIEndpointWS
+  | SourceREST
+  | SourceWS
 ;
 
 ApiKeyLoc: 'header' | 'query';
@@ -58,9 +58,10 @@ AuthBlock:
     'in:' location=ApiKeyLoc
     'value:' value=STRING
 ;
-// ---------- EXTERNAL (integration) ----------
-ExternalRESTEndpoint:
-  'ExternalREST' name=ID
+
+// ---------- SOURCE (integration) ----------
+SourceREST:
+  'Source<' kind='REST' '>' name=ID
   (
     'url:' url=STRING
     'verb:' verb=HttpVerb
@@ -71,8 +72,8 @@ ExternalRESTEndpoint:
   'end'
 ;
 
-ExternalWSEndpoint:
-  'ExternalWS' name=ID
+SourceWS:
+  'Source<' kind='WS' '>' name=ID
   (
     'url:' url=STRING
     ('entity_in:' entity_in=[Entity])?
@@ -85,9 +86,9 @@ ExternalWSEndpoint:
   'end'
 ;
 
-// ---------- INTERNAL (presentation) ----------
-InternalRESTEndpoint:
-  'InternalREST' name=ID
+// ---------- API (presentation) ----------
+APIEndpointREST:
+  'APIEndpoint<' kind='REST' '>' name=ID
   (
     'path:' path=STRING
     'verb:' verb=HttpVerb
@@ -97,8 +98,8 @@ InternalRESTEndpoint:
   'end'
 ;
 
-InternalWSEndpoint:
-  'InternalWS' name=ID
+APIEndpointWS:
+  'APIEndpoint<' kind='WS' '>' name=ID
   (
     'path:' path=STRING
     ('entity_in:' entity_in=[Entity])?
@@ -108,6 +109,7 @@ InternalWSEndpoint:
   )
   'end'
 ;
+
 // ---------- COMMON ----------
 HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 

@@ -14,7 +14,7 @@ end
 
 
 // --- Internal endpoints ----------------------------------------
-InternalREST CreateUserEndpoint
+APIEndpoint<REST> CreateUserEndpoint
   path: "/api/users"
   verb: POST
   entity: User
@@ -54,13 +54,13 @@ Entity UserNormalized3(UserNormalized2)
 end
 
 // --- External REST targets (ReqRes) ----------------------------
-// ExternalREST UserCreate
+// Source<REST> UserCreate
 //   url: "https://reqres.in/api/users"
 //   verb: POST
 //   entity: UserNormalized
 // end
 
-ExternalREST UserCreate
+Source<REST> UserCreate
   url: "https://httpbin.org/anything"
   verb: POST
   entity: UserNormalized3

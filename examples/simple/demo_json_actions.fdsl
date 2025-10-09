@@ -5,7 +5,7 @@ Server SimpleJSON
 end
 
 // --- External REST sources -------------------------------------
-ExternalREST RealObjects
+Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
   verb: GET
 end
@@ -42,7 +42,7 @@ Entity RealObjectsRows(RealObjectsRaw)
 end
 
 // --- Internal endpoint -----------------------------------------
-InternalREST RealObjectsList
+APIEndpoint<REST> RealObjectsList
   path: "/api/objects"
   verb: GET
   entity: RealObjectsRows

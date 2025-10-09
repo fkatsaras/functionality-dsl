@@ -8,10 +8,10 @@ FDSLModel:
 
     (
         servers+=Server
-    |   internalrest+=InternalRESTEndpoint
-    |   internalws+=InternalWSEndpoint
-    |   externalrest+=ExternalRESTEndpoint
-    |   externalws+=ExternalWSEndpoint
+    |   apirest+=APIEndpointREST
+    |   apiws+=APIEndpointWS
+    |   externalrest+=SourceREST
+    |   externalws+=SourceWS
     |   entities+=Entity
     |   components+=Component
     )+

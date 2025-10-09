@@ -5,7 +5,7 @@ Server WikiLive
 end
 
 // --- External WS feed ------------------------------------------
-ExternalWS WikiMonEN
+Source<WS> WikiMonEN
   url: "wss://wikimon.hatnote.com/en/"
   protocol: "json"
   entity_out: WikiEdit
@@ -34,12 +34,12 @@ end
 
 
 // --- Internal endpoints -----------------------------------------
-InternalWS EditGaugeStream
+APIEndpoint<WS> EditGaugeStream
   path: "/api/wiki/edits"
   entity_in: EditGauge
 end
 
-InternalWS WikiEditsStream
+APIEndpoint<WS> WikiEditsStream
   path: "/api/wiki/edits/feed"
   entity_in: WikiEdit
 end

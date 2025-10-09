@@ -7,7 +7,7 @@ Server LIVEAuthJSON
 end
 
 // custom websocket server 
-ExternalWS EchoBearer
+Source<WS> EchoBearer
   url: "ws://host.docker.internal:8765"
   protocol: "json"
   auth:
@@ -23,7 +23,7 @@ Entity EchoEntity
 end
 
 // Internal publish endpoint: clients send here
-InternalWS EchoPub
+APIEndpoint<WS> EchoPub
   path: "/api/ws/echo/send"
   entity_out: EchoEntity
 end

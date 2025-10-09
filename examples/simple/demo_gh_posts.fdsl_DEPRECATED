@@ -4,7 +4,7 @@ Server GH
   cors: "http://localhost:3000"
 end
 
-ExternalREST SvelteIssues
+Source<REST> SvelteIssues
   url: "https://api.github.com/repos/sveltejs/svelte/issues?state=open&per_page=50"
   verb: GET
 end
@@ -33,7 +33,7 @@ Entity IssueStats
 end
 
 // ------------------- Internal endpoint -------------------------
-InternalREST IssueStats
+APIEndpoint<REST> IssueStats
   entity: IssueStats
   path: "/api/issues"
 end

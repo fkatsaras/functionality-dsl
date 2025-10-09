@@ -305,39 +305,48 @@ def build_model_str(model_str: str):
     return FunctionalityDSLMetaModel.model_from_str(model_str)
 
 
-# ------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Getters
 def get_model_servers(model):
     return get_children_of_type("Server", model)
 
 
 def get_model_external_sources(model):
-    # ExternalRESTEndpoint and ExternalWSEndpoint
-    return list(get_children_of_type("ExternalRESTEndpoint", model)) + list(
-        get_children_of_type("ExternalWSEndpoint", model)
-    )
+    # Source<REST> and Source<WS>
+    return get_children_of_type("SourceREST", model) + get_children_of_type("SourceWS", model)
 
 
 def get_model_external_rest_endpoints(model):
-    return get_children_of_type("ExternalRESTEndpoint", model)
+    return [
+        s for s in get_model_external_sources(model)
+        if getattr(s, "kind", "").upper() == "REST"
+    ]
 
 
 def get_model_external_ws_endpoints(model):
-    return get_children_of_type("ExternalWSEndpoint", model)
+    return [
+        s for s in get_model_external_sources(model)
+        if getattr(s, "kind", "").upper() == "WS"
+    ]
 
 
 def get_model_internal_endpoints(model):
-    return list(get_children_of_type("InternalRESTEndpoint", model)) + list(
-        get_children_of_type("InternalWSEndpoint", model)
-    )
+    # APIEndpoint<REST> and APIEndpoint<WS>
+    return get_children_of_type("APIEndpointREST", model) + get_children_of_type("APIEndpointWS", model)
 
 
 def get_model_internal_rest_endpoints(model):
-    return get_children_of_type("InternalRESTEndpoint", model)
+    return [
+        e for e in get_model_internal_endpoints(model)
+        if getattr(e, "kind", "").upper() == "REST"
+    ]
 
 
 def get_model_internal_ws_endpoints(model):
-    return get_children_of_type("InternalWSEndpoint", model)
+    return [
+        e for e in get_model_internal_endpoints(model)
+        if getattr(e, "kind", "").upper() == "WS"
+    ]
 
 
 def get_model_entities(model):
@@ -350,12 +359,11 @@ def get_model_components(model):
         comps.extend(get_children_of_type(kind, model))
     return comps
 
-
 # ------------------------------------------------------------------------------
 # Object processors (defaults & enrichment)
 def external_rest_endpoint_obj_processor(ep):
     """
-    ExternalRESTEndpoint:
+    SourceREST:
       - Default verb to GET if omitted
       - Must have absolute url
     """
@@ -364,36 +372,36 @@ def external_rest_endpoint_obj_processor(ep):
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
-            f"ExternalREST '{ep.name}' must define a 'url:'.",
+            f"Source<REST> '{ep.name}' must define a 'url:'.",
             **get_location(ep),
         )
     if not (url.startswith("http://") or url.startswith("https://")):
         raise TextXSemanticError(
-            f"ExternalREST '{ep.name}' url must start with http:// or https://.",
+            f"Source<REST> '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
     # NEW: must bind an entity for mutation verbs
     if getattr(ep, "entity", None) is None and ep.verb.upper() != "GET":
         raise TextXSemanticError(
-            f"ExternalREST '{ep.name}' with verb {ep.verb} must bind an 'entity:'.",
+            f"Source<REST> '{ep.name}' with verb {ep.verb} must bind an 'entity:'.",
             **get_location(ep),
         )
 
 def external_ws_endpoint_obj_processor(ep):
     """
-    ExternalWSEndpoint:
+    SourceWS:
       - must have ws/wss url
       - require entity_in/entity_out
     """
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
-            f"ExternalWS '{ep.name}' must define a 'url:'.",
+            f"Source<WS> '{ep.name}' must define a 'url:'.",
             **get_location(ep),
         )
     if not (url.startswith("ws://") or url.startswith("wss://")):
         raise TextXSemanticError(
-            f"ExternalWS '{ep.name}' url must start with ws:// or wss://.",
+            f"Source<WS> '{ep.name}' url must start with ws:// or wss://.",
             **get_location(ep),
         )
 
@@ -402,20 +410,20 @@ def external_ws_endpoint_obj_processor(ep):
 
     if ent_in is None and ent_out is None:
         raise TextXSemanticError(
-            f"ExternalWS '{ep.name}' must define 'entity_in:' or 'entity_out:'.",
+            f"Source<WS> '{ep.name}' must define 'entity_in:' or 'entity_out:'.",
             **get_location(ep)
         )
 
 
 def internal_rest_endpoint_obj_processor(iep):
     """
-    InternalRESTEndpoint:
+    APIEndpointREST:
       - Must bind an entity
       - Default verb = GET
     """
     if getattr(iep, "entity", None) is None:
         raise TextXSemanticError(
-            "InternalREST must bind an 'entity:'.", **get_location(iep)
+            "APIEndpoint<REST> must bind an 'entity:'.", **get_location(iep)
         )
 
     verb = getattr(iep, "verb", None)
@@ -426,14 +434,14 @@ def internal_rest_endpoint_obj_processor(iep):
 
     if iep.verb not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
         raise TextXSemanticError(
-            f"InternalREST verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
+            f"APIEndpoint<REST> verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
             **get_location(iep)
         )
 
 
 def internal_ws_endpoint_obj_processor(iep):
     """
-    InternalWSEndpoint:
+    APIEndpointWS:
       - require entity_in / entity_out
       - set a compatibility alias `entity` so components and scope work
     """
@@ -442,7 +450,7 @@ def internal_ws_endpoint_obj_processor(iep):
     
     if ent_in is None and ent_out is None:
         raise TextXSemanticError(
-            f"InternalWS '{iep.name}' must define 'entity_in:' or 'entity_out:'.",
+            f"APIEndpoint<WS> '{iep.name}' must define 'entity_in:' or 'entity_out:'.",
             **get_location(iep)
         )
 
@@ -535,10 +543,10 @@ def entity_obj_processor(ent):
             
     if src is not None:
         t = src.__class__.__name__
-        if t == "ExternalRESTEndpoint":
-            kind = "external-rest"
-        elif t == "ExternalWSEndpoint":
-            kind = "external-ws"
+        if t == "SourceREST":
+            kind = "source-rest"
+        elif t == "SourceWS":
+            kind = "source-ws"
     setattr(ent, "_source_kind", kind)
 
 # ------------------------------------------------------------------------------
@@ -568,17 +576,17 @@ def verify_unique_names(model):
             seen.add(o.name)
 
     ensure_unique(get_model_servers(model), "Server")
-    ensure_unique(get_model_external_rest_endpoints(model), "ExternalRESTEndpoint")
-    ensure_unique(get_model_external_ws_endpoints(model), "ExternalWSEndpoint")
-    ensure_unique(get_model_internal_rest_endpoints(model), "InternalRESTEndpoint")
-    ensure_unique(get_model_internal_ws_endpoints(model), "InternalWSEndpoint")
+    ensure_unique(get_model_external_rest_endpoints(model), "Source<REST>")
+    ensure_unique(get_model_external_ws_endpoints(model), "Source<WS>")
+    ensure_unique(get_model_internal_rest_endpoints(model), "APIEndpoint<REST>")
+    ensure_unique(get_model_internal_ws_endpoints(model), "APIEndpoint<WS>")
     ensure_unique(get_model_entities(model), "Entity")
     ensure_unique(get_model_components(model), "Component")
 
 
 def verify_endpoints(model):
     """
-    For each InternalWS endpoint:
+    For each APIEndpoint<WS> endpoint:
       - If it has entity_in and/or entity_out, ensure each one
         eventually traces back to an entity with a 'source:'.
       - Raise error if neither entity_in nor entity_out is defined.
@@ -590,7 +598,7 @@ def verify_endpoints(model):
         # Must have at least one entity bound
         if ent_in is None and ent_out is None:
             raise TextXSemanticError(
-                f"InternalWS '{iwep.name}' must define 'entity_in:' or 'entity_out:'.",
+                f"APIEndpoint<WS> '{iwep.name}' must define 'entity_in:' or 'entity_out:'.",
                 **get_location(iwep),
             )
 
@@ -665,7 +673,7 @@ def _validate_table_component(comp):
         )
 
 def _backlink_external_targets(model):
-    for er in get_children_of_type("ExternalRESTEndpoint", model):
+    for er in get_children_of_type("SourceREST", model):
         e = getattr(er, "entity", None)
         if e is not None:
             # attach a back reference for generator convenience
@@ -762,10 +770,10 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Obj processors run while the model is being built
     mm.register_obj_processors(
         {
-            "ExternalRESTEndpoint": external_rest_endpoint_obj_processor,
-            "ExternalWSEndpoint": external_ws_endpoint_obj_processor,
-            "InternalRESTEndpoint": internal_rest_endpoint_obj_processor,
-            "InternalWSEndpoint": internal_ws_endpoint_obj_processor,
+            "SourceREST": external_rest_endpoint_obj_processor,
+            "SourceWS": external_ws_endpoint_obj_processor,
+            "APIEndpointREST": internal_rest_endpoint_obj_processor,
+            "APIEndpointWS": internal_ws_endpoint_obj_processor,
             "Entity": entity_obj_processor,
         }
     )

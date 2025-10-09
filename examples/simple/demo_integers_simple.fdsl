@@ -6,12 +6,12 @@ Server IntCompare
 end
 
 // --- External REST sources -------------------------------------
-ExternalREST RandomA
+Source<REST> RandomA
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
 end
 
-ExternalREST RandomB
+Source<REST> RandomB
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
 end
@@ -42,7 +42,7 @@ end
 
 
 // --- Internal endpoint -----------------------------------------
-InternalREST CompareIntsList
+APIEndpoint<REST> CompareIntsList
   path: "/api/compare"
   verb: GET
   entity: CompareInts

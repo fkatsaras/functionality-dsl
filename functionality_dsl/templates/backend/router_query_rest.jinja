@@ -47,7 +47,7 @@ _COMPILED_ATTRS = {
 {%- endfor %}
 }
 
-# Inline-computed ancestors (no ExternalREST / no InternalREST)
+# Inline-computed ancestors (no Source<REST> / no APIEndpoint<REST>)
 _INLINE_CHAIN = [
 {%- for ent in inline_chain or [] %}
   {
@@ -73,7 +73,7 @@ async def {{ endpoint.name|lower }}():
         # ------------------------------
         ctx: Dict[str, Any] = {}
 
-        # ---- a) Parents with ExternalREST (treat as 'raw-like' entities)
+        # ---- a) Parents with Source<REST> (treat as 'raw-like' entities)
         for ri in _REST_INPUTS:
             try:
                 headers = resolve_headers(ri.get("headers") or [])
@@ -167,7 +167,7 @@ async def {{ endpoint.name|lower }}():
         evaluation_context = {"ctx": ctx}
         for ri in _REST_INPUTS:
             alias = ri["alias"]
-            # expose alias directly in eval context (ExternalREST semantics)
+            # expose alias directly in eval context (Source<REST> semantics)
             evaluation_context[alias] = ctx.get(ri["entity"], {})
 
         for attr_name, compiled_expr in _COMPILED_ATTRS.items():

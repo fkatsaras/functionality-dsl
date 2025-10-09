@@ -86,7 +86,7 @@ async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{%
         # 1) Build parent context
         ctx: Dict[str, Any] = {}
 
-        # Seed ctx with the InternalREST payload under the endpoint name
+        # Seed ctx with the APIEndpoint<REST> payload under the endpoint name
         if body_json:
             ctx["{{ endpoint.name }}"] = body_json
 

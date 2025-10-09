@@ -7,12 +7,12 @@ end
 
 // ----------- External sources  -----------
 // Returns an ARRAY of coffee drinks: [{ id, title, description, ingredients, image, ...}, ...]
-ExternalREST CoffeeHot
+Source<REST> CoffeeHot
   url: "https://api.sampleapis.com/coffee/hot"
   verb: GET
 end
 
-ExternalREST CoffeeIced
+Source<REST> CoffeeIced
   url: "https://api.sampleapis.com/coffee/iced"
   verb: GET
 end
@@ -54,7 +54,7 @@ Entity CoffeeStatsList(HotCoffees,ColdCoffees)
 end
 // ----------- Internal endpoints (what the UI calls) -----------
 // REST: expose computed CoffeeStats
-InternalREST CoffeeStats
+APIEndpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
   verb: GET
   entity: CoffeeStatsList

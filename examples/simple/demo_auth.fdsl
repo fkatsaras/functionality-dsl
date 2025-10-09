@@ -6,7 +6,7 @@ end
 
 
 // --- External REST sources with auth -------------------------
-ExternalREST BearerTest
+Source<REST> BearerTest
   url: "https://httpbin.org/bearer"
   verb: GET
   auth:
@@ -15,7 +15,7 @@ ExternalREST BearerTest
 end
 
 
-ExternalREST BasicTest
+Source<REST> BasicTest
   url: "https://httpbin.org/basic-auth/user/pass"
   verb: GET
   auth:
@@ -24,7 +24,7 @@ ExternalREST BasicTest
     password: "pass"
 end
 
-ExternalREST ApiKeyQuery
+Source<REST> ApiKeyQuery
   url: "https://httpbin.org/get"
   verb: GET
   auth:
@@ -54,19 +54,19 @@ Entity ApiKeyEntity
 end
 
 // --- Internal endpoints --------------------------------------
-InternalREST BearerEndpoint
+APIEndpoint<REST> BearerEndpoint
   path: "/api/test/bearer"
   verb: GET
   entity: BearerEntity
 end
 
-InternalREST BasicEndpoint
+APIEndpoint<REST> BasicEndpoint
   path: "/api/test/basic"
   verb: GET
   entity: BasicEntity
 end
 
-InternalREST ApiKeyEndpoint
+APIEndpoint<REST> ApiKeyEndpoint
   path: "/api/test/apikey"
   verb: GET
   entity: ApiKeyEntity

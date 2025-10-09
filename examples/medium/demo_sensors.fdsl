@@ -13,31 +13,31 @@ end
 // =============================================================
 
 // Device list metadata (static REST)
-ExternalREST DevicesAPI
+Source<REST> DevicesAPI
   url: "http://dummyiot:9500/api/devices"
   verb: GET
 end
 
 // --- Individual live sensor WebSocket feeds ---
-ExternalWS Sensor1Feed
+Source<WS> Sensor1Feed
   entity_out: Sensor1Raw
   url: "ws://dummyiot:9601"
   protocol: "json"
 end
 
-ExternalWS Sensor2Feed
+Source<WS> Sensor2Feed
   entity_out: Sensor2Raw
   url: "ws://dummyiot:9602"
   protocol: "json"
 end
 
-ExternalWS Sensor3Feed
+Source<WS> Sensor3Feed
   entity_out: Sensor3Raw
   url: "ws://dummyiot:9603"
   protocol: "json"
 end
 
-ExternalWS Sensor4Feed
+Source<WS> Sensor4Feed
   entity_out: Sensor4Raw
   url: "ws://dummyiot:9604"
   protocol: "json"
@@ -114,7 +114,7 @@ end
 // =============================================================
 //                     INTERNAL STREAMS
 // =============================================================
-InternalWS TelemetryStream
+APIEndpoint<WS> TelemetryStream
   path: "/api/telemetry/live"
   entity_in: TelemetryComputed
 end

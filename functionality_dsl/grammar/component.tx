@@ -17,14 +17,14 @@ Component:
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('endpoint:' endpoint=[InternalRESTEndpoint])?   // still binds to InternalREST/WS endpoint
+  ('endpoint:' endpoint=[APIEndpointREST])?   // still binds to APIEndpoint<REST>/WS endpoint
   ('colNames:' colNames=StringList)?                   // explicit list of column names ['id','name',...]
   'end'
 ;
 
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
-  ('endpoint:' endpoint=[InternalWSEndpoint])?
+  ('endpoint:' endpoint=[APIEndpointWS])?
   (
     ('rows:' rows=AttrRef)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
@@ -36,16 +36,16 @@ LineChartComponent:
 
 GaugeComponent:
   'Component' '<' 'Gauge' '>' name=ID
-  ('endpoint:' endpoint=[InternalWSEndpoint])?
+  ('endpoint:' endpoint=[APIEndpointWS])?
   ( ('value:' value=AttrRef)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
   'end'
 ;
 
-// ActionForm should *not* hit External anymore; point to InternalREST
+// ActionForm should *not* hit External anymore; point to APIEndpoint<REST>
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'endpoint:' endpoint=[InternalRESTEndpoint]
+    'endpoint:' endpoint=[APIEndpointREST]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
@@ -55,7 +55,7 @@ ActionFormComponent:
 
 InputComponent:
   'Component' '<' 'Input' '>' name=ID
-  'endpoint' ':' endpoint=[InternalWSEndpoint]
+  'endpoint' ':' endpoint=[APIEndpointWS]
   ( ('label:' label=STRING)
   | ('placeholder:' placeholder=STRING)
   | ('initial:' initial=STRING)
@@ -66,7 +66,7 @@ InputComponent:
 
 LiveViewComponent:
   'Component' '<' 'LiveView' '>' name=ID
-  'endpoint' ':' endpoint=[InternalWSEndpoint]
+  'endpoint' ':' endpoint=[APIEndpointWS]
   'fields:' fields=StringList
   ( ('label:' label=STRING)
   )*

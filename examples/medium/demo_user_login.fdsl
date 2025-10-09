@@ -6,19 +6,19 @@ Server AuthServer
 end
 
 // --- External Endpoints (requires a custom dummy db container) -
-ExternalREST UserRegisterExternal
+Source<REST> UserRegisterExternal
   url: "http://dummydb:9000/db/users/register"
   verb: POST
   entity: NewUser
 end
 
-ExternalREST UserLoginExternal
+Source<REST> UserLoginExternal
   url: "http://dummydb:9000/db/users/login"
   verb: POST
   entity: LoginValidated
 end
 
-ExternalREST UserList
+Source<REST> UserList
   url: "http://dummydb:9000/db/users"
   verb: GET
 end
@@ -31,7 +31,7 @@ Entity ExistingUsers
 end
 
 // ---------------- REGISTER FLOW ----------------
-InternalREST UserRegister
+APIEndpoint<REST> UserRegister
   path: "/api/auth/register"
   verb: POST
   entity: RegisterPayload
@@ -55,7 +55,7 @@ Entity NewUser(RegisterPayload)
 end
 
 // ---------------- LOGIN FLOW ----------------
-InternalREST UserLogin
+APIEndpoint<REST> UserLogin
   path: "/api/auth/login"
   verb: POST
   entity: LoginPayload

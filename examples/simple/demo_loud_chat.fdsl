@@ -28,7 +28,7 @@ Entity IncomingProcessed(EchoInOut)
 end
 
 // External duplex - handles OUTBOUND
-ExternalWS EchoWS
+Source<WS> EchoWS
   url: "ws://host.docker.internal:8765"
   protocol: "json"
   auth:
@@ -39,7 +39,7 @@ ExternalWS EchoWS
 end
 
 // Internal duplex - handles INBOUND display
-InternalWS ChatDup
+APIEndpoint<WS> ChatDup
   path: "/api/chat"
   entity_in: IncomingProcessed
   entity_out: OutgoingRaw

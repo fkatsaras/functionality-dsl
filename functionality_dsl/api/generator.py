@@ -17,10 +17,10 @@ def _entities(model):
     return list(get_children_of_type("Entity", model))
 
 def _internal_rest_endpoints(model):
-    return list(get_children_of_type("InternalRESTEndpoint", model))
+    return list(get_children_of_type("APIEndpointREST", model))
 
 def _internal_ws_endpoints(model):
-    return list(get_children_of_type("InternalWSEndpoint", model))
+    return list(get_children_of_type("APIEndpointWS", model))
 
 def _pyd_type_for(attr):
     t = getattr(attr, "type", None)
@@ -42,7 +42,7 @@ def _pyd_type_for(attr):
     return base
 
 def _as_headers_list(obj):
-    """Normalize .headers from ExternalREST/ExternalWS to list of {key,value} dicts."""
+    """Normalize .headers from Source<REST>/Source<WS> to list of {key,value} dicts."""
     hs = getattr(obj, "headers", None)
     out = []
     if not hs:
@@ -106,7 +106,7 @@ def _auth_headers(ext):
     return []
 
 def _normalize_ws_source(ws):
-    """Mutate ExternalWSEndpoint so templates have JSON-serializable attrs."""
+    """Mutate SourceWS so templates have JSON-serializable attrs."""
     if ws is None:
         return
     ws.headers = _as_headers_list(ws)
@@ -123,11 +123,11 @@ def _normalize_ws_source(ws):
 
 # --------  Simple sync detection --------
 def _get_ws_source_parents(entity, model):
-    """Return list of ExternalWS *endpoint names* found in all ancestors."""
+    """Return list of Source<WS> *endpoint names* found in all ancestors."""
     feeds = []
     for anc in _all_ancestors(entity, model):
         src = getattr(anc, "source", None)
-        if src and src.__class__.__name__ == "ExternalWSEndpoint":
+        if src and src.__class__.__name__ == "SourceWS":
             feeds.append(src.name)  # <<< IMPORTANT: use feed/endpoint name, not entity name
     # dedupe, keep stable order
     seen = set()
@@ -140,10 +140,10 @@ def _get_ws_source_parents(entity, model):
 
 def _find_terminal_for_internal_out(ent_out, model):
     """
-    Starting from an InternalWS.entity_out, walk forward to the ExternalWS.entity_in
+    Starting from an APIEndpoint<WS>.entity_out, walk forward to the Source<WS>.entity_in
     that eventually consumes it. If found, return that entity; else return ent_out.
     """
-    for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
+    for ext_ws in get_children_of_type("SourceWS", model):
         ext_ent_in = getattr(ext_ws, "entity_in", None)
         if not ext_ent_in:
             continue
@@ -202,9 +202,9 @@ def _find_downstream_terminal_entity(ent, model):
 
 def _collect_external_sources(entity, model, seen=None):
     """
-    Recursively collect all (Entity, ExternalRESTEndpoint) pairs that are reachable
+    Recursively collect all (Entity, SourceREST) pairs that are reachable
     from the given entity by following its parents. Ensures that any entity that
-    depends on another entity with an ExternalREST source gets its data fetched.
+    depends on another entity with an Source<REST> source gets its data fetched.
     """
     if seen is None:
         seen = set()
@@ -212,7 +212,7 @@ def _collect_external_sources(entity, model, seen=None):
 
     # Direct source on this entity
     src = getattr(entity, "source", None)
-    if src and src.__class__.__name__ == "ExternalRESTEndpoint":
+    if src and src.__class__.__name__ == "SourceREST":
         key = (entity.name, src.url)
         if key not in seen:
             results.append((entity, src))
@@ -246,9 +246,9 @@ def _default_ws_prefix(endpoint, entity) -> str:
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
     
     all_sources = []
-    for src in get_children_of_type("ExternalRESTEndpoint", model):
+    for src in get_children_of_type("SourceREST", model):
         all_sources.append(src.name)
-    for src in get_children_of_type("ExternalWSEndpoint", model):
+    for src in get_children_of_type("SourceWS", model):
         all_sources.append(src.name)
         
     env = Environment(
@@ -300,8 +300,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
     # -------- per-internal-endpoint generation --------
     
-    for src in get_children_of_type("ExternalRESTEndpoint", model):
-        print(f"[DEBUG] ExternalREST {src.name} auth={getattr(src, 'auth', None)}")
+    for src in get_children_of_type("SourceREST", model):
+        print(f"[DEBUG] Source<REST> {src.name} auth={getattr(src, 'auth', None)}")
 
     # INTERNAL REST endpoints
     for iep in _internal_rest_endpoints(model):
@@ -315,9 +315,9 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         computed_parents = []
     
         ent_src = getattr(ent, "source", None)
-        ent_has_ext_rest = ent_src and ent_src.__class__.__name__ == "ExternalRESTEndpoint"
+        ent_has_ext_rest = ent_src and ent_src.__class__.__name__ == "SourceREST"
     
-        # === A) Entity has its own ExternalREST source
+        # === A) Entity has its own Source<REST> source
         if ent_has_ext_rest:
             ent_attrs = []
             for a in (getattr(ent, "attributes", []) or []):
@@ -352,8 +352,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             src_cls = a_src.__class__.__name__ if a_src is not None else None
             print(f"[GEN/ANC] {ent.name} depends on {ancestor.name} (src={src_cls})")
 
-            # --- ExternalREST ancestors → fetch & shape into ctx under ancestor.name
-            if a_src and src_cls == "ExternalRESTEndpoint":
+            # --- Source<REST> ancestors → fetch & shape into ctx under ancestor.name
+            if a_src and src_cls == "SourceREST":
                 # de-dup by (entity_name, url)
                 rest_key = (ancestor.name, a_src.url)
                 if rest_key in seen_rest_keys:
@@ -387,8 +387,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 })
                 print(f"[GEN/REST_INPUT] + {ancestor.name} ({a_src.url})")
 
-            # --- InternalREST ancestors → call their internal route first
-            elif a_src and src_cls == "InternalRESTEndpoint":
+            # --- APIEndpoint<REST> ancestors → call their internal route first
+            elif a_src and src_cls == "APIEndpointREST":
                 if ancestor.name in seen_comp_names:
                     print(f"[GEN/ANC] skip duplicate computed parent {ancestor.name}")
                     continue
@@ -410,7 +410,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     print(f"[GEN/WARNING] No internal route found for computed parent {ancestor.name}")
 
             else:
-                # Pure computed ancestor (no direct ExternalREST/InternalREST source):
+                # Pure computed ancestor (no direct Source<REST>/APIEndpoint<REST> source):
                 # nothing to fetch here; its values will be computed later in the chain.
                 print(f"[GEN/ANC] {ancestor.name} has no external/internal source; computed inline later.")
         
@@ -456,7 +456,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         if verb == "GET":
             ancestors = _all_ancestors(ent, model)  # oldest-first
 
-            # collect inline-computed only (no ExternalREST, no InternalREST endpoint)
+            # collect inline-computed only (no Source<REST>, no APIEndpoint<REST> endpoint)
             def _has_internal_rest_endpoint_for(e):
                 for other_iep in _internal_rest_endpoints(model):
                     if getattr(other_iep, "entity").name == e.name:
@@ -467,9 +467,9 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             inline_chain = []
             for E in ancestors:
                 E_src = getattr(E, "source", None)
-                if E_src and E_src.__class__.__name__ == "ExternalRESTEndpoint":
+                if E_src and E_src.__class__.__name__ == "SourceREST":
                     
-                    # treat like top-level ExternalREST input
+                    # treat like top-level Source<REST> input
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         py = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources) if getattr(a, "expr", None) else f"{E_src.name}"
@@ -506,7 +506,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                 encoding="utf-8",
             )
         else:
-            # Mutation router → requires a target (usually ExternalREST)
+            # Mutation router → requires a target (usually Source<REST>)
             # --- choose terminal entity ---
             terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
             
@@ -540,8 +540,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             (routers_dir / f"{iep.name.lower()}.py").write_text(
                 tpl_router_mutation_rest.render(
                     endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                    entity=ent,                         # InternalREST-bound entity
-                    terminal=terminal_entity,           # terminal entity (bound to ExternalREST)
+                    entity=ent,                         # APIEndpoint<REST>-bound entity
+                    terminal=terminal_entity,           # terminal entity (bound to Source<REST>)
                     target=target,                      # None → echo; else forward
                     rest_inputs=rest_inputs,
                     computed_parents=computed_parents,
@@ -569,7 +569,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             for E in inbound_chain_entities:
                 t_src = getattr(E, "source", None)
 
-                if t_src and t_src.__class__.__name__ == "ExternalWSEndpoint":
+                if t_src and t_src.__class__.__name__ == "SourceWS":
                     _normalize_ws_source(t_src)
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
@@ -595,7 +595,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
                     if ent_attrs:
                         compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
 
-                elif t_src and t_src.__class__.__name__ == "InternalWSEndpoint":
+                elif t_src and t_src.__class__.__name__ == "APIEndpointWS":
                     ent_attrs = []
                     for a in getattr(E, "attributes", []) or []:
                         if hasattr(a, "expr") and a.expr is not None:
@@ -629,7 +629,7 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         # -------- External targets (entity_out present) --------
         external_targets: list[dict] = []
         if ent_out:
-            for ext_ws in get_children_of_type("ExternalWSEndpoint", model):
+            for ext_ws in get_children_of_type("SourceWS", model):
                 out_ent = getattr(ext_ws, "entity_in", None)
                 # include if ext_ws consumes ent_out (or any of its descendants)
                 if out_ent and _distance_up(out_ent, ent_out) is not None:

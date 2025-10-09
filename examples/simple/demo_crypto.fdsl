@@ -6,7 +6,7 @@ Server BinanceWS
 end
 
 // ------------------- External WebSocket ----------------
-ExternalWS BTCUSDT
+Source<WS> BTCUSDT
   url: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
   protocol: "json"
   entity_out: BTCRaw
@@ -26,7 +26,7 @@ Entity Prices(BTCRaw)
 end
 
 // ------------------- Internal endpoint ---------
-InternalWS PricesStream
+APIEndpoint<WS> PricesStream
   path: "/api/prices"
   entity_in: Prices
 end

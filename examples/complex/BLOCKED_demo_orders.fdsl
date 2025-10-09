@@ -8,23 +8,23 @@ end
 
 // --- External REST Endpoints ----------------------------------
 
-ExternalREST ProductCatalog
+Source<REST> ProductCatalog
   url: "http://dummyorders:9000/api/products"
   verb: GET
 end
 
-ExternalREST UserProfiles
+Source<REST> UserProfiles
   url: "http://dummyorders:9100/api/users"
   verb: GET
 end
 
-ExternalREST PlaceOrderExternal
+Source<REST> PlaceOrderExternal
   url: "http://dummyorders:9200/api/orders"
   verb: POST
   entity: OrderRequestValidated
 end
 
-ExternalREST OrderLogsExternal
+Source<REST> OrderLogsExternal
   url: "http://dummyorders:9400/api/logs"
   verb: POST
   entity: OrderLogEntry
@@ -51,7 +51,7 @@ end
 // --- ORDER CREATION FLOW ---------------------------------------
 
 // Step 1: Internal endpoint entry
-InternalREST CreateOrder
+APIEndpoint<REST> CreateOrder
   entity: OrderPayload
   verb: POST
   path: "/api/order/create"
