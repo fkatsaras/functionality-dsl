@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     DOCS_URL: str = "/docs"
     OPENAPI_URL: str = "/openapi.json"
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"
 
     # CORS
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
@@ -22,5 +24,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()

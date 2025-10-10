@@ -7,6 +7,29 @@ networks:
 
 services:
   backend:
+    {% if server.env == 'dev' %}
+    # ===================== DEV (Hot Reload) =====================
+    image: python:3.11-slim
+    working_dir: /app
+    container_name: {{ server.name | lower | replace(' ', '-') }}-backend
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FORCE_COLOR=1
+      - ENV=dev
+    volumes:
+      - ./:/app                    # mount entire generated project (with pyproject.toml)
+      - /app/__pycache__/          # ignore cached bytecode
+    command: >
+      sh -c "pip install --no-cache-dir .[dev] &&
+             uvicorn app.main:app --host 0.0.0.0 --port {{ server.port }} --reload --reload-dir /app"
+    ports:
+      - "{{ server.port }}:{{ server.port }}"
+    restart: unless-stopped
+    tty: true
+    networks:
+      - fdsl_net
+    {% else %}
+    # ===================== PROD =====================
     build: .
     container_name: {{ server.name | lower | replace(' ', '-') }}-backend
     ports:
@@ -17,7 +40,7 @@ services:
     tty: true
     networks:
       - fdsl_net
-
+    {% endif %}
   frontend:
     {% if server.env == 'dev' %}
     # ===================== DEV (HMR) =====================

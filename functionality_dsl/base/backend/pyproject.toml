@@ -23,6 +23,9 @@ dev = [
   "types-python-dateutil",
 ]
 
+[tool.setuptools]
+packages = ["app"]
+
 [tool.uvicorn]
 factory = true
 app = "app.main:create_app"
