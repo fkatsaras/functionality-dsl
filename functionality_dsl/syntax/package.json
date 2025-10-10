@@ -2,7 +2,7 @@
   "name": "functionality-dsl-highlighter",
   "displayName": "Functionality DSL Highlighter",
   "publisher": "fotiskatsaras",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": { "vscode": "^1.70.0" },
   "license": "MIT",
   "repository": {"type": "git","url": "https://github.com/fkatsaras/functionality-dsl"},

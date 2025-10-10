@@ -43,7 +43,7 @@
       "patterns": [
         {
           "name": "support.class.componentkind.fdsl",
-          "match": "\\b(Table|LineChart|Gauge|ActionForm)\\b"
+          "match": "\\b(Table|LineChart|Gauge|ActionForm|Input|LiveView)\\b"
         }
       ]
     },
@@ -51,18 +51,15 @@
       "patterns": [
         {
           "name": "keyword.control.fdsl",
-          "match": "\\b(Server|RESTEndpoint|WSEndpoint|Entity|Component|import|inputs|attributes|props|source|entity|strict|host|port|base|cors|env|url|verb|headers|protocol|subprotocols|subscribe|where|end)\\b"
+          "match": "\\b(Server|Entity|Source|SourceREST|SourceWS|APIEndpoint|APIEndpointREST|APIEndpointWS|Component|import|inputs|attributes|props|source|entity|strict|host|port|base|cors|env|url|verb|headers|protocol|subprotocols|subscribe|where|end|fields|value|min|max|label|unit|pathKey|submitLabel)\\b"
         },
         {
           "name": "keyword.control.conditional.fdsl",
-          "match": "\\b(if|then|else)\\b"
+          "match": "\\b(if|then|else|for|in)\\b"
         },
         {
           "name": "keyword.operator.logical.fdsl",
           "match": "\\b(and|or|not)\\b"
-        },
-        { "name": "keyword.other.componentprop.fdsl",
-          "match": "\\b(action|fields|pathKey|submitLabel|x|y|xLabel|yLabel|value|min|max|label|unit|primaryKey|columns)\\b"
         }
       ]
     },
@@ -77,6 +74,14 @@
     "http-verbs": {
       "patterns": [
         { "name": "constant.language.httpverb.fdsl", "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b" }
+      ]
+    },
+    "source-kind": {
+      "patterns": [
+        {
+          "name": "constant.language.sourcekind.fdsl",
+          "match": "(?<=<)(REST|WS)(?=>)"
+        }
       ]
     },
     "literals": {
