@@ -17,7 +17,6 @@ router = APIRouter(
 #                          CONFIGURATION
 # ============================================================================
 
-# External REST sources (parent entities fetched from external APIs)
 _EXTERNAL_REST_SOURCES = [
 {%- for source in rest_inputs %}
     {
@@ -35,14 +34,12 @@ _EXTERNAL_REST_SOURCES = [
 {%- endfor %}
 ]
 
-# Internal computed dependencies (other API endpoints)
 _INTERNAL_DEPENDENCIES = [
 {%- for dep in computed_parents | default([], true) %}
     {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
 {%- endfor %}
 ]
 
-# Inline computed ancestors (pure transformations, no external sources)
 _INLINE_COMPUTED_CHAIN = [
 {%- for step in inline_chain or [] %}
     {
@@ -56,7 +53,6 @@ _INLINE_COMPUTED_CHAIN = [
 {%- endfor %}
 ]
 
-# Final entity attributes (computed from all dependencies)
 _ENTITY_ATTRIBUTES = {
 {%- for attr in computed_attrs %}
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
@@ -84,13 +80,13 @@ async def query_{{ endpoint.name | lower }}():
             url = source_config["url"]
             method = source_config["method"]
             
-            logger.info(f"[FETCH] Fetching {entity_name} from {url} ({method})")
+            logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
             
             try:
                 # Prepare headers
                 headers = resolve_headers(source_config.get("headers", []))
-                
-                # Handle API key query param injection
+
+                # Inject API key query params if necessary
                 for key, value in source_config.get("headers", []):
                     if key == "__queryparam__":
                         separator = "&" if "?" in url else "?"
@@ -100,14 +96,14 @@ async def query_{{ endpoint.name | lower }}():
                 response = await http_client.request(method, url, headers=headers)
                 
                 if response.status_code >= 400:
-                    logger.error(f"[FETCH] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    logger.error(f"[FETCH] - Failed to fetch {entity_name}: HTTP {response.status_code}")
                     raise HTTPException(
                         status_code=502,
                         detail=f"External source {entity_name} returned {response.status_code}"
                     )
                 
                 raw_payload = response.json()
-                logger.debug(f"[FETCH] {entity_name} payload type: {type(raw_payload)}")
+                logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
                 
                 # Shape the data by evaluating attribute expressions
                 shaped_data: Dict[str, Any] = {}
@@ -120,12 +116,9 @@ async def query_{{ endpoint.name | lower }}():
                     try:
                         compiled_expr = compile_safe(attr_expr)
                         shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
-                        logger.debug(f"[SHAPE] {entity_name}.{attr_name} computed successfully")
+                        logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
                     except Exception as eval_error:
-                        logger.error(
-                            f"[SHAPE] Error computing {entity_name}.{attr_name}: {eval_error}",
-                            exc_info=True
-                        )
+                        logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
                         raise HTTPException(
                             status_code=500,
                             detail=f"Failed to compute {entity_name}.{attr_name}"
@@ -137,12 +130,12 @@ async def query_{{ endpoint.name | lower }}():
                 
                 # Store in context under entity name
                 context[entity_name] = shaped_data
-                logger.info(f"[CONTEXT] Stored {entity_name} with keys: {list(shaped_data.keys())}")
+                logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
                 
             except HTTPException:
                 raise
             except Exception as fetch_error:
-                logger.error(f"[FETCH] Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
+                logger.error(f"[FETCH] - Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
                 raise HTTPException(
                     status_code=502,
                     detail=f"Failed to fetch external source: {entity_name}"
@@ -155,13 +148,13 @@ async def query_{{ endpoint.name | lower }}():
             entity_name = dependency["name"]
             endpoint_path = dependency["endpoint"]
             
-            logger.info(f"[DEPENDENCY] Fetching computed parent {entity_name} from {endpoint_path}")
+            logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
             
             try:
                 response = await http_client.get(f"http://localhost:8080{endpoint_path}")
                 
                 if response.status_code >= 400:
-                    logger.error(f"[DEPENDENCY] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
                     raise HTTPException(
                         status_code=502,
                         detail=f"Internal dependency {entity_name} returned {response.status_code}"
@@ -184,12 +177,12 @@ async def query_{{ endpoint.name | lower }}():
                 else:
                     context[entity_name] = {"value": dependency_data}
                 
-                logger.info(f"[CONTEXT] Stored computed parent {entity_name}")
+                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
                 
             except HTTPException:
                 raise
             except Exception as dep_error:
-                logger.error(f"[DEPENDENCY] Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
+                logger.error(f"[DEPENDENCY] - Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
                 raise HTTPException(
                     status_code=502,
                     detail=f"Failed to fetch internal dependency: {entity_name}"
@@ -200,7 +193,7 @@ async def query_{{ endpoint.name | lower }}():
         # ----------------------------------------------------------------
         for inline_entity in _INLINE_COMPUTED_CHAIN:
             entity_name = inline_entity["name"]
-            logger.debug(f"[INLINE] Computing inline entity {entity_name}")
+            logger.debug(f"[INLINE] - Computing inline entity {entity_name}")
             
             shaped_data = {}
             evaluation_ctx = {"ctx": context}
@@ -213,12 +206,12 @@ async def query_{{ endpoint.name | lower }}():
                 shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
             
             context[entity_name] = shaped_data
-            logger.debug(f"[CONTEXT] Stored inline entity {entity_name}")
+            logger.debug(f"[CONTEXT] - Stored inline entity {entity_name}")
 
         # ----------------------------------------------------------------
         # STEP 4: Compute final entity attributes
         # ----------------------------------------------------------------
-        logger.info(f"[COMPUTE] Computing final entity {{ entity.name }}")
+        logger.info(f"[COMPUTE] - Computing final entity {{ entity.name }}")
         
         final_attributes: Dict[str, Any] = {}
         
@@ -236,12 +229,9 @@ async def query_{{ endpoint.name | lower }}():
             try:
                 result = eval(compiled_expr, safe_globals, evaluation_ctx)
                 final_attributes[attr_name] = result
-                logger.debug(f"[COMPUTE] {{ entity.name }}.{attr_name}: {type(result).__name__}")
+                logger.debug(f"[COMPUTE] - {{ entity.name }}.{attr_name}: {type(result).__name__}")
             except Exception as compute_error:
-                logger.error(
-                    f"[COMPUTE] Error computing attribute {attr_name}: {compute_error}",
-                    exc_info=True
-                )
+                logger.error(f"[COMPUTE] - Error computing attribute {attr_name}: {compute_error}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
                     detail=f"Failed to compute attribute: {attr_name}"
@@ -250,14 +240,13 @@ async def query_{{ endpoint.name | lower }}():
         # ----------------------------------------------------------------
         # STEP 5: Return result
         # ----------------------------------------------------------------
-        logger.info(f"[SUCCESS] Query {{ entity.name }} completed successfully")
-        logger.debug(f"[RESULT] Attributes: {list(final_attributes.keys())}")
+        logger.info(f"[SUCCESS] - Query {{ entity.name }} completed successfully")
+        logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
         
-        # Contract: Always return list[dict]
         return [final_attributes]
 
     except HTTPException:
         raise
     except Exception as unexpected_error:
-        logger.exception(f"[ERROR] Unexpected error in query {{ entity.name }}")
+        logger.exception(f"[ERROR] - Unexpected error in query {{ entity.name }}")
         raise HTTPException(status_code=500, detail="Internal server error")
