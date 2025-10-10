@@ -71,7 +71,7 @@ _EXTERNAL_TARGET = {
 #                          MUTATION ENDPOINT
 # ============================================================================
 
-@router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any]])
+@router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
 async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(request: Request):
     """
     Mutation endpoint for {{ entity.name }}.
@@ -173,7 +173,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
             
             try:
-                response = await http_client.get(f"http://localhost:8080{endpoint_path}")
+                response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
                 
                 if response.status_code >= 400:
                     logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")

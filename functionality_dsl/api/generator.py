@@ -12,6 +12,20 @@ from functionality_dsl.lib.computed import compile_expr_to_python
 
 
 # ============================================================================
+#                           MISC
+# ============================================================================
+
+def _format_python_code(code: str) -> str:
+    """Format generated Python code with Black if available."""
+    try:
+        import black
+        return black.format_str(code, mode=black.FileMode())
+    except Exception:
+        # black not installed or failed — return unformatted code
+        return code
+
+
+# ============================================================================
 #                           MODEL EXTRACTION
 # ============================================================================
 
@@ -447,7 +461,7 @@ def _resolve_universal_dependencies(entity, model, all_source_names):
 #                           QUERY ENDPOINT GENERATION (GET)
 # ============================================================================
 
-def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir):
+def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a query (GET) router for an APIEndpoint<REST>."""
     route_path = _get_route_path(endpoint, entity)
     
@@ -494,7 +508,9 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
         computed_parents=computed_parents,
         route_prefix=route_path,
         inline_chain=inline_chain,
+        server=server_config["server"],
     )
+    router_code = _format_python_code(router_code)  # PEP formatting w black
     
     output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
     output_file.write_text(router_code, encoding="utf-8")
@@ -505,7 +521,7 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
 #                           MUTATION ENDPOINT GENERATION (POST/PUT/DELETE)
 # ============================================================================
 
-def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir):
+def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
     route_path = _get_route_path(endpoint, entity)
     verb = getattr(endpoint, "verb", "POST").upper()
@@ -562,7 +578,9 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
         computed_parents=computed_parents,
         route_prefix=route_path,
         compiled_chain=compiled_chain,
+        server=server_config["server"],
     )
+    router_code = _format_python_code(router_code)  # PEP formatting w black
     
     output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
     output_file.write_text(router_code, encoding="utf-8")
@@ -940,6 +958,7 @@ def _generate_websocket_router(endpoint, model, all_source_names, templates_dir,
         external_targets=external_targets,
         sync_config_inbound=sync_config_inbound,
     )
+    router_code = _format_python_code(router_code)  # PEP formatting w black
     
     output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
     output_file.write_text(router_code, encoding="utf-8")
@@ -1051,6 +1070,8 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     all_ws_endpoints = _get_ws_endpoints(model)
     all_source_names = _get_all_source_names(model)
     
+    server_config = _extract_server_config(model)
+    
     # Create output directories
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
@@ -1070,12 +1091,12 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         if verb == "GET":
             _generate_query_router(
                 endpoint, entity, model, all_rest_endpoints, 
-                all_source_names, templates_dir, out_dir
+                all_source_names, templates_dir, out_dir, server_config
             )
         else:
             _generate_mutation_router(
                 endpoint, entity, model, all_rest_endpoints,
-                all_source_names, templates_dir, out_dir
+                all_source_names, templates_dir, out_dir, server_config
             )
     
     # Generate WebSocket routers
