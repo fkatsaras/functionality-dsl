@@ -1,31 +1,54 @@
-# generator.py
 from __future__ import annotations
 
 from collections import deque
 import re
+import base64
 from pathlib import Path
-from shutil import copytree
+
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from textx import get_children_of_type
 
 from functionality_dsl.lib.computed import compile_expr_to_python
 
 
-# ---------------- helpers ----------------
+# ============================================================================
+#                           MODEL EXTRACTION
+# ============================================================================
 
-def _entities(model):
+def _get_entities(model):
+    """Extract all Entity nodes from the model."""
     return list(get_children_of_type("Entity", model))
 
-def _internal_rest_endpoints(model):
+
+def _get_rest_endpoints(model):
+    """Extract all APIEndpoint<REST> nodes from the model."""
     return list(get_children_of_type("APIEndpointREST", model))
 
-def _internal_ws_endpoints(model):
+
+def _get_ws_endpoints(model):
+    """Extract all APIEndpoint<WS> nodes from the model."""
     return list(get_children_of_type("APIEndpointWS", model))
 
-def _pyd_type_for(attr):
-    t = getattr(attr, "type", None)
 
-    base = {
+def _get_all_source_names(model):
+    """Extract all Source<REST> and Source<WS> names for expression compilation."""
+    sources = []
+    for src in get_children_of_type("SourceREST", model):
+        sources.append(src.name)
+    for src in get_children_of_type("SourceWS", model):
+        sources.append(src.name)
+    return sources
+
+
+# ============================================================================
+#                           TYPE MAPPING
+# ============================================================================
+
+def _map_to_python_type(attr):
+    """Map DSL attribute types to Python/Pydantic types."""
+    attr_type = getattr(attr, "type", None)
+    
+    base_type = {
         "int": "int",
         "float": "float",
         "number": "float",
@@ -35,222 +58,425 @@ def _pyd_type_for(attr):
         "uuid": "str",
         "dict": "dict",
         "list": "list",
-    }.get((t or "").lower(), "Any")
-
+    }.get((attr_type or "").lower(), "Any")
+    
     if getattr(attr, "optional", False):
-        return f"Optional[{base}]"
-    return base
+        return f"Optional[{base_type}]"
+    return base_type
 
-def _as_headers_list(obj):
-    """Normalize .headers from Source<REST>/Source<WS> to list of {key,value} dicts."""
-    hs = getattr(obj, "headers", None)
-    out = []
-    if not hs:
-        return out
 
-    if isinstance(hs, list):
-        for h in hs:
-            k = getattr(h, "key", None)
-            v = getattr(h, "value", None)
-            if k and v is not None:
-                out.append({"key": k, "value": v})
-        return out
+# ============================================================================
+#                           HEADER UTILITIES
+# ============================================================================
 
-    if isinstance(hs, str):
-        parts = [p.strip() for p in re.split(r"[;,]", hs) if p.strip()]
-        for p in parts:
-            if ":" in p:
-                k, v = p.split(":", 1)
-                out.append({"key": k.strip(), "value": v.strip()})
-        return out
-
-    return out
-
-def _auth_headers(ext):
-    a = getattr(ext, "auth", None)
-    if not a:
+def _normalize_headers(obj):
+    """Convert headers from various formats to list of (key, value) tuples."""
+    headers = getattr(obj, "headers", None)
+    if not headers:
         return []
+    
+    normalized = []
+    
+    # Handle list of header objects
+    if isinstance(headers, list):
+        for h in headers:
+            key = getattr(h, "key", None)
+            value = getattr(h, "value", None)
+            if key and value is not None:
+                normalized.append((key, value))
+        return normalized
+    
+    # Handle string format "key1: value1; key2: value2"
+    if isinstance(headers, str):
+        parts = [p.strip() for p in re.split(r"[;,]", headers) if p.strip()]
+        for part in parts:
+            if ":" in part:
+                key, value = part.split(":", 1)
+                normalized.append((key.strip(), value.strip()))
+        return normalized
+    
+    return normalized
 
-    kind = getattr(a, "kind", "").lower()
-    if kind == "bearer":
-        token = getattr(a, "token", "")
+
+def _build_auth_headers(source):
+    """Generate authentication headers based on source auth config."""
+    auth = getattr(source, "auth", None)
+    if not auth:
+        return []
+    
+    auth_kind = getattr(auth, "kind", "").lower()
+    
+    # Bearer token
+    if auth_kind == "bearer":
+        token = getattr(auth, "token", "")
         if token.startswith("env:"):
             import os
             token = os.getenv(token.split(":", 1)[1], "")
         return [("Authorization", f"Bearer {token}")]
-
-    if kind == "basic":
-        import base64, os
-        user = getattr(a, "username", "")
-        pw = getattr(a, "password", "")
-        if user.startswith("env:"):
-            user = os.getenv(user.split(":", 1)[1], "")
-        if pw.startswith("env:"):
-            pw = os.getenv(pw.split(":", 1)[1], "")
-        creds = f"{user}:{pw}"
-        return [("Authorization", "Basic " + base64.b64encode(creds.encode()).decode())]
-
-    if kind == "api_key":
-        key = getattr(a, "key", "")
-        val = getattr(a, "value", "")
-        loc = getattr(a, "location", "header")
-        if val.startswith("env:"):
+    
+    # Basic auth
+    if auth_kind == "basic":
+        username = getattr(auth, "username", "")
+        password = getattr(auth, "password", "")
+        if username.startswith("env:"):
+            username = os.getenv(username.split(":", 1)[1], "")
+        if password.startswith("env:"):
+            password = os.getenv(password.split(":", 1)[1], "")
+        credentials = f"{username}:{password}"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        return [("Authorization", f"Basic {encoded}")]
+    
+    # API key
+    if auth_kind == "api_key":
+        key = getattr(auth, "key", "")
+        value = getattr(auth, "value", "")
+        location = getattr(auth, "location", "header")
+        if value.startswith("env:"):
             import os
-            val = os.getenv(val.split(":", 1)[1], "")
-        if loc == "header":
-            return [(key, val)]
+            value = os.getenv(value.split(":", 1)[1], "")
+        if location == "header":
+            return [(key, value)]
         else:
-            # For query injection we can keep a sentinel
-            return [("__queryparam__", f"{key}={val}")]
-
+            # Query param injection marker
+            return [("__queryparam__", f"{key}={value}")]
+    
     return []
 
-def _normalize_ws_source(ws):
-    """Mutate SourceWS so templates have JSON-serializable attrs."""
-    if ws is None:
-        return
-    ws.headers = _as_headers_list(ws)
-    subs = getattr(ws, "subprotocols", None)
-    try:
-        if subs and hasattr(subs, "items"):
-            ws.subprotocols = list(subs.items)
-        else:
-            ws.subprotocols = subs or []
-    except Exception:
-        ws.subprotocols = []
-        
-# --- chain helpers -------------------------------------------------
 
-# --------  Simple sync detection --------
-def _get_ws_source_parents(entity, model):
-    """Return list of Source<WS> *endpoint names* found in all ancestors."""
-    feeds = []
-    for anc in _all_ancestors(entity, model):
-        src = getattr(anc, "source", None)
-        if src and src.__class__.__name__ == "SourceWS":
-            feeds.append(src.name)  # <<< IMPORTANT: use feed/endpoint name, not entity name
-    # dedupe, keep stable order
-    seen = set()
-    out = []
-    for f in feeds:
-        if f not in seen:
-            seen.add(f)
-            out.append(f)
-    return out
+# ============================================================================
+#                           ENTITY GRAPH TRAVERSAL
+# ============================================================================
 
-def _find_terminal_for_internal_out(ent_out, model):
+def _get_all_ancestors(entity, model):
     """
-    Starting from an APIEndpoint<WS>.entity_out, walk forward to the Source<WS>.entity_in
-    that eventually consumes it. If found, return that entity; else return ent_out.
+    Return all ancestor entities in topological order (oldest → newest).
+    This ensures dependencies are processed before dependents.
     """
-    for ext_ws in get_children_of_type("SourceWS", model):
-        ext_ent_in = getattr(ext_ws, "entity_in", None)
-        if not ext_ent_in:
-            continue
-        # check if ext_ent_in descends from ent_out
-        dist = _distance_up(ext_ent_in, ent_out)
-        if dist is not None:
-            return ext_ent_in
-    return ent_out
-
-
-def _all_ancestors(entity, model):
-    """Return all ancestors of entity, in topological (oldest→newest) order."""
     seen = set()
-    order = []
+    ordered = []
+    
     def visit(e):
         if id(e) in seen:
             return
         seen.add(id(e))
-        for p in getattr(e, "parents", []) or []:
-            visit(p)
-        order.append(e)
+        # Recurse into parents first (depth-first)
+        for parent in getattr(e, "parents", []) or []:
+            visit(parent)
+        ordered.append(e)
+    
     visit(entity)
-    return [e for e in order if e is not entity]
+    # Remove the entity itself, return only ancestors
+    return [e for e in ordered if e is not entity]
 
-def _distance_up(from_node, to_ancestor) -> int | None:
-    """edges from from_node up through parents to to_ancestor (if reachable)."""
-    q = deque([(from_node, 0)])
+
+def _calculate_distance_to_ancestor(from_entity, to_ancestor):
+    """
+    Calculate the edge distance from from_entity up to to_ancestor.
+    Returns None if to_ancestor is not reachable.
+    """
+    queue = deque([(from_entity, 0)])
     seen = set()
-    while q:
-        cur, d = q.popleft()
-        if id(cur) in seen:
+    
+    while queue:
+        current, distance = queue.popleft()
+        if id(current) in seen:
             continue
-        seen.add(id(cur))
-        if cur is to_ancestor:
-            return d
-        for p in getattr(cur, "parents", []) or []:
-            q.append((p, d + 1))
+        seen.add(id(current))
+        
+        if current is to_ancestor:
+            return distance
+        
+        for parent in getattr(current, "parents", []) or []:
+            queue.append((parent, distance + 1))
+    
     return None
 
-def _find_downstream_terminal_entity(ent, model):
+
+def _find_terminal_entity(entity, model):
     """
-    Return the nearest descendant entity (fewest edges upward from it to 'ent')
-    that has a bound external target. If none, return None.
+    Find the nearest descendant entity (minimum distance) that has an
+    external target (Source<REST>). Used for mutation flows.
+    Returns None if no target is found.
     """
     candidates = []
-    for e2 in get_children_of_type("Entity", model):
-        if getattr(e2, "target", None) is None:
+    
+    for candidate in _get_entities(model):
+        if getattr(candidate, "target", None) is None:
             continue
-        dist = _distance_up(e2, ent)
-        if dist is not None:
-            candidates.append((dist, e2))
+        
+        distance = _calculate_distance_to_ancestor(candidate, entity)
+        if distance is not None:
+            candidates.append((distance, candidate))
+    
     if not candidates:
         return None
-    candidates.sort(key=lambda t: t[0])
+    
+    # Return the closest one (minimum distance)
+    candidates.sort(key=lambda x: x[0])
     return candidates[0][1]
 
-def _collect_external_sources(entity, model, seen=None):
+
+def _collect_all_external_sources(entity, model, seen=None):
     """
-    Recursively collect all (Entity, SourceREST) pairs that are reachable
-    from the given entity by following its parents. Ensures that any entity that
-    depends on another entity with an Source<REST> source gets its data fetched.
+    Recursively collect all (Entity, SourceREST) pairs reachable from entity.
+    This ensures transitive dependencies are included.
     """
     if seen is None:
         seen = set()
+    
     results = []
-
-    # Direct source on this entity
-    src = getattr(entity, "source", None)
-    if src and src.__class__.__name__ == "SourceREST":
-        key = (entity.name, src.url)
+    
+    # Check if this entity has a Source<REST>
+    source = getattr(entity, "source", None)
+    if source and source.__class__.__name__ == "SourceREST":
+        key = (entity.name, source.url)
         if key not in seen:
-            results.append((entity, src))
+            results.append((entity, source))
             seen.add(key)
-
-    # Recurse through parents
+    
+    # Recurse through parent entities
     for parent in getattr(entity, "parents", []) or []:
-        for pair in _collect_external_sources(parent, model, seen):
-            results.append(pair)
-
+        results.extend(_collect_all_external_sources(parent, model, seen))
+    
     return results
 
 
-# ---------------- route helpers ----------------
+# ============================================================================
+#                           ROUTE PATH HELPERS
+# ============================================================================
 
-def _default_rest_prefix(endpoint, entity) -> str:
-    path = getattr(endpoint, "path", None)
-    if isinstance(path, str) and path.strip():
-        return path
-    return f"/api/{getattr(endpoint, 'name', getattr(entity, 'name', 'endpoint')).lower()}"
-
-def _default_ws_prefix(endpoint, entity) -> str:
-    path = getattr(endpoint, "path", None)
-    if isinstance(path, str) and path.strip():
-        return path
-    return f"/api/{getattr(endpoint, 'name', getattr(entity, 'name', 'endpoint')).lower()}"
-
-
-# ---------------- domain models ----------------
-
-def render_domain_files(model, templates_dir: Path, out_dir: Path):
+def _get_route_path(endpoint, entity, default_prefix="/api"):
+    """
+    Determine the route path for an endpoint.
+    Uses explicit path if provided, otherwise generates from endpoint/entity name.
+    """
+    explicit_path = getattr(endpoint, "path", None)
+    if isinstance(explicit_path, str) and explicit_path.strip():
+        return explicit_path
     
-    all_sources = []
-    for src in get_children_of_type("SourceREST", model):
-        all_sources.append(src.name)
-    for src in get_children_of_type("SourceWS", model):
-        all_sources.append(src.name)
+    name = getattr(endpoint, "name", getattr(entity, "name", "endpoint"))
+    return f"{default_prefix}/{name.lower()}"
+
+
+# ============================================================================
+#                           CONFIG BUILDERS
+# ============================================================================
+
+def _build_rest_input_config(entity, source, all_source_names):
+    """
+    Build a REST input configuration for template rendering.
+    Returns a dict with entity name, source alias, URL, headers, and attribute mappings.
+    """
+    # Build attribute expressions
+    attribute_configs = []
+    for attr in getattr(entity, "attributes", []) or []:
+        if getattr(attr, "expr", None):
+            # Compile the expression
+            expr_code = compile_expr_to_python(
+                attr.expr,
+                context="entity",
+                known_sources=all_source_names + [source.name],
+            )
+        else:
+            # Default: use raw source payload
+            expr_code = source.name
         
+        attribute_configs.append({
+            "name": attr.name,
+            "pyexpr": expr_code
+        })
+    
+    return {
+        "entity": entity.name,      # Where to store in ctx
+        "alias": source.name,        # How expressions reference it
+        "url": source.url,
+        "headers": _normalize_headers(source) + _build_auth_headers(source),
+        "method": (getattr(source, "verb", "GET") or "GET").upper(),
+        "attrs": attribute_configs,
+    }
+
+
+def _build_computed_parent_config(parent_entity, all_endpoints):
+    """
+    Build a computed parent configuration (internal endpoint dependency).
+    Returns None if no internal endpoint is found for the parent.
+    """
+    for endpoint in all_endpoints:
+        if getattr(endpoint, "entity").name == parent_entity.name:
+            path = _get_route_path(endpoint, getattr(endpoint, "entity"))
+            return {
+                "name": parent_entity.name,
+                "endpoint": path,
+            }
+    return None
+
+
+def _build_entity_chain(entity, model, all_source_names, context="ctx"):
+    """
+    Build the computation chain for an entity (itself + all ancestors).
+    Returns list of entity configs with their compiled attribute expressions.
+    """
+    ancestors = _get_all_ancestors(entity, model)
+    chain_entities = ancestors + [entity]
+    
+    compiled_chain = []
+    for chain_entity in chain_entities:
+        attribute_configs = []
+        for attr in getattr(chain_entity, "attributes", []) or []:
+            if hasattr(attr, "expr") and attr.expr is not None:
+                expr_code = compile_expr_to_python(
+                    attr.expr,
+                    context=context,
+                    known_sources=all_source_names + [chain_entity.name]
+                )
+                attribute_configs.append({
+                    "name": attr.name,
+                    "pyexpr": expr_code
+                })
+        
+        if attribute_configs:  # Only include if it has computed attributes
+            compiled_chain.append({
+                "name": chain_entity.name,
+                "attrs": attribute_configs,
+            })
+    
+    return compiled_chain
+
+
+# ============================================================================
+#                           DEPENDENCY RESOLUTION
+# ============================================================================
+
+def _resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_names):
+    """
+    Resolve all dependencies for an entity:
+    - REST inputs (external Source<REST> dependencies)
+    - Computed parents (internal APIEndpoint<REST> dependencies)
+    - Inline chain (purely computed ancestors)
+    
+    Returns: (rest_inputs, computed_parents, inline_chain)
+    """
+    rest_inputs = []
+    computed_parents = []
+    inline_chain = []
+    
+    seen_rest_keys = set()
+    seen_computed_names = set()
+    
+    ancestors = _get_all_ancestors(entity, model)
+    
+    # Process each ancestor
+    for ancestor in ancestors:
+        if isinstance(ancestor, dict):
+            continue  # Safety check
+        
+        source = getattr(ancestor, "source", None)
+        source_class = source.__class__.__name__ if source else None
+        
+        # External REST source
+        if source and source_class == "SourceREST":
+            rest_key = (ancestor.name, source.url)
+            if rest_key not in seen_rest_keys:
+                seen_rest_keys.add(rest_key)
+                config = _build_rest_input_config(ancestor, source, all_source_names)
+                rest_inputs.append(config)
+                print(f"[DEPENDENCY] REST input: {ancestor.name} ({source.url})")
+        
+        # Internal REST endpoint (computed dependency)
+        elif source and source_class == "APIEndpointREST":
+            if ancestor.name not in seen_computed_names:
+                seen_computed_names.add(ancestor.name)
+                config = _build_computed_parent_config(ancestor, all_endpoints)
+                if config:
+                    computed_parents.append(config)
+                    print(f"[DEPENDENCY] Computed parent: {ancestor.name} via {config['endpoint']}")
+                else:
+                    print(f"[WARNING] No internal route found for {ancestor.name}")
+        
+        # Purely computed entity (no external/internal source)
+        else:
+            attribute_configs = []
+            for attr in getattr(ancestor, "attributes", []) or []:
+                if getattr(attr, "expr", None):
+                    expr_code = compile_expr_to_python(
+                        attr.expr,
+                        context="ctx",
+                        known_sources=all_source_names + [ancestor.name]
+                    )
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": expr_code
+                    })
+            
+            if attribute_configs:
+                inline_chain.append({
+                    "name": ancestor.name,
+                    "attrs": attribute_configs,
+                })
+                print(f"[DEPENDENCY] Inline computed: {ancestor.name}")
+    
+    return rest_inputs, computed_parents, inline_chain
+
+
+def _resolve_universal_dependencies(entity, model, all_source_names):
+    """
+    Universal dependency resolver: ensures ALL transitive Source<REST>
+    dependencies are included, even if they're deep in the graph.
+    Critical for complex mutation flows.
+    """
+    terminal = _find_terminal_entity(entity, model) or entity
+    all_related = [entity] + _get_all_ancestors(terminal, model)
+    
+    rest_inputs = []
+    seen_keys = set()
+    
+    for related_entity in all_related:
+        external_sources = _collect_all_external_sources(related_entity, model)
+        for dep_entity, dep_source in external_sources:
+            rest_key = (dep_entity.name, dep_source.url)
+            if rest_key not in seen_keys:
+                seen_keys.add(rest_key)
+                config = _build_rest_input_config(dep_entity, dep_source, all_source_names)
+                rest_inputs.append(config)
+                print(f"[UNIVERSAL] Found deep dependency: {dep_entity.name} ({dep_source.url})")
+    
+    return rest_inputs
+
+
+# ============================================================================
+#                           QUERY ENDPOINT GENERATION (GET)
+# ============================================================================
+
+def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir):
+    """Generate a query (GET) router for an APIEndpoint<REST>."""
+    route_path = _get_route_path(endpoint, entity)
+    
+    # Resolve dependencies
+    rest_inputs, computed_parents, inline_chain = _resolve_dependencies_for_entity(
+        entity, model, all_endpoints, all_source_names
+    )
+    
+    # Check if entity itself has a Source<REST>
+    entity_source = getattr(entity, "source", None)
+    if entity_source and entity_source.__class__.__name__ == "SourceREST":
+        config = _build_rest_input_config(entity, entity_source, all_source_names)
+        rest_inputs.append(config)
+    
+    # Build computed attributes for this entity
+    computed_attrs = []
+    for attr in getattr(entity, "attributes", []) or []:
+        if hasattr(attr, "expr") and attr.expr is not None:
+            expr_code = compile_expr_to_python(
+                attr.expr,
+                context="entity",
+                known_sources=all_source_names + [entity_source.name if entity_source else entity.name]
+            )
+            computed_attrs.append({
+                "name": attr.name,
+                "pyexpr": expr_code
+            })
+    
+    # Render template
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -258,482 +484,607 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+    template = env.get_template("router_query_rest.jinja")
+    
+    router_code = template.render(
+        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None)},
+        entity=entity,
+        computed_attrs=computed_attrs,
+        rest_inputs=rest_inputs,
+        computed_parents=computed_parents,
+        route_prefix=route_path,
+        inline_chain=inline_chain,
+    )
+    
+    output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    output_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] Query router: {output_file}")
 
-    # -------- models --------
-    entities_ctx = []
-    for e in _entities(model):
-        attrs_ctx = []
-        for a in getattr(e, "attributes", []) or []:
-            if hasattr(a, "expr") and a.expr is not None:
-                attrs_ctx.append({
-                    "name": a.name,
+
+# ============================================================================
+#                           MUTATION ENDPOINT GENERATION (POST/PUT/DELETE)
+# ============================================================================
+
+def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir):
+    """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
+    route_path = _get_route_path(endpoint, entity)
+    verb = getattr(endpoint, "verb", "POST").upper()
+    
+    # Find the terminal entity (has external target)
+    terminal_entity = _find_terminal_entity(entity, model) or entity
+    
+    # Resolve dependencies
+    rest_inputs, computed_parents, _ = _resolve_dependencies_for_entity(
+        entity, model, all_endpoints, all_source_names
+    )
+    
+    # Universal resolver for deep dependencies
+    universal_inputs = _resolve_universal_dependencies(entity, model, all_source_names)
+    
+    # Merge inputs (deduplicate)
+    seen_keys = {(ri["entity"], ri["url"]) for ri in rest_inputs}
+    for uni_input in universal_inputs:
+        key = (uni_input["entity"], uni_input["url"])
+        if key not in seen_keys:
+            rest_inputs.append(uni_input)
+            seen_keys.add(key)
+    
+    # Build computation chain (entity → terminal)
+    compiled_chain = _build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
+    
+    # Build target config
+    target = None
+    target_obj = getattr(terminal_entity, "target", None)
+    if target_obj:
+        target = {
+            "name": target_obj.name,
+            "url": target_obj.url,
+            "method": getattr(target_obj, "verb", verb).upper(),
+            "headers": _normalize_headers(target_obj) + _build_auth_headers(target_obj),
+        }
+    
+    # Render template
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(disabled_extensions=("jinja",)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        undefined=StrictUndefined,
+    )
+    template = env.get_template("router_mutation_rest.jinja")
+    
+    router_code = template.render(
+        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None)},
+        entity=entity,
+        terminal=terminal_entity,
+        target=target,
+        rest_inputs=rest_inputs,
+        computed_parents=computed_parents,
+        route_prefix=route_path,
+        compiled_chain=compiled_chain,
+    )
+    
+    output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    output_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] Mutation router: {output_file}")
+
+
+# ============================================================================
+#                           DOMAIN MODEL GENERATION
+# ============================================================================
+
+def _generate_domain_models(model, templates_dir, output_dir):
+    """Generate Pydantic domain models from entities."""
+    entities_context = []
+    
+    for entity in _get_entities(model):
+        attribute_configs = []
+        for attr in getattr(entity, "attributes", []) or []:
+            if hasattr(attr, "expr") and attr.expr is not None:
+                # Computed attribute
+                attribute_configs.append({
+                    "name": attr.name,
                     "kind": "computed",
-                    "expr_raw": getattr(a, "expr_str", "") or "",
-                    "py_type": _pyd_type_for(a),
+                    "expr_raw": getattr(attr, "expr_str", "") or "",
+                    "py_type": _map_to_python_type(attr),
                 })
             else:
-                attrs_ctx.append({
-                    "name": a.name,
+                # Schema attribute
+                attribute_configs.append({
+                    "name": attr.name,
                     "kind": "schema",
-                    "py_type": _pyd_type_for(a),
+                    "py_type": _map_to_python_type(attr),
                 })
-        entities_ctx.append({
-            "name": e.name,
-            "has_parents": bool(getattr(e, "parents", None)),
-            "attributes": attrs_ctx,
+        
+        entities_context.append({
+            "name": entity.name,
+            "has_parents": bool(getattr(entity, "parents", None)),
+            "attributes": attribute_configs,
         })
-
-    models_tpl = env.get_template("models.jinja")
-    models_out = out_dir / "app" / "domain" / "models.py"
-    models_out.parent.mkdir(parents=True, exist_ok=True)
-    models_out.write_text(models_tpl.render(entities=entities_ctx), encoding="utf-8")
-
-    # -------- routers --------
-    routers_dir = out_dir / "app" / "api" / "routers"
-    routers_dir.mkdir(parents=True, exist_ok=True)
-
-    tpl_router_query_rest = env.get_template("router_query_rest.jinja")
-    tpl_router_mutation_rest = env.get_template("router_mutation_rest.jinja")
-    tpl_router_ws_pub = env.get_template("router_ws_pub.jinja")
-    tpl_router_ws_sub = env.get_template("router_ws_sub.jinja")
-    tpl_router_ws_duplex = env.get_template("router_ws_duplex.jinja")
-
-    # -------- per-internal-endpoint generation --------
     
-    for src in get_children_of_type("SourceREST", model):
-        print(f"[DEBUG] Source<REST> {src.name} auth={getattr(src, 'auth', None)}")
-
-    # INTERNAL REST endpoints
-    for iep in _internal_rest_endpoints(model):
-        ent = getattr(iep, "entity")
-        route_prefix = _default_rest_prefix(iep, ent)
-        verb = getattr(iep, "verb", "GET").upper()
+    # Render template
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(disabled_extensions=("jinja",)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        undefined=StrictUndefined,
+    )
+    template = env.get_template("models.jinja")
     
-        # Common accumulators
-        computed_attrs = []
-        rest_inputs = []
-        computed_parents = []
+    models_code = template.render(entities=entities_context)
     
-        ent_src = getattr(ent, "source", None)
-        ent_has_ext_rest = ent_src and ent_src.__class__.__name__ == "SourceREST"
+    output_file = output_dir / "app" / "domain" / "models.py"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(models_code, encoding="utf-8")
+    print(f"[GENERATED] Domain models: {output_file}")
+
+
+# ============================================================================
+#                           WEBSOCKET UTILITIES
+# ============================================================================
+
+def _normalize_ws_source(ws_source):
+    """
+    Normalize WebSocket source attributes for template rendering.
+    Converts subprotocols and headers to JSON-serializable formats.
+    """
+    if ws_source is None:
+        return
     
-        # === A) Entity has its own Source<REST> source
-        if ent_has_ext_rest:
-            ent_attrs = []
-            for a in (getattr(ent, "attributes", []) or []):
-                if hasattr(a, "expr") and a.expr is not None:
-                    print('[DEBUG] HEREHERHEHRHEHRHEHRHEHRHERHEHREHREHRHERHEHREHRHERHERHH')
-                    raw = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources + [ent_src.name])
-                else:
-                    raw = f"{ent_src.name}"
-                ent_attrs.append({"name": a.name, "pyexpr": raw})
-                
-                computed_attrs.append({"name": a.name, "pyexpr": raw})
+    ws_source.headers = _normalize_headers(ws_source)
     
-            rest_inputs.append({
-                "entity": ent.name,           # <-- bind into ctx under entity name
-                "alias":  ent_src.name,       # <-- evaluate exprs against this alias
-                "url": ent_src.url,
-                "headers": _as_headers_list(ent_src) + _auth_headers(ent_src),
-                "method": (getattr(ent_src, "verb", "GET") or "GET").upper(),
-                "attrs": ent_attrs,
-            })
+    # Normalize subprotocols to list
+    subprotocols = getattr(ws_source, "subprotocols", None)
+    try:
+        if subprotocols and hasattr(subprotocols, "items"):
+            ws_source.subprotocols = list(subprotocols.items)
+        else:
+            ws_source.subprotocols = subprotocols or []
+    except Exception:
+        ws_source.subprotocols = []
+
+
+def _get_ws_source_parents(entity, model):
+    """
+    Return list of Source<WS> endpoint names found in all ancestors.
+    Used for synchronization detection (multiple WS feeds).
+    """
+    feed_names = []
+    for ancestor in _get_all_ancestors(entity, model):
+        source = getattr(ancestor, "source", None)
+        if source and source.__class__.__name__ == "SourceWS":
+            feed_names.append(source.name)  # Use endpoint name, not entity name
     
-        # === B) Dependencies: resolve ALL ancestors up to their sources
-        seen_rest_keys: set[tuple[str, str]] = set()      # (entity_name, url)
-        seen_comp_names: set[str] = set()                 # entity_name
+    # Deduplicate while preserving order
+    seen = set()
+    unique_feeds = []
+    for name in feed_names:
+        if name not in seen:
+            seen.add(name)
+            unique_feeds.append(name)
+    
+    return unique_feeds
 
-        ancestors = _all_ancestors(ent, model)  # oldest → newest
-        for ancestor in ancestors:
-            if isinstance(ancestor, dict):
-                continue  # defensive
-            
-            a_src = getattr(ancestor, "source", None)
-            src_cls = a_src.__class__.__name__ if a_src is not None else None
-            print(f"[GEN/ANC] {ent.name} depends on {ancestor.name} (src={src_cls})")
 
-            # --- Source<REST> ancestors → fetch & shape into ctx under ancestor.name
-            if a_src and src_cls == "SourceREST":
-                # de-dup by (entity_name, url)
-                rest_key = (ancestor.name, a_src.url)
-                if rest_key in seen_rest_keys:
-                    print(f"[GEN/ANC] skip duplicate REST input for {ancestor.name} @ {a_src.url}")
-                    continue
-                seen_rest_keys.add(rest_key)
-
-                # build attribute shapers; default to full source payload when no expr
-                ancestor_attrs = []
-                for a in (getattr(ancestor, "attributes", []) or []):
-                    if hasattr(a, "expr") and a.expr is not None:
-                        py = compile_expr_to_python(
-                            a.expr,
-                            context="entity",
-                            known_sources=all_sources + [a_src.name],
-                        )
-                        print(f"[GEN/ANC_ATTR] {ancestor.name}.{a.name} -> {py}")
-                    else:
-                        # default: entire external payload
-                        py = f"{a_src.name}"
-                        print(f"[GEN/ANC_ATTR] {ancestor.name}.{a.name} default -> {py}")
-                    ancestor_attrs.append({"name": a.name, "pyexpr": py})
-
-                rest_inputs.append({
-                    "entity":  ancestor.name,                  # where to place in ctx
-                    "alias":   a_src.name,                     # alias used by compiled exprs
-                    "url":     a_src.url,
-                    "headers": _as_headers_list(a_src) + _auth_headers(a_src),
-                    "method":  (getattr(a_src, "verb", "GET") or "GET").upper(),
-                    "attrs":   ancestor_attrs,
-                })
-                print(f"[GEN/REST_INPUT] + {ancestor.name} ({a_src.url})")
-
-            # --- APIEndpoint<REST> ancestors → call their internal route first
-            elif a_src and src_cls == "APIEndpointREST":
-                if ancestor.name in seen_comp_names:
-                    print(f"[GEN/ANC] skip duplicate computed parent {ancestor.name}")
-                    continue
-                seen_comp_names.add(ancestor.name)
-
-                parent_endpoint_path = None
-                for other_iep in _internal_rest_endpoints(model):
-                    if getattr(other_iep, "entity").name == ancestor.name:
-                        parent_endpoint_path = _default_rest_prefix(other_iep, getattr(other_iep, "entity"))
-                        break
-                    
-                if parent_endpoint_path:
-                    computed_parents.append({
-                        "name": ancestor.name,
-                        "endpoint": parent_endpoint_path,
-                    })
-                    print(f"[GEN/COMPUTED_DEP] + {ancestor.name} via {parent_endpoint_path}")
-                else:
-                    print(f"[GEN/WARNING] No internal route found for computed parent {ancestor.name}")
-
-            else:
-                # Pure computed ancestor (no direct Source<REST>/APIEndpoint<REST> source):
-                # nothing to fetch here; its values will be computed later in the chain.
-                print(f"[GEN/ANC] {ancestor.name} has no external/internal source; computed inline later.")
+def _find_ws_terminal_entity(entity_out, model):
+    """
+    Starting from an APIEndpoint<WS>.entity_out, walk forward to find
+    the Source<WS>.entity_in that eventually consumes it.
+    Returns the consuming entity if found, otherwise returns entity_out.
+    """
+    for external_ws in get_children_of_type("SourceWS", model):
+        consumer_entity = getattr(external_ws, "entity_in", None)
+        if not consumer_entity:
+            continue
         
-        # --- UNIVERSAL RESOLVER: ensure ALL reachable external sources are fetched ---
-        # Walk the full ancestor chain up to the terminal entity (for POST)
-        target_root = _find_downstream_terminal_entity(ent, model) or ent
-        all_related_entities = [ent] + _all_ancestors(target_root, model)
-        seen_rest_keys = set()
-        
-        for related in all_related_entities:
-            extra_sources = _collect_external_sources(related, model)
-            for dep_entity, dep_src in extra_sources:
-                rest_key = (dep_entity.name, dep_src.url)
-                if rest_key in seen_rest_keys:
-                    continue
-                seen_rest_keys.add(rest_key)
-        
-                dep_attrs = []
-                for a in getattr(dep_entity, "attributes", []) or []:
-                    if getattr(a, "expr", None):
-                        py = compile_expr_to_python(
-                            a.expr,
-                            context="entity",
-                            known_sources=all_sources + [dep_src.name],
-                        )
-                    else:
-                        py = f"{dep_src.name}"
-                    dep_attrs.append({"name": a.name, "pyexpr": py})
-        
-                rest_inputs.append({
-                    "entity": dep_entity.name,
-                    "alias": dep_src.name,
-                    "url": dep_src.url,
-                    "headers": _as_headers_list(dep_src) + _auth_headers(dep_src),
-                    "method": (getattr(dep_src, "verb", "GET") or "GET").upper(),
-                    "attrs": dep_attrs,
-                })
-                print(f"[GEN/UNIVERSAL_SRC] + {dep_entity.name} ({dep_src.url})")
+        # Check if consumer_entity descends from entity_out
+        distance = _calculate_distance_to_ancestor(consumer_entity, entity_out)
+        if distance is not None:
+            return consumer_entity
     
-        # ------------------------------------------------------
-        # Generate the router depending on verb
-        # ------------------------------------------------------
-        if verb == "GET":
-            ancestors = _all_ancestors(ent, model)  # oldest-first
+    return entity_out
 
-            # collect inline-computed only (no Source<REST>, no APIEndpoint<REST> endpoint)
-            def _has_internal_rest_endpoint_for(e):
-                for other_iep in _internal_rest_endpoints(model):
-                    if getattr(other_iep, "entity").name == e.name:
-                        return True
-                return False
 
-            ancestors = _all_ancestors(ent, model)
-            inline_chain = []
-            for E in ancestors:
-                E_src = getattr(E, "source", None)
-                if E_src and E_src.__class__.__name__ == "SourceREST":
-                    
-                    # treat like top-level Source<REST> input
-                    ent_attrs = []
-                    for a in getattr(E, "attributes", []) or []:
-                        py = compile_expr_to_python(a.expr, context="entity", known_sources=all_sources) if getattr(a, "expr", None) else f"{E_src.name}"
-                        ent_attrs.append({"name": a.name, "pyexpr": py})
-                    rest_inputs.append({
-                        "entity": E.name,
-                        "alias":  E_src.name,
-                        "url": E_src.url,
-                        "headers": _as_headers_list(E_src) + _auth_headers(E_src),
-                        "method": (getattr(E_src, "verb", "GET") or "GET").upper(),
-                        "attrs": ent_attrs,
-                    })
-                elif not _has_internal_rest_endpoint_for(E):
-                    # inline compute
-                    attrs = []
-                    for a in (getattr(E, "attributes", []) or []):
-                        if getattr(a, "expr", None):
-                            py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
-                            attrs.append({"name": a.name, "pyexpr": py_code})
-                    inline_chain.append({"name": E.name, "attrs": attrs})
+# ============================================================================
+#                           WEBSOCKET CONFIG BUILDERS
+# ============================================================================
 
-                
-            # Query router
-            (routers_dir / f"{iep.name.lower()}.py").write_text(
-                tpl_router_query_rest.render(
-                    endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                    entity=ent,
-                    computed_attrs=computed_attrs,
-                    rest_inputs=rest_inputs,
-                    computed_parents=computed_parents,
-                    route_prefix=route_prefix,
-                    inline_chain=inline_chain,
-                ),
-                encoding="utf-8",
+def _build_ws_input_config(entity, ws_source, all_source_names):
+    """
+    Build a WebSocket input configuration for template rendering.
+    Similar to REST input config but with WS-specific fields (subprotocols, protocol).
+    """
+    _normalize_ws_source(ws_source)
+    
+    # Build attribute expressions
+    attribute_configs = []
+    for attr in getattr(entity, "attributes", []) or []:
+        if hasattr(attr, "expr") and attr.expr is not None:
+            expr_code = compile_expr_to_python(
+                attr.expr,
+                context="entity",
+                known_sources=all_source_names + [ws_source.name]
             )
         else:
-            # Mutation router → requires a target (usually Source<REST>)
-            # --- choose terminal entity ---
-            terminal_entity = _find_downstream_terminal_entity(ent, model) or ent
-            
-            # --- build the chain (start -> ... -> terminal), computed-only nodes ---
-            ancestors = _all_ancestors(terminal_entity, model)  # oldest-first
-            chain_entities = ancestors + [terminal_entity]
-            
-            compiled_chain = []
-            for E in chain_entities:
-                attrs = []
-                for a in (getattr(E, "attributes", []) or []):
-                    if hasattr(a, "expr") and a.expr is not None:
-                        # IMPORTANT: compile against ctx
-                        py_code = compile_expr_to_python(a.expr, context="ctx", known_sources=all_sources + [E.name])
-                        attrs.append({"name": a.name, "pyexpr": py_code})
-                compiled_chain.append({"name": E.name, "attrs": attrs})
-
-            
-            # target (if any)
-            tgt = getattr(terminal_entity, "target", None)
-            target = None
-            if tgt:
-                target = {
-                    "name": tgt.name,
-                    "url": tgt.url,
-                    "method": getattr(tgt, "verb", verb).upper(),
-                    "headers": _as_headers_list(tgt) + _auth_headers(tgt),
-                }
-            
-            # render
-            (routers_dir / f"{iep.name.lower()}.py").write_text(
-                tpl_router_mutation_rest.render(
-                    endpoint={"name": iep.name, "summary": getattr(iep, "summary", None)},
-                    entity=ent,                         # APIEndpoint<REST>-bound entity
-                    terminal=terminal_entity,           # terminal entity (bound to Source<REST>)
-                    target=target,                      # None → echo; else forward
-                    rest_inputs=rest_inputs,
-                    computed_parents=computed_parents,
-                    route_prefix=route_prefix,
-                    compiled_chain=compiled_chain,      # << pass the whole chain
-                ),
-                encoding="utf-8",
-            )
-
-
-    # ---------------- INTERNAL WS endpoints ----------------
-    for iwep in _internal_ws_endpoints(model):
-        ent_in  = getattr(iwep, "entity_in", None)
-        ent_out = getattr(iwep, "entity_out", None)
-
-        route_prefix = _default_ws_prefix(iwep, ent_in or ent_out)
-
-        compiled_chain_inbound: list[dict] = []
-        compiled_chain_outbound: list[dict] = []
-        ws_inputs: list[dict] = []
-
-        # -------- Inbound chain build (entity_in present) --------
-        if ent_in:
-            inbound_chain_entities = _all_ancestors(ent_in, model) + [ent_in]
-            for E in inbound_chain_entities:
-                t_src = getattr(E, "source", None)
-
-                if t_src and t_src.__class__.__name__ == "SourceWS":
-                    _normalize_ws_source(t_src)
-                    ent_attrs = []
-                    for a in getattr(E, "attributes", []) or []:
-                        if hasattr(a, "expr") and a.expr is not None:
-                            py = compile_expr_to_python(
-                                a.expr, context="entity", known_sources=[t_src.name]
-                            )
-                        else:
-                            py = f"{t_src.name}"
-                        ent_attrs.append({"name": a.name, "pyexpr": py})
-
-                    ws_inputs.append({
-                        "entity": E.name,
-                        "endpoint": t_src.name,
-                        # optional alias (safe default = endpoint name)
-                        "alias": t_src.name,
-                        "url": t_src.url,
-                        "headers": _as_headers_list(t_src) + _auth_headers(t_src),
-                        "subprotocols": list(getattr(t_src, "subprotocols", []) or []),
-                        "protocol": getattr(t_src, "protocol", "json") or "json",
-                        "attrs": ent_attrs,
-                    })
-                    if ent_attrs:
-                        compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
-
-                elif t_src and t_src.__class__.__name__ == "APIEndpointWS":
-                    ent_attrs = []
-                    for a in getattr(E, "attributes", []) or []:
-                        if hasattr(a, "expr") and a.expr is not None:
-                            py = compile_expr_to_python(
-                                a.expr, context="entity", known_sources=[t_src.name]
-                            )
-                            ent_attrs.append({"name": a.name, "pyexpr": py})
-                    if ent_attrs:
-                        compiled_chain_inbound.append({"name": E.name, "attrs": ent_attrs})
-
-                else:
-                    # Pure computed (no explicit source)
-                    attrs = []
-                    for a in getattr(E, "attributes", []) or []:
-                        if hasattr(a, "expr") and a.expr is not None:
-                            py_code = compile_expr_to_python(
-                                a.expr, context="entity", known_sources=[E.name]
-                            )
-                            attrs.append({"name": a.name, "pyexpr": py_code})
-                    if attrs:
-                        compiled_chain_inbound.append({"name": E.name, "attrs": attrs})
-
-            # Deduplicate ws_inputs by (endpoint, url)
-            unique = {}
-            for w in ws_inputs:
-                key = (w["endpoint"], w["url"])
-                if key not in unique:
-                    unique[key] = w
-            ws_inputs = list(unique.values())
-
-        # -------- External targets (entity_out present) --------
-        external_targets: list[dict] = []
-        if ent_out:
-            for ext_ws in get_children_of_type("SourceWS", model):
-                out_ent = getattr(ext_ws, "entity_in", None)
-                # include if ext_ws consumes ent_out (or any of its descendants)
-                if out_ent and _distance_up(out_ent, ent_out) is not None:
-                    _normalize_ws_source(ext_ws)
-                    external_targets.append({
-                        "url": ext_ws.url,
-                        "headers": _as_headers_list(ext_ws) + _auth_headers(ext_ws),
-                        "subprotocols": list(getattr(ext_ws, "subprotocols", []) or []),
-                        "protocol": getattr(ext_ws, "protocol", "json") or "json",
-                    })
-
-        # -------- Outbound chain build (entity_out present) --------
-        if ent_out:
-            terminal = _find_terminal_for_internal_out(ent_out, model)
-            outbound_chain_entities = _all_ancestors(terminal, model) + [terminal]
-            known_sources = [iwep.name] + [E.name for E in outbound_chain_entities]
-            for E in outbound_chain_entities:
-                out_attrs = []
-                for a in getattr(E, "attributes", []) or []:
-                    if hasattr(a, "expr") and a.expr is not None:
-                        py = compile_expr_to_python(
-                            a.expr, context="entity", known_sources=known_sources
-                        )
-                        out_attrs.append({"name": a.name, "pyexpr": py})
-                if out_attrs:
-                    compiled_chain_outbound.append({"name": E.name, "attrs": out_attrs})
-
-        # -------- Single (duplex) template for all cases --------
-        tpl = tpl_router_ws_duplex
-        filename = f"{iwep.name.lower()}.py"
-        render_args = {
-            "compiled_chain_inbound": compiled_chain_inbound,
-            "compiled_chain_outbound": compiled_chain_outbound,
-            "ws_inputs": ws_inputs,
-            "external_targets": external_targets,
-        }
+            expr_code = ws_source.name
         
-        sync_config_inbound = None
+        attribute_configs.append({
+            "name": attr.name,
+            "pyexpr": expr_code
+        })
+    
+    return {
+        "entity": entity.name,
+        "endpoint": ws_source.name,
+        "alias": ws_source.name,
+        "url": ws_source.url,
+        "headers": _normalize_headers(ws_source) + _build_auth_headers(ws_source),
+        "subprotocols": list(getattr(ws_source, "subprotocols", []) or []),
+        "protocol": getattr(ws_source, "protocol", "json") or "json",
+        "attrs": attribute_configs,
+    }
 
-        if ent_in:
-            ws_parents = _get_ws_source_parents(ent_in, model)
-            if len(ws_parents) > 1:
-                sync_config_inbound = {"required_parents": ws_parents}
-                print(f"[GEN/SYNC] {ent_in.name} requires sync: {ws_parents}")
 
-        (routers_dir / filename).write_text(
-            tpl.render(
-                endpoint=iwep,
-                entity_in=ent_in,
-                entity_out=ent_out,
-                route_prefix=_default_ws_prefix(iwep, ent_in or ent_out),
-                sync_config_inbound=sync_config_inbound, 
-                **render_args
-            ),
-            encoding="utf-8",
-        )
+def _build_ws_external_targets(entity_out, model):
+    """
+    Find all external WebSocket targets that consume entity_out.
+    Returns list of target configs with URL, headers, protocols.
+    """
+    external_targets = []
+    
+    for external_ws in get_children_of_type("SourceWS", model):
+        consumer_entity = getattr(external_ws, "entity_in", None)
+        if not consumer_entity:
+            continue
+        
+        # Include if external_ws consumes entity_out (or its descendants)
+        if _calculate_distance_to_ancestor(consumer_entity, entity_out) is not None:
+            _normalize_ws_source(external_ws)
+            external_targets.append({
+                "url": external_ws.url,
+                "headers": _normalize_headers(external_ws) + _build_auth_headers(external_ws),
+                "subprotocols": list(getattr(external_ws, "subprotocols", []) or []),
+                "protocol": getattr(external_ws, "protocol", "json") or "json",
+            })
+    
+    return external_targets
 
-# ---------------- server / env / docker rendering ----------------
 
-def _server_ctx(model):
+def _build_inbound_chain(entity_in, model, all_source_names):
+    """
+    Build the inbound computation chain for WebSocket messages.
+    Handles Source<WS>, APIEndpoint<WS>, and pure computed entities.
+    Returns: (compiled_chain, ws_inputs)
+    """
+    if not entity_in:
+        return [], []
+    
+    compiled_chain = []
+    ws_inputs = []
+    
+    chain_entities = _get_all_ancestors(entity_in, model) + [entity_in]
+    
+    for entity in chain_entities:
+        source = getattr(entity, "source", None)
+        source_class = source.__class__.__name__ if source else None
+        
+        # External WebSocket source
+        if source and source_class == "SourceWS":
+            config = _build_ws_input_config(entity, source, all_source_names)
+            ws_inputs.append(config)
+            
+            if config["attrs"]:
+                compiled_chain.append({
+                    "name": entity.name,
+                    "attrs": config["attrs"]
+                })
+        
+        # Internal WebSocket endpoint (another APIEndpoint<WS>)
+        elif source and source_class == "APIEndpointWS":
+            attribute_configs = []
+            for attr in getattr(entity, "attributes", []) or []:
+                if hasattr(attr, "expr") and attr.expr is not None:
+                    expr_code = compile_expr_to_python(
+                        attr.expr,
+                        context="entity",
+                        known_sources=all_source_names + [source.name]
+                    )
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": expr_code
+                    })
+            
+            if attribute_configs:
+                compiled_chain.append({
+                    "name": entity.name,
+                    "attrs": attribute_configs
+                })
+        
+        # Pure computed entity (no explicit source)
+        else:
+            attribute_configs = []
+            for attr in getattr(entity, "attributes", []) or []:
+                if hasattr(attr, "expr") and attr.expr is not None:
+                    expr_code = compile_expr_to_python(
+                        attr.expr,
+                        context="entity",
+                        known_sources=all_source_names + [entity.name]
+                    )
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": expr_code
+                    })
+            
+            if attribute_configs:
+                compiled_chain.append({
+                    "name": entity.name,
+                    "attrs": attribute_configs
+                })
+    
+    # Deduplicate ws_inputs by (endpoint, url)
+    unique_inputs = {}
+    for ws_input in ws_inputs:
+        key = (ws_input["endpoint"], ws_input["url"])
+        if key not in unique_inputs:
+            unique_inputs[key] = ws_input
+    
+    return compiled_chain, list(unique_inputs.values())
+
+
+def _build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
+    """
+    Build the outbound computation chain for WebSocket messages.
+    Walks from entity_out to the terminal entity that will be sent.
+    """
+    if not entity_out:
+        return []
+    
+    compiled_chain = []
+    
+    # Find terminal entity (the one that gets sent out)
+    terminal = _find_ws_terminal_entity(entity_out, model)
+    chain_entities = _get_all_ancestors(terminal, model) + [terminal]
+    
+    # Build known sources list
+    known_sources = [endpoint_name] + [e.name for e in chain_entities]
+    
+    for entity in chain_entities:
+        attribute_configs = []
+        for attr in getattr(entity, "attributes", []) or []:
+            if hasattr(attr, "expr") and attr.expr is not None:
+                expr_code = compile_expr_to_python(
+                    attr.expr,
+                    context="entity",
+                    known_sources=all_source_names + known_sources
+                )
+                attribute_configs.append({
+                    "name": attr.name,
+                    "pyexpr": expr_code
+                })
+        
+        if attribute_configs:
+            compiled_chain.append({
+                "name": entity.name,
+                "attrs": attribute_configs
+            })
+    
+    return compiled_chain
+
+
+def _build_sync_config(entity_in, model):
+    """
+    Build synchronization config if entity_in depends on multiple WS sources.
+    Returns None if no sync needed, otherwise returns config dict.
+    """
+    if not entity_in:
+        return None
+    
+    ws_parent_feeds = _get_ws_source_parents(entity_in, model)
+    
+    if len(ws_parent_feeds) > 1:
+        print(f"[SYNC] {entity_in.name} requires synchronization: {ws_parent_feeds}")
+        return {"required_parents": ws_parent_feeds}
+    
+    return None
+
+
+# ============================================================================
+#                           WEBSOCKET ENDPOINT GENERATION
+# ============================================================================
+
+def _generate_websocket_router(endpoint, model, all_source_names, templates_dir, output_dir):
+    """Generate a WebSocket (duplex) router for an APIEndpoint<WS>."""
+    entity_in = getattr(endpoint, "entity_in", None)
+    entity_out = getattr(endpoint, "entity_out", None)
+    route_path = _get_route_path(endpoint, entity_in or entity_out)
+    
+    print(f"\n--- Processing WebSocket: {endpoint.name} ---")
+    print(f"    entity_in:  {entity_in.name if entity_in else 'None'}")
+    print(f"    entity_out: {entity_out.name if entity_out else 'None'}")
+    
+    # Build inbound chain (incoming messages)
+    compiled_chain_inbound, ws_inputs = _build_inbound_chain(
+        entity_in, model, all_source_names
+    )
+    
+    # Build outbound chain (outgoing messages)
+    compiled_chain_outbound = _build_outbound_chain(
+        entity_out, model, endpoint.name, all_source_names
+    )
+    
+    # Find external targets for outbound messages
+    external_targets = _build_ws_external_targets(entity_out, model) if entity_out else []
+    
+    # Check if synchronization is needed
+    sync_config_inbound = _build_sync_config(entity_in, model)
+    
+    # Render template
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(disabled_extensions=("jinja",)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        undefined=StrictUndefined,
+    )
+    template = env.get_template("router_ws_duplex.jinja")
+    
+    router_code = template.render(
+        endpoint=endpoint,
+        entity_in=entity_in,
+        entity_out=entity_out,
+        route_prefix=route_path,
+        compiled_chain_inbound=compiled_chain_inbound,
+        compiled_chain_outbound=compiled_chain_outbound,
+        ws_inputs=ws_inputs,
+        external_targets=external_targets,
+        sync_config_inbound=sync_config_inbound,
+    )
+    
+    output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    output_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] WebSocket router: {output_file}")
+
+
+# ============================================================================
+#                           SERVER SCAFFOLDING
+# ============================================================================
+
+def _extract_server_config(model):
+    """
+    Extract server configuration from the model.
+    Returns dict with server name, host, port, CORS, and environment.
+    """
     servers = list(get_children_of_type("Server", model))
     if not servers:
         raise RuntimeError("No `Server` block found in model.")
-    s = servers[0]
-    cors_val = getattr(s, "cors", None)
-    if isinstance(cors_val, (list, tuple)) and len(cors_val) == 1:
-        cors_val = cors_val[0]
-
-    env_val = getattr(s, "env", None)
-    env_val = (env_val or "").lower()
-    if env_val not in {"dev", ""}:
-        env_val = ""
-
+    
+    server = servers[0]
+    
+    # Normalize CORS value
+    cors_value = getattr(server, "cors", None)
+    if isinstance(cors_value, (list, tuple)) and len(cors_value) == 1:
+        cors_value = cors_value[0]
+    
+    # Normalize environment value
+    env_value = getattr(server, "env", None)
+    env_value = (env_value or "").lower()
+    if env_value not in {"dev", ""}:
+        env_value = ""
+    
     return {
         "server": {
-            "name": s.name,
-            "host": getattr(s, "host", "localhost"),
-            "port": int(getattr(s, "port", 8080)),
-            "cors": cors_val or "http://localhost:3000",
-            "env": env_val,
+            "name": server.name,
+            "host": getattr(server, "host", "localhost"),
+            "port": int(getattr(server, "port", 8080)),
+            "cors": cors_value or "http://localhost:3000",
+            "env": env_value,
         }
     }
 
-def _render_env_and_docker(ctx: dict, templates_dir: Path, out_dir: Path):
+
+def _render_infrastructure_files(context, templates_dir, output_dir):
+    """
+    Render infrastructure files (.env, docker-compose.yml, Dockerfile)
+    from templates using the provided context.
+    """
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
         trim_blocks=True,
         lstrip_blocks=True,
     )
-
-    render_map = {
-        ".env":               "env.jinja",
+    
+    # Map output files to their templates
+    file_mappings = {
+        ".env": "env.jinja",
         "docker-compose.yml": "docker-compose.yaml.jinja",
-        "Dockerfile":         "Dockerfile.jinja",
+        "Dockerfile": "Dockerfile.jinja",
     }
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    for output_file, template_name in file_mappings.items():
+        template = env.get_template(template_name)
+        content = template.render(**context)
+        (output_dir / output_file).write_text(content, encoding="utf-8")
+        print(f"[GENERATED] {output_file}")
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for target, tpl_name in render_map.items():
-        tpl = env.get_template(tpl_name)
-        (out_dir / target).write_text(tpl.render(**ctx), encoding="utf-8")
 
 def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path) -> Path:
-    ctx = _server_ctx(model)
+    """
+    Scaffold the complete backend structure from the model.
+    Copies base files and renders environment/Docker configuration.
+    """
+    from shutil import copytree
+    
+    print("\n[SCAFFOLD] Creating backend structure...")
+    
+    # Extract server configuration
+    context = _extract_server_config(model)
+    
+    # Copy base backend files
     copytree(base_backend_dir, out_dir, dirs_exist_ok=True)
-    _render_env_and_docker(ctx, templates_backend_dir, out_dir)
+    print(f"[SCAFFOLD] Copied base files to {out_dir}")
+    
+    # Render infrastructure files
+    _render_infrastructure_files(context, templates_backend_dir, out_dir)
+    
     return out_dir
+
+
+# ============================================================================
+#                           MAIN ENTRY POINT
+# ============================================================================
+
+def render_domain_files(model, templates_dir: Path, out_dir: Path):
+    """
+    Main entry point for code generation.
+    Generates domain models and API routers from the DSL model.
+    """
+    print("\n" + "="*70)
+    print("  STARTING CODE GENERATION")
+    print("="*70 + "\n")
+    
+    # Extract metadata
+    all_rest_endpoints = _get_rest_endpoints(model)
+    all_ws_endpoints = _get_ws_endpoints(model)
+    all_source_names = _get_all_source_names(model)
+    
+    # Create output directories
+    routers_dir = out_dir / "app" / "api" / "routers"
+    routers_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate domain models
+    print("\n[PHASE 1] Generating domain models...")
+    _generate_domain_models(model, templates_dir, out_dir)
+    
+    # Generate REST routers
+    print("\n[PHASE 2] Generating REST API routers...")
+    for endpoint in all_rest_endpoints:
+        entity = getattr(endpoint, "entity")
+        verb = getattr(endpoint, "verb", "GET").upper()
+        
+        print(f"\n--- Processing REST: {endpoint.name} ({verb}) ---")
+        
+        if verb == "GET":
+            _generate_query_router(
+                endpoint, entity, model, all_rest_endpoints, 
+                all_source_names, templates_dir, out_dir
+            )
+        else:
+            _generate_mutation_router(
+                endpoint, entity, model, all_rest_endpoints,
+                all_source_names, templates_dir, out_dir
+            )
+    
+    # Generate WebSocket routers
+    print("\n[PHASE 3] Generating WebSocket routers...")
+    for endpoint in all_ws_endpoints:
+        _generate_websocket_router(
+            endpoint, model, all_source_names, templates_dir, out_dir
+        )
+    
+    print("\n" + "="*70)
+    print("  CODE GENERATION COMPLETE")
+    print("="*70 + "\n")
