@@ -1,4 +1,3 @@
-{# router_mutation_rest.jinja #}
 from fastapi import APIRouter, HTTPException, Request
 from typing import Dict, Any
 import logging
@@ -18,184 +17,322 @@ router = APIRouter(
     tags=["{{ endpoint.summary or endpoint.name }}"]
 )
 
-# Parents (same as GET)
-_REST_INPUTS = [
-{%- for it in rest_inputs %}
+# ============================================================================
+#                          CONFIGURATION
+# ============================================================================
+
+# External REST sources (parent entities fetched from external APIs)
+_EXTERNAL_REST_SOURCES = [
+{%- for source in rest_inputs %}
     {
-        "entity": "{{ it.entity }}",
-        "alias":  "{{ it.alias }}",
-        "url": "{{ it.url }}",
-        "headers": {{ it.headers }},
-        "method": "{{ (it.method or 'GET')|upper }}",
+        "entity": "{{ source.entity }}",
+        "alias": "{{ source.alias }}",
+        "url": "{{ source.url }}",
+        "headers": {{ source.headers }},
+        "method": "{{ source.method }}",
         "attrs": [
-        {%- for a in it.attrs %}
-            {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+        {%- for attr in source.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
         ]
     },
 {%- endfor %}
 ]
 
-_COMPUTED_PARENTS = [
-{%- for parent in computed_parents | default([], true) %}
-    {"name": "{{ parent.name }}", "endpoint": "{{ parent.endpoint }}/"},
+# Internal computed dependencies (other API endpoints)
+_INTERNAL_DEPENDENCIES = [
+{%- for dep in computed_parents | default([], true) %}
+    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
 {%- endfor %}
 ]
 
-# --- compiled attrs for the entity chain (from current -> terminal) ---
-_COMPILED_CHAIN = [
-{%- for ent in compiled_chain %}
-  {
-    "name": "{{ ent.name }}",
-    "attrs": [
-    {%- for a in ent.attrs %}
-      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
-    {%- endfor %}
-    ]
-  },
+# Entity transformation chain (from input entity to terminal entity)
+_TRANSFORMATION_CHAIN = [
+{%- for step in compiled_chain %}
+    {
+        "name": "{{ step.name }}",
+        "attrs": [
+        {%- for attr in step.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ]
+    },
 {%- endfor %}
 ]
-
-# --- compiled attrs for the TERMINAL entity (what we return/forward) ---
-_COMPILED_PAYLOAD_ATTRS = {
-{%- for attr in terminal.attributes or [] %}
-    "{{ attr.name }}": compile_safe({{ attr._py | tojson }}),
-{%- endfor %}
-}
 
 {% if target %}
-_TARGET = {
+# External target configuration (where to forward the final payload)
+_EXTERNAL_TARGET = {
     "name": "{{ target.name }}",
     "url": "{{ target.url }}",
     "method": "{{ target.method }}",
-    "headers": {{ (target.headers or []) | tojson }},
+    "headers": {{ target.headers | tojson }},
 }
 {% endif %}
 
+
+# ============================================================================
+#                          MUTATION ENDPOINT
+# ============================================================================
+
 @router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
-async def {{ endpoint.name|lower }}_{% if target %}{{ target.method.lower() }}{% else %}internal{% endif %}(request: Request):
-    client = get_http_client()
+async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(request: Request):
+    """
+    Mutation endpoint for {{ entity.name }}.
+    {% if target %}
+    Transforms input data through computation chain and forwards to {{ target.name }}.
+    {% else %}
+    Transforms input data through computation chain (internal endpoint, no forwarding).
+    {% endif %}
+    """
+    http_client = get_http_client()
+    context: Dict[str, Any] = {}
 
-    body_json = {}
+    # Parse incoming request body
     try:
-        body_json = await request.json()
-    except Exception:
-        body_json = {}
+        request_body = await request.json()
+        logger.info(f"[REQUEST] Received payload with keys: {list(request_body.keys())}")
+    except Exception as parse_error:
+        logger.warning(f"[REQUEST] Failed to parse JSON body: {parse_error}")
+        request_body = {}
 
     try:
-        # 1) Build parent context
-        ctx: Dict[str, Any] = {}
+        # ----------------------------------------------------------------
+        # STEP 1: Seed context with incoming payload
+        # ----------------------------------------------------------------
+        if request_body:
+            context["{{ endpoint.name }}"] = request_body
+            logger.debug(f"[CONTEXT] Seeded with endpoint payload: {{ endpoint.name }}")
 
-        # Seed ctx with the APIEndpoint<REST> payload under the endpoint name
-        if body_json:
-            ctx["{{ endpoint.name }}"] = body_json
-
-        # a) External REST parents
-        for ri in _REST_INPUTS:
+        # ----------------------------------------------------------------
+        # STEP 2: Fetch external REST sources
+        # ----------------------------------------------------------------
+        for source_config in _EXTERNAL_REST_SOURCES:
+            entity_name = source_config["entity"]
+            source_alias = source_config["alias"]
+            url = source_config["url"]
+            method = source_config["method"]
+            
+            logger.info(f"[FETCH] Fetching {entity_name} from {url} ({method})")
+            
             try:
-                headers = resolve_headers([(h.get("key"), h.get("value")) for h in (ri.get("headers") or [])])
-
-                # Apply query param injection
-                url = ri["url"]
-                for key, val in (ri.get("headers") or []):
+                # Prepare headers
+                headers = resolve_headers(source_config.get("headers", []))
+                
+                # Handle API key query param injection
+                for key, value in source_config.get("headers", []):
                     if key == "__queryparam__":
-                        sep = "&" if "?" in url else "?"
-                        url = f"{url}{sep}{val}"
-
-                response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
+                        separator = "&" if "?" in url else "?"
+                        url = f"{url}{separator}{value}"
+                
+                # Make request
+                response = await http_client.request(method, url, headers=headers)
+                
                 if response.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
-                payload = response.json()
-
-                shaped: Dict[str, Any] = {}
-                for a in (ri.get("attrs") or []):
-                    compiled = compile_safe(a["expr"])
-                    shaped[a["name"]] = eval(compiled, safe_globals, {ri["alias"]: payload})
-                if not shaped:
-                    shaped = {"raw": payload}
-
-                ctx[ri["entity"]] = shaped # Store shaped data under entity name
-                ctx[ri["alias"]] = payload # Store raw payload under source alias
+                    logger.error(f"[FETCH] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"External source {entity_name} returned {response.status_code}"
+                    )
+                
+                raw_payload = response.json()
+                logger.debug(f"[FETCH] {entity_name} payload type: {type(raw_payload)}")
+                
+                # Shape the data by evaluating attribute expressions
+                shaped_data: Dict[str, Any] = {}
+                evaluation_ctx = {source_alias: raw_payload}
+                
+                for attr_config in source_config.get("attrs", []):
+                    attr_name = attr_config["name"]
+                    attr_expr = attr_config["expr"]
+                    
+                    compiled_expr = compile_safe(attr_expr)
+                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                
+                # Default to raw payload if no attributes specified
+                if not shaped_data:
+                    shaped_data = {"raw": raw_payload}
+                
+                # Store both shaped data (under entity name) and raw payload (under alias)
+                context[entity_name] = shaped_data
+                context[source_alias] = raw_payload
+                
+                logger.info(f"[CONTEXT] Stored {entity_name} and raw {source_alias}")
+                
             except HTTPException:
                 raise
-            except Exception:
-                logger.exception(f"Error fetching REST dependency for {ri.get('entity')}")
-                raise HTTPException(status_code=502, detail="Failed to fetch REST dependency")
+            except Exception as fetch_error:
+                logger.error(f"[FETCH] Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to fetch external source: {entity_name}"
+                )
 
-        # b) Computed parents
-        for cp in _COMPUTED_PARENTS:
+        # ----------------------------------------------------------------
+        # STEP 3: Fetch internal computed dependencies
+        # ----------------------------------------------------------------
+        for dependency in _INTERNAL_DEPENDENCIES:
+            entity_name = dependency["name"]
+            endpoint_path = dependency["endpoint"]
+            
+            logger.info(f"[DEPENDENCY] Fetching computed parent {entity_name} from {endpoint_path}")
+            
             try:
-                response = await client.get(f"http://localhost:8080{cp['endpoint']}")
+                response = await http_client.get(f"http://localhost:8080{endpoint_path}")
+                
                 if response.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"Failed to fetch computed parent {cp['name']}: {response.status_code}")
-                parent_json = response.json()
-                if isinstance(parent_json, list):
-                    merged: Dict[str, Any] = {}
-                    for item in parent_json:
+                    logger.error(f"[DEPENDENCY] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Internal dependency {entity_name} returned {response.status_code}"
+                    )
+                
+                dependency_data = response.json()
+                
+                # Normalize response: internal endpoints return list[dict]
+                if isinstance(dependency_data, list):
+                    merged_data: Dict[str, Any] = {}
+                    for item in dependency_data:
                         if isinstance(item, dict):
-                            merged.update(item)
+                            merged_data.update(item)
                         else:
-                            merged.setdefault("value", item)
-                    ctx[cp["name"]] = merged
-                elif isinstance(parent_json, dict):
-                    ctx[cp["name"]] = parent_json
+                            merged_data.setdefault("value", item)
+                    context[entity_name] = merged_data
+                elif isinstance(dependency_data, dict):
+                    context[entity_name] = dependency_data
                 else:
-                    ctx[cp["name"]] = {"value": parent_json}
+                    context[entity_name] = {"value": dependency_data}
+                
+                logger.info(f"[CONTEXT] Stored computed parent {entity_name}")
+                
             except HTTPException:
                 raise
-            except Exception:
-                logger.exception(f"Error fetching computed dependency {cp['name']}")
-                raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
+            except Exception as dep_error:
+                logger.error(f"[DEPENDENCY] Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to fetch internal dependency: {entity_name}"
+                )
 
-        # 2) Compute each entity in the chain in order (parents first)
-        for ent in _COMPILED_CHAIN:
-            shaped = {}
-            for a in (ent.get("attrs") or []):
-                compiled = compile_safe(a["expr"])
-                shaped[a["name"]] = eval(compiled, {**safe_globals, "ctx": ctx}, {})
-            ctx[ent["name"]] = shaped
+        # ----------------------------------------------------------------
+        # STEP 4: Execute transformation chain
+        # ----------------------------------------------------------------
+        logger.info(f"[TRANSFORM] Executing chain with {len(_TRANSFORMATION_CHAIN)} step(s)")
+        
+        for step_index, transform_step in enumerate(_TRANSFORMATION_CHAIN, 1):
+            entity_name = transform_step["name"]
+            logger.debug(f"[TRANSFORM] Step {step_index}/{len(_TRANSFORMATION_CHAIN)}: {entity_name}")
+            
+            shaped_data = {}
+            evaluation_ctx = {**safe_globals, "ctx": context}
+            
+            for attr_config in transform_step.get("attrs", []):
+                attr_name = attr_config["name"]
+                attr_expr = attr_config["expr"]
+                
+                try:
+                    compiled_expr = compile_safe(attr_expr)
+                    shaped_data[attr_name] = eval(compiled_expr, evaluation_ctx, {})
+                    logger.debug(f"[TRANSFORM] {entity_name}.{attr_name} computed")
+                except Exception as compute_error:
+                    logger.error(
+                        f"[TRANSFORM] Error computing {entity_name}.{attr_name}: {compute_error}",
+                        exc_info=True
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to compute {entity_name}.{attr_name}"
+                    )
+            
+            context[entity_name] = shaped_data
+            logger.debug(f"[CONTEXT] Stored transformation result: {entity_name}")
 
-        # 3) Compute TERMINAL entity payload
-        payload_out: Dict[str, Any] = {}
-        for attr_name, compiled_expr in _COMPILED_PAYLOAD_ATTRS.items():
-            payload_out[attr_name] = eval(compiled_expr, {**safe_globals, "ctx": ctx}, {})
+        # ----------------------------------------------------------------
+        # STEP 5: Extract final payload (terminal entity)
+        # ----------------------------------------------------------------
+        terminal_entity_name = "{{ terminal.name }}"
+        final_payload = context.get(terminal_entity_name, {})
+        
+        logger.info(f"[PAYLOAD] Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
 
         {% if target %}
-        # 4) Forward to external target
-        t_headers = resolve_headers(_TARGET.get("headers") or [])
-        method = _TARGET.get("method", "POST").upper()
-        url = _TARGET["url"]
-
-        for key, val in (_TARGET.get("headers") or []):
-            if key == "__queryparam__":
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}{val}"
-
-        kwargs = dict(headers=t_headers)
-        if not (method == "DELETE" and not payload_out):
-            kwargs["json"] = payload_out
-
-        resp = await client.request(method, url, **kwargs)
-        if resp.status_code >= 400:
-            try:
-                detail = resp.json()
-            except Exception:
-                detail = {"message": resp.text}
-            raise HTTPException(status_code=resp.status_code, detail=detail)
-
+        # ----------------------------------------------------------------
+        # STEP 6: Forward to external target
+        # ----------------------------------------------------------------
+        target_url = _EXTERNAL_TARGET["url"]
+        target_method = _EXTERNAL_TARGET["method"]
+        target_name = _EXTERNAL_TARGET["name"]
+        
+        logger.info(f"[FORWARD] Sending to {target_name} ({target_method} {target_url})")
+        
         try:
-            data = resp.json()
-        except Exception:
-            data = {"ok": True}
-
-        return {"forwarded_to": url, "method": method, "payload": payload_out, "response": data}
+            # Prepare headers
+            target_headers = resolve_headers(_EXTERNAL_TARGET.get("headers", []))
+            
+            # Handle API key query param injection
+            for key, value in _EXTERNAL_TARGET.get("headers", []):
+                if key == "__queryparam__":
+                    separator = "&" if "?" in target_url else "?"
+                    target_url = f"{target_url}{separator}{value}"
+            
+            # Prepare request kwargs
+            request_kwargs = {"headers": target_headers}
+            
+            # Don't send body for DELETE with empty payload
+            if not (target_method == "DELETE" and not final_payload):
+                request_kwargs["json"] = final_payload
+            
+            # Make request
+            target_response = await http_client.request(
+                target_method,
+                target_url,
+                **request_kwargs
+            )
+            
+            if target_response.status_code >= 400:
+                logger.error(f"[FORWARD] Target returned error: HTTP {target_response.status_code}")
+                try:
+                    error_detail = target_response.json()
+                except Exception:
+                    error_detail = {"message": target_response.text}
+                raise HTTPException(
+                    status_code=target_response.status_code,
+                    detail=error_detail
+                )
+            
+            # Parse response
+            try:
+                target_data = target_response.json()
+            except Exception:
+                target_data = {"ok": True}
+            
+            logger.info(f"[SUCCESS] Forwarded to {target_name} successfully")
+            
+            return {
+                "forwarded_to": target_url,
+                "method": target_method,
+                "payload": final_payload,
+                "response": target_data
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as forward_error:
+            logger.error(f"[FORWARD] Unexpected error forwarding to {target_name}: {forward_error}", exc_info=True)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to forward to external target: {target_name}"
+            )
         {% else %}
-        # 4) No external target → return TERMINAL payload
-        return payload_out
+        # ----------------------------------------------------------------
+        # STEP 6: Return final payload (no external target)
+        # ----------------------------------------------------------------
+        logger.info(f"[SUCCESS] Mutation {{ entity.name }} completed (internal)")
+        return final_payload
         {% endif %}
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("Mutation flow failed")
+    except Exception as unexpected_error:
+        logger.exception(f"[ERROR] Unexpected error in mutation {{ entity.name }}")
         raise HTTPException(status_code=500, detail="Internal server error")

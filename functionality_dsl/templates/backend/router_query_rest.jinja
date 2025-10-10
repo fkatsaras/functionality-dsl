@@ -13,183 +13,251 @@ router = APIRouter(
     tags=["{{ endpoint.summary or endpoint.name }}"]
 )
 
-# REST input sources (external APIs) for PARENT ENTITIES
-# Each entry includes the parent's attributes as expressions to evaluate
-_REST_INPUTS = [
-{%- for it in rest_inputs %}
+# ============================================================================
+#                          CONFIGURATION
+# ============================================================================
+
+# External REST sources (parent entities fetched from external APIs)
+_EXTERNAL_REST_SOURCES = [
+{%- for source in rest_inputs %}
     {
-        "entity": "{{ it.entity }}",   # e.g. RealObjectsRaw
-        "alias":  "{{ it.alias }}",    # e.g. RealObjects (or parent entity name)
-        "url": "{{ it.url }}",
-        "headers": {{ it.headers }},
-        "method": "{{ (it.method or 'GET')|upper }}",
+        "entity": "{{ source.entity }}",
+        "alias": "{{ source.alias }}",
+        "url": "{{ source.url }}",
+        "headers": {{ source.headers }},
+        "method": "{{ source.method }}",
         "attrs": [
-        {%- for a in it.attrs %}
-            {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+        {%- for attr in source.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
         ]
     },
 {%- endfor %}
 ]
 
-# Computed parent dependencies (internal endpoints)
-_COMPUTED_PARENTS = [
-{%- for parent in computed_parents | default([], true) %}
-    {"name": "{{ parent.name }}", "endpoint": "{{ parent.endpoint }}/"},
+# Internal computed dependencies (other API endpoints)
+_INTERNAL_DEPENDENCIES = [
+{%- for dep in computed_parents | default([], true) %}
+    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
 {%- endfor %}
 ]
 
-# Compiled attribute expressions for THIS entity
+# Inline computed ancestors (pure transformations, no external sources)
+_INLINE_COMPUTED_CHAIN = [
+{%- for step in inline_chain or [] %}
+    {
+        "name": "{{ step.name }}",
+        "attrs": [
+        {%- for attr in step.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ]
+    },
+{%- endfor %}
+]
 
-_COMPILED_ATTRS = {
+# Final entity attributes (computed from all dependencies)
+_ENTITY_ATTRIBUTES = {
 {%- for attr in computed_attrs %}
     "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
 {%- endfor %}
 }
 
-# Inline-computed ancestors (no Source<REST> / no APIEndpoint<REST>)
-_INLINE_CHAIN = [
-{%- for ent in inline_chain or [] %}
-  {
-    "name": "{{ ent.name }}",
-    "attrs": [
-    {%- for a in ent.attrs %}
-      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
-    {%- endfor %}
-    ]
-  },
-{%- endfor %}
-]
-
 
 @router.get("/", response_model=List[Dict[str, Any]])
-async def {{ endpoint.name|lower }}():
-    """Compute {{ entity.name }} from parent entities + external REST inputs."""
-    client = get_http_client()
+async def query_{{ endpoint.name | lower }}():
+    """
+    Query endpoint for {{ entity.name }}.
+    Aggregates data from external sources and internal dependencies,
+    then computes the final entity attributes.
+    """
+    http_client = get_http_client()
+    context: Dict[str, Any] = {}
 
     try:
-        # ------------------------------
-        # 1) Build parent context
-        # ------------------------------
-        ctx: Dict[str, Any] = {}
-
-        # ---- a) Parents with Source<REST> (treat as 'raw-like' entities)
-        for ri in _REST_INPUTS:
-            try:
-                headers = resolve_headers(ri.get("headers") or [])
-
-                # Apply query param injection
-                url = ri["url"]
-                for key, val in (ri.get("headers") or []):
-                    if key == "__queryparam__":
-                        sep = "&" if "?" in url else "?"
-                        url = f"{url}{sep}{val}"
-
-                response = await client.request(ri.get("method", "GET"), ri["url"], headers=headers)
-                if response.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"Failed to fetch {ri['entity']}: {response.status_code}")
-
-                payload = response.json()
-                print(f"[REST-FETCH] {ri['entity']} payload type={type(payload)} keys={list(payload) if isinstance(payload, dict) else 'n/a'}")
-
-                parent_attrs: Dict[str, Any] = {}
-                for a in (ri.get("attrs") or []):
-                    try:
-                        compiled = compile_safe(a["expr"])
-                        evaluation_context = {ri["alias"]: payload}  #  eval against alias
-                        print(f"[REST-EVAL] Entity={ri['entity']} Attr={a['name']} Expr={a['expr']}")
-                        value = eval(compiled, safe_globals, evaluation_context)
-                        print(f"[REST-EVAL] Result type={type(value)} sample={str(value)[:200]}")
-                        parent_attrs[a["name"]] = value
-                    except Exception:
-                        logger.error(f"Error computing parent attr {ri['entity']}.{a.get('name')}", exc_info=True)
-                        raise HTTPException(status_code=500, detail=f"Computation error in parent {ri['entity']}.{a.get('name')}")
-
-                if not parent_attrs:
-                    parent_attrs = {"raw": payload}
-
-                #  Bind under ENTITY name so downstream can do RealObjectsRaw.raw
-                ctx[ri["entity"]] = parent_attrs #  bind into ctx under entity name
-                logger.info(f"Fetched REST {ri['entity']}: shaped as {type(parent_attrs)}")
-
-            except HTTPException:
-                raise
-            except Exception:
-                logger.error(f"Error fetching {ri['name']}", exc_info=True)
-                raise HTTPException(status_code=502, detail=f"Failed to fetch REST dependency: {ri['name']}")
-
-        # ---- b) Parents that are computed (internal endpoints)
-        for cp in _COMPUTED_PARENTS:
-            try:
-                response = await client.get(f"http://localhost:8080{cp['endpoint']}")
-                if response.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"Failed to fetch computed parent {cp['name']}: {response.status_code}")
-
-                parent_json = response.json()
-
-                # Contract: internal routers return list[dict]; merge into a single dict
-                if isinstance(parent_json, list):
-                    merged: Dict[str, Any] = {}
-                    for item in parent_json:
-                        if isinstance(item, dict):
-                            merged.update(item)
-                        else:
-                            merged.setdefault("value", item)
-                    ctx[cp["name"]] = merged
-                elif isinstance(parent_json, dict):
-                    ctx[cp["name"]] = parent_json
-                else:
-                    ctx[cp["name"]] = {"value": parent_json}
-
-                logger.info(f"Fetched computed parent {cp['name']}: shaped as {type(ctx[cp['name']])}")
-
-            except HTTPException:
-                raise
-            except Exception:
-                logger.error(f"Error fetching computed parent {cp['name']}", exc_info=True)
-                raise HTTPException(status_code=502, detail=f"Failed to fetch computed dependency: {cp['name']}")
-
-        # ---- c) Inline-compute computed-only ancestors into ctx
-        for ent in _INLINE_CHAIN:
-            shaped = {}
-            eval_ctx = {"ctx": ctx}
-            for a in (ent.get("attrs") or []):
-                compiled = compile_safe(a["expr"])
-                shaped[a["name"]] = eval(compiled, safe_globals, eval_ctx)
-            ctx[ent["name"]] = shaped
+        # ----------------------------------------------------------------
+        # STEP 1: Fetch external REST sources
+        # ----------------------------------------------------------------
+        for source_config in _EXTERNAL_REST_SOURCES:
+            entity_name = source_config["entity"]
+            source_alias = source_config["alias"]
+            url = source_config["url"]
+            method = source_config["method"]
             
-        # ------------------------------
-        # 2) Evaluate THIS entity's attributes
-        # ------------------------------
-        computed_attrs: Dict[str, Any] = {}
-        # NOTE: We do NOT set a top-level 'response' here (ambiguity).
-        # Current entity expressions should refer to parents via 'ctx', e.g., ctx['RealObjectsRaw']['raw']
-        evaluation_context = {"ctx": ctx}
-        for ri in _REST_INPUTS:
-            alias = ri["alias"]
-            # expose alias directly in eval context (Source<REST> semantics)
-            evaluation_context[alias] = ctx.get(ri["entity"], {})
-
-        for attr_name, compiled_expr in _COMPILED_ATTRS.items():
+            logger.info(f"[FETCH] Fetching {entity_name} from {url} ({method})")
+            
             try:
-                result = eval(compiled_expr, safe_globals, evaluation_context)
-                computed_attrs[attr_name] = result
-                logger.debug(f"Computed {attr_name}: {type(result)}")
-            except Exception:
-                logger.error(f"Error computing attribute {attr_name}", exc_info=True)
-                raise HTTPException(status_code=500, detail=f"Computation error: {attr_name}")
+                # Prepare headers
+                headers = resolve_headers(source_config.get("headers", []))
+                
+                # Handle API key query param injection
+                for key, value in source_config.get("headers", []):
+                    if key == "__queryparam__":
+                        separator = "&" if "?" in url else "?"
+                        url = f"{url}{separator}{value}"
+                
+                # Make request
+                response = await http_client.request(method, url, headers=headers)
+                
+                if response.status_code >= 400:
+                    logger.error(f"[FETCH] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"External source {entity_name} returned {response.status_code}"
+                    )
+                
+                raw_payload = response.json()
+                logger.debug(f"[FETCH] {entity_name} payload type: {type(raw_payload)}")
+                
+                # Shape the data by evaluating attribute expressions
+                shaped_data: Dict[str, Any] = {}
+                evaluation_ctx = {source_alias: raw_payload}
+                
+                for attr_config in source_config.get("attrs", []):
+                    attr_name = attr_config["name"]
+                    attr_expr = attr_config["expr"]
+                    
+                    try:
+                        compiled_expr = compile_safe(attr_expr)
+                        shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                        logger.debug(f"[SHAPE] {entity_name}.{attr_name} computed successfully")
+                    except Exception as eval_error:
+                        logger.error(
+                            f"[SHAPE] Error computing {entity_name}.{attr_name}: {eval_error}",
+                            exc_info=True
+                        )
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to compute {entity_name}.{attr_name}"
+                        )
+                
+                # Default to raw payload if no attributes specified
+                if not shaped_data:
+                    shaped_data = {"raw": raw_payload}
+                
+                # Store in context under entity name
+                context[entity_name] = shaped_data
+                logger.info(f"[CONTEXT] Stored {entity_name} with keys: {list(shaped_data.keys())}")
+                
+            except HTTPException:
+                raise
+            except Exception as fetch_error:
+                logger.error(f"[FETCH] Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to fetch external source: {entity_name}"
+                )
 
-        # Pretty debug
-        print("\n" * 8)
-        print(f"Computed Entity {{ entity.name }} returns this data:")
-        print([computed_attrs])
-        print("\n" * 8)
+        # ----------------------------------------------------------------
+        # STEP 2: Fetch internal computed dependencies
+        # ----------------------------------------------------------------
+        for dependency in _INTERNAL_DEPENDENCIES:
+            entity_name = dependency["name"]
+            endpoint_path = dependency["endpoint"]
+            
+            logger.info(f"[DEPENDENCY] Fetching computed parent {entity_name} from {endpoint_path}")
+            
+            try:
+                response = await http_client.get(f"http://localhost:8080{endpoint_path}")
+                
+                if response.status_code >= 400:
+                    logger.error(f"[DEPENDENCY] Failed to fetch {entity_name}: HTTP {response.status_code}")
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Internal dependency {entity_name} returned {response.status_code}"
+                    )
+                
+                dependency_data = response.json()
+                
+                # Normalize response: internal endpoints return list[dict]
+                if isinstance(dependency_data, list):
+                    # Merge all items into single dict
+                    merged_data: Dict[str, Any] = {}
+                    for item in dependency_data:
+                        if isinstance(item, dict):
+                            merged_data.update(item)
+                        else:
+                            merged_data.setdefault("value", item)
+                    context[entity_name] = merged_data
+                elif isinstance(dependency_data, dict):
+                    context[entity_name] = dependency_data
+                else:
+                    context[entity_name] = {"value": dependency_data}
+                
+                logger.info(f"[CONTEXT] Stored computed parent {entity_name}")
+                
+            except HTTPException:
+                raise
+            except Exception as dep_error:
+                logger.error(f"[DEPENDENCY] Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to fetch internal dependency: {entity_name}"
+                )
 
-        # Contract: list[dict]
-        return [computed_attrs]
+        # ----------------------------------------------------------------
+        # STEP 3: Compute inline ancestors
+        # ----------------------------------------------------------------
+        for inline_entity in _INLINE_COMPUTED_CHAIN:
+            entity_name = inline_entity["name"]
+            logger.debug(f"[INLINE] Computing inline entity {entity_name}")
+            
+            shaped_data = {}
+            evaluation_ctx = {"ctx": context}
+            
+            for attr_config in inline_entity.get("attrs", []):
+                attr_name = attr_config["name"]
+                attr_expr = attr_config["expr"]
+                
+                compiled_expr = compile_safe(attr_expr)
+                shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+            
+            context[entity_name] = shaped_data
+            logger.debug(f"[CONTEXT] Stored inline entity {entity_name}")
+
+        # ----------------------------------------------------------------
+        # STEP 4: Compute final entity attributes
+        # ----------------------------------------------------------------
+        logger.info(f"[COMPUTE] Computing final entity {{ entity.name }}")
+        
+        final_attributes: Dict[str, Any] = {}
+        
+        # Build evaluation context with all dependencies
+        evaluation_ctx = {"ctx": context}
+        
+        # Also expose external sources directly by their alias
+        for source_config in _EXTERNAL_REST_SOURCES:
+            source_alias = source_config["alias"]
+            entity_name = source_config["entity"]
+            evaluation_ctx[source_alias] = context.get(entity_name, {})
+        
+        # Evaluate each attribute
+        for attr_name, compiled_expr in _ENTITY_ATTRIBUTES.items():
+            try:
+                result = eval(compiled_expr, safe_globals, evaluation_ctx)
+                final_attributes[attr_name] = result
+                logger.debug(f"[COMPUTE] {{ entity.name }}.{attr_name}: {type(result).__name__}")
+            except Exception as compute_error:
+                logger.error(
+                    f"[COMPUTE] Error computing attribute {attr_name}: {compute_error}",
+                    exc_info=True
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to compute attribute: {attr_name}"
+                )
+
+        # ----------------------------------------------------------------
+        # STEP 5: Return result
+        # ----------------------------------------------------------------
+        logger.info(f"[SUCCESS] Query {{ entity.name }} completed successfully")
+        logger.debug(f"[RESULT] Attributes: {list(final_attributes.keys())}")
+        
+        # Contract: Always return list[dict]
+        return [final_attributes]
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception(f"Error computing {{ entity.name }}")
+    except Exception as unexpected_error:
+        logger.exception(f"[ERROR] Unexpected error in query {{ entity.name }}")
         raise HTTPException(status_code=500, detail="Internal server error")
