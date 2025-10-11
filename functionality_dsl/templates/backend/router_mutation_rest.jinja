@@ -1,9 +1,15 @@
-from fastapi import APIRouter, HTTPException, Request
-from typing import Dict, Any
+# ========================================================================
+# AUTO-GENERATED MUTATION ROUTER
+# ========================================================================
+
+import json
 import logging
+from typing import Any, Dict
+
+from fastapi import APIRouter, HTTPException, Request
 
 from app.core.http import get_http_client
-from app.core.computed import compile_safe, safe_globals
+from app.core.runtime.safe_eval import compile_safe, safe_globals
 from app.core.utils import resolve_headers
 
 {% if target %}

@@ -8,8 +8,9 @@ from textx import (
     TextXSemanticError,
 )
 
-from .lib.computed import compile_expr_to_python, DSL_FUNCTION_SIG
-from .lib.component_types import COMPONENT_TYPES
+from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+from functionality_dsl.lib.builtins.registry import DSL_FUNCTION_SIG
+from functionality_dsl.lib.component_types import COMPONENT_TYPES
 
 
 # ------------------------------------------------------------------------------

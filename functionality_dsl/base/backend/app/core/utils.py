@@ -7,8 +7,6 @@ import httpx
 
 from typing import Dict, Union, Tuple, Any, List, Callable
 
-from app.core.computed import safe_globals
-
 
 class EntityResolver:
     """Clean interface for resolving entity dependencies."""

@@ -1,15 +1,20 @@
-# router_ws_duplex.jinja
-import uuid
-import json
-import logging
-import asyncio
-import websockets
-from typing import Any, Dict, Optional, List
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+# ========================================================================
+# AUTO-GENERATED WEBSOCKET ROUTER
+# ========================================================================
 
-from app.core.computed import compile_safe, safe_globals
+import json
+import uuid
+import asyncio
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import websockets
+
+from app.core.runtime.safe_eval import compile_safe, safe_globals
 from app.core.logging import set_request_id
 from app.core import wsbus
+
 
 logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
 

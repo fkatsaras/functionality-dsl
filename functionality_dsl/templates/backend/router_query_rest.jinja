@@ -1,11 +1,15 @@
-import logging
+# ========================================================================
+# AUTO-GENERATED QUERY ROUTER
+# ========================================================================
+
 import json
+import logging
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
 
 from app.core.http import get_http_client
-from app.core.computed import compile_safe, safe_globals
+from app.core.runtime.safe_eval import compile_safe, safe_globals
 from app.core.utils import resolve_headers
 
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
