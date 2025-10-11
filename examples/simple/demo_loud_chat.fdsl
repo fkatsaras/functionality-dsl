@@ -1,6 +1,7 @@
 Server EventServer
   host: "localhost"
   port: 8080
+  loglevel: debug
 end
 
 // OUTBOUND CHAIN (what we send)
