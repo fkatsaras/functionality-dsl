@@ -99,13 +99,13 @@ def _as_id_str(x):
         return s if "<" not in s else None
     except Exception:
         return None
-
 def _loop_var_names(expr) -> set[str]:
     names: set[str] = set()
 
     for n in _walk(expr):
         cname = n.__class__.__name__
 
+        # --- list comprehensions ---
         if cname == "ListCompExpr":
             v = getattr(n, "var", None)
             if v is None:
@@ -122,11 +122,28 @@ def _loop_var_names(expr) -> set[str]:
                     if nm:
                         names.add(nm)
 
+        # --- dict comprehensions ---
         elif cname == "DictCompExpr":
             v = getattr(n, "var", None)
             nm = _as_id_str(v)
             if nm:
                 names.add(nm)
+
+        # --- lambda expressions ---
+        elif cname == "LambdaExpr":
+            # Single parameter (x -> ...)
+            if getattr(n, "param", None):
+                nm = _as_id_str(n.param)
+                if nm:
+                    names.add(nm)
+
+            # Tuple parameter ((a,b) -> ...)
+            elif getattr(n, "params", None):
+                for v in getattr(n.params, "vars", []):
+                    nm = _as_id_str(v)
+                    if nm:
+                        names.add(nm)
+
     return names
 
 # ------------------------------------------------------------------------------

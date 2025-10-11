@@ -2,6 +2,7 @@ Server WeatherServer
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 // --- External REST sources -------------------------------------
@@ -29,10 +30,17 @@ Entity LondonHourly
 end
 
 // --- Row-shaped compare entity ---------------------------------
-Entity WeatherCompare(ThessHourly,LondonHourly)
+Entity WeatherCompare(ThessHourly, LondonHourly)
   attributes:
-    - rows: list = [ 
-        { 
+    - rows: list = map(
+        zip(
+          ThessHourly.hourly["time"],
+          ThessHourly.hourly["temperature_2m"],
+          LondonHourly.hourly["temperature_2m"],
+          ThessHourly.hourly["relative_humidity_2m"],
+          LondonHourly.hourly["relative_humidity_2m"]
+        ),
+        (t, th_t, ln_t, th_h, ln_h) -> {
           "time": t,
           "th_temp": th_t,
           "ln_temp": ln_t,
@@ -44,14 +52,7 @@ Entity WeatherCompare(ThessHourly,LondonHourly)
           "th_is_comfy": ((abs(th_t - 22) < 3) and (th_h >= 30) and (th_h <= 60)),
           "ln_is_comfy": ((abs(ln_t - 22) < 3) and (ln_h >= 30) and (ln_h <= 60))
         }
-        for (t, th_t, ln_t, th_h, ln_h) in zip(
-          ThessHourly.hourly["time"],
-          ThessHourly.hourly["temperature_2m"],
-          LondonHourly.hourly["temperature_2m"],
-          ThessHourly.hourly["relative_humidity_2m"],
-          LondonHourly.hourly["relative_humidity_2m"]
-        )
-      ];
+      );
 end
 // --- Simplified stats view (line chart) ------------------------
 Entity WeatherStats(WeatherCompare)

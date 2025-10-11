@@ -15,77 +15,71 @@ RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
 
 def _avg(xs) -> Optional[float]:
     xs = list(xs)
-    return (sum(xs) / len(xs)) if xs else None
+    if not xs:
+        raise ValueError("_avg() called on empty sequence")
+    return sum(xs) / len(xs)
 
 def _now() -> int:
     return int(time.time() * 1000)
 
-def _len(x) -> Optional[int]:
+def _len(x) -> int:
     if x is None:
-        return None
-    try:
-        return len(x)
-    except Exception:
-        return None
+        raise TypeError("_len() received None")
+    return len(x)
 
-def _tofloat(x) -> Optional[float]:
+def _tofloat(x) -> float:
     if x is None:
-        return None
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return None
-    
-def _lower(x) -> Optional[str]:
+        raise TypeError("_tofloat() received None")
+    return float(x)
+
+def _lower(x) -> str:
     if x is None:
-        return None
-    try:
-        return str(x).lower()
-    except Exception:
-        return None
-    
-def _upper(x) -> Optional[str]:
+        raise TypeError("_lower() received None")
+    return str(x).lower()
+
+def _upper(x) -> str:
     if x is None:
-        return None
-    try:
-        return str(x).upper()
-    except Exception:
-        return None
-    
+        raise TypeError("_upper() received None")
+    return str(x).upper()
+
 def _map(xs, fn):
+    """DSL map supporting both single and tuple lambdas, no swallowing."""
     if xs is None:
-        return []
-    try:
-        return [fn(x) for x in xs]
-    except Exception:
-        return []
+        raise TypeError("_map() received None sequence")
+
+    result = []
+    for x in xs:
+        if isinstance(x, (tuple, list)):
+            result.append(fn(*x))
+        else:
+            result.append(fn(x))
+    return result
 
 def _filter(xs, fn):
     if xs is None:
-        return []
-    try:
-        return [x for x in xs if fn(x)]
-    except Exception:
-        return []
+        raise TypeError("_filter() received None sequence")
+    return [x for x in xs if fn(x)]
 
 def _safe_str(fn):
-    """Wrap string predicates so they return False on any exception."""
+    """String predicate wrappers — if they fail, raise clearly."""
     @wraps(fn)
     def _wrap(s, sub):
         try:
             return fn(str(s), str(sub))
-        except Exception:
-            return False
+        except Exception as e:
+            raise RuntimeError(f"String predicate {fn.__name__} failed: {e}")
     return _wrap
 
 def _safe_zip(*args):
-    iters = []
+    """Force strict zip — raise on None or non-iterable."""
+    cleaned = []
     for a in args:
         if a is None:
-            iters.append([])
-        else:
-            iters.append(a)
-    return zip(*iters)
+            raise TypeError("_safe_zip() received None input")
+        if not hasattr(a, "__iter__"):
+            raise TypeError(f"_safe_zip() arg {a!r} not iterable")
+        cleaned.append(list(a))
+    return list(zip(*cleaned))
 
 def _error(status: int, message: str):
     """Raise a FastAPI HTTPException from inside a DSL expression."""
@@ -128,6 +122,8 @@ DSL_FUNCTIONS = {
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
 DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
+
+
 
 
 _ALLOWED_AST = {

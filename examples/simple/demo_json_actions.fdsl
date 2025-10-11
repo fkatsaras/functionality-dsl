@@ -31,16 +31,17 @@ end
 
 Entity RealObjectsRows(RealObjectsRaw)
   attributes:
-    - lol: list = [{ 
-      "id": x['id'],
-      "name": x['name'],
-      "color": x['data']['color'],
-      "capacity": x['data']['capacity'],
-      "price": x['data']['price'],
-      "year": x['data']['year']
-      } for x in RealObjectsRaw.raw];
+    - rows: list = map( RealObjectsRaw.raw, x ->
+        {
+          "id": x["id"],
+          "name": x["name"],
+          "color": x["data"]["color"],
+          "capacity": x["data"]["capacity"],
+          "price": x["data"]["price"],
+          "year": x["data"]["year"]
+        }
+      );
 end
-
 // --- Internal endpoint -----------------------------------------
 APIEndpoint<REST> RealObjectsList
   path: "/api/objects"

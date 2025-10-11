@@ -972,7 +972,7 @@ def _generate_websocket_router(endpoint, model, all_source_names, templates_dir,
 def _extract_server_config(model):
     """
     Extract server configuration from the model.
-    Returns dict with server name, host, port, CORS, and environment.
+    Returns dict with server name, host, port, CORS, loglevel and environment.
     """
     servers = list(get_children_of_type("Server", model))
     if not servers:
@@ -990,6 +990,12 @@ def _extract_server_config(model):
     env_value = (env_value or "").lower()
     if env_value not in {"dev", ""}:
         env_value = ""
+        
+    # Normalize loglevel value
+    loglvl_value = getattr(server, "loglevel", None)
+    loglvl_value = (loglvl_value or "").lower()
+    if loglvl_value not in {"debug", "info", "error"}:
+        loglvl_value = "info"
     
     return {
         "server": {
@@ -998,6 +1004,7 @@ def _extract_server_config(model):
             "port": int(getattr(server, "port", 8080)),
             "cors": cors_value or "http://localhost:3000",
             "env": env_value,
+            "loglevel": loglvl_value,
         }
     }
 

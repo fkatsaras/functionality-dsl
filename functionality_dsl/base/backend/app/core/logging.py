@@ -1,3 +1,4 @@
+# app/core/logging.py
 from __future__ import annotations
 
 import logging
@@ -34,6 +35,9 @@ class StructuredFormatter(logging.Formatter):
         "CONTEXT": CLIColorCodes.ORANGE,
         "FORWARD": CLIColorCodes.YELLOW,
         "PAYLOAD": CLIColorCodes.CYAN,
+        "INLINE": CLIColorCodes.CYAN,
+        "SHAPE": CLIColorCodes.CYAN,
+        "RESULT": CLIColorCodes.GREEN,
     }
 
     TAG_REGEX = re.compile(r"\[([A-Z_]+)\]")
@@ -43,12 +47,16 @@ class StructuredFormatter(logging.Formatter):
         lvl = record.levelname.upper()
         logger_name = record.name
         msg = record.getMessage()
+        
+        # Include request ID if available
+        rid = request_id_cv.get()
+        rid_str = f" [{rid[:8]}]" if rid != "-" else ""
 
         # Color only tags if supported
         if self.USE_COLOR:
             msg = self._colorize_tags(msg)
 
-        base = f"{ts} : {lvl:<5} : {logger_name} : {msg}"
+        base = f"{ts} : {lvl:<5} : {logger_name}{rid_str} : {msg}"
 
         if record.exc_info:
             base += f"\n{self.formatException(record.exc_info)}"
@@ -67,13 +75,41 @@ class StructuredFormatter(logging.Formatter):
 
 
 def configure_logging(level: str = "INFO", *, json_mode: bool = False):
+    """Configure logging for the entire application."""
+    # Convert string level to numeric
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    
+    # Configure root logger
     root = logging.getLogger()
-    root.handlers.clear()
-    root.setLevel(getattr(logging, level.upper(), logging.INFO))
+    root.handlers.clear()  # remove any existing handlers
+    root.setLevel(numeric_level)
 
+    # Create console handler
     handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(numeric_level)
     handler.setFormatter(StructuredFormatter())
     root.addHandler(handler)
+
+    # Configure specific loggers
+    # Set uvicorn loggers to WARNING to reduce noise (unless DEBUG is requested)
+    uvicorn_level = numeric_level if numeric_level == logging.DEBUG else logging.WARNING
+    logging.getLogger("uvicorn").setLevel(uvicorn_level)
+    logging.getLogger("uvicorn.error").setLevel(uvicorn_level)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Always WARNING for access logs
+    
+    # Set httpx to INFO minimum (to see HTTP requests)
+    httpx_level = max(numeric_level, logging.INFO)
+    logging.getLogger("httpx").setLevel(httpx_level)
+    
+    # Keep fastapi at INFO minimum
+    logging.getLogger("fastapi").setLevel(max(numeric_level, logging.INFO))
+    
+    # Ensure all fdsl.router.* loggers inherit from root
+    logging.getLogger("fdsl").setLevel(numeric_level)
+    
+    # Log the configuration (do this at the end to ensure handler is attached)
+    logger = logging.getLogger("fdsl.core")
+    logger.info(f"[CONFIG] Logging initialized: level={level.upper()}")
 
 
 def set_request_id(value: str) -> None:

@@ -8,6 +8,7 @@ Server:
         ('base:' base=STRING)?
         ('cors:' cors+=STRING (',' cors+=STRING)*)?
         ('env:' env=ID)?          // (expects: dev | prod; or omit)
+        ('loglevel:' loglevel=ID)?          // (expects: debug | info | error; or omit)
     )#
     'end'
 ;

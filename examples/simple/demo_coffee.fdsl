@@ -3,6 +3,7 @@ Server CoffeeAPI
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 // ----------- External sources  -----------
@@ -21,31 +22,29 @@ end
 Entity HotCoffees
   source: CoffeeHot
   attributes:
-    - rows: list = [
+    - rows: list = map(CoffeeHot, x ->
         {
           "temp": "Hot",
           "name": x["title"],
-          "title_length": len(x["title"]),
+          "title_length": len(x["title"] or ""),
           "description": x["description"],
           "image": x["image"]
         }
-        for x in CoffeeHot
-      ];
+    );
 end
 
 Entity ColdCoffees
   source: CoffeeIced
   attributes:
-    - rows: list = [
+    - rows: list = map(CoffeeIced, x -> 
         {
           "temp": "Iced",
           "name": x["title"],
-          "title_length": len(x["title"]),
+          "title_length": len(x["title"] or ""),
           "description": x["description"],
           "image": x["image"]
         }
-        for x in CoffeeIced
-      ];
+    );
 end
 
 Entity CoffeeStatsList(HotCoffees,ColdCoffees)
