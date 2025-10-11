@@ -3,6 +3,7 @@ Server AuthServer
   host: "localhost"
   port: 8081
   cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 // --- External Endpoints (requires a custom dummy db container) -
@@ -40,8 +41,8 @@ end
 Entity RegisterPayload
   source: UserRegister
   attributes:
-    - username: string = UserRegister.username;
-    - email:    string = UserRegister.email;
+    - username: string = trim(UserRegister.username);
+    - email:    string = trim(UserRegister.email);
     - password: string = UserRegister.password if len(UserRegister.password) > 5 else error(400, "Weak password");
 end
 
@@ -54,6 +55,7 @@ Entity NewUser(RegisterPayload)
       };
 end
 
+
 // ---------------- LOGIN FLOW ----------------
 APIEndpoint<REST> UserLogin
   path: "/api/auth/login"
@@ -64,30 +66,31 @@ end
 Entity LoginPayload
   source: UserLogin
   attributes:
-    - username: string = UserLogin.username;
-    - password: string = UserLogin.password;
+    - username: string = trim(UserLogin.username);
+    - password: string = trim(UserLogin.password);
 end
+
 
 Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
-    - match: dict = (
-        [u for u in ExistingUsers.users
-         if u["username"] == LoginPayload.username
-         and u["password"] == LoginPayload.password][0]
-        if len([u for u in ExistingUsers.users
-                if u["username"] == LoginPayload.username
-                and u["password"] == LoginPayload.password]) > 0
-        else None
-      );
+    - matches: list = filter(ExistingUsers.users, u -> 
+      ( u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
+    );
+
+    - match: dict = find(ExistingUsers.users, u -> 
+      (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
+    );
 end
 
-Entity LoginValidated(LoginCandidates, LoginPayload)
+
+Entity LoginValidated(LoginCandidates)
   attributes:
     - username: string = (
         LoginCandidates.match["username"]
         if LoginCandidates.match != None
-        else error(401, "Invalid username")
+        else error(401, "Invalid username or password")
       );
+
     - password: string = (
         LoginCandidates.match["password"]
         if LoginCandidates.match != None
@@ -95,7 +98,8 @@ Entity LoginValidated(LoginCandidates, LoginPayload)
       );
 end
 
-// ---------------- UI ----------------
+
+// ---------------- UI Components ----------------
 Component<ActionForm> RegisterForm
   endpoint: UserRegister
   fields: [username, email, password]

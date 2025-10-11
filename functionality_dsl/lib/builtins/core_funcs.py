@@ -33,22 +33,7 @@ def _safe_zip(*args):
         cleaned.append(list(a))
     return list(zip(*cleaned))
 
-def _map(xs, fn):
-    if xs is None:
-        raise TypeError("_map() received None sequence")
-    result = []
-    for x in xs:
-        result.append(fn(*x) if isinstance(x, (tuple, list)) else fn(x))
-    return result
-
-def _filter(xs, fn):
-    if xs is None:
-        raise TypeError("_filter() received None sequence")
-    return [x for x in xs if fn(x)]
-
 DSL_FUNCTIONS = {
-    "map":        (_map,        (2, 2)),
-    "filter":     (_filter,     (2, 2)),
     "zip":        (_safe_zip,   (1, None)),
     "error":      (_error,      (2, 2)),
     "contains":   (_contains,   (2, 2)),
