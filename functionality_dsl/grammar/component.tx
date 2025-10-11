@@ -24,7 +24,7 @@ TableComponent:
 
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointWS])?
+  ('endpoint:' endpoint=[APIEndpointREST])?
   (
     ('rows:' rows=AttrRef)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?

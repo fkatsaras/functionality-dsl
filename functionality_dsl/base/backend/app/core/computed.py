@@ -51,6 +51,22 @@ def _upper(x) -> Optional[str]:
         return str(x).upper()
     except Exception:
         return None
+    
+def _map(xs, fn):
+    if xs is None:
+        return []
+    try:
+        return [fn(x) for x in xs]
+    except Exception:
+        return []
+
+def _filter(xs, fn):
+    if xs is None:
+        return []
+    try:
+        return [x for x in xs if fn(x)]
+    except Exception:
+        return []
 
 def _safe_str(fn):
     """Wrap string predicates so they return False on any exception."""
@@ -105,11 +121,14 @@ DSL_FUNCTIONS = {
     "lower":      (_lower,      (1, 1)),
     "upper":      (_upper,      (1, 1)),
     "zip":        (_safe_zip,   (1, None)),
-    "error":      (_error, (2, 2)),
+    "error":      (_error,      (2, 2)),
+    "map":        (_map,        (2, 2)),
+    "filter":     (_filter,     (2, 2)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
 DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
+
 
 _ALLOWED_AST = {
     ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.IfExp,
@@ -118,7 +137,7 @@ _ALLOWED_AST = {
     ast.Index, ast.Slice, ast.Attribute,
     ast.And, ast.Or, ast.Not, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
     ast.USub, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
-    ast.ListComp, ast.comprehension,
+    ast.ListComp, ast.comprehension, ast.Lambda, ast.arguments, ast.arg
 }
 
 def _validate(tree: ast.AST):

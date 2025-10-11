@@ -51,6 +51,30 @@ def _upper(x) -> Optional[str]:
         return str(x).upper()
     except Exception:
         return None
+    
+def _map(xs, fn):
+    """DSL map supporting both single and tuple lambdas."""
+    if xs is None:
+        return []
+    try:
+        result = []
+        for item in xs:
+            if isinstance(item, (tuple, list)):
+                result.append(fn(*item))
+            else:
+                result.append(fn(item))
+        return result
+    except Exception as e:
+        print(f"[DSL map] error: {e}")
+        return []
+
+def _filter(xs, fn):
+    if xs is None:
+        return []
+    try:
+        return [x for x in xs if fn(x)]
+    except Exception:
+        return []
 
 def _safe_str(fn):
     """Wrap string predicates so they return False on any exception."""
@@ -105,7 +129,9 @@ DSL_FUNCTIONS = {
     "lower":      (_lower,      (1, 1)),
     "upper":      (_upper,      (1, 1)),
     "zip":        (_safe_zip,   (1, None)),
-    "error":      (_error, (2, 2)),
+    "error":      (_error,      (2, 2)),
+    "map":        (_map,        (2, 2)),
+    "filter":     (_filter,     (2, 2)),
 }
 
 DSL_FUNCTION_REGISTRY = {k: v[0] for k, v in DSL_FUNCTIONS.items()}
@@ -116,12 +142,12 @@ DSL_FUNCTION_SIG       = {k: v[1] for k, v in DSL_FUNCTIONS.items()}
 
 _ALLOWED_AST = {
     ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.IfExp,
-    ast.Compare, ast.Call, ast.Name, ast.Load, ast.Store,  # <--- add Store
+    ast.Compare, ast.Call, ast.Name, ast.Load, ast.Store,
     ast.Constant, ast.Subscript, ast.Tuple, ast.List, ast.Dict,
     ast.Index, ast.Slice, ast.Attribute,
     ast.And, ast.Or, ast.Not, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
     ast.USub, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
-    ast.ListComp, ast.comprehension,
+    ast.ListComp, ast.comprehension, ast.Lambda, ast.arguments, ast.arg
 }
 
 def _assert_safe_python_expr(py: str):
@@ -383,6 +409,24 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
             loop_vars.remove(target)
             return f"{{ {k}: {v} for {target} in {iterable}{cond} }}"
+        
+        if cls == "LambdaExpr":
+            # collect parameter names
+            if getattr(node, "param", None):
+                param_names = [node.param]
+            else:
+                param_names = list(getattr(node.params, "vars", []))
+
+            # mark lambda params as local variables
+            for n in param_names:
+                loop_vars.add(n)
+            try:
+                body_code = to_py(node.body)
+            finally:
+                for n in param_names:
+                    loop_vars.discard(n)
+
+            return f"(lambda {', '.join(param_names)}: {body_code})"
 
         if cls == "Var":
             # loop / keywords first
@@ -422,6 +466,8 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 return to_py(node.var)
             if getattr(node, "ifx", None) is not None:
                 return to_py(node.ifx)
+            if getattr(node, "lambda_", None) is not None:
+                return to_py(node.lambda_)
             if getattr(node, "inner", None) is not None:
                 return to_py(node.inner)
             raise ValueError("Empty AtomBase")

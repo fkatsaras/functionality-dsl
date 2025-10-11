@@ -53,11 +53,19 @@ AtomBase:
     | literal=Literal
     | call=Call
     | var=Var
+    | lambda_=LambdaExpr
     | '(' inner=Expr ')'
 ;
 
 Var: name=ID ;
 
+LambdaExpr:
+    (param=ID | params=TupleParams) '->' body=Expr
+;
+
+TupleParams:
+    '(' vars+=ID (',' vars+=ID)* ')'
+;
 
 // calls
 Call:
