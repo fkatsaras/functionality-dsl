@@ -42,8 +42,12 @@ Entity RegisterPayload
   source: UserRegister
   attributes:
     - username: string = trim(UserRegister.username);
-    - email:    string = trim(UserRegister.email);
-    - password: string = UserRegister.password if len(UserRegister.password) > 5 else error(400, "Weak password");
+    - email:    string = trim(UserRegister.fdsddsdffds);
+    - password: string = UserRegister.password;
+  validations:
+    - require(len(RegisterPayload.password) > 5, "Password must be at least 6 characters", 400);
+    - require(validate_email(RegisterPayload.email), "Invalid email format", 400);
+    - require(in_range(len(RegisterPayload.username), 3, 50), "Username must be 3-50 characters", 400);
 end
 
 Entity NewUser(RegisterPayload)
@@ -54,7 +58,6 @@ Entity NewUser(RegisterPayload)
         "password": RegisterPayload.password
       };
 end
-
 
 // ---------------- LOGIN FLOW ----------------
 APIEndpoint<REST> UserLogin
@@ -70,34 +73,23 @@ Entity LoginPayload
     - password: string = trim(UserLogin.password);
 end
 
-
 Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
     - matches: list = filter(ExistingUsers.users, u -> 
       ( u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
     );
-
     - match: dict = find(ExistingUsers.users, u -> 
       (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
     );
 end
 
-
 Entity LoginValidated(LoginCandidates)
   attributes:
-    - username: string = (
-        LoginCandidates.match["username"]
-        if LoginCandidates.match != None
-        else error(401, "Invalid username or password")
-      );
-
-    - password: string = (
-        LoginCandidates.match["password"]
-        if LoginCandidates.match != None
-        else error(401, "Invalid password")
-      );
+    - username: string = LoginCandidates.match["username"];
+    - password: string = LoginCandidates.match["password"];
+  validations:
+    - require(LoginCandidates.match != None, "Invalid username or password", 401);
 end
-
 
 // ---------------- UI Components ----------------
 Component<ActionForm> RegisterForm

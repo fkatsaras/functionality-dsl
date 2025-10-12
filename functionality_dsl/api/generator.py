@@ -255,6 +255,25 @@ def _collect_all_external_sources(entity, model, seen=None):
     
     return results
 
+def _collect_entity_validations(entity, model, all_source_names):
+    """
+    Collect validation expressions for the entity and all its ancestors.
+    Returns a list of {'pyexpr': compiled_expr}.
+    """
+    all_validations = []
+    chain_entities = _get_all_ancestors(entity, model) + [entity]
+
+    for ent in chain_entities:
+        for v in getattr(ent, "validations", []) or []:
+            expr_code = compile_expr_to_python(
+                v.expr,
+                context="entity",
+                known_sources=all_source_names + [ent.name],
+            )
+            all_validations.append({"pyexpr": expr_code})
+
+    return all_validations
+
 
 # ============================================================================
 #                           ROUTE PATH HELPERS
@@ -329,16 +348,16 @@ def _build_computed_parent_config(parent_entity, all_endpoints):
 def _build_entity_chain(entity, model, all_source_names, context="ctx"):
     """
     Build the computation chain for an entity (itself + all ancestors).
-    Returns list of entity configs with their compiled attribute expressions.
+    Returns list of entity configs with their compiled attribute expressions + validations.
     """
     ancestors = _get_all_ancestors(entity, model)
     chain_entities = ancestors + [entity]
-    
+
     compiled_chain = []
     for chain_entity in chain_entities:
         attribute_configs = []
         for attr in getattr(chain_entity, "attributes", []) or []:
-            if hasattr(attr, "expr") and attr.expr is not None:
+            if getattr(attr, "expr", None):
                 expr_code = compile_expr_to_python(
                     attr.expr,
                     context=context,
@@ -348,13 +367,23 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
                     "name": attr.name,
                     "pyexpr": expr_code
                 })
-        
-        if attribute_configs:  # Only include if it has computed attributes
+
+        validation_configs = []
+        for v in getattr(chain_entity, "validations", []) or []:
+            expr_code = compile_expr_to_python(
+                v.expr,
+                context="entity",
+                known_sources=all_source_names + [chain_entity.name]
+            )
+            validation_configs.append({"pyexpr": expr_code})
+
+        if attribute_configs or validation_configs:
             compiled_chain.append({
                 "name": chain_entity.name,
                 "attrs": attribute_configs,
+                "validations": validation_configs
             })
-    
+
     return compiled_chain
 
 
@@ -470,6 +499,8 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     rest_inputs, computed_parents, inline_chain = _resolve_dependencies_for_entity(
         entity, model, all_endpoints, all_source_names
     )
+    # Get all entity attribute validations
+    validations = _collect_entity_validations(entity, model, all_source_names)
     
     # Check if entity itself has a Source<REST>
     entity_source = getattr(entity, "source", None)
@@ -510,6 +541,7 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
         route_prefix=route_path,
         inline_chain=inline_chain,
         server=server_config["server"],
+        validations=validations,
     )
     router_code = _format_python_code(router_code)  # PEP formatting w black
     
@@ -549,6 +581,8 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
     # Build computation chain (entity → terminal)
     compiled_chain = _build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
     
+    validations = _collect_entity_validations(entity, model, all_source_names)
+    
     # Build target config
     target = None
     target_obj = getattr(terminal_entity, "target", None)
@@ -580,6 +614,7 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
         route_prefix=route_path,
         compiled_chain=compiled_chain,
         server=server_config["server"],
+        validations=validations,
     )
     router_code = _format_python_code(router_code)  # PEP formatting w black
     
@@ -946,7 +981,7 @@ def _generate_websocket_router(endpoint, model, all_source_names, templates_dir,
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
-    template = env.get_template("router_ws_duplex.jinja")
+    template = env.get_template("router_ws.jinja")
     
     router_code = template.render(
         endpoint=endpoint,

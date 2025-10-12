@@ -119,6 +119,8 @@ def _compute_row(payload, sender_id, chain, source_name):
             try:
                 shaped[attr_name] = eval(compiled, safe_globals, eval_ctx)
                 logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
+            except HTTPException:
+                raise 
             except Exception as ex:
                 logger.error(
                     f"[COMPUTE] - Error computing {entity_name}.{attr_name}: {ex}",
@@ -199,6 +201,7 @@ async def _compute_row_with_sync(payload, sender_id, chain, source_name):
             shaped = {}
             ctx[entity_name] = shaped
             eval_ctx[entity_name] = shaped
+
             for a in ent.get("attrs") or []:
                 attr_name = a["name"]
                 attr_expr = a["expr"]
@@ -206,6 +209,8 @@ async def _compute_row_with_sync(payload, sender_id, chain, source_name):
                 try:
                     shaped[attr_name] = eval(compiled, safe_globals, eval_ctx)
                     logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
+                except HTTPException:
+                    raise 
                 except Exception as ex:
                     logger.error(
                         f"[COMPUTE] - Error computing {entity_name}.{attr_name}: {ex}",

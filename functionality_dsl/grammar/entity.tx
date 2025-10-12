@@ -31,10 +31,15 @@ Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
-    ('source:' source=[Source])?
-    ('attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*)?
-  )#
+      'source:' source=[Source]
+    | 'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
+    | 'validations:' '-' validations+=ValidationRule ('-' validations+=ValidationRule)*
+  )*
   'end'
+;
+
+ValidationRule:
+    expr=Expr ';'
 ;
 
 // Entity sources / targets -------------------

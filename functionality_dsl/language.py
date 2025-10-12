@@ -147,6 +147,65 @@ def _loop_var_names(expr) -> set[str]:
 
     return names
 
+def _find_websocket_source_in_hierarchy(entity):
+    """
+    Checks if an entity or any of its parents sources a WebSocket endpoint.
+    Returns the entity that has the WS source, or None if no WS source found.
+    Uses BFS to traverse parent hierarchy.
+    """
+    queue = deque([entity])
+    visited = set()
+    
+    while queue:
+        current = queue.popleft()
+        eid = id(current)
+        if eid in visited:
+            continue
+        visited.add(eid)
+        
+        # Check if current entity has a WebSocket source
+        src = getattr(current, "source", None)
+        if src is not None:
+            src_class = src.__class__.__name__
+            if src_class == "SourceWS":
+                return current  # Found WS source
+        
+        # Add parents to queue
+        parents = getattr(current, "parents", []) or []
+        queue.extend(parents)
+    
+    return None  # No WS source in hierarchy
+
+
+def _get_all_entity_attributes(entity):
+    """
+    Returns all attributes for an entity, including those inherited from parents.
+    Uses BFS to traverse parent hierarchy.
+    """
+    all_attrs = []
+    seen_names = set()
+    queue = deque([entity])
+    visited = set()
+    
+    while queue:
+        current = queue.popleft()
+        eid = id(current)
+        if eid in visited:
+            continue
+        visited.add(eid)
+        
+        # Add attributes from current entity (child attributes override parent)
+        for attr in getattr(current, "attributes", []) or []:
+            if attr.name not in seen_names:
+                all_attrs.append(attr)
+                seen_names.add(attr.name)
+        
+        # Add parents to queue
+        parents = getattr(current, "parents", []) or []
+        queue.extend(parents)
+    
+    return all_attrs
+
 # ------------------------------------------------------------------------------
 # Expression validation helpers
 def _collect_refs(expr, loop_vars: set[str] | None = None):
@@ -236,6 +295,7 @@ def _validate_func(name, argc, node):
                     **get_location(node),
                 )
 
+# ------------------ Attribute validation -------------------------------------------
 
 def _annotate_computed_attrs(model, metamodel=None):
     """
@@ -306,6 +366,94 @@ def _annotate_computed_attrs(model, metamodel=None):
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
                 )
+                
+def _validate_entity_validations(model, metamodel=None):
+    """
+    Semantic validation for entity validation rules.
+    Ensures validations are well-formed and reference valid attributes.
+    """
+    for ent in get_children_of_type("Entity", model):
+        validations = getattr(ent, "validations", []) or []
+        
+        if not validations:
+            continue  # No validations to check
+        
+        # 1. Entity with validations must have at least one attribute
+        attrs = getattr(ent, "attributes", []) or []
+        if len(attrs) == 0:
+            raise TextXSemanticError(
+                f"Entity '{ent.name}' defines validations but has no attributes. "
+                f"Validations require attributes to validate.",
+                **get_location(ent)
+            )
+        
+        # 2. Entity with validations cannot source WebSocket endpoints (directly or via parents)
+        ws_entity = _find_websocket_source_in_hierarchy(ent)
+        if ws_entity is not None:
+            if ws_entity.name == ent.name:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' defines validations but sources a WebSocket endpoint. "
+                    f"Validations are only supported for REST-based request/response flows, "
+                    f"not streaming WebSocket connections.",
+                    **get_location(ent)
+                )
+            else:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' defines validations but inherits from '{ws_entity.name}', "
+                    f"which sources a WebSocket endpoint. "
+                    f"Validations are only supported for REST-based request/response flows, "
+                    f"not streaming WebSocket connections.",
+                    **get_location(ent)
+                )
+        
+        # Build attribute map for this entity (including inherited)
+        all_attrs = _get_all_entity_attributes(ent)
+        attr_names = {a.name for a in all_attrs}
+        
+        # 3. Validate each validation expression
+        for idx, val in enumerate(validations):
+            expr = get_expr(val)
+            if expr is None:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' validation #{idx+1} is missing an expression.",
+                    **get_location(val)
+                )
+            
+            # 3. Check references in validation expressions
+            loop_vars = _loop_var_names(expr)
+            
+            for alias, attr, node in _collect_refs(expr, loop_vars):                
+                # Check that the referenced attribute exists
+                if attr != "__jsonpath__" and attr not in attr_names:
+                    raise TextXSemanticError(
+                        f"Entity '{ent.name}' validation references '{ent.name}.{attr}', "
+                        f"but attribute '{attr}' does not exist. "
+                        f"Available attributes: {sorted(attr_names)}",
+                        **get_location(node)
+                    )
+            
+            # 4. Validate function calls (especially 'require' for validations)
+            for fname, argc, node in _collect_calls(expr):
+                _validate_func(fname, argc, node)
+                
+                # Special check: 'require' is the primary validation function
+                if fname == "require":
+                    args = getattr(node, "args", []) or []
+                    if len(args) < 1:
+                        raise TextXSemanticError(
+                            f"Entity '{ent.name}' validation: require() needs at least a condition.",
+                            **get_location(node)
+                        )
+            
+            # 5. Compile validation expression to ensure it's valid Python
+            try:
+                val._py = compile_expr_to_python(expr, context="validation")
+            except Exception as ex:
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",
+                    **get_location(val)
+                )
+
 
 # ------------------------------------------------------------------------------
 # Public helpers
@@ -580,6 +728,8 @@ def model_processor(model, metamodel=None):
 
     _populate_aggregates(model)
     _backlink_external_targets(model)
+    
+    _validate_entity_validations(model, metamodel)
 
 
 def verify_unique_names(model):

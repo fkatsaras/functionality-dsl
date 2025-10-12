@@ -58,8 +58,14 @@ _TRANSFORMATION_CHAIN = [
         {%- for attr in step.attrs %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
-        ]
+        ]{% if step.validations %},
+        "validations": [
+        {%- for v in step.validations %}
+            {"pyexpr": {{ v.pyexpr | tojson }}},
+        {%- endfor %}
+        ]{% endif %}
     },
+
 {%- endfor %}
 ]
 
@@ -226,7 +232,8 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             
             shaped_data = {}
             evaluation_ctx = {**safe_globals, "ctx": context}
-            
+
+                   
             for attr_config in transform_step.get("attrs", []):
                 attr_name = attr_config["name"]
                 attr_expr = attr_config["expr"]
@@ -235,6 +242,8 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
                     compiled_expr = compile_safe(attr_expr)
                     shaped_data[attr_name] = eval(compiled_expr, evaluation_ctx, {})
                     logger.debug(f"[TRANSFORM] - {entity_name}.{attr_name} computed")
+                except HTTPException:
+                    raise 
                 except Exception as compute_error:
                     logger.error(f"[TRANSFORM] - Error computing {entity_name}.{attr_name}: {compute_error}", exc_info=True)
                     raise HTTPException(
@@ -244,6 +253,23 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             
             context[entity_name] = shaped_data
             logger.debug(f"[CONTEXT] - Stored transformation result: {entity_name}")
+
+            # --- Run validations for this entity (after compute) ---
+            if transform_step.get("validations"):
+                evaluation_ctx = {"ctx": context, **context}
+                try:
+                    for v in transform_step["validations"]:
+                        eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
+                        logger.debug(f"[VALIDATION] - {entity_name} validation passed")
+                except HTTPException as http_e:
+                    logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
+                    raise  # <-- re-raise unchanged, preserves message + status
+                except Exception as e:
+                    logger.error(
+                        f"[VALIDATION] - {entity_name} crashed during validation: {e}",
+                        exc_info=True,
+                    )
+                    raise HTTPException(status_code=400, detail={"error": str(e)})
 
         # ----------------------------------------------------------------
         # STEP 5: Extract final payload (terminal entity)

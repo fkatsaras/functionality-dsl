@@ -3,6 +3,7 @@ from .math_funcs import DSL_FUNCTIONS as MATH_FUNCS
 from .string_funcs import DSL_FUNCTIONS as STRING_FUNCS
 from .time_funcs import DSL_FUNCTIONS as TIME_FUNCS
 from .collection_funcs import DSL_COLLECTION_FUNCS as COLLECTION_FUNCS
+from .validation_funcs import DSL_VALIDATION_FUNCS as VALIDATION_FUNCS
 
 DSL_FUNCTIONS = {}
 for group in [
@@ -11,6 +12,7 @@ for group in [
     STRING_FUNCS,
     TIME_FUNCS,
     COLLECTION_FUNCS,
+    VALIDATION_FUNCS,
 ]:
     DSL_FUNCTIONS.update(group)
 

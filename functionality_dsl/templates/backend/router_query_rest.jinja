@@ -54,8 +54,14 @@ _INLINE_COMPUTED_CHAIN = [
         {%- for attr in step.attrs %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
-        ]
+        ]{% if step.validations %},
+        "validations": [
+        {%- for v in step.validations %}
+            {"pyexpr": {{ v.pyexpr | tojson }}},
+        {%- endfor %}
+        ]{% endif %}
     },
+
 {%- endfor %}
 ]
 
@@ -123,6 +129,8 @@ async def query_{{ endpoint.name | lower }}():
                         compiled_expr = compile_safe(attr_expr)
                         shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
                         logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
+                    except HTTPException:
+                        raise 
                     except Exception as eval_error:
                         logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
                         raise HTTPException(
@@ -157,7 +165,7 @@ async def query_{{ endpoint.name | lower }}():
             logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
             
             try:
-                response = await http_client.get(f"http://localhost:8080{endpoint_path}")
+                response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
                 
                 if response.status_code >= 400:
                     logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
@@ -214,6 +222,23 @@ async def query_{{ endpoint.name | lower }}():
             context[entity_name] = shaped_data
             logger.debug(f"[CONTEXT] - Stored inline entity {entity_name}")
 
+            # --- Run validations for this inline entity ---
+            if transform_step.get("validations"):
+                evaluation_ctx = {"ctx": context, **context}
+                try:
+                    for v in transform_step["validations"]:
+                        eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
+                        logger.debug(f"[VALIDATION] - {entity_name} validation passed")
+                except HTTPException as http_e:
+                    logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
+                    raise  # <-- re-raise unchanged, preserves message + status
+                except Exception as e:
+                    logger.error(
+                        f"[VALIDATION] - {entity_name} crashed during validation: {e}",
+                        exc_info=True,
+                    )
+                    raise HTTPException(status_code=400, detail={"error": str(e)})
+
         # ----------------------------------------------------------------
         # STEP 4: Compute final entity attributes
         # ----------------------------------------------------------------
@@ -236,12 +261,30 @@ async def query_{{ endpoint.name | lower }}():
             entity_name = source_config["entity"]
             evaluation_ctx[source_alias] = context.get(entity_name, {})
         
+        # --- Entity-level validation ---
+        {% if validations %}
+        evaluation_ctx = {"ctx": context}
+        for k, v in context.items():
+            evaluation_ctx[k] = v
+        try:
+            {% for v in validations %}
+            eval(compile_safe({{ v.pyexpr | tojson }}), safe_globals, evaluation_ctx)
+            {% endfor %}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[VALIDATION] - {{ entity.name }} validation failed: {e}", exc_info=True)
+            raise HTTPException(status_code=400, detail={"error": str(e)})
+        {% endif %}
+
         # Evaluate each attribute
         for attr_name, compiled_expr in _ENTITY_ATTRIBUTES.items():
             try:
                 result = eval(compiled_expr, safe_globals, evaluation_ctx)
                 final_attributes[attr_name] = result
                 logger.debug(f"[COMPUTE] - {{ entity.name }}.{attr_name}: {type(result).__name__}")
+            except HTTPException:
+                raise 
             except Exception as compute_error:
                 logger.error(f"[COMPUTE] - Error computing attribute {attr_name}: {compute_error}", exc_info=True)
                 raise HTTPException(
