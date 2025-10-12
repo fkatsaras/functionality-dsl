@@ -42,7 +42,7 @@ Entity RegisterPayload
   source: UserRegister
   attributes:
     - username: string = trim(UserRegister.username);
-    - email:    string = trim(UserRegister.fdsddsdffds);
+    - email:    string = trim(UserRegister.email);
     - password: string = UserRegister.password;
   validations:
     - require(len(RegisterPayload.password) > 5, "Password must be at least 6 characters", 400);
