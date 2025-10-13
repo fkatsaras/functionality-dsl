@@ -12,19 +12,7 @@ class utils.Import  {
 }
 
 
-class entity.Attribute <<abstract>> {
-}
-
-
-class entity.SchemaAttribute  {
-  name : ID
-  type : AttrType
-  optional : optional<BOOL>
-  default : AttrValue
-}
-
-
-class entity.ComputedAttribute  {
+class entity.Attribute  {
   name : ID
   type : AttrType
   optional : optional<BOOL>
@@ -38,6 +26,10 @@ class entity.Input  {
 
 class entity.Entity  {
   name : ID
+}
+
+
+class entity.ValidationRule  {
 }
 
 
@@ -56,32 +48,34 @@ class entity.AuthBlock  {
 }
 
 
-class entity.ExternalRESTEndpoint  {
+class entity.SourceREST  {
+  kind : STRING
   name : ID
   url : STRING
   verb : HttpVerb
 }
 
 
-class entity.ExternalWSEndpoint  {
+class entity.SourceWS  {
+  kind : STRING
   name : ID
   url : STRING
   protocol : STRING
-  mode : WSmode
 }
 
 
-class entity.InternalRESTEndpoint  {
+class entity.APIEndpointREST  {
+  kind : STRING
   name : ID
-  verb : HttpVerb
   path : STRING
+  verb : HttpVerb
   summary : STRING
 }
 
 
-class entity.InternalWSEndpoint  {
+class entity.APIEndpointWS  {
+  kind : STRING
   name : ID
-  mode : WSmode
   path : STRING
   summary : STRING
 }
@@ -158,38 +152,39 @@ class server.Server  {
   base : STRING
   cors : list[STRING]
   env : ID
+  loglevel : ID
 }
 
 
 model.FDSLModel *--> "1..*" utils.Import: imports
 model.FDSLModel *--> "1..*" server.Server: servers
-model.FDSLModel *--> "1..*" entity.InternalRESTEndpoint: internalrest
-model.FDSLModel *--> "1..*" entity.InternalWSEndpoint: internalws
-model.FDSLModel *--> "1..*" entity.ExternalRESTEndpoint: externalrest
-model.FDSLModel *--> "1..*" entity.ExternalWSEndpoint: externalws
+model.FDSLModel *--> "1..*" entity.APIEndpointREST: apirest
+model.FDSLModel *--> "1..*" entity.APIEndpointWS: apiws
+model.FDSLModel *--> "1..*" entity.SourceREST: externalrest
+model.FDSLModel *--> "1..*" entity.SourceWS: externalws
 model.FDSLModel *--> "1..*" entity.Entity: entities
 model.FDSLModel *--> "1..*" component.Component: components
-entity.Attribute <|-- entity.ComputedAttribute
-entity.Attribute <|-- entity.SchemaAttribute
 entity.Input -->  entity.Entity: target
 entity.Entity --> "1..*" entity.Entity: parents
-entity.Entity -->  entity.Source: source
+entity.Entity --> "0..*" entity.Source: source
 entity.Entity *--> "1..*" entity.Attribute: attributes
-entity.Source <|-- entity.InternalRESTEndpoint
-entity.Source <|-- entity.InternalWSEndpoint
-entity.Source <|-- entity.ExternalRESTEndpoint
-entity.Source <|-- entity.ExternalWSEndpoint
-entity.ExternalRESTEndpoint *--> "1..*" entity.Header: headers
-entity.ExternalRESTEndpoint *-->  entity.AuthBlock: auth
-entity.ExternalRESTEndpoint -->  entity.Entity: entity
-entity.ExternalWSEndpoint *-->  entity.StringList: subprotocols
-entity.ExternalWSEndpoint *--> "1..*" entity.Header: headers
-entity.ExternalWSEndpoint *-->  entity.AuthBlock: auth
-entity.ExternalWSEndpoint -->  entity.Entity: entity_in
-entity.ExternalWSEndpoint -->  entity.Entity: entity_out
-entity.InternalRESTEndpoint -->  entity.Entity: entity
-entity.InternalWSEndpoint -->  entity.Entity: entity_in
-entity.InternalWSEndpoint -->  entity.Entity: entity_out
+entity.Entity *--> "1..*" entity.ValidationRule: validations
+entity.Source <|-- entity.APIEndpointREST
+entity.Source <|-- entity.APIEndpointWS
+entity.Source <|-- entity.SourceREST
+entity.Source <|-- entity.SourceWS
+entity.SourceREST -->  entity.Entity: entity
+entity.SourceREST *--> "1..*" entity.Header: headers
+entity.SourceREST *-->  entity.AuthBlock: auth
+entity.SourceWS -->  entity.Entity: entity_in
+entity.SourceWS -->  entity.Entity: entity_out
+entity.SourceWS *-->  entity.StringList: subprotocols
+entity.SourceWS *--> "1..*" entity.Header: headers
+entity.SourceWS *-->  entity.AuthBlock: auth
+entity.APIEndpointREST -->  entity.Entity: entity
+entity.APIEndpointWS -->  entity.Entity: entity_in
+entity.APIEndpointWS -->  entity.Entity: entity_out
+entity.APIEndpointWS *-->  entity.AuthBlock: auth
 component.AttrRef -->  entity.Attribute: attr
 component.Component <|-- component.TableComponent
 component.Component <|-- component.LineChartComponent
@@ -197,28 +192,27 @@ component.Component <|-- component.ActionFormComponent
 component.Component <|-- component.GaugeComponent
 component.Component <|-- component.InputComponent
 component.Component <|-- component.LiveViewComponent
-component.TableComponent -->  entity.InternalRESTEndpoint: endpoint
+component.TableComponent -->  entity.APIEndpointREST: endpoint
 component.TableComponent *-->  entity.StringList: colNames
-component.LineChartComponent -->  entity.InternalWSEndpoint: endpoint
+component.LineChartComponent -->  entity.APIEndpointREST: endpoint
 component.LineChartComponent *-->  component.AttrRef: rows
-component.GaugeComponent -->  entity.InternalWSEndpoint: endpoint
+component.GaugeComponent -->  entity.APIEndpointWS: endpoint
 component.GaugeComponent *-->  component.AttrRef: value
-component.ActionFormComponent -->  entity.InternalRESTEndpoint: endpoint
-component.InputComponent -->  entity.InternalWSEndpoint: endpoint
-component.LiveViewComponent -->  entity.InternalWSEndpoint: endpoint
+component.ActionFormComponent -->  entity.APIEndpointREST: endpoint
+component.InputComponent -->  entity.APIEndpointWS: endpoint
+component.LiveViewComponent -->  entity.APIEndpointWS: endpoint
 component.LiveViewComponent *-->  entity.StringList: fields
 
 legend
   Match rules:
   |= Name  |= Rule details |
-  | Comment | \\/\\/[^\\n]* |
-  | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
-  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
-  | FQN | ID (. ID)* |
-  | WSmode | publish\|subscribe\|duplex |
-  | AttrValue | STRING\|FLOAT\|INT |
-  | Bool | true\|false |
   | ApiKeyLoc | header\|query |
+  | FQN | ID (. ID)* |
+  | Bool | true\|false |
+  | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
+  | AttrValue | STRING\|FLOAT\|INT |
+  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | Comment | \\/\\/[^\\n]* |
 end legend
 
 @enduml

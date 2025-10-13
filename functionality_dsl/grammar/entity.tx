@@ -11,16 +11,7 @@ AttrValue:
 ;
 
 Attribute:
-    ComputedAttribute | SchemaAttribute  
-;
-
-SchemaAttribute:
-  name=ID ':' type=AttrType (optional?='?')?
-  ('default=' default=AttrValue)?
-;
-
-ComputedAttribute:
-  name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr ';'
+    name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr ';' 
 ;
 
 Input:

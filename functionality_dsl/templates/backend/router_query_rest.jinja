@@ -223,15 +223,15 @@ async def query_{{ endpoint.name | lower }}():
             logger.debug(f"[CONTEXT] - Stored inline entity {entity_name}")
 
             # --- Run validations for this inline entity ---
-            if transform_step.get("validations"):
+            if inline_entity.get("validations"):
                 evaluation_ctx = {"ctx": context, **context}
                 try:
-                    for v in transform_step["validations"]:
+                    for v in inline_entity["validations"]:
                         eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
                         logger.debug(f"[VALIDATION] - {entity_name} validation passed")
                 except HTTPException as http_e:
                     logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
-                    raise  # <-- re-raise unchanged, preserves message + status
+                    raise
                 except Exception as e:
                     logger.error(
                         f"[VALIDATION] - {entity_name} crashed during validation: {e}",

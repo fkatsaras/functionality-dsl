@@ -40,20 +40,21 @@ Entity WeatherCompare(ThessHourly, LondonHourly)
           ThessHourly.hourly["relative_humidity_2m"],
           LondonHourly.hourly["relative_humidity_2m"]
         ),
-        (t, th_t, ln_t, th_h, ln_h) -> {
-          "time": t,
-          "th_temp": th_t,
-          "ln_temp": ln_t,
-          "th_hum": th_h,
-          "ln_hum": ln_h,
-          "delta_temp": abs(th_t - ln_t),
-          "hotter_city": ("Thessaloniki" if th_t > ln_t else "London"),
-          "big_gap": (abs(th_t - ln_t) >= 5),
-          "th_is_comfy": ((abs(th_t - 22) < 3) and (th_h >= 30) and (th_h <= 60)),
-          "ln_is_comfy": ((abs(ln_t - 22) < 3) and (ln_h >= 30) and (ln_h <= 60))
+        (row) -> {
+          "time": row[0],
+          "th_temp": row[1],
+          "ln_temp": row[2],
+          "th_hum": row[3],
+          "ln_hum": row[4],
+          "delta_temp": abs(row[1] - row[2]),
+          "hotter_city": ("Thessaloniki" if row[1] > row[2] else "London"),
+          "big_gap": (abs(row[1] - row[2]) >= 5),
+          "th_is_comfy": ((abs(row[1] - 22) < 3) and (row[3] >= 30) and (row[3] <= 60)),
+          "ln_is_comfy": ((abs(row[2] - 22) < 3) and (row[4] >= 30) and (row[4] <= 60))
         }
       );
 end
+
 // --- Simplified stats view (line chart) ------------------------
 Entity WeatherStats(WeatherCompare)
   attributes:

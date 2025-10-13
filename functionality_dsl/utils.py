@@ -162,19 +162,8 @@ def print_model_debug(model):
                 print("    (no attributes)")
             for a in attrs:
                 cls = type(a).__name__
-                if cls == "SchemaAttribute":
-                    t = getattr(a, "type", None)
-                    req = getattr(a, "required", False)
-                    default = getattr(a, "default", getattr(a, "defaultValueLiteral", None))
-                    bits = [str(t)]
-                    if req: bits.append("required")
-                    if default is not None: bits.append(f"default={default!r}")
-                    print(f"    • {a.name}: " + " ".join(bits))
-                elif cls == "ComputedAttribute":
-                    expr_obj = getattr(a, "expr", None) or getattr(a, "expression", None)
-                    print(f"    • {a.name} = {to_expr_str(expr_obj)}")
-                else:
-                    print(f"    • {a.name} (unknown attr kind: {cls})")
+                expr_obj = getattr(a, "expr", None) or getattr(a, "expression", None)
+                print(f"    • {a.name} = {to_expr_str(expr_obj)}")
         print()
 
     if comps:

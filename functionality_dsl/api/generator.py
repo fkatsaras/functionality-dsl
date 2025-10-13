@@ -369,13 +369,15 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
                 })
 
         validation_configs = []
-        for v in getattr(chain_entity, "validations", []) or []:
-            expr_code = compile_expr_to_python(
-                v.expr,
-                context="entity",
-                known_sources=all_source_names + [chain_entity.name]
-            )
-            validation_configs.append({"pyexpr": expr_code})
+        validations = getattr(chain_entity, "validations", None)
+        if validations:  # Only process if validations exist
+            for v in validations:
+                expr_code = compile_expr_to_python(
+                    v.expr,
+                    context="entity",
+                    known_sources=all_source_names + [chain_entity.name]
+                )
+                validation_configs.append({"pyexpr": expr_code})
 
         if attribute_configs or validation_configs:
             compiled_chain.append({
@@ -452,10 +454,22 @@ def _resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_na
                         "pyexpr": expr_code
                     })
             
-            if attribute_configs:
+            validation_configs = []
+            validations = getattr(ancestor, "validations", None)
+            if validations:  # Only process if validations exist
+                for v in validations:
+                    expr_code = compile_expr_to_python(
+                        v.expr,
+                        context="entity",
+                        known_sources=all_source_names + [ancestor.name]
+                    )
+                    validation_configs.append({"pyexpr": expr_code})
+
+            if attribute_configs or validation_configs:
                 inline_chain.append({
                     "name": ancestor.name,
                     "attrs": attribute_configs,
+                    "validations": validation_configs,
                 })
                 print(f"[DEPENDENCY] Inline computed: {ancestor.name}")
     
