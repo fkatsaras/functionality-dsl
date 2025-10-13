@@ -92,6 +92,15 @@
           if (Array.isArray(v) && v.length && typeof v[0] === "object") {
             rows = v;
             break outer;
+          } else if (v && typeof v === "object") {
+            // support { WeatherStatsAPI: { rows: [...] } }
+            const innerArr = Object.values(v).find(
+              vv => Array.isArray(vv) && vv.length && typeof vv[0] === "object"
+            );
+            if (innerArr) {
+              rows = innerArr as any[];
+              break outer;
+            }
           }
         }
       }

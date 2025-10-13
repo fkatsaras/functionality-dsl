@@ -72,7 +72,7 @@ _ENTITY_ATTRIBUTES = {
 }
 
 
-@router.get("/", response_model=List[Dict[str, Any]])
+@router.get("/", response_model=Dict[str, Any])
 async def query_{{ endpoint.name | lower }}():
     """
     Query endpoint for {{ entity.name }}.
@@ -304,7 +304,7 @@ async def query_{{ endpoint.name | lower }}():
         except Exception as e:
             logger.debug(f"[COMPUTE] - Could not serialize final result: {e}")
         
-        return [final_attributes]
+        return {"{{ endpoint.name }}": final_attributes}
 
     except HTTPException:
         raise

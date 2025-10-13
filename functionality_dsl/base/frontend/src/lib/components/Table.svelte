@@ -43,16 +43,25 @@
                   data = json;
               }
           } else if (json && typeof json === "object") {
-              // Case: { "lol": [...] }
-              const keys = Object.keys(json);
-              if (keys.length === 1 && Array.isArray(json[keys[0]])) {
-                  data = json[keys[0]];
-                  console.log("Unwrapped object:", keys[0], data);
+            const keys = Object.keys(json);
+            if (keys.length === 1) {
+              const first = json[keys[0]];
+              if (Array.isArray(first)) {
+                data = first;
+              } else if (first && typeof first === "object") {
+                // Handles { WeatherCompareAPI: { rows: [...] } }
+                const innerKeys = Object.keys(first);
+                if (innerKeys.length === 1 && Array.isArray(first[innerKeys[0]])) {
+                  data = first[innerKeys[0]];
+                } else {
+                  throw new Error("Expected object with single array field inside entity.");
+                }
               } else {
-                  throw new Error("Response JSON is not a list or single-field object containing a list.");
+                throw new Error("Expected entity object or array.");
               }
-          } else {
-              throw new Error("Unexpected response format.");
+            } else {
+              throw new Error("Expected single entity key.");
+            }
           }
 
           // Extract entity keys from the first row for position-based mapping

@@ -88,7 +88,7 @@ Entity LoginValidated(LoginCandidates)
     - username: string = LoginCandidates.match["username"];
     - password: string = LoginCandidates.match["password"];
   validations:
-    - require(LoginCandidates.match != None, "Invalid username or password", 401);
+    - require(LoginCandidates.match != null, "Invalid username or password", 401);
 end
 
 // ---------------- UI Components ----------------
