@@ -161,38 +161,38 @@ async def query_{{ endpoint.name | lower }}():
         for dependency in _INTERNAL_DEPENDENCIES:
             entity_name = dependency["name"]
             endpoint_path = dependency["endpoint"]
-            
+
             logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
-            
+
             try:
                 response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
-                
+
                 if response.status_code >= 400:
                     logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
                     raise HTTPException(
                         status_code=502,
                         detail=f"Internal dependency {entity_name} returned {response.status_code}"
                     )
-                
-                dependency_data = response.json()
-                
-                # Normalize response: internal endpoints return list[dict]
-                if isinstance(dependency_data, list):
-                    # Merge all items into single dict
-                    merged_data: Dict[str, Any] = {}
-                    for item in dependency_data:
-                        if isinstance(item, dict):
-                            merged_data.update(item)
-                        else:
-                            merged_data.setdefault("value", item)
-                    context[entity_name] = merged_data
-                elif isinstance(dependency_data, dict):
-                    context[entity_name] = dependency_data
+
+                payload = response.json()
+
+                # Unwrap single-key envelope { "<EntityName>": <data> } if present
+                if isinstance(payload, dict) and entity_name in payload and len(payload) == 1:
+                    context[entity_name] = payload[entity_name]
+                    logger.debug(
+                        f"[DEPENDENCY] - Unwrapped envelope for {entity_name}; "
+                        f"type={type(payload[entity_name]).__name__}"
+                    )
                 else:
-                    context[entity_name] = {"value": dependency_data}
-                
-                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
-                
+                    # Store as-is (dict, list, scalar).
+                    context[entity_name] = payload
+                    logger.debug(
+                        f"[DEPENDENCY] - Stored {entity_name} as-is; "
+                        f"type={type(payload).__name__}"
+                    )
+
+                logger.info(f"[CONTEXT] - Stored computed parent {entity_name} (keys may vary by type)")
+
             except HTTPException:
                 raise
             except Exception as dep_error:

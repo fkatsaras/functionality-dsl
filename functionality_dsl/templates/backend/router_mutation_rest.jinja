@@ -181,49 +181,44 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         for dependency in _INTERNAL_DEPENDENCIES:
             entity_name = dependency["name"]
             endpoint_path = dependency["endpoint"]
-            
+
             logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
-            
+
             try:
                 response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
-                
+
                 if response.status_code >= 400:
-                    logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
                     raise HTTPException(
                         status_code=502,
                         detail=f"Internal dependency {entity_name} returned {response.status_code}"
                     )
-                
-                dependency_data = response.json()
-                
-                # Normalize response: internal endpoints return list[dict]
-                if isinstance(dependency_data, list):
-                    merged_data: Dict[str, Any] = {}
-                    for item in dependency_data:
-                        if isinstance(item, dict):
-                            merged_data.update(item)
-                        else:
-                            merged_data.setdefault("value", item)
-                    context[entity_name] = merged_data
-                elif isinstance(dependency_data, dict):
-                    context[entity_name] = dependency_data
+
+                payload = response.json()
+
+                # Unwrap { "EntityName": <data> } envelope if present
+                if isinstance(payload, dict) and entity_name in payload and len(payload) == 1:
+                    context[entity_name] = payload[entity_name]
                 else:
-                    context[entity_name] = {"value": dependency_data}
-                
-                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
-                
+                    context[entity_name] = payload
+
+                logger.info(f"[CONTEXT] - Stored computed parent {entity_name} (type={type(context[entity_name]).__name__})")
+
             except HTTPException:
                 raise
             except Exception as dep_error:
                 logger.error(f"[DEPENDENCY] - Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Failed to fetch internal dependency: {entity_name}"
-                )
+                raise HTTPException(status_code=502, detail=f"Failed to fetch internal dependency: {entity_name}")
 
         # ----------------------------------------------------------------
         # STEP 4: Execute transformation chain
         # ----------------------------------------------------------------
+        logger.debug("[CONTEXT] - Current context before transformation chain:")
+        try:
+            preview = json.dumps(context, indent=2)[:800]
+            logger.debug(preview + ("..." if len(preview) == 800 else ""))
+        except Exception as e:
+            logger.debug(f"[CONTEXT] - Could not serialize context: {e}")
+
         logger.info(f"[TRANSFORM] - Executing chain with {len(_TRANSFORMATION_CHAIN)} step(s)")
         
         for step_index, transform_step in enumerate(_TRANSFORMATION_CHAIN, 1):
@@ -276,6 +271,13 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         # ----------------------------------------------------------------
         terminal_entity_name = "{{ terminal.name }}"
         final_payload = context.get(terminal_entity_name, {})
+
+        logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}")
+        try:
+            preview = json.dumps(final_payload, indent=2)[:800]
+            logger.debug(preview + ("..." if len(preview) == 800 else ""))
+        except Exception as e:
+            logger.debug(f"[PAYLOAD] - Could not serialize final payload: {e}")
         
         logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
 
