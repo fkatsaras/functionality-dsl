@@ -1,144 +1,558 @@
-// --- Server ----------------------------------------------------
-Server OrderServer
+// =============================================================
+//                     SERVER CONFIG
+// =============================================================
+Server OrderManagementServer
   host: "localhost"
   port: 8090
-  cors: "http://localhost:5173"
+  cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 
-// --- External REST Endpoints ----------------------------------
+// =============================================================
+//                     EXTERNAL REST SERVICES
+// =============================================================
 
-Source<REST> ProductCatalog
-  url: "http://dummyorders:9000/api/products"
+// Product catalog
+Source<REST> ProductsAPI
+  url: "http://dummydb:9000/db/products"
   verb: GET
 end
 
-Source<REST> UserProfiles
-  url: "http://dummyorders:9100/api/users"
+// Customers database
+Source<REST> CustomersAPI
+  url: "http://dummydb:9000/db/customers"
   verb: GET
 end
 
-Source<REST> PlaceOrderExternal
-  url: "http://dummyorders:9200/api/orders"
+// Orders database
+Source<REST> OrdersAPI
+  url: "http://dummydb:9000/db/orders"
+  verb: GET
+end
+
+// Create new order
+Source<REST> CreateOrderExternal
+  url: "http://dummydb:9000/db/orders/create"
   verb: POST
-  entity: OrderRequestValidated
+  entity: ValidatedOrder
 end
 
-Source<REST> OrderLogsExternal
-  url: "http://dummyorders:9400/api/logs"
-  verb: POST
-  entity: OrderLogEntry
+// Update order status
+Source<REST> UpdateOrderStatusExternal
+  url: "http://dummydb:9000/db/orders/{orderId}/status"
+  verb: PATCH
+  entity: OrderStatusUpdate
 end
 
-
-// --- ENTITIES --------------------------------------------------
-
-// Snapshot of available products
-Entity Products
-  source: ProductCatalog
-  attributes:
-    - products: list = ProductCatalog;
-end
-
-// Snapshot of users
-Entity Users
-  source: UserProfiles
-  attributes:
-    - users: list = UserProfiles;
+// Cancel order
+Source<REST> CancelOrderExternal
+  url: "http://dummydb:9000/db/orders/{orderId}/cancel"
+  verb: DELETE
+  entity: OrderCancellation
 end
 
 
-// --- ORDER CREATION FLOW ---------------------------------------
+// =============================================================
+//                     LIVE WEBSOCKET FEEDS
+// =============================================================
 
-// Step 1: Internal endpoint entry
+// Real-time inventory updates from warehouse
+Source<WS> WarehouseInventoryFeed
+  entity_out: WarehouseInventoryRaw
+  url: "ws://dummydb:9700"
+  protocol: "json"
+end
+
+// Real-time shipping status updates
+Source<WS> ShippingStatusFeed
+  entity_out: ShippingStatusRaw
+  url: "ws://dummydb:9701"
+  protocol: "json"
+end
+
+// Real-time price fluctuations
+Source<WS> PricingFeed
+  entity_out: PricingUpdateRaw
+  url: "ws://dummydb:9702"
+  protocol: "json"
+end
+
+
+// =============================================================
+//                     REST ENDPOINTS - QUERIES
+// =============================================================
+
+// List all products with current inventory
+APIEndpoint<REST> ProductList
+  path: "/api/products"
+  verb: GET
+  entity: ProductCatalog
+end
+
+// List all customers
+APIEndpoint<REST> CustomerList
+  path: "/api/customers"
+  verb: GET
+  entity: CustomerDirectory
+end
+
+// List all orders with enriched details
+APIEndpoint<REST> OrderList
+  path: "/api/orders"
+  verb: GET
+  entity: EnrichedOrders
+end
+
+// Get specific order details
+APIEndpoint<REST> OrderDetails
+  path: "/api/orders/{orderId}"
+  verb: GET
+  entity: OrderDetail
+end
+
+
+// =============================================================
+//                     REST ENDPOINTS - MUTATIONS
+// =============================================================
+
+// Create new order
 APIEndpoint<REST> CreateOrder
-  entity: OrderPayload
+  path: "/api/orders/create"
   verb: POST
-  path: "/api/order/create"
+  entity: NewOrder
 end
 
-Entity OrderPayload
+// Update order status
+APIEndpoint<REST> UpdateOrderStatus
+  path: "/api/orders/{orderId}/status"
+  verb: PATCH
+  entity: OrderStatusRequest
+end
+
+// Cancel order
+APIEndpoint<REST> CancelOrder
+  path: "/api/orders/{orderId}/cancel"
+  verb: DELETE
+  entity: CancelOrderRequest
+end
+
+
+// =============================================================
+//                     WEBSOCKET ENDPOINTS
+// =============================================================
+
+// Live inventory updates stream
+APIEndpoint<WS> LiveInventory
+  path: "/api/inventory/live"
+  entity_in: InventoryStatus
+end
+
+// Live order tracking stream
+APIEndpoint<WS> LiveOrderTracking
+  path: "/api/orders/tracking/live"
+  entity_in: OrderTrackingData
+end
+
+// Live dashboard metrics
+APIEndpoint<WS> LiveDashboard
+  path: "/api/dashboard/live"
+  entity_in: DashboardMetrics
+end
+
+
+// =============================================================
+//                     BASE ENTITIES (REST)
+// =============================================================
+
+Entity ProductCatalog
+  source: ProductsAPI
+  attributes:
+    - products: list = ProductsAPI;
+    - total_products: int = len(ProductsAPI);
+end
+
+Entity CustomerDirectory
+  source: CustomersAPI
+  attributes:
+    - customers: list = CustomersAPI;
+    - total_customers: int = len(CustomersAPI);
+end
+
+Entity OrdersList
+  source: OrdersAPI
+  attributes:
+    - orders: list = OrdersAPI;
+end
+
+
+// =============================================================
+//                     ORDER CREATION FLOW
+// =============================================================
+
+Entity NewOrder
   source: CreateOrder
   attributes:
-    - user_id: string  = CreateOrder.user_id;
-    - product_id: string = CreateOrder.product_id;
-    - quantity: int = CreateOrder.quantity if CreateOrder.quantity > 0 else error(400, "Quantity must be positive");
+    - customerId: int = int(CreateOrder.customerId);
+    - items: list = CreateOrder.items;
+    - shippingAddress: string = trim(CreateOrder.shippingAddress);
+  validations:
+    - require(NewOrder.customerId > 0, "Invalid customer ID", 400);
+    - require(len(NewOrder.items) > 0, "Order must contain at least one item", 400);
+    - require(len(NewOrder.shippingAddress) > 10, "Shipping address too short", 400);
 end
 
-
-// Step 2: Resolve user info and product info
-Entity UserContext(OrderPayload, Users)
+Entity OrderWithCustomer(NewOrder, CustomerDirectory)
   attributes:
-    - user: dict = (
-        [u for u in Users.users if u["id"] == OrderPayload.user_id][0]
-        if len([u for u in Users.users if u["id"] == OrderPayload.user_id]) > 0
-        else error(404, "User not found")
+    - customer: dict = find(CustomerDirectory.customers, c -> c["id"] == NewOrder.customerId);
+    - customerName: string = find(CustomerDirectory.customers, c -> c["id"] == NewOrder.customerId)["name"];
+  validations:
+    - require(OrderWithCustomer.customer != null, "Customer not found", 404);
+end
+
+Entity ValidatedOrderItems(OrderWithCustomer, ProductCatalog, NewOrder)
+  attributes:
+    - enrichedItems: list = [
+        {
+          "productId": item["productId"],
+          "quantity": item["quantity"],
+          "product": find(ProductCatalog.products, p -> p["id"] == item["productId"]),
+          "subtotal": item["quantity"] * find(ProductCatalog.products, p -> p["id"] == item["productId"])["price"]
+        }
+        for item in NewOrder.items
+      ];
+    - totalAmount: float = sum([item["subtotal"] for item in ValidatedOrderItems.enrichedItems]);
+  validations:
+    - require(
+        all([find(ProductCatalog.products, p -> p["id"] == item["productId"]) != null for item in NewOrder.items]),
+        "One or more products not found",
+        404
+      );
+    - require(
+        all([item["quantity"] > 0 for item in NewOrder.items]),
+        "All quantities must be positive",
+        400
       );
 end
 
-Entity ProductContext(OrderPayload, Products)
+Entity ValidatedOrder(ValidatedOrderItems, OrderWithCustomer, NewOrder)
   attributes:
-    - product: dict = (
-        [p for p in Products.products if p["id"] == OrderPayload.product_id][0]
-        if len([p for p in Products.products if p["id"] == OrderPayload.product_id]) > 0
-        else error(404, "Product not found")
+    - customerId: int = NewOrder.customerId;
+    - customerName: string = OrderWithCustomer.customerName;
+    - items: list = ValidatedOrderItems.enrichedItems;
+    - totalAmount: float = ValidatedOrderItems.totalAmount;
+    - shippingAddress: string = NewOrder.shippingAddress;
+    - status: string = "pending";
+  validations:
+    - require(ValidatedOrder.totalAmount > 0, "Order total must be positive", 400);
+    - require(ValidatedOrder.totalAmount < 100000, "Order total exceeds maximum limit", 400);
+end
+
+
+// =============================================================
+//                     ORDER STATUS UPDATE FLOW
+// =============================================================
+
+Entity OrderStatusRequest
+  source: UpdateOrderStatus
+  attributes:
+    - orderId: int = int(UpdateOrderStatus.orderId);
+    - newStatus: string = trim(UpdateOrderStatus.newStatus);
+  validations:
+    - require(OrderStatusRequest.orderId > 0, "Invalid order ID", 400);
+    - require(
+        in_list(OrderStatusRequest.newStatus, ["pending", "processing", "shipped", "delivered", "cancelled"]),
+        "Invalid order status",
+        400
+      );
+end
+
+Entity OrderToUpdate(OrderStatusRequest, OrdersList)
+  attributes:
+    - order: dict = find(OrdersList.orders, o -> o["id"] == OrderStatusRequest.orderId);
+  validations:
+    - require(OrderToUpdate.order != null, "Order not found", 404);
+end
+
+Entity OrderStatusUpdate(OrderToUpdate, OrderStatusRequest)
+  attributes:
+    - orderId: int = OrderStatusRequest.orderId;
+    - status: string = OrderStatusRequest.newStatus;
+    - previousStatus: string = OrderToUpdate.order["status"];
+  validations:
+    - require(
+        OrderStatusUpdate.previousStatus != "cancelled",
+        "Cannot update cancelled order",
+        400
+      );
+    - require(
+        OrderStatusUpdate.previousStatus != OrderStatusUpdate.status,
+        "Status is already set to this value",
+        400
       );
 end
 
 
-// Step 3: Compute discount eligibility and final price
-Entity Pricing(UserContext, ProductContext)
+// =============================================================
+//                     ORDER CANCELLATION FLOW
+// =============================================================
+
+Entity CancelOrderRequest
+  source: CancelOrder
   attributes:
-    - base_price: float = ProductContext.product["price"];
-    - tier: string = UserContext.user["tier"];
-    - discount_pct: float = (
-        0.10 if tier == "gold"
-        else 0.05 if tier == "silver"
-        else 0.0
+    - orderId: int = int(CancelOrder.orderId);
+    - reason: string = trim(CancelOrder.reason);
+  validations:
+    - require(CancelOrderRequest.orderId > 0, "Invalid order ID", 400);
+    - require(len(CancelOrderRequest.reason) > 5, "Cancellation reason required", 400);
+end
+
+Entity OrderToCancel(CancelOrderRequest, OrdersList)
+  attributes:
+    - order: dict = find(OrdersList.orders, o -> o["id"] == CancelOrderRequest.orderId);
+  validations:
+    - require(OrderToCancel.order != null, "Order not found", 404);
+    - require(
+        OrderToCancel.order["status"] != "delivered",
+        "Cannot cancel delivered order",
+        400
       );
-    - final_price: float = base_price * (1 - discount_pct);
+    - require(
+        OrderToCancel.order["status"] != "cancelled",
+        "Order already cancelled",
+        400
+      );
+end
+
+Entity OrderCancellation(OrderToCancel, CancelOrderRequest)
+  attributes:
+    - orderId: int = CancelOrderRequest.orderId;
+    - status: string = "cancelled";
+    - reason: string = CancelOrderRequest.reason;
 end
 
 
-// Step 4: Validate stock and compute total
-Entity StockValidated(ProductContext, OrderPayload)
+// =============================================================
+//                     ENRICHED ORDER VIEWS
+// =============================================================
+
+Entity EnrichedOrders(OrdersList, CustomerDirectory, ProductCatalog)
   attributes:
-    - available: int = ProductContext.product["stock"];
-    - valid: bool = available >= OrderPayload.quantity;
-    - message: string = (
-        "OK" if valid else error(409, "Insufficient stock")
+    - orders: list = [
+        {
+          "id": order["id"],
+          "customerId": order["customerId"],
+          "customerName": find(CustomerDirectory.customers, c -> c["id"] == order["customerId"])["name"],
+          "items": [
+            {
+              "productId": item["productId"],
+              "productName": find(ProductCatalog.products, p -> p["id"] == item["productId"])["name"],
+              "quantity": item["quantity"],
+              "subtotal": item["subtotal"]
+            }
+            for item in order["items"]
+          ],
+          "totalAmount": order["totalAmount"],
+          "status": order["status"],
+          "shippingAddress": order["shippingAddress"],
+          "createdAt": order["createdAt"]
+        }
+        for order in OrdersList.orders
+      ];
+    - totalOrders: int = len(OrdersList.orders);
+    - totalRevenue: float = sum([order["totalAmount"] for order in OrdersList.orders]);
+end
+
+Entity OrderDetail(OrdersList, CustomerDirectory, ProductCatalog)
+  attributes:
+    - order: dict = find(OrdersList.orders, o -> o["id"] == int(OrderDetail.orderId));
+    - customer: dict = find(
+        CustomerDirectory.customers,
+        c -> c["id"] == find(OrdersList.orders, o -> o["id"] == int(OrderDetail.orderId))["customerId"]
       );
+    - enrichedItems: list = [
+        {
+          "productId": item["productId"],
+          "product": find(ProductCatalog.products, p -> p["id"] == item["productId"]),
+          "quantity": item["quantity"],
+          "subtotal": item["subtotal"]
+        }
+        for item in find(OrdersList.orders, o -> o["id"] == int(OrderDetail.orderId))["items"]
+      ];
+  validations:
+    - require(OrderDetail.order != null, "Order not found", 404);
 end
 
 
-// Step 5: Prepare final payload to external order service
-Entity OrderRequestValidated(OrderPayload, Pricing, StockValidated)
+// =============================================================
+//                     WEBSOCKET ENTITIES (RAW)
+// =============================================================
+
+Entity WarehouseInventoryRaw
+  source: WarehouseInventoryFeed
   attributes:
-    - order: dict = {
-        "user_id": OrderPayload.user_id,
-        "product_id": OrderPayload.product_id,
-        "quantity": OrderPayload.quantity,
-        "price": Pricing.final_price,
-        "timestamp": now()
+    - productId: int = WarehouseInventoryFeed["productId"];
+    - quantity: int = WarehouseInventoryFeed["quantity"];
+    - warehouse: string = WarehouseInventoryFeed["warehouse"];
+    - timestamp: int = WarehouseInventoryFeed["ts"];
+end
+
+Entity ShippingStatusRaw
+  source: ShippingStatusFeed
+  attributes:
+    - orderId: int = ShippingStatusFeed["orderId"];
+    - status: string = ShippingStatusFeed["status"];
+    - location: string = ShippingStatusFeed["location"];
+    - estimatedDelivery: string = ShippingStatusFeed["eta"];
+    - timestamp: int = ShippingStatusFeed["ts"];
+end
+
+Entity PricingUpdateRaw
+  source: PricingFeed
+  attributes:
+    - productId: int = PricingFeed["productId"];
+    - newPrice: float = PricingFeed["price"];
+    - oldPrice: float = PricingFeed["oldPrice"];
+    - changePercent: float = PricingFeed["change"];
+    - timestamp: int = PricingFeed["ts"];
+end
+
+
+// =============================================================
+//                     WEBSOCKET COMPUTED ENTITIES
+// =============================================================
+
+Entity InventoryStatus(WarehouseInventoryRaw, ProductCatalog)
+  attributes:
+    - productId: int = WarehouseInventoryRaw.productId;
+    - productName: string = find(
+        ProductCatalog.products,
+        p -> p["id"] == WarehouseInventoryRaw.productId
+      )["name"];
+    - quantity: int = WarehouseInventoryRaw.quantity;
+    - warehouse: string = WarehouseInventoryRaw.warehouse;
+    - status: string = if_else(
+        WarehouseInventoryRaw.quantity > 50,
+        "In Stock",
+        if_else(WarehouseInventoryRaw.quantity > 10, "Low Stock", "Critical")
+      );
+    - timestamp: int = WarehouseInventoryRaw.timestamp;
+end
+
+Entity OrderTrackingData(ShippingStatusRaw, OrdersList, CustomerDirectory)
+  attributes:
+    - orderId: int = ShippingStatusRaw.orderId;
+    - order: dict = find(OrdersList.orders, o -> o["id"] == ShippingStatusRaw.orderId);
+    - customerName: string = find(
+        CustomerDirectory.customers,
+        c -> c["id"] == find(OrdersList.orders, o -> o["id"] == ShippingStatusRaw.orderId)["customerId"]
+      )["name"];
+    - currentStatus: string = ShippingStatusRaw.status;
+    - location: string = ShippingStatusRaw.location;
+    - estimatedDelivery: string = ShippingStatusRaw.estimatedDelivery;
+    - timestamp: int = ShippingStatusRaw.timestamp;
+end
+
+Entity DashboardMetrics(WarehouseInventoryRaw, ShippingStatusRaw, PricingUpdateRaw, OrdersList, ProductCatalog)
+  attributes:
+    - timestamp: int = WarehouseInventoryRaw.timestamp;
+    - totalInventoryValue: float = WarehouseInventoryRaw.quantity * find(
+        ProductCatalog.products,
+        p -> p["id"] == WarehouseInventoryRaw.productId
+      )["price"];
+    - activeShipments: int = len(filter(OrdersList.orders, o -> o["status"] == "shipped"));
+    - totalOrders: int = len(OrdersList.orders);
+    - recentPriceChange: dict = {
+        "productId": PricingUpdateRaw.productId,
+        "newPrice": PricingUpdateRaw.newPrice,
+        "changePercent": PricingUpdateRaw.changePercent
       };
+    - lowStockAlert: bool = WarehouseInventoryRaw.quantity < 10;
 end
 
 
-// Step 6: Log successful order in external logs
-Entity OrderLogEntry(OrderRequestValidated)
-  attributes:
-    - log: dict = {
-        "event": "ORDER_PLACED",
-        "payload": OrderRequestValidated.order,
-        "created_at": now()
-      };
+// =============================================================
+//                     UI COMPONENTS - REST
+// =============================================================
+
+Component<Table> ProductTable
+  endpoint: ProductList
+  colNames: ["id", "name", "price", "category", "stock"]
 end
 
+Component<Table> CustomerTable
+  endpoint: CustomerList
+  colNames: ["id", "name", "email", "phone", "address"]
+end
 
-// --- UI COMPONENTS ---------------------------------------------
+Component<Table> OrderTable
+  endpoint: OrderList
+  colNames: ["id", "customerName", "totalAmount", "status", "createdAt"]
+end
 
-Component<ActionForm> OrderForm
+Component<ActionForm> CreateOrderForm
   endpoint: CreateOrder
-  fields: [user_id, product_id, quantity]
-  submitLabel: "Place Order"
+  fields: [customerId, items, shippingAddress]
+  submitLabel: "Create Order"
+end
+
+Component<ActionForm> UpdateOrderStatusForm
+  endpoint: UpdateOrderStatus
+  fields: [orderId, newStatus]
+  submitLabel: "Update Status"
+end
+
+Component<ActionForm> CancelOrderForm
+  endpoint: CancelOrder
+  fields: [orderId, reason]
+  submitLabel: "Cancel Order"
+end
+
+
+// =============================================================
+//                     UI COMPONENTS - WEBSOCKET
+// =============================================================
+
+Component<LiveView> InventoryMonitor
+  endpoint: LiveInventory
+  fields: ["productId", "productName", "quantity", "warehouse", "status", "timestamp"]
+  label: "Real-Time Inventory"
+end
+
+Component<LiveView> OrderTracker
+  endpoint: LiveOrderTracking
+  fields: ["orderId", "customerName", "currentStatus", "location", "estimatedDelivery"]
+  label: "Live Order Tracking"
+end
+
+Component<LiveView> DashboardView
+  endpoint: LiveDashboard
+  fields: ["timestamp", "totalInventoryValue", "activeShipments", "totalOrders", "lowStockAlert"]
+  label: "Live Dashboard"
+end
+
+Component<Gauge> InventoryLevel
+  endpoint: LiveInventory
+  value: data.quantity
+  min: 0
+  max: 100
+  label: "Stock Level"
+  unit: "units"
+end
+
+Component<Gauge> ActiveShipments
+  endpoint: LiveDashboard
+  value: data.activeShipments
+  min: 0
+  max: 50
+  label: "Active Shipments"
+  unit: "orders"
+end
+
+Component<LineChart> InventoryTrend
+  endpoint: LiveInventory
+  rows: data.quantity
+  seriesLabels: ["Stock Quantity"]
+  xLabel: "Time"
+  yLabel: "Units"
 end

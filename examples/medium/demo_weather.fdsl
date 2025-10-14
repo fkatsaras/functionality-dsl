@@ -58,10 +58,9 @@ end
 // --- Simplified stats view (line chart) ------------------------
 Entity WeatherStats(WeatherCompare)
   attributes:
-    - rows: list = [
-        { time: r["time"], th_temp: r["th_temp"], ln_temp: r["ln_temp"] }
-        for r in WeatherCompare.rows
-      ];
+    - rows: list = map(WeatherCompare.rows, row -> 
+          { "time": row["time"], "th_temp": row["th_temp"], "ln_temp": row["ln_temp"] }
+        );
 end
 
 // --- Internal endpoints ----------------------------------------

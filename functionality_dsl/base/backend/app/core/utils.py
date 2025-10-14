@@ -2,40 +2,39 @@ from __future__ import annotations
 
 import os
 import re
-import importlib
-import httpx
 
-from typing import Dict, Union, Tuple, Any, List, Callable
+from typing import Dict, Union, Tuple, List
 
 
-class EntityResolver:
-    """Clean interface for resolving entity dependencies."""
-    
-    def __init__(self):
-        self._cache: Dict[str, List[Dict[str, Any]]] = {}
-    
-    async def get_entity_data(self, entity_name: str) -> Dict[str, Any]:
-        """
-        Get data for an entity. Returns the entity's attributes as a single dict.
-        Caches results to avoid duplicate API calls.
-        """
-        if entity_name in self._cache:
-            return self._cache[entity_name][0]  # Return first (and usually only) dict
-        
-        # Import the entity's router module
-        module_path = f"app.api.routers.{entity_name.lower()}"
-        try:
-            module = importlib.import_module(module_path)
-        except ImportError:
-            raise ValueError(f"Could not import entity module: {module_path}")
-        
-        # Call the entity's endpoint directly (internal call)
-        if hasattr(module, f'get_{entity_name.lower()}'):
-            entity_data = await getattr(module, f'get_{entity_name.lower()}')()
-            self._cache[entity_name] = entity_data
-            return entity_data[0] if entity_data else {}
+def normalize_path_value(value):
+    """
+    Normalize a path parameter or placeholder value.
+
+    Removes wrapping curly braces if present (e.g., '{1}' -> '1').
+    Keeps other values unchanged. This prevents issues when a DSL
+    expression tries to cast or compare raw placeholders.
+    """
+    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
+        return value.strip("{}")
+    return value
+
+def interpolate_url(template: str, ctx: dict) -> str:
+    """
+    Replace {placeholders} in a URL with values from context.
+    Supports both plain {id} and qualified {Entity.attr} forms.
+    """
+    flat = {}
+    for name, data in ctx.items():
+        if isinstance(data, dict):
+            for k, v in data.items():
+                flat[f"{name}.{k}"] = v
+                flat[k] = v
         else:
-            raise ValueError(f"Entity {entity_name} does not have expected endpoint function")
+            flat[name] = data
+    try:
+        return template.format(**flat)
+    except KeyError:
+        return template
 
 
 def resolve_headers(headers: Union[List[Tuple[str, str]], None]) -> Dict[str, str]:

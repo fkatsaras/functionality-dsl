@@ -6,6 +6,11 @@ def _avg(xs) -> Optional[float]:
         raise ValueError("_avg() called on empty sequence")
     return sum(xs) / len(xs)
 
+def _toint(x) -> int:
+    if x is None:
+        raise TypeError("_toint() received None")
+    return int(x)
+
 def _tofloat(x) -> float:
     if x is None:
         raise TypeError("_tofloat() received None")
@@ -17,4 +22,5 @@ DSL_FUNCTIONS = {
     "max":   (max,  (1, None)),
     "abs":   (abs,  (1, 1)),
     "float": (_tofloat, (1, 1)),
+    "int":   (_toint, (1, 1)),
 }

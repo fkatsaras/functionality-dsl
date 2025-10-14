@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, safe_globals
-from app.core.utils import resolve_headers
+from app.core.utils import resolve_headers, interpolate_url, normalize_path_value
 
 {% if target %}
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ target.method.lower() }}")
@@ -83,8 +83,11 @@ _EXTERNAL_TARGET = {
 #                          MUTATION ENDPOINT
 # ============================================================================
 
+{% set pparams = endpoint.path_params or [] %}
 @router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
-async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(request: Request):
+async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(
+    request: Request{% for p in pparams %}, {{ p }}: str{% endfor %}
+):
     """
     Mutation endpoint for {{ entity.name }}.
     {% if target %}
@@ -106,11 +109,18 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
 
     try:
         # ----------------------------------------------------------------
-        # STEP 1: Seed context with incoming payload
+        # STEP 1: Seed context with incoming payload + path params
         # ----------------------------------------------------------------
-        if request_body:
-            context["{{ endpoint.name }}"] = request_body
-            logger.debug(f"[CONTEXT] - Seeded with endpoint payload: {{ endpoint.name }}")
+        seed_payload = request_body or {}
+        {% if pparams|length %}
+        for _param_name, _param_value in [
+          {% for p in pparams %}("{{ p }}", {{ p }}){% if not loop.last %}, {% endif %}{% endfor %}
+        ]:
+            seed_payload[_param_name] = normalize_path_value(_param_value)
+        {% endif %}
+        if seed_payload:
+            context["{{ endpoint.name }}"] = seed_payload
+            logger.debug(f"[CONTEXT] - Seeded with endpoint payload + path params: {{ endpoint.name }}")
 
         # ----------------------------------------------------------------
         # STEP 2: Fetch external REST sources
@@ -119,6 +129,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             entity_name = source_config["entity"]
             source_alias = source_config["alias"]
             url = source_config["url"]
+            url = interpolate_url(url, context)
             method = source_config["method"]
             
             logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
@@ -286,6 +297,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         # STEP 6: Forward to external target
         # ----------------------------------------------------------------
         target_url = _EXTERNAL_TARGET["url"]
+        target_url = interpolate_url(target_url, context)
         target_method = _EXTERNAL_TARGET["method"]
         target_name = _EXTERNAL_TARGET["name"]
         

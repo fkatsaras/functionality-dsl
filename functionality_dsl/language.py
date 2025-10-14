@@ -1,5 +1,6 @@
 from collections import deque
 from os.path import join, dirname, abspath
+import re
 from textx import (
     metamodel_from_file,
     get_children_of_type,
@@ -85,25 +86,6 @@ def _as_id_str(x):
 # ------------------------------------------------------------------------------
 # Expression analysis helpers
 
-def get_expr(a):
-    """Extract expression from an attribute or validation node."""
-    for key in ("expr", "expression", "valueExpr", "value", "rhs"):
-        if hasattr(a, key):
-            v = getattr(a, key)
-            if v is not None:
-                return v
-    # Fallback: first Expr child
-    expr_children = list(get_children_of_type("Expr", a))
-    if expr_children:
-        return expr_children[0]
-    return None
-
-
-def is_computed_attr(a):
-    """Check if an attribute is computed (has an expression)."""
-    return get_expr(a) is not None
-
-
 def _loop_var_names(expr) -> set[str]:
     """
     Extract loop variable names from comprehensions and lambdas.
@@ -169,22 +151,26 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
             base = n.base
             tails = list(getattr(n, "tails", []) or [])
 
-            if getattr(base, "var", None) is not None and tails:
+            if getattr(base, "var", None) is not None:
                 alias_raw = base.var
                 alias = _as_id_str(alias_raw)
 
                 if not alias or alias in RESERVED or alias in lvs:
                     continue  # skip reserved/loop vars
 
-                # Use the FIRST tail if it's a member access
-                first = tails[0]
-                if getattr(first, "member", None) is not None:
-                    attr_name = getattr(first.member, "name", None)
-                    if not attr_name:
+                # If there are tails, extract the first member access
+                if tails:
+                    first = tails[0]
+                    if getattr(first, "member", None) is not None:
+                        attr_name = getattr(first.member, "name", None)
+                        if not attr_name:
+                            attr_name = "__jsonpath__"
+                    else:
+                        # if the first tail is an index, treat as jsonpath
                         attr_name = "__jsonpath__"
                 else:
-                    # if the first tail is an index, treat as jsonpath
-                    attr_name = "__jsonpath__"
+                    # No tails = bare identifier reference
+                    attr_name = None
 
                 yield alias, attr_name, n
 
@@ -215,24 +201,6 @@ def _validate_func(name, argc, node):
             f"Function '{name}' expects {expect} args, got {argc}.",
             **get_location(node),
         )
-
-    # Special semantic validation for error()
-    if name == "error":
-        args = getattr(node, "args", []) or []
-        if len(args) >= 1:
-            first = getattr(args[0], "literal", None)
-            if first is not None and not hasattr(first, "INT"):
-                raise TextXSemanticError(
-                    "error() first argument must be an integer literal HTTP code.",
-                    **get_location(node),
-                )
-        if len(args) >= 2:
-            second = getattr(args[1], "literal", None)
-            if second is not None and not hasattr(second, "STRING"):
-                raise TextXSemanticError(
-                    "error() second argument must be a string literal message.",
-                    **get_location(node),
-                )
 
 
 # ------------------------------------------------------------------------------
@@ -298,9 +266,9 @@ def _find_websocket_source_in_hierarchy(entity):
 # ------------------------------------------------------------------------------
 # Computed attributes validation
 
-def _annotate_computed_attrs(model, metamodel=None):
+def _validate_computed_attrs(model, metamodel=None):
     """
-    Validate and compile computed attributes inside all entities.
+    Validate and compile attributes .
     - Accepts loop vars inside comprehensions
     - Accepts parent entity references
     - Accepts references to external sources
@@ -309,52 +277,62 @@ def _annotate_computed_attrs(model, metamodel=None):
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
     }
-    external_sources = {ep.name for ep in get_model_external_sources(model)}
 
     for ent in get_children_of_type("Entity", model):
         parents = getattr(ent, "parents", []) or []
 
         for a in getattr(ent, "attributes", []) or []:
-            if not is_computed_attr(a):
-                continue
-            
-            expr = get_expr(a)
+            expr = getattr(a, "expr", None)
             if expr is None:
                 raise TextXSemanticError(
-                    "Computed attribute missing expression.",
+                    f"Attribute '{a.name}' is missing expression.",
                     **get_location(a)
                 )
 
             loop_vars = _loop_var_names(expr)
 
-            # Validate references
+            # Validate references in computed expressions
+            # --------------------------------------------------------------
+            ent_src = getattr(ent, "source", None)
+            allowed_aliases = set(p.name for p in parents)
+            if ent_src is not None:
+                allowed_aliases.add(getattr(ent_src, "name", None))
+
             for alias, attr, node in _collect_refs(expr, loop_vars):
-                # Allow references to parent entities
-                matched_parent = next((p for p in parents if alias == p.name), None)
-                if matched_parent:
-                    tgt_attrs = target_attrs.get(matched_parent.name, set())
+                if alias is None or alias in loop_vars:
+                    continue
+
+                # Bare alias
+                if attr is None:
+                    # Allow only if it's our source or parent
+                    if not ((ent_src and alias == getattr(ent_src, "name", None)) or
+                            any(alias == p.name for p in parents)):
+                        raise TextXSemanticError(
+                            f"Entity '{ent.name}' illegal bare reference '{alias}'. "
+                            f"Only its source or parents can be referenced directly.",
+                            **get_location(node)
+                        )
+                    continue
+
+                # Allow references to parent entities (and validate attr existence)
+                if alias in (p.name for p in parents):
+                    tgt_attrs = target_attrs.get(alias, set())
                     if attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on entity '{matched_parent.name}'.",
+                            f"'{alias}.{attr}' not found on parent entity '{alias}'.",
                             **get_location(node),
                         )
                     continue
 
-                # Allow references to this entity's external source
-                ent_src = getattr(ent, "source", None)
+                # Allow references to this entity's source
                 if ent_src and alias == getattr(ent_src, "name", None):
                     continue
 
-                # Allow references to any external source
-                if alias in external_sources:
-                    continue
-
-                # Unknown reference
+                # Everything else is invalid
                 raise TextXSemanticError(
-                    f"Unknown reference '{alias}'. "
-                    f"Allowed parents: {[p.name for p in parents]}, "
-                    f"external sources: {list(external_sources)}, "
-                    f"or loop vars {loop_vars}",
+                    f"Entity '{ent.name}' illegal reference '{alias}'. "
+                    f"Only its parents ({[p.name for p in parents]}) "
+                    f"and its own source ({getattr(ent_src, 'name', None)}) are allowed.",
                     **get_location(node)
                 )
 
@@ -419,7 +397,7 @@ def _validate_entity_validations(model, metamodel=None):
 
         # 3. Validate each validation expression
         for idx, val in enumerate(validations):
-            expr = get_expr(val)
+            expr = getattr(val, "expr", None)
             if expr is None:
                 raise TextXSemanticError(
                     f"Entity '{ent.name}' validation #{idx+1} is missing an expression.",
@@ -428,15 +406,55 @@ def _validate_entity_validations(model, metamodel=None):
 
             loop_vars = _loop_var_names(expr)
 
-            # Check references in validation expressions
+            # ------------------------------------------------------
+            # Allowed aliases: this entity's source + parents + self
+            # ------------------------------------------------------
+            ent_src = getattr(ent, "source", None)
+            parent_list = list(getattr(ent, "parents", []) or [])
+            parent_names = [p.name for p in parent_list]
+            allowed_aliases = set(parent_names)
+            if ent_src is not None:
+                allowed_aliases.add(getattr(ent_src, "name", None))
+            allowed_aliases.add(ent.name)  # allow self reference
+
+            # ------------------------------------------------------
+            # Validate all references in the validation expression
+            # ------------------------------------------------------
             for alias, attr, node in _collect_refs(expr, loop_vars):
-                if attr != "__jsonpath__" and attr not in attr_names:
-                    raise TextXSemanticError(
-                        f"Entity '{ent.name}' validation references attribute '{attr}', "
-                        f"but it does not exist. "
-                        f"Available attributes: {sorted(attr_names)}",
-                        **get_location(node)
-                    )
+                if alias is None or alias in loop_vars:
+                    continue
+
+                # Allow self-reference (same entity)
+                if alias == ent.name:
+                    if attr not in attr_names and attr != "__jsonpath__":
+                        raise TextXSemanticError(
+                            f"'{alias}.{attr}' not found on entity '{ent.name}'.",
+                            **get_location(node),
+                        )
+                    continue
+
+                # Parent reference (validate attribute existence)
+                if alias in parent_names:
+                    parent_ent = next(p for p in parent_list if p.name == alias)
+                    parent_attr_names = {a.name for a in _get_all_entity_attributes(parent_ent)}
+                    if attr != "__jsonpath__" and attr not in parent_attr_names and attr is not None:
+                        raise TextXSemanticError(
+                            f"'{alias}.{attr}' not found on parent entity '{alias}'.",
+                            **get_location(node),
+                        )
+                    continue
+
+                # This entity's source reference is allowed
+                if ent_src and alias == getattr(ent_src, "name", None):
+                    continue
+
+                # Illegal alias
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' illegal reference '{alias}' in validation #{idx+1}. "
+                    f"Only itself, its parents ({sorted(a for a in allowed_aliases if a)}), "
+                    f"and its own source are allowed.",
+                    **get_location(node),
+                )
 
             # Validate function calls
             for fname, argc, node in _collect_calls(expr):
@@ -634,7 +652,6 @@ def entity_obj_processor(ent):
     Entity validation:
     - Must declare at least one attribute
     - Attribute names must be unique
-    - Inputs aliases must be unique
     - Normalize source/target lists
     - Mark _source_kind for templates
     """
@@ -660,31 +677,6 @@ def entity_obj_processor(ent):
                 **get_location(a),
             )
         seen.add(aname)
-
-        # Computed attributes must have expression
-        if is_computed_attr(a) and get_expr(a) is None:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' computed attribute '{aname}' is missing an expression.",
-                **get_location(a),
-            )
-
-    # Inputs alias uniqueness
-    inputs = getattr(ent, "inputs", None) or []
-    alias_seen = set()
-    for inp in inputs:
-        alias = getattr(inp, "alias", None)
-        target = getattr(inp, "target", None)
-        if not alias or target is None:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' has an invalid inputs entry (alias or target missing).",
-                **get_location(inp),
-            )
-        if alias in alias_seen:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' inputs alias '{alias}' is duplicated.",
-                **get_location(inp),
-            )
-        alias_seen.add(alias)
 
     # Normalize source (list -> single or None)
     src = getattr(ent, "source", None)
@@ -792,6 +784,70 @@ def verify_endpoints(model):
                     f"must have a source (directly or via inheritance).",
                     **get_location(iwep),
                 )
+                
+def verify_path_params(model):
+    """
+    Validate path parameters with relaxed constraints:
+    
+    1. Internal endpoints (APIEndpoint<REST>):
+       - Path params always available in endpoint context
+       - No validation needed (generator seeds them automatically)
+    
+    2. External sources (Source<REST>):
+       - GET sources: Allow context-based interpolation (flexible)
+       - Mutation sources (POST/PUT/PATCH/DELETE): Validate params exist in entity
+    
+    This allows patterns like:
+        APIEndpoint path="/users/{id}" -> seeds context["Endpoint"]["id"]
+        Source url="https://api.example.com/users/{id}" -> interpolates from context
+    """
+    
+    # --- Skip validation for internal REST endpoints ---
+    # Path params are ALWAYS seeded into context by the generator:
+    #   context["EndpointName"]["paramName"] = normalize_path_value(paramValue)
+    # No need to check if entity has matching attributes
+    
+    for ep in get_model_internal_rest_endpoints(model):
+        path = getattr(ep, "path", "") or ""
+        if "{" not in path:
+            continue
+        
+    # --- Validate external REST sources ---
+    for src in get_model_external_rest_endpoints(model):
+        url = getattr(src, "url", "") or ""
+        if "{" not in url:
+            continue
+
+        entity = getattr(src, "entity", None)
+        verb = (getattr(src, "verb", "GET") or "GET").upper()
+        
+        params = re.findall(r"{([^{}]+)}", url)
+        if not params:
+            continue
+        
+        # Allow GET sources to interpolate from runtime context
+        # (e.g., using path params from parent endpoint)
+        if verb == "GET":
+            continue
+        
+        # For mutation verbs, validate params exist in bound entity
+        # This catches errors early: "You're trying to forward {id} but entity doesn't have it"
+        if entity is not None:
+            attr_names = {a.name for a in _get_all_entity_attributes(entity)}
+            
+            for p in params:
+                if p not in attr_names:
+                    raise TextXSemanticError(
+                        f"URL parameter '{p}' not found in entity '{entity.name}' "
+                        f"bound to mutation source '{src.name}' ({verb}). "
+                        f"Mutation sources must have URL params as entity attributes. "
+                        f"Available attributes: {sorted(attr_names)}",
+                        **get_location(src),
+                    )
+        
+        # If mutation source has no entity, allow (edge case: DELETE with no body)
+        if entity is None and verb in ["DELETE"]:
+            continue
 
 
 def verify_entities(model):
@@ -861,10 +917,11 @@ def _populate_aggregates(model):
 def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
-    Order matters: unique names → endpoints → entities → components → aggregates → validations
+    Order matters: unique names -> endpoints -> entities -> components -> aggregates -> validations
     """
     verify_unique_names(model)
     verify_endpoints(model)
+    verify_path_params(model)
     verify_entities(model)
     verify_components(model)
     _populate_aggregates(model)
@@ -968,7 +1025,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
 
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
-    mm.register_model_processor(_annotate_computed_attrs)
+    mm.register_model_processor(_validate_computed_attrs)
 
     return mm
 

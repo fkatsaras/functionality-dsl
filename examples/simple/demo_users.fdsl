@@ -53,12 +53,7 @@ Entity UserNormalized3(UserNormalized2)
     - job: string = lower(UserNormalized2.job);
 end
 
-// --- External REST targets (ReqRes) ----------------------------
-// Source<REST> UserCreate
-//   url: "https://reqres.in/api/users"
-//   verb: POST
-//   entity: UserNormalized
-// end
+
 
 Source<REST> UserCreate
   url: "https://httpbin.org/anything"

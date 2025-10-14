@@ -105,9 +105,9 @@ end
 Entity TelemetryComputed(TelemetryCombined)
   attributes:
     - t: int = TelemetryCombined.ts;
-    - avg_temp: float = avg([r["temperature"] for r in TelemetryCombined.readings]);
-    - avg_hum:  float = avg([r["humidity"] for r in TelemetryCombined.readings]);
-    - avg_heat: float = avg([r["temperature"] + 0.2 * r["humidity"] for r in TelemetryCombined.readings]);
+    - avg_temp: float = avg(map(TelemetryCombined.readings, r -> r["temperature"]));
+    - avg_hum:  float = avg(map(TelemetryCombined.readings, r -> r["humidity"]));
+    - avg_heat: float = avg(map(TelemetryCombined.readings, r -> r["temperature"] + 0.2 * r["humidity"]));
 end
 
 
@@ -138,7 +138,7 @@ Component<Gauge> AverageTemperature
   min: 0
   max: 100
   label: "Average Temperature"
-  unit: "°C"
+  unit: "C"
 end
 
 Component<Gauge> AverageHumidity

@@ -1,3 +1,8 @@
+def _tostring(x) -> str:
+    if x is None:
+        raise TypeError("_tostring() received None")
+    return str(x)
+
 def _lower(x) -> str:
     if x is None:
         raise TypeError("_lower() received None")
@@ -34,6 +39,7 @@ def _replace(s: str, old: str, new: str):
     return str(s).replace(old, new)
 
 DSL_FUNCTIONS = {
+    "str":   (_tostring, (1, 1)),
     "lower": (_lower, (1, 1)),
     "upper": (_upper, (1, 1)),
     "len":   (_len,   (1, 1)),

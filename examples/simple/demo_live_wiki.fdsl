@@ -28,7 +28,7 @@ end
 Entity EditGauge(WikiEdit)
   attributes:
     - edit_size_abs: int = (
-        abs(WikiEdit.delta) if WikiEdit.delta != None else 0
+        abs(WikiEdit.delta) if WikiEdit.delta != null else 0
       );
 end
 

@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { preventDefault } from 'svelte/legacy';
-
-  import { onMount } from "svelte";
+  import { preventDefault } from "svelte/legacy";
 
   const {
     name = "ActionForm",
@@ -13,7 +11,7 @@
   } = $props<{
     name?: string;
     url: string;
-    method?: "POST" | "PUT" | "PATCH" | "DELETE" | "GET";
+    method?: "POST" | "PUT" | "PATCH" | "DELETE" | "GET" | "UPDATE";
     fields?: string[];
     pathKey?: string | null;
     submitLabel?: string;
@@ -26,10 +24,26 @@
   let error = $state<string | null>(null);
   let ok = $state<string | null>(null);
 
+  /**
+   * Compute the effective endpoint URL by replacing any path parameters
+   * like {id}, {userId}, {postId}, etc. with their corresponding model values.
+   * If a param has no matching field in the model, it is left unchanged.
+   */
   function endpoint(): string {
-    const base = url.replace(/\/+$/, ""); // strip trailing slash if present
-    const pathVal = pathKey ? model[pathKey] : null;
-    return pathVal != null && `${pathVal}` !== "" ? `${base}/${pathVal}` : base;
+    const base = url.replace(/\/+$/, ""); // strip trailing slash
+    let final = base;
+  
+    // Find all placeholders {param}
+    const matches = [...base.matchAll(/\{([^{}]+)\}/g)];
+    for (const m of matches) {
+      const key = m[1];
+      const val = model[key];
+      if (val != null && `${val}`.trim() !== "") {
+        final = final.replace(new RegExp(`\\{${key}\\}`, "g"), encodeURIComponent(val));
+      }
+    }
+  
+    return final;
   }
 
   async function submit() {
@@ -38,12 +52,17 @@
 
     try {
       const body = structuredClone(model);
-      if (pathKey) delete body[pathKey];
+      if (pathKey) delete body[pathKey]; // remove path parameter from body
 
-      const res = await fetch(endpoint(), {
+      const target = endpoint();
+
+      const res = await fetch(target, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: (method === "DELETE" || method === "GET") ? undefined : JSON.stringify(body),
+        body:
+          method === "DELETE" || method === "GET"
+            ? undefined
+            : JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -106,14 +125,13 @@
               role="img"
               aria-label="Error"
             >
-               circle 
+              <!-- Circle -->
               <circle cx="10" cy="10" r="8.5" />
-               X 
+              <!-- X -->
               <path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6" />
             </svg>
           {/if}
         </div>
-
       </div>
 
       <div class="p-4 pt-0 space-y-4">
@@ -151,9 +169,12 @@
     font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
       "Liberation Mono", "Courier New", monospace;
   }
-  .thin-border, .table-border { border-color: var(--edge); }
-  
-  /* Added fade-in animation for success/error icons */
+
+  .thin-border,
+  .table-border {
+    border-color: var(--edge);
+  }
+
   @keyframes fade-in {
     from {
       opacity: 0;
@@ -164,7 +185,7 @@
       transform: scale(1);
     }
   }
-  
+
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
   }
@@ -177,7 +198,7 @@
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
-  
+
   @keyframes spin {
     to {
       transform: rotate(360deg);

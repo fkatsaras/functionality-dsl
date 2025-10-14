@@ -7,7 +7,7 @@ from pathlib import Path
 from shutil import copytree
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
-from textx import get_children_of_type
+from textx import get_children_of_type, TextXSemanticError 
 
 from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
 
@@ -165,22 +165,40 @@ def _build_auth_headers(source):
 def _get_all_ancestors(entity, model):
     """
     Return all ancestor entities in topological order (oldest → newest).
-    This ensures dependencies are processed before dependents.
+    Detects and reports cyclic dependencies (entity inheritance loops).
     """
     seen = set()
+    visiting = set()  # tracks current recursion stack
     ordered = []
-    
-    def visit(e):
-        if id(e) in seen:
+
+    def visit(e, path=None):
+        if path is None:
+            path = []
+
+        eid = id(e)
+
+        if eid in visiting:
+            cycle_path = " -> ".join([ent.name for ent in path + [e]])
+            raise TextXSemanticError(
+                f"Cycle detected in entity inheritance graph: {cycle_path}"
+            )
+
+        if eid in seen:
             return
-        seen.add(id(e))
-        # Recurse into parents first (depth-first)
+
+        visiting.add(eid)
+        path.append(e)
+
         for parent in getattr(e, "parents", []) or []:
-            visit(parent)
+            visit(parent, path)
+
+        visiting.remove(eid)
+        path.pop()
+
+        seen.add(eid)
         ordered.append(e)
-    
+
     visit(entity)
-    # Remove the entity itself, return only ancestors
     return [e for e in ordered if e is not entity]
 
 
@@ -290,6 +308,12 @@ def _get_route_path(endpoint, entity, default_prefix="/api"):
     
     name = getattr(endpoint, "name", getattr(entity, "name", "endpoint"))
     return f"{default_prefix}/{name.lower()}"
+
+def _extract_path_params(path: str) -> list[str]:
+    """Return all {param} placeholders from a path or URL."""
+    if not path:
+        return []
+    return re.findall(r"{([^{}]+)}", path)
 
 
 # ============================================================================
@@ -508,6 +532,7 @@ def _resolve_universal_dependencies(entity, model, all_source_names):
 def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a query (GET) router for an APIEndpoint<REST>."""
     route_path = _get_route_path(endpoint, entity)
+    path_params = _extract_path_params(route_path)
     
     # Resolve dependencies
     rest_inputs, computed_parents, inline_chain = _resolve_dependencies_for_entity(
@@ -547,7 +572,7 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     template = env.get_template("router_query_rest.jinja")
     
     router_code = template.render(
-        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None)},
+        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params,},
         entity=entity,
         computed_attrs=computed_attrs,
         rest_inputs=rest_inputs,
@@ -572,6 +597,7 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
     """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
     route_path = _get_route_path(endpoint, entity)
     verb = getattr(endpoint, "verb", "POST").upper()
+    path_params = _extract_path_params(route_path)
     
     # Find the terminal entity (has external target)
     terminal_entity = _find_terminal_entity(entity, model) or entity
@@ -619,7 +645,7 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
     template = env.get_template("router_mutation_rest.jinja")
     
     router_code = template.render(
-        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None)},
+        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params,},
         entity=entity,
         terminal=terminal_entity,
         target=target,

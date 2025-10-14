@@ -17,7 +17,7 @@ Component:
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointREST])?   // still binds to APIEndpoint<REST>/WS endpoint
+  ('endpoint:' endpoint=[APIEndpointREST])?
   ('colNames:' colNames=StringList)?                   // explicit list of column names ['id','name',...]
   'end'
 ;

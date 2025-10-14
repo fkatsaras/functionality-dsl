@@ -1,9 +1,15 @@
-{# expects: actionPath, fields[]; optional: method, pathKey, submitLabel #}
+{# components/ActionForm.jinja — escaped curly braces #}
+{%- set raw_url = props.get('endpointPath') or '' -%}
+{# Escape curly braces so that Svelte doesn’t interpret them as expressions #}
+{%- set safe_url = raw_url.replace('{', '&#123;').replace('}', '&#125;') -%}
+
 <ActionForm
   name="{{ common.name }}"
-  url="{{ (props.get('endpointPath') or '').rstrip('/') }}"
+  url="{{ safe_url }}"
   method="{{ props.get('method', 'POST') }}"
-  fields={{ "{" }}{{ (props.get('fields') or []) | tojson }}{{ "}" }}{% if props.get('pathKey') %}
-  pathKey="{{ props['pathKey'] }}"{% endif %}
+  fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
+  {% if props.get('pathKey') %}
+  pathKey="{{ props['pathKey'] }}"
+  {% endif %}
   submitLabel="{{ props.get('submitLabel') or 'Submit' }}"
 />

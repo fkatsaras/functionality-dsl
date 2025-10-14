@@ -185,15 +185,31 @@ class ActionFormComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint.")
 
     def to_props(self):
-        # The front-end should call the internal endpoint path. We expose just the suffix used by UI.
-        # If your UI prefixes something (e.g., none now), adjust here accordingly.
+        """
+        Build frontend props for ActionForm.
+        - Detect {param} in endpoint path.
+        - Preserve it in URL for runtime interpolation.
+        - Expose pathKey so the frontend knows which field to use.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        import re
+
+        match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
+        path_key = self.pathKey or (match.group(1) if match else None)
+
+        if match:
+            path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
+            
+        path = path.replace("{", "{{").replace("}", "}}")
+
         return {
-            "endpointPath": getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}",
+            "endpointPath": path,
             "fields": [str(f) for f in (self.fields or [])],
-            "pathKey": self.pathKey,
+            "pathKey": path_key,
             "submitLabel": self.submitLabel or "Submit",
             "method": self.method,
         }
+
 
 
 @register_component

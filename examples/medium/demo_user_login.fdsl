@@ -1,4 +1,6 @@
-// --- Server ----------------------------------------------------
+// ============================================================
+// Server Configuration
+// ============================================================
 Server AuthServer
   host: "localhost"
   port: 8081
@@ -6,7 +8,9 @@ Server AuthServer
   loglevel: debug
 end
 
-// --- External Endpoints (requires a custom dummy db container) -
+// ============================================================
+// External Endpoints (dummy DB interfaces)
+// ============================================================
 Source<REST> UserRegisterExternal
   url: "http://dummydb:9000/db/users/register"
   verb: POST
@@ -19,49 +23,66 @@ Source<REST> UserLoginExternal
   entity: LoginValidated
 end
 
-Source<REST> UserList
+Source<REST> Users
   url: "http://dummydb:9000/db/users"
   verb: GET
 end
 
-// --- Entities --------------------------------------------------
+Source<REST> ResetPasswordExternal
+  url: "http://dummydb:9000/db/users/reset-password"
+  verb: PUT
+  entity: ResetPasswordPayload
+end
+
+Source<REST> UserUpdateExternal
+  url: "http://dummydb:9000/db/users/{id}" 
+  verb: PATCH
+  entity: UserUpdatePayload
+end
+
+Source<REST> UserDeleteExternal
+  url: "http://dummydb:9000/db/users/{id}"
+  verb: DELETE
+  entity: UserDeletePayload
+end
+
+// ------------- List all users ------------
+APIEndpoint<REST> UserList
+  path: "/api/users"
+  verb: GET
+  entity: ExistingUsers
+end
+
 Entity ExistingUsers
-  source: UserList
+  source: Users
   attributes:
-    - users: list = UserList;
+    - users: list = Users;
 end
 
-// ---------------- REGISTER FLOW ----------------
+//  -------------------REGISTER FLOW -------------------
 APIEndpoint<REST> UserRegister
-  path: "/api/auth/register"
+  path: "/api/users/register"
   verb: POST
-  entity: RegisterPayload
+  entity: NewUser
 end
 
-Entity RegisterPayload
+Entity NewUser
   source: UserRegister
   attributes:
-    - username: string = trim(UserRegister.username);
-    - email:    string = trim(UserRegister.email);
-    - password: string = UserRegister.password;
-  validations:
-    - require(len(RegisterPayload.password) > 5, "Password must be at least 6 characters", 400);
-    - require(validate_email(RegisterPayload.email), "Invalid email format", 400);
-    - require(in_range(len(RegisterPayload.username), 3, 50), "Username must be 3-50 characters", 400);
-end
-
-Entity NewUser(RegisterPayload)
-  attributes:
     - user: dict = {
-        "username": RegisterPayload.username,
-        "email":    RegisterPayload.email,
-        "password": RegisterPayload.password
+        "username": trim(UserRegister.username),
+        "email":    trim(UserRegister.email),
+        "password": UserRegister.password
       };
+  validations:
+    - require(len(UserRegister.password) > 5, "Password must be at least 6 characters", 400);
+    - require(validate_email(UserRegister.email), "Invalid email format", 400);
+    - require(in_range(len(UserRegister.username), 3, 50), "Username must be 3-50 characters", 400);
 end
 
-// ---------------- LOGIN FLOW ----------------
+//  --------------- LOGIN FLOW -------------------------------
 APIEndpoint<REST> UserLogin
-  path: "/api/auth/login"
+  path: "/api/users/login"
   verb: POST
   entity: LoginPayload
 end
@@ -75,12 +96,12 @@ end
 
 Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
-    - matches: list = filter(ExistingUsers.users, u -> 
-      ( u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
-    );
-    - match: dict = find(ExistingUsers.users, u -> 
-      (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
-    );
+    - matches: list = filter(ExistingUsers.users, u ->
+        (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
+      );
+    - match: dict = find(ExistingUsers.users, u ->
+        (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
+      );
 end
 
 Entity LoginValidated(LoginCandidates)
@@ -91,7 +112,68 @@ Entity LoginValidated(LoginCandidates)
     - require(LoginCandidates.match != null, "Invalid username or password", 401);
 end
 
-// ---------------- UI Components ----------------
+// ------------- RESET PASSWORD FLOW -----------------
+APIEndpoint<REST> ResetPassword
+  path: "/api/users/reset-password"
+  verb: PUT
+  entity: ResetPasswordRequest
+end
+
+Entity ResetPasswordRequest
+  source: ResetPassword
+  attributes:
+    - email: string = trim(ResetPassword.email);
+    - newPassword: string = ResetPassword.newPassword;
+end
+
+Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
+  attributes:
+    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email);
+  validations:
+    - require(CurrentUser.user != null, "User not found", 404);
+end
+
+Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
+  attributes:
+    - email: string = ResetPasswordRequest.email;
+    - newPassword: string = ResetPasswordRequest.newPassword;
+  validations:
+    - require(len(ResetPasswordPayload.newPassword) > 5, "New password must be at least 6 characters", 400);
+    - require(CurrentUser.user.password != ResetPasswordPayload.newPassword, "New password must be different from old one", 400);
+end
+// ----------------- USER UPDATE FLOW ------------
+APIEndpoint<REST> UserUpdate
+  path: "/api/users/{id}/update"
+  verb: PATCH
+  entity: UserUpdatePayload
+end
+
+Entity UserUpdatePayload
+  source: UserUpdate
+  attributes:
+    - id: int = int(UserUpdate.id);
+    - email: string = trim(UserUpdate.email);
+    - password: string = UserUpdate.password;
+  validations:
+    - require(UserUpdatePayload.id > 0, "Invalid user ID", 400);
+end
+
+// --------------- USER DELETE FLOW -------------
+APIEndpoint<REST> UserDelete
+  path: "/api/users/{id}/delete"
+  verb: DELETE
+  entity: UserDeletePayload
+end
+
+Entity UserDeletePayload
+  source: UserDelete
+  attributes:
+    - id: int = int(UserDelete.id);
+  validations:
+    - require(UserDeletePayload.id > 0, "Invalid user ID", 400);
+end
+
+// ------------- UI Components ----------------
 Component<ActionForm> RegisterForm
   endpoint: UserRegister
   fields: [username, email, password]
@@ -102,4 +184,27 @@ Component<ActionForm> LoginForm
   endpoint: UserLogin
   fields: [username, password]
   submitLabel: "Login"
+end
+
+Component<ActionForm> ResetPasswordForm
+  endpoint: ResetPassword
+  fields: [email, newPassword]
+  submitLabel: "Reset Password"
+end
+
+Component<ActionForm> UpdateUserForm
+  endpoint: UserUpdate
+  fields: [id, email, password]
+  submitLabel: "Update User"
+end
+
+Component<ActionForm> DeleteUserForm
+  endpoint: UserDelete
+  fields: [id]
+  submitLabel: "Delete User"
+end
+
+Component<Table> UserTable
+  endpoint: UserList
+  colNames: ["id", "username", "email", "password"]
 end
