@@ -114,7 +114,7 @@ class TableComponent(_BaseComponent):
 
     def to_props(self):
         return {
-            "endpointPath": self._endpoint_path("/"),
+            "endpointPath": self._endpoint_path(""),
             "colNames": self.colNames,
         }
 
@@ -151,7 +151,7 @@ class LineChartComponent(_BaseComponent):
 
     def to_props(self):
         base = {
-            "endpointPath": self._endpoint_path("/"),
+            "endpointPath": self._endpoint_path(""),
             "seriesLabels": self.seriesLabels,
             "xLabel": self.xLabel,
             "yLabel": self.yLabel,

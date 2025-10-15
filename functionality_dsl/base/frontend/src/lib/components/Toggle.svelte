@@ -16,6 +16,7 @@
 
   // --- Reactive state ---
   const state = writable(false);
+  let loading = false;
   let error: string | null = null;
 
   // --- SPRING animation (0 = off, 1 = on) ---
