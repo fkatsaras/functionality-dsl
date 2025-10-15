@@ -379,27 +379,36 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
 
     compiled_chain = []
     for chain_entity in chain_entities:
+        # --- build list of known source names ---
+        known_aliases = set(all_source_names)
+        known_aliases.add(chain_entity.name)
+        src = getattr(chain_entity, "source", None)
+        if src and getattr(src, "name", None):
+            known_aliases.add(src.name)
+
+        # --- attributes ---
         attribute_configs = []
         for attr in getattr(chain_entity, "attributes", []) or []:
             if getattr(attr, "expr", None):
                 expr_code = compile_expr_to_python(
                     attr.expr,
                     context=context,
-                    known_sources=all_source_names + [chain_entity.name]
+                    known_sources=list(known_aliases)
                 )
                 attribute_configs.append({
                     "name": attr.name,
                     "pyexpr": expr_code
                 })
 
+        # --- validations ---
         validation_configs = []
         validations = getattr(chain_entity, "validations", None)
-        if validations:  # Only process if validations exist
+        if validations:
             for v in validations:
                 expr_code = compile_expr_to_python(
                     v.expr,
                     context="entity",
-                    known_sources=all_source_names + [chain_entity.name]
+                    known_sources=list(known_aliases)
                 )
                 validation_configs.append({"pyexpr": expr_code})
 
@@ -534,12 +543,10 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     route_path = _get_route_path(endpoint, entity)
     path_params = _extract_path_params(route_path)
     
-    # Resolve dependencies
-    rest_inputs, computed_parents, inline_chain = _resolve_dependencies_for_entity(
+    # Resolve dependencies (external sources + computed parents)
+    rest_inputs, computed_parents, _ = _resolve_dependencies_for_entity(
         entity, model, all_endpoints, all_source_names
     )
-    # Get all entity attribute validations
-    validations = _collect_entity_validations(entity, model, all_source_names)
     
     # Check if entity itself has a Source<REST>
     entity_source = getattr(entity, "source", None)
@@ -547,19 +554,9 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
         config = _build_rest_input_config(entity, entity_source, all_source_names)
         rest_inputs.append(config)
     
-    # Build computed attributes for this entity
-    computed_attrs = []
-    for attr in getattr(entity, "attributes", []) or []:
-        if hasattr(attr, "expr") and attr.expr is not None:
-            expr_code = compile_expr_to_python(
-                attr.expr,
-                context="entity",
-                known_sources=all_source_names + [entity_source.name if entity_source else entity.name]
-            )
-            computed_attrs.append({
-                "name": attr.name,
-                "pyexpr": expr_code
-            })
+    #  Build unified computation chain (ancestors + final entity)
+    # This replaces separate inline_chain + computed_attrs + validations
+    compiled_chain = _build_entity_chain(entity, model, all_source_names, context="ctx")
     
     # Render template
     env = Environment(
@@ -572,22 +569,19 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     template = env.get_template("router_query_rest.jinja")
     
     router_code = template.render(
-        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params,},
+        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params},
         entity=entity,
-        computed_attrs=computed_attrs,
         rest_inputs=rest_inputs,
         computed_parents=computed_parents,
         route_prefix=route_path,
-        inline_chain=inline_chain,
+        compiled_chain=compiled_chain,
         server=server_config["server"],
-        validations=validations,
     )
-    router_code = _format_python_code(router_code)  # PEP formatting w black
+    router_code = _format_python_code(router_code)
     
     output_file = output_dir / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
     output_file.write_text(router_code, encoding="utf-8")
     print(f"[GENERATED] Query router: {output_file}")
-
 
 # ============================================================================
 #                           MUTATION ENDPOINT GENERATION (POST/PUT/DELETE)

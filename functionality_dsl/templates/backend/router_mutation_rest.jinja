@@ -158,7 +158,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
                 
                 # Shape the data by evaluating attribute expressions
                 shaped_data: Dict[str, Any] = {}
-                evaluation_ctx = {source_alias: raw_payload}
+                evaluation_ctx = {"ctx": {source_alias: raw_payload}, source_alias: raw_payload}
                 
                 for attr_config in source_config.get("attrs", []):
                     attr_name = attr_config["name"]

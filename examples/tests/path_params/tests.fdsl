@@ -33,7 +33,7 @@ end
 Entity UserById
   source: GetUserById
   attributes:
-    - userId: int = GetUserById.userId;
+    - userId: int = int(GetUserById.userId);
     - userIdType: string = str(GetUserById.userId);
     - isNumeric: bool = GetUserById.userId > 0;
   validations:

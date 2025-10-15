@@ -4,7 +4,7 @@
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
@@ -47,8 +47,8 @@ _INTERNAL_DEPENDENCIES = [
 {%- endfor %}
 ]
 
-_INLINE_COMPUTED_CHAIN = [
-{%- for step in inline_chain or [] %}
+_COMPUTATION_CHAIN = [
+{%- for step in compiled_chain %}
     {
         "name": "{{ step.name }}",
         "attrs": [
@@ -65,12 +65,6 @@ _INLINE_COMPUTED_CHAIN = [
 
 {%- endfor %}
 ]
-
-_ENTITY_ATTRIBUTES = {
-{%- for attr in computed_attrs %}
-    "{{ attr.name }}": compile_safe({{ attr.pyexpr | tojson }}),
-{%- endfor %}
-}
 
 {% set pparams = endpoint.path_params or [] %}
 @router.get("", response_model=Dict[str, Any])
@@ -133,7 +127,7 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 
                 # Shape the data by evaluating attribute expressions
                 shaped_data: Dict[str, Any] = {}
-                evaluation_ctx = {source_alias: raw_payload}
+                evaluation_ctx = {"ctx": {source_alias: raw_payload}, source_alias: raw_payload}
                 
                 for attr_config in source_config.get("attrs", []):
                     attr_name = attr_config["name"]
@@ -158,6 +152,7 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 
                 # Store in context under entity name
                 context[entity_name] = shaped_data
+                context[source_alias] = raw_payload
                 logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
                 
             except HTTPException:
@@ -217,30 +212,49 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 )
 
         # ----------------------------------------------------------------
-        # STEP 3: Compute inline ancestors
+        # STEP 3: Execute computation chain (UNIFIED!)
         # ----------------------------------------------------------------
-        for inline_entity in _INLINE_COMPUTED_CHAIN:
-            entity_name = inline_entity["name"]
-            logger.debug(f"[INLINE] - Computing inline entity {entity_name}")
+        logger.debug("[CONTEXT] - Current context before computation chain:")
+        try:
+            preview = json.dumps(context, indent=2)[:800]
+            logger.debug(preview + ("..." if len(preview) == 800 else ""))
+        except Exception as e:
+            logger.debug(f"[CONTEXT] - Could not serialize context: {e}")
+
+        logger.info(f"[COMPUTE] - Executing chain with {len(_COMPUTATION_CHAIN)} step(s)")
+        
+        for step_index, compute_step in enumerate(_COMPUTATION_CHAIN, 1):
+            entity_name = compute_step["name"]
+            logger.debug(f"[COMPUTE] - Step {step_index}/{len(_COMPUTATION_CHAIN)}: {entity_name}")
             
             shaped_data = {}
-            evaluation_ctx = {"ctx": context}
+            evaluation_ctx = {"ctx": context, **context}
             
-            for attr_config in inline_entity.get("attrs", []):
+            for attr_config in compute_step.get("attrs", []):
                 attr_name = attr_config["name"]
                 attr_expr = attr_config["expr"]
                 
-                compiled_expr = compile_safe(attr_expr)
-                shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                try:
+                    compiled_expr = compile_safe(attr_expr)
+                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                    logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
+                except HTTPException:
+                    raise 
+                except Exception as compute_error:
+                    logger.error(f"[COMPUTE] - Error computing {entity_name}.{attr_name}: {compute_error}", exc_info=True)
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to compute {entity_name}.{attr_name}"
+                    )
             
             context[entity_name] = shaped_data
-            logger.debug(f"[CONTEXT] - Stored inline entity {entity_name}")
+            logger.debug(f"[CONTEXT] - Stored computation result: {entity_name}")
 
-            # --- Run validations for this inline entity ---
-            if inline_entity.get("validations"):
+            # --- Run validations for this entity (after compute) ---
+            if compute_step.get("validations"):
                 evaluation_ctx = {"ctx": context, **context}
                 try:
-                    for v in inline_entity["validations"]:
+                    for v in compute_step["validations"]:
                         eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
                         logger.debug(f"[VALIDATION] - {entity_name} validation passed")
                 except HTTPException as http_e:
@@ -254,69 +268,19 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                     raise HTTPException(status_code=400, detail={"error": str(e)})
 
         # ----------------------------------------------------------------
-        # STEP 4: Compute final entity attributes
+        # STEP 4: Return final entity
         # ----------------------------------------------------------------
-        logger.info(f"[COMPUTE] - Computing final entity {{ entity.name }}")
-        logger.debug("[COMPUTE] - Raw context before computations:")
-        try:
-            preview = json.dumps(context, indent=2)[:800]
-            logger.debug(preview + ("..." if len(preview) == 800 else ""))
-        except Exception as e:
-            logger.debug(f"[COMPUTE] - Could not serialize context: {e}")
+        final_entity_name = "{{ entity.name }}"
+        final_attributes = context.get(final_entity_name, {})
         
-        final_attributes: Dict[str, Any] = {}
-        
-        # Build evaluation context with all dependencies
-        evaluation_ctx = {"ctx": context}
-        
-        # Also expose external sources directly by their alias
-        for source_config in _EXTERNAL_REST_SOURCES:
-            source_alias = source_config["alias"]
-            entity_name = source_config["entity"]
-            evaluation_ctx[source_alias] = context.get(entity_name, {})
-        
-        # --- Entity-level validation ---
-        {% if validations %}
-        evaluation_ctx = {"ctx": context}
-        for k, v in context.items():
-            evaluation_ctx[k] = v
-        try:
-            {% for v in validations %}
-            eval(compile_safe({{ v.pyexpr | tojson }}), safe_globals, evaluation_ctx)
-            {% endfor %}
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"[VALIDATION] - {{ entity.name }} validation failed: {e}", exc_info=True)
-            raise HTTPException(status_code=400, detail={"error": str(e)})
-        {% endif %}
-
-        # Evaluate each attribute
-        for attr_name, compiled_expr in _ENTITY_ATTRIBUTES.items():
-            try:
-                result = eval(compiled_expr, safe_globals, evaluation_ctx)
-                final_attributes[attr_name] = result
-                logger.debug(f"[COMPUTE] - {{ entity.name }}.{attr_name}: {type(result).__name__}")
-            except HTTPException:
-                raise 
-            except Exception as compute_error:
-                logger.error(f"[COMPUTE] - Error computing attribute {attr_name}: {compute_error}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to compute attribute: {attr_name}"
-                )
-
-        # ----------------------------------------------------------------
-        # STEP 5: Return result
-        # ----------------------------------------------------------------
-        logger.info(f"[SUCCESS] - Query {{ entity.name }} completed successfully")
+        logger.info(f"[SUCCESS] - Query {final_entity_name} completed successfully")
         logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
-        logger.debug("[COMPUTE] - Computed entity output:")
+        logger.debug("[RESULT] - Final entity output:")
         try:
             preview = json.dumps(final_attributes, indent=2)[:800]
             logger.debug(preview + ("..." if len(preview) == 800 else ""))
         except Exception as e:
-            logger.debug(f"[COMPUTE] - Could not serialize final result: {e}")
+            logger.debug(f"[RESULT] - Could not serialize final result: {e}")
         
         return final_attributes
 

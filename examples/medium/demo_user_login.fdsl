@@ -141,10 +141,6 @@ Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
     - require(CurrentUser.user.password != ResetPasswordPayload.newPassword, "New password must be different from old one", 400);
 end
 
-Component<Notification> PasswordValidationNotice
-  endpoint: ResetPassword
-end
-
 // ----------------- USER UPDATE FLOW ------------
 APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"

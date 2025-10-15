@@ -144,8 +144,8 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 if alias in loop_vars:
                     base = alias
                 elif alias in known_sources:
-                    # external REST/WS source: refer directly
-                    base = alias
+                    # external REST/WS source: refer directly or via ctx
+                    base = f'ctx.get({alias!r}, {alias})'
                 else:
                     # internal entity: go through ctx
                     base = f'ctx[{alias!r}]'
@@ -304,9 +304,8 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 return node.name
             if node.name in RESERVED:
                 return node.name
-            # KEY FIX: if this Var is an external source name, emit it directly
             if context == "entity" and node.name in known_sources:
-                return node.name
+                return f'ctx.get({node.name!r}, {node.name})'
             if node.name in {"None", "null"}:
                 return "None"
             if node.name == "True":
