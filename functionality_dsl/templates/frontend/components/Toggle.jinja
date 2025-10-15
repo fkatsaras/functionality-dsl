@@ -1,9 +1,9 @@
-{% set path = common.endpointPath or props.get("endpointPath") %}
-{% set label = props.get("label") or "Toggle" %}
-{% set onLabel = props.get("onLabel") or "ON" %}
+{# components/Toggle.jinja #}
+{% set path     = props.get("endpointPath") %}
+{% set label    = props.get("label") or "Toggle" %}
+{% set onLabel  = props.get("onLabel") or "ON" %}
 {% set offLabel = props.get("offLabel") or "OFF" %}
-{% set field = props.get("field") or "state" %}
-{% set initial = props.get("initial") or false %}
+{% set field    = props.get("field") or "state" %}
 
 <Toggle
   name="{{ common.name }}"
@@ -12,5 +12,4 @@
   onLabel="{{ onLabel }}"
   offLabel="{{ offLabel }}"
   field="{{ field }}"
-  initial="{{ initial }}"
 />

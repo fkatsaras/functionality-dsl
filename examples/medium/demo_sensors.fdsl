@@ -110,6 +110,30 @@ Entity TelemetryComputed(TelemetryCombined)
     - avg_heat: float = avg(map(TelemetryCombined.readings, r -> r["temperature"] + 0.2 * r["humidity"]));
 end
 
+// =============================================================
+//                     DUMMY DEVICE TOGGLE
+// =============================================================
+
+// External dummy REST service for toggle
+Source<REST> ACToggleExternal
+  url: "http://dummyiot:9500/api/device/toggle/ac"
+  verb: POST
+  entity: ToggleCommand
+end
+
+// REST endpoint that toggles dummy AC or Oven
+APIEndpoint<REST> ACToggle
+  path: "/api/device/toggle/ac"
+  verb: POST
+  entity: ToggleCommand
+end
+
+Entity ToggleCommand
+  source: ACToggle
+  attributes:
+    - state: bool = ACToggle.state;
+end
+
 
 // =============================================================
 //                     INTERNAL STREAMS
@@ -129,6 +153,15 @@ Component<LiveView> TelemetryTable
   endpoint: TelemetryStream
   fields: ["t", "avg_temp", "avg_hum", "avg_heat"]
   label: "Live Sensor Telemetry"
+end
+
+// REST switches
+Component<Toggle> ACToggleSwitch
+  endpoint: ACToggle
+  label: "Air Conditioner"
+  onLabel: "Cooling"
+  offLabel: "Idle"
+  field: "state"
 end
 
 // Gauges for averages

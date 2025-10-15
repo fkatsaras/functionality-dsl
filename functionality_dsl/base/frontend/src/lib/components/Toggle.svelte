@@ -1,39 +1,46 @@
 <script lang="ts">
+  import { spring } from "svelte/motion";
+  import { writable, derived } from "svelte/store";
+
   const {
     endpointPath,
     label = "Toggle",
-    onLabel = "ON",
-    offLabel = "OFF",
     field = "state",
-    initial = false,
     name = "ToggleSwitch",
   } = $props<{
     endpointPath: string;
     label?: string;
-    onLabel?: string;
-    offLabel?: string;
     field?: string;
-    initial?: boolean;
     name?: string;
   }>();
 
-  let state = $state(initial);
-  let loading = $state(false);
-  let error = $state<string | null>(null);
+  // --- Reactive state ---
+  const state = writable(false);
+  let error: string | null = null;
 
-  async function sendToggle() {
+  // --- SPRING animation (0 = off, 1 = on) ---
+  const position = spring(0, {
+    stiffness: 0.2,
+    damping: 0.4,
+  });
+
+  // Derived for transform animation
+  const translateX = derived(position, ($p) => `translateX(${$p * 24}px)`);
+
+  $effect(() => {
+    position.set($state ? 1 : 0);
+  });
+
+  async function sendToggle(newValue: boolean) {
     loading = true;
     error = null;
     try {
       const res = await fetch(endpointPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: state }),
+        body: JSON.stringify({ [field]: newValue }),
       });
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg);
-      }
+      if (!res.ok) throw new Error(await res.text());
     } catch (e) {
       console.error(e);
       error = "Toggle failed";
@@ -43,34 +50,48 @@
   }
 
   function flip() {
-    state = !state;
-    sendToggle();
+    state.update((prev) => {
+      const next = !prev;
+      console.log("State changing:", prev, "→", next); // 🔍
+      sendToggle(next);
+      return next;
+    });
   }
 </script>
 
 <div class="w-full flex justify-center p-4">
   <div class="w-full max-w-sm">
     <div
-      class="rounded-2xl shadow-lg border bg-[color:var(--card)] p-6 flex flex-col gap-4 transition-shadow duration-200 hover:shadow-xl"
+      class="rounded-2xl shadow-lg border bg-[color:var(--card)] p-6 flex flex-col gap-5 transition-all duration-200 hover:shadow-xl"
     >
       <div class="flex items-center justify-between">
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
       </div>
 
       {#if error}
-        <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
+        <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">
+          {error}
+        </span>
       {/if}
 
       <div class="flex items-center justify-between gap-3">
         <label class="font-approachmono text-text/90">{label}</label>
+
         <button
-          on:click={() => flip()}
-          class="px-4 py-2 rounded font-approachmono text-white transition-colors"
-          class:bg-dag-success={state}
-          class:bg-dag-danger={!state}
-          disabled={loading}
+          type="button"
+          role="switch"
+          aria-checked={$state}
+          on:click={flip}
+          class={`relative w-14 h-8 flex items-center rounded-full p-1 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 ${
+            $state
+              ? 'bg-green-500 focus:ring-green-400'
+              : 'bg-gray-400 focus:ring-gray-300'
+          }`}
         >
-          {state ? onLabel : offLabel}
+          <span
+            class="inline-block w-6 h-6 bg-white rounded-full shadow-md"
+            style="transform: {$translateX};"
+          ></span>
         </button>
       </div>
     </div>
@@ -79,6 +100,11 @@
 
 <style>
   .font-approachmono {
-    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+
+  button:active span {
+    transform: scale(0.95);
   }
 </style>

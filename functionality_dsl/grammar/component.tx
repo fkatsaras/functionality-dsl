@@ -13,6 +13,7 @@ Component:
   | GaugeComponent
   | InputComponent 
   | LiveViewComponent
+  | ToggleComponent
 ;
 
 TableComponent:
@@ -24,7 +25,7 @@ TableComponent:
 
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointREST])?
+  ('endpoint:' endpoint=[APIEndpointWS])?
   (
     ('rows:' rows=AttrRef)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
@@ -69,6 +70,17 @@ LiveViewComponent:
   'endpoint' ':' endpoint=[APIEndpointWS]
   'fields:' fields=StringList
   ( ('label:' label=STRING)
+  )*
+  'end'
+;
+
+ToggleComponent:
+  'Component' '<' 'Toggle' '>' name=ID
+  'endpoint' ':' endpoint=[APIEndpointREST]
+  ( ('label:' label=STRING)
+  | ('onLabel:' onLabel=STRING)
+  | ('offLabel:' offLabel=STRING)
+  | ('field:' field=STRING)
   )*
   'end'
 ;

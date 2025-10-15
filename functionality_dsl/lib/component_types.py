@@ -313,3 +313,41 @@ class LiveViewComponent(_BaseComponent):
             "label": self.label,
             "maxMessages": self.maxMessages,
         }
+        
+@register_component
+class ToggleComponent(_BaseComponent):
+    """
+    <Component<Toggle> ...>
+      endpoint: <APIEndpoint<REST>>
+      label/onLabel/offLabel/field/initial
+    """
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        endpoint=None,
+        label=None,
+        onLabel=None,
+        offLabel=None,
+        field=None,
+    ):
+        super().__init__(parent, name, endpoint)
+        self.label = _strip_quotes(label)
+        self.onLabel = _strip_quotes(onLabel)
+        self.offLabel = _strip_quotes(offLabel)
+        self.field = _strip_quotes(field)
+
+
+        if endpoint is None:
+            raise ValueError(
+                f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint."
+            )
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "label": self.label or "Toggle",
+            "onLabel": self.onLabel or "ON",
+            "offLabel": self.offLabel or "OFF",
+            "field": self.field or "state",
+        }
