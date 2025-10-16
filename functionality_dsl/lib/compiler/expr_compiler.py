@@ -1,9 +1,7 @@
 import ast
 
-
 # ---------------- AST safety ----------------
-RESERVED = { 'in', 'for', 'if', 'else', 'not', 'and', 'or' }
-
+RESERVED = {'in', 'for', 'if', 'else', 'not', 'and', 'or'}
 
 _ALLOWED_AST = {
     ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.IfExp,
@@ -24,19 +22,25 @@ def _assert_safe_python_expr(py: str):
 
 # ---------------- Compiler ----------------
 
-def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | None = None) -> str:
-    known_sources = set(known_sources or [])
+def compile_expr_to_python(expr) -> str:
     """
-    context: 'entity', 'predicate', or 'component'
-    Produces a Python expr using ONLY ctx[...] and dsl_funcs[...](...).
+    Compile DSL expression to Python code.
+    
+    Simplified model: All entity/source references become direct variable names.
+    The runtime provides a flat namespace where all entities are available by name.
+    
+    Example:
+        DSL:    MeteoThess.hourly["temperature"]
+        Python: MeteoThess.hourly["temperature"]  (assuming MeteoThess is in context)
     """
 
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
-    loop_vars: set[str] = set()  # track names introduced by comprehensions
+    loop_vars: set[str] = set()  # Track variables introduced by comprehensions/lambdas
 
     def to_py(node) -> str:
         cls = node.__class__.__name__
 
+        # ---------------- Primitives ----------------
         if isinstance(node, bool):
             return "True" if node else "False"
         if isinstance(node, (int, float)):
@@ -95,11 +99,10 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             pairs = getattr(node, "pairs", []) or []
             items = []
             for p in pairs:
-                print("[DEBUG] KeyValue node:", vars(p))
                 ks = getattr(p, "key_str", None)
                 ki = getattr(p, "key_id", None)
 
-                if ks and ks.strip():  # only if it's a non-empty string
+                if ks and ks.strip():  # non-empty string key
                     key = ks.strip('"').strip("'")
                     key_code = repr(key)
                 elif ki:  # bare identifier -> treat as string key
@@ -111,52 +114,32 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 items.append(f"{key_code}: {val_code}")
             return "{" + ", ".join(items) + "}"
 
-        # ---------------- References ----------------
+        # ---------------- References (SIMPLIFIED!) ----------------
         if cls == "Ref":
             alias = getattr(node, "alias", None)
-            attr  = getattr(node, "attr", [])
-            print(f"[COMPILE/REF] context={context} alias={alias} attr={attr}")
+            attr = getattr(node, "attr", [])
             
-            alias = getattr(node, "alias", None)
             if alias is None:
-                raise ValueError(f"Reference without alias in expr {expr!r}")
+                raise ValueError(f"Reference without alias in expr")
 
-            # reserved keywords should never compile into ctx[…]
+            # Reserved keywords pass through as-is
             if alias in RESERVED:
                 return alias
 
-            if context == "component":
-                if alias != "data":
-                    raise ValueError("Only `data.*` references are allowed in Component props.")
-                base = 'ctx["data"]'
+            # Loop variables pass through as-is
+            if alias in loop_vars:
+                base = alias
+            else:
+                # Everything else is a direct entity/source reference
+                base = alias
 
-            elif context == "predicate":
-                if alias == "self":
-                    base = 'row'
-                elif alias in loop_vars:
-                    base = alias
-                else:
-                    base = f'ctx[{alias!r}]'
-
-            else:  # context == "entity"
-                if alias is None:
-                    raise ValueError("Bare attribute not allowed here; use <alias>.<attr>.")
-                if alias in loop_vars:
-                    base = alias
-                elif alias in known_sources:
-                    # external REST/WS source: refer directly or via ctx
-                    base = f'ctx.get({alias!r}, {alias})'
-                else:
-                    # internal entity: go through ctx
-                    base = f'ctx[{alias!r}]'
-
+            # Add attribute access
             for a in attr:
                 base += f'[{a!r}]'
             return base
 
         # ---------------- Expressions ----------------
         if cls == "IfThenElse":
-            # always have orExpr (this is the "then" value if cond/else are present)
             then_code = to_py(node.orExpr)
 
             if getattr(node, "cond", None) is not None and getattr(node, "elseExpr", None) is not None:
@@ -164,7 +147,7 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 else_code = to_py(node.elseExpr)
                 return f"({then_code} if {cond_code} else {else_code})"
 
-            # no conditional part: just a plain orExpr
+            # No conditional part: just a plain orExpr
             return then_code
 
         if cls == "Call":
@@ -173,7 +156,7 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             return f'dsl_funcs[{fname!r}]({args})'
 
         if cls == "UnaryExpr":
-            # pick lambda body or postfix
+            # Pick lambda body or postfix
             if getattr(node, "lambda_", None) is not None:
                 s = to_py(node.lambda_)
             else:
@@ -218,17 +201,17 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
                 s = f"({s} or {to_py(t.right)})"
             return s
         
-        # ----- accessing lists /dicts -------
+        # ----- Accessing lists/dicts (safe) -------
         if cls == "PostfixExpr":
             base = to_py(node.base)
             for t in node.tails or []:
                 if getattr(t, "member", None) is not None:
-                    # foo.bar -> safe dict lookup only
+                    # foo.bar -> safe dict lookup
                     member = t.member.name
                     base = f"({base}.get('{member}') if isinstance({base}, dict) else None)"
                 elif getattr(t, "index", None) is not None:
-                    idx = to_py(t.index)
                     # foo[idx] -> safe dict or list indexing
+                    idx = to_py(t.index)
                     base = (
                         f"({base}.get({idx}) if isinstance({base}, dict) "
                         f"else ("
@@ -260,14 +243,13 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             iterable = to_py(node.iterable)
             cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
 
-            # cleanup loop vars
+            # Cleanup loop vars
             if getattr(node.var, "single", None):
                 loop_vars.remove(target)
             elif getattr(node.var, "tuple", None):
                 for nm in names:
                     loop_vars.remove(nm)
 
-            # IMPORTANT: emit full comprehension, don't recurse into `for`/`in`
             return f"[{head} for {target_code} in {iterable}{cond}]"
         
         if cls == "DictCompExpr":
@@ -278,16 +260,16 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             iterable = to_py(node.iterable)
             cond = f" if {to_py(node.cond)}" if getattr(node, "cond", None) else ""
             loop_vars.remove(target)
-            return f"{{ {k}: {v} for {target} in {iterable}{cond} }}"
+            return f"{{{k}: {v} for {target} in {iterable}{cond}}}"
         
         if cls == "LambdaExpr":
-            # collect parameter names
+            # Collect parameter names
             if getattr(node, "param", None):
                 param_names = [node.param]
             else:
                 param_names = list(getattr(node.params, "vars", []))
 
-            # mark lambda params as local variables
+            # Mark lambda params as local variables
             for n in param_names:
                 loop_vars.add(n)
             try:
@@ -299,57 +281,45 @@ def compile_expr_to_python(expr, *, context: str, known_sources: list[str] | Non
             return f"(lambda {', '.join(param_names)}: {body_code})"
 
         if cls == "Var":
-            # loop / keywords first
-            if node.name in loop_vars:
+            # Loop vars and reserved words pass through
+            if node.name in loop_vars or node.name in RESERVED:
                 return node.name
-            if node.name in RESERVED:
-                return node.name
-            if context == "entity" and node.name in known_sources:
-                return f'ctx.get({node.name!r}, {node.name})'
+            # Normalize null/None/True/False
             if node.name in {"None", "null"}:
                 return "None"
             if node.name == "True":
                 return "True"
             if node.name == "False":
                 return "False"
-            # otherwise, it’s an internal entity reference, go through ctx
-            return f"ctx[{node.name!r}]"
+            # Everything else is an entity/source reference
+            return node.name
 
         if cls == "Atom":
-            for fld in ("literal","ref","call","ifx","inner"):
+            for fld in ("literal", "ref", "call", "ifx", "inner"):
                 v = getattr(node, fld, None)
                 if v is not None:
                     return to_py(v)
             raise ValueError("Empty Atom")
         
         if cls == "AtomBase":
-            if getattr(node, "listcomp", None) is not None:
-                return to_py(node.listcomp)
-            if getattr(node, "literal", None) is not None:
-                return to_py(node.literal)
-            if getattr(node, "ref", None) is not None:
-                return to_py(node.ref)
-            if getattr(node, "call", None) is not None:
-                return to_py(node.call)
-            if getattr(node, "var", None) is not None:
-                return to_py(node.var)
-            if getattr(node, "ifx", None) is not None:
-                return to_py(node.ifx)
-            if getattr(node, "inner", None) is not None:
-                return to_py(node.inner)
+            for fld in ("listcomp", "literal", "ref", "call", "var", "ifx", "inner"):
+                v = getattr(node, fld, None)
+                if v is not None:
+                    return to_py(v)
             raise ValueError("Empty AtomBase")
         
         if cls == "MemberAccess":
-            # normally handled inside PostfixExpr
-            return node.name
+            # Normally handled inside PostfixExpr, but can appear standalone
+            return getattr(node, "name", "")
 
         if cls == "IndexAccess":
-            # normally handled inside PostfixExpr
-            return to_py(node.index)
+            # Normally handled inside PostfixExpr, but can appear standalone
+            return to_py(getattr(node, "index", None))
 
         raise ValueError(f"Unhandled node type: {cls}")
 
     py = to_py(expr).replace(" null ", " None ")
-    # print("[DEBUG] compiling expr_str:", repr(py))
+    
+    print(py)
     _assert_safe_python_expr(py)
     return py

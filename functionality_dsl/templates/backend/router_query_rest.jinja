@@ -1,5 +1,5 @@
 # ========================================================================
-# AUTO-GENERATED QUERY ROUTER
+# AUTO-GENERATED QUERY ROUTER (SIMPLIFIED)
 # ========================================================================
 
 import json
@@ -125,9 +125,19 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 raw_payload = response.json()
                 logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
                 
+                # SIMPLIFIED: Store raw payload directly by alias
+                context[source_alias] = raw_payload
+                
+                # Log raw payload preview
+                logger.debug(f"[FETCH] - {source_alias} raw payload preview:")
+                try:
+                    preview = json.dumps(raw_payload, indent=2)[:800]
+                    logger.debug(preview + ("..." if len(preview) == 800 else ""))
+                except Exception as e:
+                    logger.debug(f"[FETCH] - Could not serialize raw payload: {e}")
+                
                 # Shape the data by evaluating attribute expressions
                 shaped_data: Dict[str, Any] = {}
-                evaluation_ctx = {"ctx": {source_alias: raw_payload}, source_alias: raw_payload}
                 
                 for attr_config in source_config.get("attrs", []):
                     attr_name = attr_config["name"]
@@ -135,7 +145,9 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                     
                     try:
                         compiled_expr = compile_safe(attr_expr)
-                        shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                        # CRITICAL: Merge context into globals so lambdas can access entity references
+                        eval_globals = {**safe_globals, **context}
+                        shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
                         logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
                     except HTTPException:
                         raise 
@@ -150,9 +162,8 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 if not shaped_data:
                     shaped_data = {"raw": raw_payload}
                 
-                # Store in context under entity name
+                # Store shaped entity in context
                 context[entity_name] = shaped_data
-                context[source_alias] = raw_payload
                 logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
                 
             except HTTPException:
@@ -200,7 +211,7 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                         f"type={type(payload).__name__}"
                     )
 
-                logger.info(f"[CONTEXT] - Stored computed parent {entity_name} (keys may vary by type)")
+                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
 
             except HTTPException:
                 raise
@@ -212,12 +223,12 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 )
 
         # ----------------------------------------------------------------
-        # STEP 3: Execute computation chain (UNIFIED!)
+        # STEP 3: Execute computation chain
         # ----------------------------------------------------------------
         logger.debug("[CONTEXT] - Current context before computation chain:")
         try:
-            preview = json.dumps(context, indent=2)[:800]
-            logger.debug(preview + ("..." if len(preview) == 800 else ""))
+            preview = json.dumps({k: type(v).__name__ for k, v in context.items()}, indent=2)
+            logger.debug(preview)
         except Exception as e:
             logger.debug(f"[CONTEXT] - Could not serialize context: {e}")
 
@@ -228,7 +239,6 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
             logger.debug(f"[COMPUTE] - Step {step_index}/{len(_COMPUTATION_CHAIN)}: {entity_name}")
             
             shaped_data = {}
-            evaluation_ctx = {"ctx": context, **context}
             
             for attr_config in compute_step.get("attrs", []):
                 attr_name = attr_config["name"]
@@ -236,7 +246,9 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
                 
                 try:
                     compiled_expr = compile_safe(attr_expr)
-                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                    # CRITICAL: Merge context into globals so lambdas can access entity references
+                    eval_globals = {**safe_globals, **context}
+                    shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
                     logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
                 except HTTPException:
                     raise 
@@ -250,12 +262,12 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
             context[entity_name] = shaped_data
             logger.debug(f"[CONTEXT] - Stored computation result: {entity_name}")
 
-            # --- Run validations for this entity (after compute) ---
+            # Run validations for this entity (after compute)
             if compute_step.get("validations"):
-                evaluation_ctx = {"ctx": context, **context}
                 try:
                     for v in compute_step["validations"]:
-                        eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
+                        # SIMPLIFIED: Pass context directly (no wrapping)
+                        eval(compile_safe(v["pyexpr"]), safe_globals, context)
                         logger.debug(f"[VALIDATION] - {entity_name} validation passed")
                 except HTTPException as http_e:
                     logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
@@ -275,12 +287,6 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
         
         logger.info(f"[SUCCESS] - Query {final_entity_name} completed successfully")
         logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
-        logger.debug("[RESULT] - Final entity output:")
-        try:
-            preview = json.dumps(final_attributes, indent=2)[:800]
-            logger.debug(preview + ("..." if len(preview) == 800 else ""))
-        except Exception as e:
-            logger.debug(f"[RESULT] - Could not serialize final result: {e}")
         
         return final_attributes
 

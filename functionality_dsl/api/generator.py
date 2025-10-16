@@ -285,8 +285,6 @@ def _collect_entity_validations(entity, model, all_source_names):
         for v in getattr(ent, "validations", []) or []:
             expr_code = compile_expr_to_python(
                 v.expr,
-                context="entity",
-                known_sources=all_source_names + [ent.name],
             )
             all_validations.append({"pyexpr": expr_code})
 
@@ -332,8 +330,6 @@ def _build_rest_input_config(entity, source, all_source_names):
             # Compile the expression
             expr_code = compile_expr_to_python(
                 attr.expr,
-                context="entity",
-                known_sources=all_source_names + [source.name],
             )
         else:
             # Default: use raw source payload
@@ -392,8 +388,6 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
             if getattr(attr, "expr", None):
                 expr_code = compile_expr_to_python(
                     attr.expr,
-                    context=context,
-                    known_sources=list(known_aliases)
                 )
                 attribute_configs.append({
                     "name": attr.name,
@@ -407,8 +401,6 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
             for v in validations:
                 expr_code = compile_expr_to_python(
                     v.expr,
-                    context="entity",
-                    known_sources=list(known_aliases)
                 )
                 validation_configs.append({"pyexpr": expr_code})
 
@@ -479,8 +471,6 @@ def _resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_na
                 if getattr(attr, "expr", None):
                     expr_code = compile_expr_to_python(
                         attr.expr,
-                        context="ctx",
-                        known_sources=all_source_names + [ancestor.name]
                     )
                     attribute_configs.append({
                         "name": attr.name,
@@ -493,8 +483,6 @@ def _resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_na
                 for v in validations:
                     expr_code = compile_expr_to_python(
                         v.expr,
-                        context="entity",
-                        known_sources=all_source_names + [ancestor.name]
                     )
                     validation_configs.append({"pyexpr": expr_code})
 
@@ -791,8 +779,6 @@ def _build_ws_input_config(entity, ws_source, all_source_names):
         if hasattr(attr, "expr") and attr.expr is not None:
             expr_code = compile_expr_to_python(
                 attr.expr,
-                context="entity",
-                known_sources=all_source_names + [ws_source.name]
             )
         else:
             expr_code = ws_source.name
@@ -875,8 +861,6 @@ def _build_inbound_chain(entity_in, model, all_source_names):
                 if hasattr(attr, "expr") and attr.expr is not None:
                     expr_code = compile_expr_to_python(
                         attr.expr,
-                        context="entity",
-                        known_sources=all_source_names + [source.name]
                     )
                     attribute_configs.append({
                         "name": attr.name,
@@ -896,8 +880,6 @@ def _build_inbound_chain(entity_in, model, all_source_names):
                 if hasattr(attr, "expr") and attr.expr is not None:
                     expr_code = compile_expr_to_python(
                         attr.expr,
-                        context="entity",
-                        known_sources=all_source_names + [entity.name]
                     )
                     attribute_configs.append({
                         "name": attr.name,
@@ -934,17 +916,12 @@ def _build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
     terminal = _find_ws_terminal_entity(entity_out, model)
     chain_entities = _get_all_ancestors(terminal, model) + [terminal]
     
-    # Build known sources list
-    known_sources = [endpoint_name] + [e.name for e in chain_entities]
-    
     for entity in chain_entities:
         attribute_configs = []
         for attr in getattr(entity, "attributes", []) or []:
             if hasattr(attr, "expr") and attr.expr is not None:
                 expr_code = compile_expr_to_python(
                     attr.expr,
-                    context="entity",
-                    known_sources=all_source_names + known_sources
                 )
                 attribute_configs.append({
                     "name": attr.name,

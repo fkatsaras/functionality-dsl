@@ -5,6 +5,7 @@ Server AuthServer
   host: "localhost"
   port: 8081
   cors: "http://localhost:5173"
+  loglevel: debug
 end
 
 // ============================================================
@@ -70,8 +71,8 @@ Entity NewUser
   attributes:
     - user: dict = {
         "username": trim(UserRegister.username),
-        "email":    trim(UserRegister.email),
-        "password": UserRegister.password
+        "password": UserRegister.password,
+        "email":    trim(UserRegister.email)
       };
   validations:
     - require(len(UserRegister.password) > 5, "Password must be at least 6 characters", 400);

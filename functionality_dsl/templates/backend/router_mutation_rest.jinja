@@ -1,5 +1,5 @@
 # ========================================================================
-# AUTO-GENERATED MUTATION ROUTER
+# AUTO-GENERATED MUTATION ROUTER (SIMPLIFIED)
 # ========================================================================
 
 import json
@@ -118,9 +118,11 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         ]:
             seed_payload[_param_name] = normalize_path_value(_param_value)
         {% endif %}
-        if seed_payload:
-            context["{{ endpoint.name }}"] = seed_payload
-            logger.debug(f"[CONTEXT] - Seeded with endpoint payload + path params: {{ endpoint.name }}")
+        
+        # IMPORTANT: Store the endpoint payload in context so it's available
+        # for entities that reference it (e.g., LoginPayload sourced from UserLogin)
+        context["{{ endpoint.name }}"] = seed_payload
+        logger.debug(f"[CONTEXT] - Seeded endpoint payload: {{ endpoint.name }}")
 
         # ----------------------------------------------------------------
         # STEP 2: Fetch external REST sources
@@ -156,26 +158,35 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
                 raw_payload = response.json()
                 logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
                 
+                # SIMPLIFIED: Store raw payload directly by alias
+                context[source_alias] = raw_payload
+                
+                # Log raw payload preview
+                logger.debug(f"[FETCH] - {source_alias} raw payload preview:")
+                try:
+                    preview = json.dumps(raw_payload, indent=2)[:800]
+                    logger.debug(preview + ("..." if len(preview) == 800 else ""))
+                except Exception as e:
+                    logger.debug(f"[FETCH] - Could not serialize raw payload: {e}")
+                
                 # Shape the data by evaluating attribute expressions
                 shaped_data: Dict[str, Any] = {}
-                evaluation_ctx = {"ctx": {source_alias: raw_payload}, source_alias: raw_payload}
                 
                 for attr_config in source_config.get("attrs", []):
                     attr_name = attr_config["name"]
                     attr_expr = attr_config["expr"]
                     
                     compiled_expr = compile_safe(attr_expr)
-                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, evaluation_ctx)
+                    # SIMPLIFIED: Pass context directly (no wrapping)
+                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, context)
                 
                 # Default to raw payload if no attributes specified
                 if not shaped_data:
                     shaped_data = {"raw": raw_payload}
                 
-                # Store both shaped data (under entity name) and raw payload (under alias)
+                # Store shaped entity in context
                 context[entity_name] = shaped_data
-                context[source_alias] = raw_payload
-                
-                logger.info(f"[CONTEXT] - Stored {entity_name} and raw {source_alias}")
+                logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
                 
             except HTTPException:
                 raise
@@ -212,7 +223,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
                 else:
                     context[entity_name] = payload
 
-                logger.info(f"[CONTEXT] - Stored computed parent {entity_name} (type={type(context[entity_name]).__name__})")
+                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
 
             except HTTPException:
                 raise
@@ -225,8 +236,8 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         # ----------------------------------------------------------------
         logger.debug("[CONTEXT] - Current context before transformation chain:")
         try:
-            preview = json.dumps(context, indent=2)[:800]
-            logger.debug(preview + ("..." if len(preview) == 800 else ""))
+            preview = json.dumps({k: type(v).__name__ for k, v in context.items()}, indent=2)
+            logger.debug(preview)
         except Exception as e:
             logger.debug(f"[CONTEXT] - Could not serialize context: {e}")
 
@@ -237,39 +248,45 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             logger.debug(f"[TRANSFORM] - Step {step_index}/{len(_TRANSFORMATION_CHAIN)}: {entity_name}")
             
             shaped_data = {}
-            evaluation_ctx = {**safe_globals, "ctx": context}
-
-                   
+            
             for attr_config in transform_step.get("attrs", []):
                 attr_name = attr_config["name"]
                 attr_expr = attr_config["expr"]
                 
                 try:
                     compiled_expr = compile_safe(attr_expr)
-                    shaped_data[attr_name] = eval(compiled_expr, evaluation_ctx, {})
+                    # CRITICAL: Merge context into globals so lambdas can access entity references
+                    eval_globals = {**safe_globals, **context}
+                    shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
                     logger.debug(f"[TRANSFORM] - {entity_name}.{attr_name} computed")
                 except HTTPException:
                     raise 
                 except Exception as compute_error:
-                    logger.error(f"[TRANSFORM] - Error computing {entity_name}.{attr_name}: {compute_error}", exc_info=True)
+                    logger.error(
+                        f"[TRANSFORM] - Error computing {entity_name}.{attr_name}: {compute_error}",
+                        exc_info=True
+                    )
+                    logger.error(f"[TRANSFORM] - Available context keys: {list(context.keys())}")
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to compute {entity_name}.{attr_name}"
+                        detail=f"Failed to compute {entity_name}.{attr_name}: {str(compute_error)}"
                     )
             
+            # Store computed entity IMMEDIATELY so next step can reference it
             context[entity_name] = shaped_data
-            logger.debug(f"[CONTEXT] - Stored transformation result: {entity_name}")
+            logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
 
-            # --- Run validations for this entity (after compute) ---
+            # Run validations for this entity (after compute)
             if transform_step.get("validations"):
-                evaluation_ctx = {"ctx": context, **context}
                 try:
                     for v in transform_step["validations"]:
-                        eval(compile_safe(v["pyexpr"]), safe_globals, evaluation_ctx)
+                        # CRITICAL: Merge context into globals so lambdas can access entity references
+                        eval_globals = {**safe_globals, **context}
+                        eval(compile_safe(v["pyexpr"]), eval_globals, {})
                         logger.debug(f"[VALIDATION] - {entity_name} validation passed")
                 except HTTPException as http_e:
                     logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
-                    raise  # <-- re-raise unchanged, preserves message + status
+                    raise
                 except Exception as e:
                     logger.error(
                         f"[VALIDATION] - {entity_name} crashed during validation: {e}",
@@ -283,13 +300,6 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         terminal_entity_name = "{{ terminal.name }}"
         final_payload = context.get(terminal_entity_name, {})
 
-        logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}")
-        try:
-            preview = json.dumps(final_payload, indent=2)[:800]
-            logger.debug(preview + ("..." if len(preview) == 800 else ""))
-        except Exception as e:
-            logger.debug(f"[PAYLOAD] - Could not serialize final payload: {e}")
-        
         logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
 
         {% if target %}

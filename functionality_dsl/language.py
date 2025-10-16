@@ -342,7 +342,7 @@ def _validate_computed_attrs(model, metamodel=None):
 
             # Compile expression
             try:
-                a._py = compile_expr_to_python(expr, context="entity")
+                a._py = compile_expr_to_python(expr)
             except Exception as ex:
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
@@ -471,7 +471,7 @@ def _validate_entity_validations(model, metamodel=None):
 
             # Compile validation expression
             try:
-                val._py = compile_expr_to_python(expr, context="validation")
+                val._py = compile_expr_to_python(expr)
             except Exception as ex:
                 raise TextXSemanticError(
                     f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",
