@@ -351,3 +351,49 @@ class ToggleComponent(_BaseComponent):
             "offLabel": self.offLabel or "OFF",
             "field": self.field or "state",
         }
+        
+@register_component
+class ObjectViewComponent(_BaseComponent):
+    """
+    <Component<ObjectView> ...>
+      endpoint: <APIEndpoint<REST>>
+      fields: ["id", "name", ...]
+      label: optional string label
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, fields=None, label=None):
+        super().__init__(parent, name, endpoint)
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+
+        # unwrap StringList
+        if hasattr(fields, "items"):
+            field_items = fields.items
+        else:
+            field_items = fields or []
+
+        self.fields = [self._attr_name(f) for f in field_items]
+        self.label = _strip_quotes(label) or ""
+
+    def to_props(self):
+        """
+        Produce the same behavior as ActionFormComponent:
+        escape path braces and detect {param} for later substitution.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        import re
+
+        # Detect {param} placeholder
+        match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
+        path_key = match.group(1) if match else None
+
+        # Keep placeholder literal, escape braces for Jinja -> pass literally to Svelte
+        if match:
+            path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
+        path = path.replace("{", "{{").replace("}", "}}")
+
+        return {
+            "endpointPath": path,
+            "fields": self.fields,
+            "label": self.label,
+            "pathKey": path_key,  # helps Svelte know which param to use
+        }

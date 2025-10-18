@@ -7,6 +7,11 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
+{% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+security = HTTPBearer()
+{% endif %}
 
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, safe_globals
@@ -87,6 +92,7 @@ _EXTERNAL_TARGET = {
 @router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
 async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(
     request: Request{% for p in pparams %}, {{ p }}: str{% endfor %}
+    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}, credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
 ):
     """
     Mutation endpoint for {{ entity.name }}.
@@ -98,6 +104,20 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
     """
     http_client = get_http_client()
     context: Dict[str, Any] = {}
+
+    # ----------------------------------------------------------------
+    # STEP 0: Enforce Auth
+    # ----------------------------------------------------------------
+    {% if endpoint.auth %}
+    {% if endpoint.auth.kind == 'bearer' %}
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    {% elif endpoint.auth.kind == 'basic' %}
+    pass
+    {% elif endpoint.auth.kind == 'api_key' %}
+    pass
+    {% endif %}
+    {% endif %}
 
     # Parse incoming request body
     try:

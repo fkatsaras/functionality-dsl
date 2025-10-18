@@ -21,7 +21,7 @@ Entity WikiEdit
     - delta:  int    = WikiMonEN["change_size"];
     - is_bot: bool   = WikiMonEN["is_bot"];
     - is_minor: bool = WikiMonEN["is_minor"];
-    - wiki:   string = WikiMonEN["ns"];  // namespace string (e.g. "Main")
+    - wiki:   string = WikiMonEN["ns"];
 end
 
 // --- Computed entity -------------------------------------------

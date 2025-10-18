@@ -46,7 +46,9 @@ Source<REST> UserDeleteExternal
   entity: UserDeletePayload
 end
 
-// ------------- List all users ------------
+// ============================================================
+// Public endpoint (no auth)
+// ============================================================
 APIEndpoint<REST> UserList
   path: "/api/users"
   verb: GET
@@ -59,11 +61,18 @@ Entity ExistingUsers
     - users: list = Users;
 end
 
-//  -------------------REGISTER FLOW -------------------
+// ============================================================
+// Authenticated endpoints
+// ============================================================
+
+// --- REGISTER ---
 APIEndpoint<REST> UserRegister
   path: "/api/users/register"
   verb: POST
   entity: NewUser
+  auth:
+    type: bearer
+    token: "required"
 end
 
 Entity NewUser
@@ -80,7 +89,7 @@ Entity NewUser
     - require(in_range(len(UserRegister.username), 3, 50), "Username must be 3-50 characters", 400);
 end
 
-//  --------------- LOGIN FLOW -------------------------------
+// --- LOGIN (public) ---
 APIEndpoint<REST> UserLogin
   path: "/api/users/login"
   verb: POST
@@ -96,7 +105,7 @@ end
 
 Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
-    - matches: list = filter(ExistingUsers.users, u ->
+    - matches: list = filter(ExistingUsers.users, u -> 
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
       );
     - match: dict = find(ExistingUsers.users, u ->
@@ -112,11 +121,14 @@ Entity LoginValidated(LoginCandidates)
     - require(LoginCandidates.match != null, "Invalid username or password", 401);
 end
 
-// ------------- RESET PASSWORD FLOW -----------------
+// --- RESET PASSWORD ---
 APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   verb: PUT
   entity: ResetPasswordRequest
+  auth:
+    type: bearer
+    token: "required"
 end
 
 Entity ResetPasswordRequest
@@ -142,11 +154,14 @@ Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
     - require(CurrentUser.user.password != ResetPasswordPayload.newPassword, "New password must be different from old one", 400);
 end
 
-// ----------------- USER UPDATE FLOW ------------
+// --- UPDATE USER ---
 APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
   verb: PATCH
   entity: UserUpdatePayload
+  auth:
+    type: bearer
+    token: "required"
 end
 
 Entity UserUpdatePayload
@@ -159,11 +174,14 @@ Entity UserUpdatePayload
     - require(UserUpdatePayload.id > 0, "Invalid user ID", 400);
 end
 
-// --------------- USER DELETE FLOW -------------
+// --- DELETE USER ---
 APIEndpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
   verb: DELETE
   entity: UserDeletePayload
+  auth:
+    type: bearer
+    token: "required"
 end
 
 Entity UserDeletePayload
@@ -174,7 +192,9 @@ Entity UserDeletePayload
     - require(UserDeletePayload.id > 0, "Invalid user ID", 400);
 end
 
-// ------------- UI Components ----------------
+// ============================================================
+// UI Components (unchanged)
+// ============================================================
 Component<ActionForm> RegisterForm
   endpoint: UserRegister
   fields: [username, email, password]

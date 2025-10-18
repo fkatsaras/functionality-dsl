@@ -1,0 +1,85 @@
+// --- Server ----------------------------------------------------
+Server SimpleJSON
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// --- External REST sources -------------------------------------
+Source<REST> RealObjects
+  url: "https://api.restful-api.dev/objects"
+  verb: GET
+end
+
+Source<REST> RealObjectById
+  url: "https://api.restful-api.dev/objects/{objectId}"
+  verb: GET
+end
+
+// --- Entities ---------------------------------------------------
+// Example upstream JSON (GET /objects):
+// [
+//   {
+//     "id": "1",
+//     "name": "Apple MacBook Pro 16",
+//     "data": { "color": "silver", "capacity": "1TB", "price": 3000, "year": 2023 }
+//   },
+//   ...
+// ]
+
+Entity RealObjectsRaw
+  source: RealObjects
+  attributes:
+    - raw: list = RealObjects;
+end
+
+Entity RealObjectsRows(RealObjectsRaw)
+  attributes:
+    - rows: list = map( RealObjectsRaw.raw, x ->
+        {
+          "id": x["id"],
+          "name": x["name"],
+          "color": x["data"]["color"],
+          "capacity": x["data"]["capacity"],
+          "price": x["data"]["price"],
+          "year": x["data"]["year"]
+        }
+      );
+end
+
+// For a single item view (GET /objects/{objectId})
+Entity RealObjectDetail
+  source: RealObjectById
+  attributes:
+    - id: string = RealObjectById["id"];
+    - name: string = RealObjectById["name"];
+    - color: string = RealObjectById["data"]["color"];
+    - capacity: string = RealObjectById["data"]["capacity"];
+    - price: float = RealObjectById["data"]["price"];
+    - year: int = RealObjectById["data"]["year"];
+end
+
+// --- Internal endpoints -----------------------------------------
+APIEndpoint<REST> RealObjectsList
+  path: "/api/objects"
+  verb: GET
+  entity: RealObjectsRows
+end
+
+APIEndpoint<REST> RealObjectDetails
+  path: "/api/objects/{objectId}"
+  verb: GET
+  entity: RealObjectDetail
+end
+
+// --- Components -------------------------------------------------
+Component<Table> ObjectsTable
+  endpoint: RealObjectsList
+  colNames: ["id", "name", "color", "capacity", "price", "year"]
+end
+
+Component<ObjectView> ObjectDetailsCard
+  endpoint: RealObjectDetails
+  fields: ["id", "name", "color", "capacity", "price", "year"]
+  label: "Object Details"
+end

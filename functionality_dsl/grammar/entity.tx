@@ -90,6 +90,7 @@ APIEndpointREST:
     'verb:' verb=HttpVerb
     'entity:' entity=[Entity]
     ('summary:' summary=STRING)?
+    ('auth:' auth=AuthBlock)?  
   )
   'end'
 ;

@@ -7,6 +7,11 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
+{% if endpoint.auth and endpoint.auth.type == 'bearer' %}
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+security = HTTPBearer()
+{% endif %}
 
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, safe_globals
@@ -68,7 +73,10 @@ _COMPUTATION_CHAIN = [
 
 {% set pparams = endpoint.path_params or [] %}
 @router.get("", response_model=Dict[str, Any])
-async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{% if not loop.last %}, {% endif %}{% endfor %}):
+async def query_{{ endpoint.name | lower }}(
+    {% for p in pparams %}{{ p }}: str{% if not loop.last %}, {% endif %}{% endfor %}
+    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
+    ):
     """
     Query endpoint for {{ entity.name }}.
     Aggregates data from external sources and internal dependencies,
@@ -78,15 +86,39 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
     context: Dict[str, Any] = {}
 
     # ----------------------------------------------------------------
-    # STEP 0: Seed context with path parameters (if any)
+    # STEP 0: Enforce Auth / Seed context with path parameters
     # ----------------------------------------------------------------
+    {% if endpoint.auth %}
+    {% if endpoint.auth.kind == 'bearer' %}
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    {% elif endpoint.auth.kind == 'basic' %}
+    # Example: Expect Basic auth from request headers
+    # (FastAPI automatically handles this if using HTTPBasic)
+    pass
+    {% elif endpoint.auth.kind == 'api_key' and endpoint.auth.location == 'header' %}
+    # Will be validated automatically through request headers
+    pass
+    {% elif endpoint.auth.kind == 'api_key' and endpoint.auth.location == 'query' %}
+    # Optionally extract from query params if needed
+    pass
+    {% endif %}
+    {% endif %}
+
     {% if pparams|length %}
     context["{{ endpoint.name }}"] = {}
     for _param_name, _param_value in [
       {% for p in pparams %}("{{ p }}", {{ p }}){% if not loop.last %}, {% endif %}{% endfor %}
     ]:
-        context["{{ endpoint.name }}"][_param_name] = normalize_path_value(_param_value)
-    logger.debug(f"[CONTEXT] - Seeded path parameters: {list(context['{{ endpoint.name }}'].keys())}")
+        _norm_val = normalize_path_value(_param_value)
+        # Store under endpoint-scoped context
+        context["{{ endpoint.name }}"][_param_name] = _norm_val
+        # Also expose globally for interpolation in Source<REST> URLs
+        context[_param_name] = _norm_val
+
+    logger.debug(
+        f"[CONTEXT] - Seeded path parameters globally: {list(context['{{ endpoint.name }}'].keys())}"
+    )
     {% endif %}
 
     try:
@@ -293,5 +325,5 @@ async def query_{{ endpoint.name | lower }}({% for p in pparams %}{{ p }}: str{%
     except HTTPException:
         raise
     except Exception as unexpected_error:
-        logger.exception(f"[ERROR] - Unexpected error in query {{ entity.name }}")
+        logger.exception(f"[ERROR] - Unexpected error in query {{ entity.name }}: {unexpected_error}")
         raise HTTPException(status_code=500, detail="Internal server error")

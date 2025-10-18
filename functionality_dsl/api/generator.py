@@ -114,7 +114,7 @@ def _normalize_headers(obj):
 
 
 def _build_auth_headers(source):
-    """Generate authentication headers based on source auth config."""
+    """Generate authentication headers based on source or endpoint auth config."""
     auth = getattr(source, "auth", None)
     if not auth:
         return []
@@ -164,7 +164,7 @@ def _build_auth_headers(source):
 
 def _get_all_ancestors(entity, model):
     """
-    Return all ancestor entities in topological order (oldest → newest).
+    Return all ancestor entities in topological order (oldest -> newest).
     Detects and reports cyclic dependencies (entity inheritance loops).
     """
     seen = set()
@@ -546,6 +546,10 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     # This replaces separate inline_chain + computed_attrs + validations
     compiled_chain = _build_entity_chain(entity, model, all_source_names, context="ctx")
     
+    # Build auth for the endpoint
+    endpoint_auth = getattr(endpoint, "auth", None)
+    auth_headers = _build_auth_headers(endpoint) if endpoint_auth else []
+    
     # Render template
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
@@ -557,7 +561,13 @@ def _generate_query_router(endpoint, entity, model, all_endpoints, all_source_na
     template = env.get_template("router_query_rest.jinja")
     
     router_code = template.render(
-        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params},
+        endpoint={
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "path_params": path_params,
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
         entity=entity,
         rest_inputs=rest_inputs,
         computed_parents=computed_parents,
@@ -600,7 +610,7 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
             rest_inputs.append(uni_input)
             seen_keys.add(key)
     
-    # Build computation chain (entity → terminal)
+    # Build computation chain (entity -> terminal)
     compiled_chain = _build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
     
     validations = _collect_entity_validations(entity, model, all_source_names)
@@ -615,6 +625,10 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
             "method": getattr(target_obj, "verb", verb).upper(),
             "headers": _normalize_headers(target_obj) + _build_auth_headers(target_obj),
         }
+        
+    # Build auth for the endpoint
+    endpoint_auth = getattr(endpoint, "auth", None)
+    auth_headers = _build_auth_headers(endpoint) if endpoint_auth else []
     
     # Render template
     env = Environment(
@@ -627,7 +641,13 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
     template = env.get_template("router_mutation_rest.jinja")
     
     router_code = template.render(
-        endpoint={"name": endpoint.name, "summary": getattr(endpoint, "summary", None), "path_params": path_params,},
+        endpoint={
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "path_params": path_params,
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
         entity=entity,
         terminal=terminal_entity,
         target=target,
@@ -984,6 +1004,11 @@ def _generate_websocket_router(endpoint, model, all_source_names, templates_dir,
     # Check if synchronization is needed
     sync_config_inbound = _build_sync_config(entity_in, model)
     
+    # --- Endpoint-level auth  ---
+    endpoint_auth = getattr(endpoint, "auth", None)
+    auth_headers = _build_auth_headers(endpoint) if endpoint_auth else []
+
+    
     # Render template
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
@@ -995,7 +1020,12 @@ def _generate_websocket_router(endpoint, model, all_source_names, templates_dir,
     template = env.get_template("router_ws.jinja")
     
     router_code = template.render(
-        endpoint=endpoint,
+        endpoint={
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
         entity_in=entity_in,
         entity_out=entity_out,
         route_prefix=route_path,
