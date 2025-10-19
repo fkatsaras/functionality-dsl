@@ -85,6 +85,7 @@ Entity RawCart
 end
 
 Entity CartWithDetails(RawCart)
+  source: ProductDetailsDB
   attributes:
     - enrichedItems: list = map(RawCart.items, item -> {
         "productId": item["productId"],
@@ -184,161 +185,161 @@ Entity RemoveFromCartResult
     - message: string = UpdateCartDB.message;
 end
 
-// ============================================================
-// CHECKOUT FLOW (Protected - Multi-step validation)
-// ============================================================
-
-APIEndpoint<REST> Checkout
-  path: "/api/checkout"
-  verb: POST
-  entity: CheckoutResult
-  auth:
-    type: bearer
-    token: "required"
-end
-
-Entity CheckoutInput
-  source: Checkout
-  attributes:
-    - userId: string = trim(Checkout.userId);
-    - paymentMethod: string = trim(Checkout.paymentMethod);
-    - cardLast4: string = trim(Checkout.cardLast4);
-    - shippingAddress: dict = Checkout.shippingAddress;
-  validations:
-    - require(CheckoutInput.paymentMethod in ["card", "paypal"], "Invalid payment method", 400);
-    - require(len(CheckoutInput.shippingAddress["zipCode"]) == 5, "Invalid zip code", 400);
-    - require(len(CheckoutInput.shippingAddress["street"]) > 0, "Street address required", 400);
-end
-
-Entity CheckoutCart(CheckoutInput, CartWithPricing)
-  attributes:
-    - items: list = CartWithPricing.items;
-    - total: float = CartWithPricing.total;
-    - subtotal: float = CartWithPricing.subtotal;
-    - tax: float = CartWithPricing.tax;
-    - shipping: float = CartWithPricing.shipping;
-  validations:
-    - require(len(CheckoutCart.items) > 0, "Cannot checkout empty cart", 400);
-    - require(CheckoutCart.total >= 10.0, "Minimum order amount is $10", 400);
-end
-
-Entity StockValidation(CheckoutCart)
-  attributes:
-    - allAvailable: bool = all(
-        map(CheckoutCart.items, item -> 
-          CheckStockDB.available >= item["quantity"]
-        ),
-        x -> x
-      );
-  validations:
-    - require(StockValidation.allAvailable, "Some items are no longer in stock", 409);
-end
-
-Entity StockReservation(CheckoutCart, StockValidation)
-  attributes:
-    - items: list = map(CheckoutCart.items, item -> {
-        "productId": item["productId"],
-        "quantity": item["quantity"]
-      });
-    - userId: string = CheckoutInput.userId;
-end
-
-Entity ReservationConfirmation
-  source: ReserveStockDB
-  attributes:
-    - reservationId: string = ReserveStockDB.reservationId;
-    - success: bool = ReserveStockDB.ok;
-  validations:
-    - require(ReservationConfirmation.success, "Failed to reserve inventory", 500);
-end
-
-Entity PaymentRequest(CheckoutCart, CheckoutInput, ReservationConfirmation)
-  attributes:
-    - amount: float = CheckoutCart.total;
-    - currency: string = "USD";
-    - method: string = CheckoutInput.paymentMethod;
-    - cardLast4: string = CheckoutInput.cardLast4;
-    - reservationId: string = ReservationConfirmation.reservationId;
-    - metadata: dict = {
-        "userId": CheckoutInput.userId,
-        "itemCount": len(CheckoutCart.items)
-      };
-end
-
-Entity PaymentResult
-  source: PaymentGatewayDB
-  attributes:
-    - transactionId: string = PaymentGatewayDB.transactionId;
-    - status: string = PaymentGatewayDB.status;
-    - processedAt: string = PaymentGatewayDB.timestamp;
-  validations:
-    - require(status == "success", "Payment declined", 402);
-end
-
-Entity FinalOrder(CheckoutCart, CheckoutInput, PaymentResult, ReservationConfirmation)
-  attributes:
-    - userId: string = CheckoutInput.userId;
-    - items: list = CheckoutCart.items;
-    - subtotal: float = CheckoutCart.subtotal;
-    - tax: float = CheckoutCart.tax;
-    - shipping: float = CheckoutCart.shipping;
-    - total: float = CheckoutCart.total;
-    - paymentId: string = PaymentResult.transactionId;
-    - shippingAddress: dict = CheckoutInput.shippingAddress;
-    - status: string = "confirmed";
-    - reservationId: string = ReservationConfirmation.reservationId;
-end
-
-Entity CheckoutResult
-  source: CreateOrderDB
-  attributes:
-    - orderId: string = CreateOrderDB.orderId;
-    - status: string = CreateOrderDB.status;
-    - total: float = CreateOrderDB.total;
-    - estimatedDelivery: string = CreateOrderDB.estimatedDelivery;
-end
-
-Entity ClearCartRequest(CheckoutResult)
-  attributes:
-    - userId: string = CheckoutInput.userId;
-end
-
-// ============================================================
-// ORDER HISTORY (Protected)
-// ============================================================
-
-APIEndpoint<REST> GetOrders
-  path: "/api/orders"
-  verb: GET
-  entity: UserOrders
-  auth:
-    type: bearer
-    token: "required"
-end
-
-Entity UserOrders
-  source: OrdersDB
-  attributes:
-    - orders: list = OrdersDB;
-end
-
-APIEndpoint<REST> GetOrderDetails
-  path: "/api/orders/{orderId}"
-  verb: GET
-  entity: OrderDetail
-  auth:
-    type: bearer
-    token: "required"
-end
-
-Entity OrderDetail
-  source: OrderDetailsDB
-  attributes:
-    - orderId: string = OrderDetailsDB.orderId;
-    - items: list = OrderDetailsDB.items;
-    - total: float = OrderDetailsDB.total;
-    - status: string = OrderDetailsDB.status;
-    - shippingAddress: dict = OrderDetailsDB.shippingAddress;
-    - createdAt: string = OrderDetailsDB.createdAt;
-    - estimatedDelivery: string = OrderDetailsDB.estimatedDelivery;
-end
+//// ============================================================
+//// CHECKOUT FLOW (Protected - Multi-step validation)
+//// ============================================================
+//
+//APIEndpoint<REST> Checkout
+//  path: "/api/checkout"
+//  verb: POST
+//  entity: CheckoutResult
+//  auth:
+//    type: bearer
+//    token: "required"
+//end
+//
+//Entity CheckoutInput
+//  source: Checkout
+//  attributes:
+//    - userId: string = trim(Checkout.userId);
+//    - paymentMethod: string = trim(Checkout.paymentMethod);
+//    - cardLast4: string = trim(Checkout.cardLast4);
+//    - shippingAddress: dict = Checkout.shippingAddress;
+//  validations:
+//    - require(CheckoutInput.paymentMethod in ["card", "paypal"], "Invalid payment method", 400);
+//    - require(len(CheckoutInput.shippingAddress["zipCode"]) == 5, "Invalid zip code", 400);
+//    - require(len(CheckoutInput.shippingAddress["street"]) > 0, "Street address required", 400);
+//end
+//
+//Entity CheckoutCart(CheckoutInput, CartWithPricing)
+//  attributes:
+//    - items: list = CartWithPricing.items;
+//    - total: float = CartWithPricing.total;
+//    - subtotal: float = CartWithPricing.subtotal;
+//    - tax: float = CartWithPricing.tax;
+//    - shipping: float = CartWithPricing.shipping;
+//  validations:
+//    - require(len(CheckoutCart.items) > 0, "Cannot checkout empty cart", 400);
+//    - require(CheckoutCart.total >= 10.0, "Minimum order amount is $10", 400);
+//end
+//
+//Entity StockValidation(CheckoutCart)
+//  attributes:
+//    - allAvailable: bool = all(
+//        map(CheckoutCart.items, item -> 
+//          CheckStockDB.available >= item["quantity"]
+//        ),
+//        x -> x
+//      );
+//  validations:
+//    - require(StockValidation.allAvailable, "Some items are no longer in stock", 409);
+//end
+//
+//Entity StockReservation(CheckoutCart, StockValidation)
+//  attributes:
+//    - items: list = map(CheckoutCart.items, item -> {
+//        "productId": item["productId"],
+//        "quantity": item["quantity"]
+//      });
+//    - userId: string = CheckoutInput.userId;
+//end
+//
+//Entity ReservationConfirmation
+//  source: ReserveStockDB
+//  attributes:
+//    - reservationId: string = ReserveStockDB.reservationId;
+//    - success: bool = ReserveStockDB.ok;
+//  validations:
+//    - require(ReservationConfirmation.success, "Failed to reserve inventory", 500);
+//end
+//
+//Entity PaymentRequest(CheckoutCart, CheckoutInput, ReservationConfirmation)
+//  attributes:
+//    - amount: float = CheckoutCart.total;
+//    - currency: string = "USD";
+//    - method: string = CheckoutInput.paymentMethod;
+//    - cardLast4: string = CheckoutInput.cardLast4;
+//    - reservationId: string = ReservationConfirmation.reservationId;
+//    - metadata: dict = {
+//        "userId": CheckoutInput.userId,
+//        "itemCount": len(CheckoutCart.items)
+//      };
+//end
+//
+//Entity PaymentResult
+//  source: PaymentGatewayDB
+//  attributes:
+//    - transactionId: string = PaymentGatewayDB.transactionId;
+//    - status: string = PaymentGatewayDB.status;
+//    - processedAt: string = PaymentGatewayDB.timestamp;
+//  validations:
+//    - require(PaymentResult.status == "success", "Payment declined", 402);
+//end
+//
+//Entity FinalOrder(CheckoutCart, CheckoutInput, PaymentResult, ReservationConfirmation)
+//  attributes:
+//    - userId: string = CheckoutInput.userId;
+//    - items: list = CheckoutCart.items;
+//    - subtotal: float = CheckoutCart.subtotal;
+//    - tax: float = CheckoutCart.tax;
+//    - shipping: float = CheckoutCart.shipping;
+//    - total: float = CheckoutCart.total;
+//    - paymentId: string = PaymentResult.transactionId;
+//    - shippingAddress: dict = CheckoutInput.shippingAddress;
+//    - status: string = "confirmed";
+//    - reservationId: string = ReservationConfirmation.reservationId;
+//end
+//
+//Entity CheckoutResult
+//  source: CreateOrderDB
+//  attributes:
+//    - orderId: string = CreateOrderDB.orderId;
+//    - status: string = CreateOrderDB.status;
+//    - total: float = CreateOrderDB.total;
+//    - estimatedDelivery: string = CreateOrderDB.estimatedDelivery;
+//end
+//
+//Entity ClearCartRequest(CheckoutResult)
+//  attributes:
+//    - userId: string = CheckoutInput.userId;
+//end
+//
+//// ============================================================
+//// ORDER HISTORY (Protected)
+//// ============================================================
+//
+//APIEndpoint<REST> GetOrders
+//  path: "/api/orders"
+//  verb: GET
+//  entity: UserOrders
+//  auth:
+//    type: bearer
+//    token: "required"
+//end
+//
+//Entity UserOrders
+//  source: OrdersDB
+//  attributes:
+//    - orders: list = OrdersDB;
+//end
+//
+//APIEndpoint<REST> GetOrderDetails
+//  path: "/api/orders/{orderId}"
+//  verb: GET
+//  entity: OrderDetail
+//  auth:
+//    type: bearer
+//    token: "required"
+//end
+//
+//Entity OrderDetail
+//  source: OrderDetailsDB
+//  attributes:
+//    - orderId: string = OrderDetailsDB.orderId;
+//    - items: list = OrderDetailsDB.items;
+//    - total: float = OrderDetailsDB.total;
+//    - status: string = OrderDetailsDB.status;
+//    - shippingAddress: dict = OrderDetailsDB.shippingAddress;
+//    - createdAt: string = OrderDetailsDB.createdAt;
+//    - estimatedDelivery: string = OrderDetailsDB.estimatedDelivery;
+//end

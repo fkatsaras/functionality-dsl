@@ -15,7 +15,7 @@ security = HTTPBearer()
 
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, safe_globals
-from app.core.utils import resolve_headers, interpolate_url, normalize_path_value
+from app.core.utils import resolve_headers, interpolate_url, normalize_path_value, seed_context_with_path_params
 
 {% if target %}
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ target.method.lower() }}")
@@ -133,10 +133,17 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         # ----------------------------------------------------------------
         seed_payload = request_body or {}
         {% if pparams|length %}
-        for _param_name, _param_value in [
-          {% for p in pparams %}("{{ p }}", {{ p }}){% if not loop.last %}, {% endif %}{% endfor %}
-        ]:
-            seed_payload[_param_name] = normalize_path_value(_param_value)
+        context = seed_context_with_path_params(
+            context=context,
+            endpoint_name="{{ endpoint.name }}",
+            endpoint_params={
+              {% for p in pparams %}
+              "{{ p }}": {{ p }}{% if not loop.last %}, {% endif %}
+              {% endfor %}
+            },
+            external_sources=_EXTERNAL_REST_SOURCES,
+            logger=logger,
+        )
         {% endif %}
         
         # IMPORTANT: Store the endpoint payload in context so it's available

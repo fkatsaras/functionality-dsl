@@ -60,7 +60,7 @@ Entity RealObjectDetail
 end
 
 // --- Internal endpoints -----------------------------------------
-APIEndpoint<REST> RealObjectsList
+APIEndpoint<REST> RealObjectsList 
   path: "/api/objects"
   verb: GET
   entity: RealObjectsRows

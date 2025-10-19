@@ -363,9 +363,9 @@ class ObjectViewComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, label=None):
         super().__init__(parent, name, endpoint)
         if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST>.")
 
-        # unwrap StringList
+        # unwrap StringList (from DSL grammar)
         if hasattr(fields, "items"):
             field_items = fields.items
         else:
@@ -376,24 +376,22 @@ class ObjectViewComponent(_BaseComponent):
 
     def to_props(self):
         """
-        Produce the same behavior as ActionFormComponent:
-        escape path braces and detect {param} for later substitution.
+        Simplified props for the new ObjectView.svelte.
+        The frontend no longer does placeholder substitution —
+        it just appends the user-provided ID to the endpoint path.
         """
+        # Use the endpoint path if declared, else default to /api/{endpoint_name}
         path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+
+        # Strip any {param} placeholders; backend handles those now
         import re
+        path = re.sub(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}", "", path).rstrip("/")
 
-        # Detect {param} placeholder
-        match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
-        path_key = match.group(1) if match else None
-
-        # Keep placeholder literal, escape braces for Jinja -> pass literally to Svelte
-        if match:
-            path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
+        # Escape for Jinja -> Svelte literal
         path = path.replace("{", "{{").replace("}", "}}")
 
         return {
-            "endpointPath": path,
+            "endpoint": path,
             "fields": self.fields,
-            "label": self.label,
-            "pathKey": path_key,  # helps Svelte know which param to use
+            "label": self.label or self.endpoint.name,
         }

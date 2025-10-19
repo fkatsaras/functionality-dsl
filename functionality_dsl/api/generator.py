@@ -347,6 +347,7 @@ def _build_rest_input_config(entity, source, all_source_names):
         "headers": _normalize_headers(source) + _build_auth_headers(source),
         "method": (getattr(source, "verb", "GET") or "GET").upper(),
         "attrs": attribute_configs,
+        "path_params": _extract_path_params(source.url),
     }
 
 

@@ -1,12 +1,12 @@
-{# 
+{#
   props.fields: list of field names to display, e.g. ["id","name","price"]
-  props.endpointPath: the bound APIEndpoint<REST> endpoint (may include {param})
+  props.endpoint: the base APIEndpoint<REST> URL (e.g. "/api/objects")
   props.label: optional title
 #}
 
 <ObjectView
   name="{{ common.name }}"
-  url="{{ props.get('endpointPath') }}"
+  endpoint="{{ props.get('endpoint') }}"
   fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
   label="{{ props.get('label', common.name) }}"
 />

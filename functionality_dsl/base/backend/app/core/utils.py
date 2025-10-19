@@ -6,6 +6,48 @@ import re
 from typing import Dict, Union, Tuple, List
 
 
+def seed_context_with_path_params(
+    context: dict,
+    endpoint_name: str,
+    endpoint_params: dict,
+    external_sources: list,
+    logger=None,
+):
+    """
+    Enrich the runtime context with all path parameters coming from:
+      - the APIEndpoint itself (endpoint_params)
+      - any placeholders present in Source<REST> URLs
+
+    This ensures interpolate_url() can resolve all {param} placeholders
+    without extra code in every router.
+    """
+    import re
+
+    # --- 1. Normalize and seed endpoint path params ---
+    if endpoint_params:
+        context[endpoint_name] = {}
+        for key, raw_val in endpoint_params.items():
+            val = normalize_path_value(raw_val)
+            context[endpoint_name][key] = val
+            context[key] = val
+        if logger:
+            logger.debug(f"[CONTEXT] - Seeded endpoint params: {list(endpoint_params.keys())}")
+
+    # --- 2. Scan Source URLs for any {placeholders} ---
+    for src in external_sources or []:
+        url = src.get("url")
+        if not url:
+            continue
+        for pname in re.findall(r"{([^{}]+)}", url):
+            if pname not in context:
+                endpoint_ctx = context.get(endpoint_name, {})
+                if pname in endpoint_ctx:
+                    context[pname] = endpoint_ctx[pname]
+                    if logger:
+                        logger.debug(f"[CONTEXT] - Propagated {pname} from endpoint context")
+
+    return context
+
 def normalize_path_value(value):
     """
     Normalize a path parameter or placeholder value.
