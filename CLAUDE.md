@@ -461,3 +461,8 @@ end
 ---
 
 **Remember**: FDSL is declarative - you describe WHAT you want, not HOW to do it. The framework handles all the plumbing (HTTP, WebSockets, validation, error handling, etc.).
+
+Claude Code should:
+-  Create files, edit code, generate artifacts
+-  Commit changes locally (with confirmation)
+-  **NEVER push to remote** (manual push only)
