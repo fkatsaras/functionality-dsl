@@ -485,8 +485,11 @@ def _validate_entity_validations(model, metamodel=None):
 # Public model builders
 
 def build_model(model_path: str):
-    """Parse & validate a model from a file path."""
-    return FunctionalityDSLMetaModel.model_from_file(model_path)
+    """Parse & validate a model from a file path, resolving imports by inlining."""
+    # Expand imports by inlining imported file contents
+    expanded_content = _expand_imports(model_path)
+    # Parse the expanded content as a single model
+    return FunctionalityDSLMetaModel.model_from_str(expanded_content)
 
 
 def build_model_str(model_str: str):
@@ -920,8 +923,8 @@ def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
     Order matters: unique names -> endpoints -> entities -> components -> aggregates -> validations
-    
-    Note: Imports are now handled in build_model() before parsing, so no need to resolve here.
+
+    Note: Imports are handled in build_model() via _preload_imports() before parsing.
     """
     verify_unique_names(model)
     verify_endpoints(model)
@@ -1000,71 +1003,52 @@ def get_scope_providers():
 # ------------------------------------------------------------------------------
 # Imports
 
-def _merge_fdsl_models(target, imported):
+def _expand_imports(model_path: str, visited=None) -> str:
     """
-    Merge the top-level collections of `imported` model into `target` model.
+    Recursively expand import statements by inlining the content of imported files.
+    Returns the fully expanded file content with all imports resolved.
     """
-    for attr in [
-        "servers",
-        "apirest",
-        "apiws",
-        "externalrest",
-        "externalws",
-        "entities",
-        "components",
-    ]:
-        if hasattr(target, attr) and hasattr(imported, attr):
-            getattr(target, attr).extend(getattr(imported, attr))
-            
-# Global flag to control whether model processors should run
-_SKIP_MODEL_VALIDATION = False
-
-
-def _resolve_imports(model, metamodel, visited=None):
-    """
-    Recursively resolve `import` statements in the given model.
-    Uses textX global repository to make imported objects available for reference resolution.
-    """
-    global _SKIP_MODEL_VALIDATION
-    
     if visited is None:
         visited = set()
 
-    model_path = Path(getattr(model, "_tx_filename", ".")).resolve()
-    base_dir = model_path.parent
+    model_file = Path(model_path).resolve()
 
-    imports = getattr(model, "imports", []) or []
-    for imp in imports:
-        uri = getattr(imp, "importURI", None)
-        if not uri:
-            continue
+    # Prevent circular imports
+    if model_file in visited:
+        return ""
+    visited.add(model_file)
 
+    if not model_file.exists():
+        raise FileNotFoundError(f"File not found: {model_file}")
+
+    # Read the file content
+    content = model_file.read_text()
+    base_dir = model_file.parent
+
+    # Find all import statements
+    import_pattern = r'^\s*import\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s*$'
+
+    def replace_import(match):
+        imp_uri = match.group(1)
         # Convert "products" → "products.fdsl", "shop.products" → "shop/products.fdsl"
-        rel_path = (uri.replace(".", os.sep) + ".fdsl")
+        rel_path = imp_uri.replace(".", os.sep) + ".fdsl"
         import_path = (base_dir / rel_path).resolve()
 
-        if import_path in visited:
-            continue
-        visited.add(import_path)
-
         if not import_path.exists():
-            raise TextXSemanticError(f"Import not found: {import_path}")
+            raise FileNotFoundError(f"Import not found: {import_path}")
 
-        print(f"[IMPORT] Loading {import_path.name}")
+        print(f"[IMPORT] Inlining {import_path.name}")
 
-        # CRITICAL: Skip model validation for imported files
-        # Object processors still run (for basic entity/endpoint validation)
-        # but model-wide cross-references are only checked after merge
-        _SKIP_MODEL_VALIDATION = True
-        try:
-            # Parse imported model - textX will automatically register it in global repository
-            sub_model = metamodel.model_from_file(str(import_path))
-            _resolve_imports(sub_model, metamodel, visited)
-            
-            # Merge collections into parent model
-            _merge_fdsl_models(model, sub_model)
-        finally:
-            _SKIP_MODEL_VALIDATION = False
+        # Recursively expand the imported file
+        imported_content = _expand_imports(str(import_path), visited)
+
+        # Return the imported content with a comment marking the source
+        return f"// ========== Imported from {import_path.name} ==========\n{imported_content}\n// ========== End of {import_path.name} ==========\n"
+
+    # Replace all import statements with the actual file contents
+    expanded = re.sub(import_pattern, replace_import, content, flags=re.MULTILINE)
+
+    return expanded
 
 # ------------------------------------------------------------------------------
 # Metamodel creation
