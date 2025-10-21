@@ -1,0 +1,108 @@
+// ============================================================
+// External REST Sources (Dummy DB)
+// ============================================================
+
+// --- Product list ---
+Source<REST> ProductsExternal
+  url: "http://dummyorders:9100/db/products"
+  verb: GET
+end
+
+// --- Product by ID ---
+Source<REST> ProductByIdExternal
+  url: "http://dummyorders:9100/db/products/{id}"
+  verb: GET
+end
+
+// --- Product reviews ---
+Source<REST> ReviewsByProductExternal
+  url: "http://dummyorders:9100/db/reviews/product/{id}"
+  verb: GET
+end
+
+
+// ============================================================
+// Internal Entities (Data Transformation)
+// ============================================================
+
+// --- Raw product entity from /db/products/:id ---
+Entity ProductRaw
+  source: ProductByIdExternal
+  attributes:
+    - id: int = int(ProductByIdExternal.id);
+    - name: string = ProductByIdExternal.name;
+    - description: string = ProductByIdExternal.description;
+    - price: float = ProductByIdExternal.price;
+    - stock: int = ProductByIdExternal.stock;
+    - category: string = ProductByIdExternal.category;
+    - createdAt: string = ProductByIdExternal.createdAt;
+end
+
+// --- Raw list of all products ---
+Entity ProductsRaw
+  source: ProductsExternal
+  attributes:
+    - rows: list = ProductsExternal;
+end
+
+// --- Shaped list for UI display ---
+Entity ProductsList(ProductsRaw)
+  attributes:
+    - rows: list = map(ProductsRaw.rows, p ->
+        {
+          "id": p["id"],
+          "name": p["name"],
+          "price": p["price"],
+          "stock": p["stock"],
+          "category": p["category"]
+        }
+      );
+end
+
+// --- Raw reviews from external source ---
+Entity ProductReviewsRaw
+  source: ReviewsByProductExternal
+  attributes:
+    - rows: list = ReviewsByProductExternal;
+end
+
+// --- Aggregated reviews (average rating + count) ---
+Entity ProductReviewsSummary(ProductReviewsRaw)
+  attributes:
+    - count: int = len(ProductReviewsRaw.rows);
+    - average_rating: float =
+        (sum(map(ProductReviewsRaw.rows, r -> r["rating"])) / max(1, len(ProductReviewsRaw.rows)));
+end
+
+// --- Full product details with embedded reviews ---
+Entity ProductDetails(ProductRaw, ProductReviewsSummary, ProductReviewsRaw)
+  attributes:
+    - id: int = ProductRaw.id;
+    - name: string = ProductRaw.name;
+    - description: string = ProductRaw.description;
+    - price: float = ProductRaw.price;
+    - stock: int = ProductRaw.stock;
+    - category: string = ProductRaw.category;
+    - average_rating: float = ProductReviewsSummary.average_rating;
+    - review_count: int = ProductReviewsSummary.count;
+    - reviews: list = ProductReviewsRaw.rows;
+end
+
+
+// ============================================================
+// Internal REST API Endpoints 
+// ============================================================
+
+// --- Public: list all products ---
+APIEndpoint<REST> ProductList
+  path: "/api/products"
+  verb: GET
+  entity: ProductsList
+end
+
+// --- Public: product details (with reviews) ---
+APIEndpoint<REST> ProductDetails
+  path: "/api/products/{id}"
+  verb: GET
+  entity: ProductDetails
+end

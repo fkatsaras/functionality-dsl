@@ -1,0 +1,117 @@
+// ============================================================
+// External REST Sources (Dummy DB)
+// ============================================================
+
+// --- Get cart for a given user ---
+Source<REST> CartByUserExternal
+  url: "http://dummyorders:9100/db/carts/user/{userId}"
+  verb: GET
+  entity: CartRaw
+end
+
+// --- Add item to cart ---
+Source<REST> CartAddItemExternal
+  url: "http://dummyorders:9100/db/carts"
+  verb: POST
+  entity: CartAddPayload
+end
+
+// --- Remove single product from cart ---
+Source<REST> CartRemoveItemExternal
+  url: "http://dummyorders:9100/db/carts/user/{userId}/product/{productId}"
+  verb: DELETE
+  entity: CartRemovePayload
+end
+
+// --- Clear entire cart for a user ---
+Source<REST> CartClearExternal
+  url: "http://dummyorders:9100/db/carts/user/{userId}"
+  verb: DELETE
+  entity: CartClearPayload
+end
+
+
+// ============================================================
+// Entities (Transformations)
+// ============================================================
+
+// --- Raw cart returned from external source ---
+Entity CartRaw
+  source: CartByUserExternal
+  attributes:
+    - userId: int = int(CartByUserExternal.userId);
+    - items: list = CartByUserExternal.items;
+    - createdAt: string = CartByUserExternal.createdAt;
+end
+
+// --- Shaped list for UI ---
+Entity CartView(CartRaw)
+  attributes:
+    - userId: int = CartRaw.userId;
+    - total_items: int = len(CartRaw.items);
+    - items: list = map(CartRaw.items, i -> {
+        "productId": i["productId"],
+        "quantity": i["quantity"]
+      });
+end
+
+// --- Payload to add an item ---
+Entity CartAddPayload
+  source: CartAdd
+  attributes:
+    - userId: int = int(CartAdd.userId);
+    - productId: int = int(CartAdd.productId);
+    - quantity: int = int(CartAdd.quantity);
+  validations:
+    - require(CartAddPayload.quantity > 0, "Quantity must be positive", 400);
+end
+
+// --- Remove item ---
+Entity CartRemovePayload
+  source: CartRemove
+  attributes:
+    - userId: int = int(CartRemove.userId);
+    - productId: int = int(CartRemove.productId);
+end
+
+// --- Clear cart ---
+Entity CartClearPayload
+  source: CartClear
+  attributes:
+    - userId: int = int(CartClear.userId);
+end
+
+
+// ============================================================
+// Internal REST API Endpoints
+// ============================================================
+
+// --- Get user's cart ---
+APIEndpoint<REST> CartByUser
+  path: "/api/carts/user/{userId}"
+  verb: GET
+  entity: CartView
+end
+
+// --- Add item to cart ---
+APIEndpoint<REST> CartAdd
+  path: "/api/carts/add"
+  verb: POST
+  entity: CartAddPayload
+end
+
+// --- Remove item ---
+APIEndpoint<REST> CartRemove
+  path: "/api/carts/remove/{userId}/{productId}"
+  verb: DELETE
+  entity: CartRemovePayload
+end
+
+// --- Clear cart ---
+APIEndpoint<REST> CartClear
+  path: "/api/carts/clear/{userId}"
+  verb: DELETE
+  entity: CartClearPayload
+end
+
+

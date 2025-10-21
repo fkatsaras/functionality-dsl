@@ -16,8 +16,13 @@ def _tofloat(x) -> float:
         raise TypeError("_tofloat() received None")
     return float(x)
 
+def _sum(xs):
+    xs = list(xs)
+    return sum(float(x) for x in xs if x is not None)
+
 DSL_FUNCTIONS = {
     "avg":   (_avg, (1, 1)),
+    "sum":   (_sum, (1, 1)),
     "min":   (min,  (1, None)),
     "max":   (max,  (1, None)),
     "abs":   (abs,  (1, 1)),

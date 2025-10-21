@@ -522,6 +522,47 @@ def _resolve_universal_dependencies(entity, model, all_source_names):
     
     return rest_inputs
 
+def _build_dependency_graph(model):
+    """
+    Build a JSON-serializable graph of all Entities, Sources, and APIEndpoints.
+    Each node has: {id, type, label}
+    Each edge has: {from, to}
+    """
+    graph = {"nodes": [], "edges": []}
+    node_ids = set()
+
+    # Helper to add nodes safely
+    def add_node(name, node_type):
+        if name not in node_ids:
+            graph["nodes"].append({"id": name, "type": node_type, "label": name})
+            node_ids.add(name)
+
+    # Entities and their sources/parents
+    for entity in _get_entities(model):
+        add_node(entity.name, "Entity")
+
+        # link to parents
+        for parent in getattr(entity, "parents", []) or []:
+            add_node(parent.name, "Entity")
+            graph["edges"].append({"from": parent.name, "to": entity.name})
+
+        # link to source
+        src = getattr(entity, "source", None)
+        if src:
+            add_node(src.name, src.__class__.__name__)
+            graph["edges"].append({"from": src.name, "to": entity.name})
+
+    # APIEndpoints to their entities
+    for ep in _get_rest_endpoints(model) + _get_ws_endpoints(model):
+        add_node(ep.name, "APIEndpoint")
+        ent = getattr(ep, "entity", getattr(ep, "entity_in", None)) or getattr(ep, "entity_out", None)
+        if ent:
+            graph["edges"].append({"from": ep.name, "to": ent.name})
+            add_node(ent.name, "Entity")
+
+    return graph
+
+
 
 # ============================================================================
 #                           QUERY ENDPOINT GENERATION (GET)
@@ -715,6 +756,28 @@ def _generate_domain_models(model, templates_dir, output_dir):
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(models_code, encoding="utf-8")
     print(f"[GENERATED] Domain models: {output_file}")
+    
+    
+def _generate_graph_endpoint(model, templates_dir, out_dir):
+    """
+    Generate the /graph endpoint (JSON + HTML visualization).
+    """
+    import json
+
+    graph = _build_dependency_graph(model)
+    routers_dir = out_dir / "app" / "api" / "routers"
+    routers_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save graph JSON
+    (routers_dir / "graph_data.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")
+
+    # Render router file
+    jenv = Environment(loader=FileSystemLoader(str(templates_dir)))
+    template = jenv.get_template("router_graph.jinja")
+    rendered = template.render()
+    (routers_dir / "router_graph.py").write_text(rendered, encoding="utf-8")
+
+    print("[GRAPH] /graph endpoint generated successfully.")
 
 
 # ============================================================================
@@ -1245,6 +1308,9 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         _generate_websocket_router(
             endpoint, model, all_source_names, templates_dir, out_dir
         )
+        
+    print("\n[PHASE 4] Generating graph visualization endpoint...")
+    _generate_graph_endpoint(model, templates_dir, out_dir)
     
     print("\n" + "="*70)
     print("  CODE GENERATION COMPLETE")

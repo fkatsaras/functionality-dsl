@@ -1,345 +1,59 @@
-import components.fdsl
-import sources.fdsl
+import products
+import carts
 
-// ============================================================
-// Server Configuration
-// ============================================================
-Server ECommerceAPI
+Server ShopServer
   host: "localhost"
   port: 8080
-  cors: "http://localhost:3000"
+  cors: "http://localhost:5173"
   loglevel: debug
 end
 
+
 // ============================================================
-// PUBLIC ENDPOINTS (No Auth Required)
+// Product Components
 // ============================================================
 
-// List all products (public browsing)
-APIEndpoint<REST> ProductList
-  path: "/api/products"
-  verb: GET
-  entity: ProductCatalog
+// Table of all products
+Component<Table> ProductsTable
+  endpoint: ProductList
+  colNames: ["id", "name", "price", "stock", "category"]
 end
 
-Entity ProductCatalog
-  source: ProductCatalogDB
-  attributes:
-    - products: list = ProductCatalogDB;
-end
-
-// Get product details (public)
-APIEndpoint<REST> ProductDetails
-  path: "/api/products/{productId}"
-  verb: GET
-  entity: ProductInfo
-end
-
-Entity ProductInfo
-  source: ProductDetailsDB
-  attributes:
-    - id: int = ProductDetailsDB.id;
-    - name: string = ProductDetailsDB.name;
-    - price: float = ProductDetailsDB.price;
-    - description: string = ProductDetailsDB.description;
-    - category: string = ProductDetailsDB.category;
-    - imageUrl: string = ProductDetailsDB.imageUrl;
-    - inStock: bool = ProductDetailsDB.stock > 0;
-end
-
-// Check stock availability (public)
-APIEndpoint<REST> CheckStock
-  path: "/api/stock/{productId}"
-  verb: GET
-  entity: StockInfo
-end
-
-Entity StockInfo
-  source: CheckStockDB
-  attributes:
-    - productId: int = CheckStockDB.productId;
-    - available: int = CheckStockDB.available;
-    - reserved: int = CheckStockDB.reserved;
-    - inStock: bool = CheckStockDB.available > 0;
+// View of single product with review list
+Component<ObjectView> ProductDetailView
+  endpoint: ProductDetails
+  fields: ["id", "name", "description", "price", "stock", "category", "average_rating", "review_count"]
+  label: "Product Details"
 end
 
 // ============================================================
-// PROTECTED ENDPOINTS (Require Bearer Auth)
+// Cart components
 // ============================================================
 
-// Get user's cart (protected)
-APIEndpoint<REST> GetCart
-  path: "/api/cart"
-  verb: GET
-  entity: CartWithPricing
-  auth:
-    type: bearer
-    token: "required"
+// View user cart
+Component<ObjectView> CartViewBox
+  endpoint: CartByUser
+  fields: ["userId", "total_items", "items"]
+  label: "User Cart"
 end
 
-Entity RawCart
-  source: CartsDB
-  attributes:
-    - items: list = CartsDB.items;
-    - userId: string = CartsDB.userId;
+// Add item form
+Component<ActionForm> AddToCartForm
+  endpoint: CartAdd
+  fields: [userId, productId, quantity]
+  submitLabel: "Add to Cart"
 end
 
-Entity CartWithDetails(RawCart)
-  source: ProductDetailsDB
-  attributes:
-    - enrichedItems: list = map(RawCart.items, item -> {
-        "productId": item["productId"],
-        "quantity": item["quantity"],
-        "productName": ProductDetailsDB.name,
-        "price": ProductDetailsDB.price,
-        "imageUrl": ProductDetailsDB.imageUrl
-      });
+// Remove single item
+Component<ActionForm> RemoveCartItemForm
+  endpoint: CartRemove
+  fields: [userId, productId]
+  submitLabel: "Remove Item"
 end
 
-Entity CartWithPricing(CartWithDetails)
-  attributes:
-    - items: list = CartWithDetails.enrichedItems;
-    - itemCount: int = len(items);
-    - subtotal: float = sum(map(items, i -> i["price"] * i["quantity"]));
-    - tax: float = round(subtotal * 0.1, 2);
-    - shipping: float = 0.0 if subtotal >= 50.0 else 9.99;
-    - total: float = round(subtotal + tax + shipping, 2);
-  validations:
-    - require(CartWithPricing.itemCount > 0, "Cart is empty", 400);
+// Clear cart
+Component<ActionForm> ClearCartForm
+  endpoint: CartClear
+  fields: [userId]
+  submitLabel: "Clear Cart"
 end
-
-// Add item to cart (protected)
-APIEndpoint<REST> AddToCart
-  path: "/api/cart/add"
-  verb: POST
-  entity: AddToCartResult
-  auth:
-    type: bearer
-    token: "required"
-end
-
-Entity AddToCartInput
-  source: AddToCart
-  attributes:
-    - userId: string = trim(AddToCart.userId);
-    - productId: int = int(AddToCart.productId);
-    - quantity: int = int(AddToCart.quantity);
-  validations:
-    - require(AddToCartInput.quantity > 0, "Quantity must be positive", 400);
-    - require(AddToCartInput.quantity <= 10, "Maximum 10 items per product", 400);
-end
-
-Entity ProductAvailability(AddToCartInput)
-  source: CheckStockDB
-  attributes:
-    - available: int = CheckStockDB.available;
-    - canFulfill: bool = available >= AddToCartInput.quantity;
-  validations:
-    - require(ProductAvailability.canFulfill, "Insufficient stock available", 409);
-end
-
-Entity CartUpdatePayload(AddToCartInput, ProductAvailability)
-  attributes:
-    - userId: string = AddToCartInput.userId;
-    - productId: int = AddToCartInput.productId;
-    - quantity: int = AddToCartInput.quantity;
-    - action: string = "add";
-end
-
-Entity AddToCartResult
-  source: UpdateCartDB
-  attributes:
-    - success: bool = UpdateCartDB.ok;
-    - message: string = UpdateCartDB.message;
-    - itemCount: int = UpdateCartDB.itemCount;
-end
-
-// Remove item from cart (protected)
-APIEndpoint<REST> RemoveFromCart
-  path: "/api/cart/remove"
-  verb: POST
-  entity: RemoveFromCartResult
-  auth:
-    type: bearer
-    token: "required"
-end
-
-Entity RemoveFromCartInput
-  source: RemoveFromCart
-  attributes:
-    - userId: string = trim(RemoveFromCart.userId);
-    - productId: int = int(RemoveFromCart.productId);
-end
-
-Entity RemoveCartPayload(RemoveFromCartInput)
-  attributes:
-    - userId: string = RemoveFromCartInput.userId;
-    - productId: int = RemoveFromCartInput.productId;
-    - action: string = "remove";
-end
-
-Entity RemoveFromCartResult
-  source: UpdateCartDB
-  attributes:
-    - success: bool = UpdateCartDB.ok;
-    - message: string = UpdateCartDB.message;
-end
-
-//// ============================================================
-//// CHECKOUT FLOW (Protected - Multi-step validation)
-//// ============================================================
-//
-//APIEndpoint<REST> Checkout
-//  path: "/api/checkout"
-//  verb: POST
-//  entity: CheckoutResult
-//  auth:
-//    type: bearer
-//    token: "required"
-//end
-//
-//Entity CheckoutInput
-//  source: Checkout
-//  attributes:
-//    - userId: string = trim(Checkout.userId);
-//    - paymentMethod: string = trim(Checkout.paymentMethod);
-//    - cardLast4: string = trim(Checkout.cardLast4);
-//    - shippingAddress: dict = Checkout.shippingAddress;
-//  validations:
-//    - require(CheckoutInput.paymentMethod in ["card", "paypal"], "Invalid payment method", 400);
-//    - require(len(CheckoutInput.shippingAddress["zipCode"]) == 5, "Invalid zip code", 400);
-//    - require(len(CheckoutInput.shippingAddress["street"]) > 0, "Street address required", 400);
-//end
-//
-//Entity CheckoutCart(CheckoutInput, CartWithPricing)
-//  attributes:
-//    - items: list = CartWithPricing.items;
-//    - total: float = CartWithPricing.total;
-//    - subtotal: float = CartWithPricing.subtotal;
-//    - tax: float = CartWithPricing.tax;
-//    - shipping: float = CartWithPricing.shipping;
-//  validations:
-//    - require(len(CheckoutCart.items) > 0, "Cannot checkout empty cart", 400);
-//    - require(CheckoutCart.total >= 10.0, "Minimum order amount is $10", 400);
-//end
-//
-//Entity StockValidation(CheckoutCart)
-//  attributes:
-//    - allAvailable: bool = all(
-//        map(CheckoutCart.items, item -> 
-//          CheckStockDB.available >= item["quantity"]
-//        ),
-//        x -> x
-//      );
-//  validations:
-//    - require(StockValidation.allAvailable, "Some items are no longer in stock", 409);
-//end
-//
-//Entity StockReservation(CheckoutCart, StockValidation)
-//  attributes:
-//    - items: list = map(CheckoutCart.items, item -> {
-//        "productId": item["productId"],
-//        "quantity": item["quantity"]
-//      });
-//    - userId: string = CheckoutInput.userId;
-//end
-//
-//Entity ReservationConfirmation
-//  source: ReserveStockDB
-//  attributes:
-//    - reservationId: string = ReserveStockDB.reservationId;
-//    - success: bool = ReserveStockDB.ok;
-//  validations:
-//    - require(ReservationConfirmation.success, "Failed to reserve inventory", 500);
-//end
-//
-//Entity PaymentRequest(CheckoutCart, CheckoutInput, ReservationConfirmation)
-//  attributes:
-//    - amount: float = CheckoutCart.total;
-//    - currency: string = "USD";
-//    - method: string = CheckoutInput.paymentMethod;
-//    - cardLast4: string = CheckoutInput.cardLast4;
-//    - reservationId: string = ReservationConfirmation.reservationId;
-//    - metadata: dict = {
-//        "userId": CheckoutInput.userId,
-//        "itemCount": len(CheckoutCart.items)
-//      };
-//end
-//
-//Entity PaymentResult
-//  source: PaymentGatewayDB
-//  attributes:
-//    - transactionId: string = PaymentGatewayDB.transactionId;
-//    - status: string = PaymentGatewayDB.status;
-//    - processedAt: string = PaymentGatewayDB.timestamp;
-//  validations:
-//    - require(PaymentResult.status == "success", "Payment declined", 402);
-//end
-//
-//Entity FinalOrder(CheckoutCart, CheckoutInput, PaymentResult, ReservationConfirmation)
-//  attributes:
-//    - userId: string = CheckoutInput.userId;
-//    - items: list = CheckoutCart.items;
-//    - subtotal: float = CheckoutCart.subtotal;
-//    - tax: float = CheckoutCart.tax;
-//    - shipping: float = CheckoutCart.shipping;
-//    - total: float = CheckoutCart.total;
-//    - paymentId: string = PaymentResult.transactionId;
-//    - shippingAddress: dict = CheckoutInput.shippingAddress;
-//    - status: string = "confirmed";
-//    - reservationId: string = ReservationConfirmation.reservationId;
-//end
-//
-//Entity CheckoutResult
-//  source: CreateOrderDB
-//  attributes:
-//    - orderId: string = CreateOrderDB.orderId;
-//    - status: string = CreateOrderDB.status;
-//    - total: float = CreateOrderDB.total;
-//    - estimatedDelivery: string = CreateOrderDB.estimatedDelivery;
-//end
-//
-//Entity ClearCartRequest(CheckoutResult)
-//  attributes:
-//    - userId: string = CheckoutInput.userId;
-//end
-//
-//// ============================================================
-//// ORDER HISTORY (Protected)
-//// ============================================================
-//
-//APIEndpoint<REST> GetOrders
-//  path: "/api/orders"
-//  verb: GET
-//  entity: UserOrders
-//  auth:
-//    type: bearer
-//    token: "required"
-//end
-//
-//Entity UserOrders
-//  source: OrdersDB
-//  attributes:
-//    - orders: list = OrdersDB;
-//end
-//
-//APIEndpoint<REST> GetOrderDetails
-//  path: "/api/orders/{orderId}"
-//  verb: GET
-//  entity: OrderDetail
-//  auth:
-//    type: bearer
-//    token: "required"
-//end
-//
-//Entity OrderDetail
-//  source: OrderDetailsDB
-//  attributes:
-//    - orderId: string = OrderDetailsDB.orderId;
-//    - items: list = OrderDetailsDB.items;
-//    - total: float = OrderDetailsDB.total;
-//    - status: string = OrderDetailsDB.status;
-//    - shippingAddress: dict = OrderDetailsDB.shippingAddress;
-//    - createdAt: string = OrderDetailsDB.createdAt;
-//    - estimatedDelivery: string = OrderDetailsDB.estimatedDelivery;
-//end
