@@ -145,10 +145,14 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             logger=logger,
         )
         {% endif %}
-        
+
         # IMPORTANT: Store the endpoint payload in context so it's available
         # for entities that reference it (e.g., LoginPayload sourced from UserLogin)
-        context["{{ endpoint.name }}"] = seed_payload
+        # Merge with existing context to preserve path params
+        if "{{ endpoint.name }}" in context and isinstance(context["{{ endpoint.name }}"], dict):
+            context["{{ endpoint.name }}"].update(seed_payload)
+        else:
+            context["{{ endpoint.name }}"] = seed_payload
         logger.debug(f"[CONTEXT] - Seeded endpoint payload: {{ endpoint.name }}")
 
         # ----------------------------------------------------------------
@@ -184,9 +188,21 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
                 
                 raw_payload = response.json()
                 logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
-                
-                # SIMPLIFIED: Store raw payload directly by alias
-                context[source_alias] = raw_payload
+
+                # Store raw payload by alias (merge with path params if they exist)
+                # Check if source context already exists (from path params seeding)
+                has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
+
+                if has_path_params:
+                    # Merge response data into source context (preserving path params)
+                    if isinstance(raw_payload, dict):
+                        context[source_alias].update(raw_payload)
+                    else:
+                        # Non-dict response (list, etc.), store as special key
+                        context[source_alias]["_response"] = raw_payload
+                else:
+                    # No path params, just store raw payload directly
+                    context[source_alias] = raw_payload
                 
                 # Log raw payload preview
                 logger.debug(f"[FETCH] - {source_alias} raw payload preview:")

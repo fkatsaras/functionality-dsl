@@ -39,7 +39,7 @@ end
 Entity CartRaw
   source: CartByUserExternal
   attributes:
-    - userId: int = int(CartByUserExternal.userId);
+    - userId: int = int(CartByUserExternal@userId);
     - items: list = CartByUserExternal.items;
     - createdAt: string = CartByUserExternal.createdAt;
 end
@@ -59,9 +59,9 @@ end
 Entity CartAddPayload
   source: CartAdd
   attributes:
-    - userId: int = int(CartAdd.userId);
-    - productId: int = int(CartAdd.productId);
-    - quantity: int = int(CartAdd.quantity);
+    - userId: int = int(CartAdd@userId);
+    - productId: int = int(CartAdd@productId);
+    - quantity: int = int(CartAdd@quantity);
   validations:
     - require(CartAddPayload.quantity > 0, "Quantity must be positive", 400);
 end
@@ -70,15 +70,15 @@ end
 Entity CartRemovePayload
   source: CartRemove
   attributes:
-    - userId: int = int(CartRemove.userId);
-    - productId: int = int(CartRemove.productId);
+    - userId: int = int(CartRemove@userId);
+    - productId: int = int(CartRemove@productId);
 end
 
 // --- Clear cart ---
 Entity CartClearPayload
   source: CartClear
   attributes:
-    - userId: int = int(CartClear.userId);
+    - userId: int = int(CartClear@userId);
 end
 
 

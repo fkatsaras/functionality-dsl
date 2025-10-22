@@ -43,10 +43,12 @@ PostfixExpr: base=AtomBase (tails+=PostfixTail)* ;
 
 PostfixTail:
       member=MemberAccess
+    | param=ParamAccess
     | index=IndexAccess
 ;
 
 MemberAccess: '.' name=ID ;
+ParamAccess:  '@' name=ID ;
 IndexAccess:  '[' index=Expr ']' ;
 
 // -------- atoms --------

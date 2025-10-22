@@ -164,8 +164,23 @@ end
 // In endpoint path
 path: "/api/users/{userId}"
 
-// In entity (automatically available)
-- id: int = int(MyEndpoint.userId);
+// In entity - use '@' syntax to access path params from the source
+// (Works only when entity has a 'source:' field pointing to an APIEndpoint or Source)
+- id: int = int(MyEndpoint@userId);
+
+// Example with Source
+Source<REST> CartByUserExternal
+  url: "http://api:9100/carts/user/{userId}"
+  verb: GET
+  entity: CartRaw
+end
+
+Entity CartRaw
+  source: CartByUserExternal
+  attributes:
+    - userId: int = int(CartByUserExternal@userId);  // '@' accesses path param
+    - items: list = CartByUserExternal.items;        // '.' accesses response field
+end
 ```
 
 ### Built-in Functions
@@ -199,6 +214,30 @@ and, or, not
 
 // Ternary
 value if condition else otherValue
+```
+
+### Access Syntax
+```fdsl
+// Member access (.) - Access fields from response data
+Source.fieldName           // Access field from source response
+Entity.attributeName       // Access attribute from entity
+
+// Path parameter access (@) - Access URL path parameters
+Source@paramName          // Access path parameter (ONLY in entities with source: field)
+APIEndpoint@paramName     // Access path parameter from endpoint
+
+// Index access ([]) - Access by key or index
+myDict["key"]             // Dict access
+myList[0]                 // List access
+
+// Examples:
+Entity CartData
+  source: CartByUserExternal  // Source has URL with {userId} param
+  attributes:
+    - userId: int = int(CartByUserExternal@userId);    // @ for path param
+    - items: list = CartByUserExternal.items;          // . for response field
+    - firstItem: dict = CartByUserExternal.items[0];   // [] for indexing
+end
 ```
 
 ### List Comprehensions

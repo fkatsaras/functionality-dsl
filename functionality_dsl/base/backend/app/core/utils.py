@@ -33,18 +33,31 @@ def seed_context_with_path_params(
         if logger:
             logger.debug(f"[CONTEXT] - Seeded endpoint params: {list(endpoint_params.keys())}")
 
-    # --- 2. Scan Source URLs for any {placeholders} ---
+    # --- 2. Scan Source URLs for any {placeholders} and create source contexts ---
     for src in external_sources or []:
         url = src.get("url")
-        if not url:
+        source_alias = src.get("alias")
+        if not url or not source_alias:
             continue
-        for pname in re.findall(r"{([^{}]+)}", url):
-            if pname not in context:
-                endpoint_ctx = context.get(endpoint_name, {})
+
+        # Extract path params from source URL
+        source_params = re.findall(r"{([^{}]+)}", url)
+        if source_params:
+            # Create nested dict for source to hold path params
+            if source_alias not in context:
+                context[source_alias] = {}
+
+            # Populate source's path params from endpoint context
+            endpoint_ctx = context.get(endpoint_name, {})
+            for pname in source_params:
                 if pname in endpoint_ctx:
-                    context[pname] = endpoint_ctx[pname]
+                    context[source_alias][pname] = endpoint_ctx[pname]
                     if logger:
-                        logger.debug(f"[CONTEXT] - Propagated {pname} from endpoint context")
+                        logger.debug(f"[CONTEXT] - Seeded {source_alias}.{pname} from endpoint params")
+
+                # Also keep flat reference for URL interpolation
+                if pname not in context:
+                    context[pname] = endpoint_ctx.get(pname)
 
     return context
 

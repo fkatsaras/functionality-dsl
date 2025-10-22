@@ -1,0 +1,45 @@
+const express = require("express");
+const bodyParser = require("body-parser");
+
+const app = express();
+const PORT = 9000;
+
+let users = [
+  { id: 1, username: 'dummy1', password: 'dummypass1', email: 'dummy@email.com' },
+  { id: 2, username: 'dummy2', password: 'dummypass2', email: 'dummy2@email.com' },
+  { id: 3, username: 'dummy3', password: 'dummypass3', email: 'dummy3@email.com' },
+];
+
+app.use(bodyParser.json());
+
+// === Registration (simulate DB insert) ===
+app.post("/register", (req, res) => {
+  const { username, email, password } = req.body;
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+  const id = users.length + 1;
+  users.push({ id, username, email, password });
+  res.json({ ok: true, id });
+});
+
+// === Login (simulate credential check) ===
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(
+    (u) => u.username === username && u.password === password
+  );
+  if (!user) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  const token = `${user.username}-token`;
+  res.json({ token });
+});
+
+// Debug endpoint
+app.get("/db/users", (_, res) => res.json(users));
+
+app.listen(PORT, () => {
+  console.log(`Dummy DB running on http://localhost:${PORT}`);
+});
+

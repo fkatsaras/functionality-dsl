@@ -158,9 +158,21 @@ async def query_{{ endpoint.name | lower }}(
                 
                 raw_payload = response.json()
                 logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
-                
-                # SIMPLIFIED: Store raw payload directly by alias
-                context[source_alias] = raw_payload
+
+                # Store raw payload by alias (merge with path params if they exist)
+                # Check if source context already exists (from path params seeding)
+                has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
+
+                if has_path_params:
+                    # Merge response data into source context (preserving path params)
+                    if isinstance(raw_payload, dict):
+                        context[source_alias].update(raw_payload)
+                    else:
+                        # Non-dict response (list, etc.), store as special key
+                        context[source_alias]["_response"] = raw_payload
+                else:
+                    # No path params, just store raw payload directly
+                    context[source_alias] = raw_payload
                 
                 # Log raw payload preview
                 logger.debug(f"[FETCH] - {source_alias} raw payload preview:")

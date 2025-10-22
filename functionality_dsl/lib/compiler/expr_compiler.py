@@ -209,6 +209,10 @@ def compile_expr_to_python(expr) -> str:
                     # foo.bar -> safe dict lookup
                     member = t.member.name
                     base = f"({base}.get('{member}') if isinstance({base}, dict) else None)"
+                elif getattr(t, "param", None) is not None:
+                    # foo@paramName -> path parameter access (foo['paramName'])
+                    param = t.param.name
+                    base = f"({base}.get('{param}') if isinstance({base}, dict) else None)"
                 elif getattr(t, "index", None) is not None:
                     # foo[idx] -> safe dict or list indexing
                     idx = to_py(t.index)

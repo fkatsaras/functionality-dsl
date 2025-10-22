@@ -1,0 +1,17 @@
+{
+  "name": "dummyiot",
+  "version": "1.0.0",
+  "description": "Dummy express / ws server for the sensor iot demo",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "Fotis Katsaras",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}

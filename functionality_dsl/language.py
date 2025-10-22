@@ -160,13 +160,16 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
                 if not alias or alias in RESERVED or alias in lvs:
                     continue  # skip reserved/loop vars
 
-                # If there are tails, extract the first member access
+                # If there are tails, extract the first member/param access
                 if tails:
                     first = tails[0]
                     if getattr(first, "member", None) is not None:
                         attr_name = getattr(first.member, "name", None)
                         if not attr_name:
                             attr_name = "__jsonpath__"
+                    elif getattr(first, "param", None) is not None:
+                        # Path parameter access with '@' - mark as special
+                        attr_name = f"@{getattr(first.param, 'name', None)}"
                     else:
                         # if the first tail is an index, treat as jsonpath
                         attr_name = "__jsonpath__"
@@ -312,6 +315,17 @@ def _validate_computed_attrs(model, metamodel=None):
                         raise TextXSemanticError(
                             f"Entity '{ent.name}' illegal bare reference '{alias}'. "
                             f"Only its source or parents can be referenced directly.",
+                            **get_location(node)
+                        )
+                    continue
+
+                # Path parameter access with '@' (e.g., Source@paramName)
+                if attr and attr.startswith("@"):
+                    # Allow only if referencing the entity's source (Source or APIEndpoint)
+                    if not (ent_src and alias == getattr(ent_src, "name", None)):
+                        raise TextXSemanticError(
+                            f"Entity '{ent.name}' path parameter access '{alias}{attr}' "
+                            f"is only allowed on the entity's source.",
                             **get_location(node)
                         )
                     continue
