@@ -435,7 +435,7 @@ async def duplex(ws: WebSocket):
     if _EXTERNAL_TARGETS:
         logger.info(f"[CLIENT] - Pre-warming {len(_EXTERNAL_TARGETS)} external target(s)")
         for i in range(len(_EXTERNAL_TARGETS)):
-            asyncio.create_task(_ensure_target_connection(i, inbound_entity_name=""))
+            asyncio.create_task(_ensure_target_connection(i, inbound_entity_name=inbound_entity))
 
     async def inbound_loop():
         """Process messages FROM client → compute outbound chain → publish/forward"""
