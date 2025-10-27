@@ -19,7 +19,7 @@ from fastapi import Depends, WebSocket, WebSocketDisconnect
 from fastapi import WebSocket, WebSocketDisconnect
 {% endif %}
 
-from app.core.runtime.safe_eval import compile_safe, safe_globals
+from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.logging import set_request_id
 from app.core import wsbus
 
@@ -67,7 +67,14 @@ _COMPILED_CHAIN_INBOUND = [
     {%- for a in ent.attrs %}
       {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
     {%- endfor %}
-    ]
+    ],
+    {%- if ent.validations %}
+    "validations": [
+    {%- for validation in ent.validations %}
+      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- endif %}
   },
 {%- endfor %}
 ]
@@ -81,7 +88,14 @@ _COMPILED_CHAIN_OUTBOUND = [
     {%- for a in ent.attrs %}
       {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
     {%- endfor %}
-    ]
+    ],
+    {%- if ent.validations %}
+    "validations": [
+    {%- for validation in ent.validations %}
+      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- endif %}
   },
 {%- endfor %}
 ]
@@ -146,6 +160,19 @@ def _compute_row(payload, sender_id, chain, source_name):
         context[entity_name] = shaped
         logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
 
+        # Execute validations for this entity (range constraints + @validate() decorators)
+        if ent.get("validations"):
+            for validation in ent["validations"]:
+                try:
+                    eval_globals = {**safe_globals, **context}
+                    exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
+                    logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
+                except HTTPException:
+                    raise  # Preserve status code and message from validation
+                except Exception as validation_error:
+                    logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
+                    raise HTTPException(status_code=400, detail={"error": str(validation_error)})
+
     final_entity = chain[-1]["name"] if chain else source_name
     result = context[final_entity] if chain else {source_name: payload}
     logger.info(f"[COMPUTE] - Computation complete, final entity: {final_entity}")
@@ -205,6 +232,19 @@ async def _compute_row_with_sync(payload, sender_id, chain, source_name):
             # Store computed entity in context
             context[entity_name] = shaped
             logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
+
+            # Execute validations for this entity (range constraints + @validate() decorators)
+            if ent.get("validations"):
+                for validation in ent["validations"]:
+                    try:
+                        eval_globals = {**safe_globals, **context}
+                        exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
+                        logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
+                    except HTTPException:
+                        raise  # Preserve status code and message from validation
+                    except Exception as validation_error:
+                        logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
+                        raise HTTPException(status_code=400, detail={"error": str(validation_error)})
 
         final_entity = chain[-1]["name"] if chain else ""
         result = context[final_entity] if chain and final_entity else {}
@@ -448,13 +488,40 @@ async def duplex(ws: WebSocket):
             except Exception:
                 payload = raw
 
-            row = _compute_row(payload, rid, _COMPILED_CHAIN_OUTBOUND, "{{ endpoint.name }}")
+            try:
+                row = _compute_row(payload, rid, _COMPILED_CHAIN_OUTBOUND, "{{ endpoint.name }}")
 
-            if row is not None and bus_out:
-                await bus_out.publish(row)
-                logger.debug(f"[CLIENT] - Published to outbound bus")
-                if _EXTERNAL_TARGETS:
-                    await _forward_to_targets(row, inbound_entity)
+                if row is not None and bus_out:
+                    await bus_out.publish(row)
+                    logger.debug(f"[CLIENT] - Published to outbound bus")
+                    if _EXTERNAL_TARGETS:
+                        await _forward_to_targets(row, inbound_entity)
+            except HTTPException as http_error:
+                # Handle HTTPException from @validate() decorators or validation errors
+                logger.error(f"[VALIDATION] - Validation failed: {http_error.detail}")
+                error_response = {
+                    "type": "error",
+                    "error": {
+                        "code": http_error.status_code,
+                        "message": "Validation failed",
+                        "details": http_error.detail
+                    }
+                }
+                await ws.send_json(error_response)
+                continue
+            except Exception as compute_error:
+                # Handle unexpected computation errors
+                logger.error(f"[COMPUTE] - Unexpected error: {compute_error}", exc_info=True)
+                error_response = {
+                    "type": "error",
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Failed to process message",
+                        "details": str(compute_error)
+                    }
+                }
+                await ws.send_json(error_response)
+                continue
 
     async def outbound_loop():
         """Subscribe to inbound bus and send TO client"""

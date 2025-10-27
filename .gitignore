@@ -114,6 +114,7 @@ ENV/
 
 *gen/
 generated/*
+generated*/
 
 # AI
 .claude/
@@ -121,3 +122,6 @@ generated/*
 
 # Examples 
 node_modules/
+
+# tests
+test_*/

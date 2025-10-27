@@ -170,7 +170,11 @@ def compile_validators_to_pydantic(attr, all_source_names):
 
 def collect_entity_validations(entity, all_source_names):
     """
-    Collect @validate() clauses from entity attributes for runtime execution.
+    Collect validations from entity attributes for runtime execution.
+    This includes:
+    1. @validate() clauses (custom validation)
+    2. Range constraints from type specs (string(3..), int(18..120), etc.)
+
     These validations run in the ROUTER after entity computation, not in Pydantic.
 
     Returns list of validation configs with compiled expressions.
@@ -179,7 +183,66 @@ def collect_entity_validations(entity, all_source_names):
     entity_name = getattr(entity, "name", "unknown")
 
     for attr in getattr(entity, "attributes", []) or []:
-        # Check for @validate() in exprValidators (validators after expressions)
+        attr_name = attr.name
+
+        # 1. Check for range constraints in type spec: string(3..50), int(18..120)
+        type_spec = getattr(attr, "type", None)
+        if type_spec and hasattr(type_spec, "baseType"):
+            base_type = getattr(type_spec, "baseType", "").lower()
+            range_constraint = extract_range_constraint(type_spec)
+
+            if range_constraint:
+                # Generate runtime validation for range constraints
+                value_ref = f"{entity_name}['{attr_name}']"
+
+                if "exact" in range_constraint:
+                    exact = range_constraint["exact"]
+                    if base_type in ("string", "list"):
+                        condition = f"len(str({value_ref})) == {exact}"
+                        message = f"'{attr_name}' must have exactly {exact} characters"
+                    else:  # numeric
+                        condition = f"{value_ref} == {exact}"
+                        message = f"'{attr_name}' must equal {exact}"
+                else:
+                    # Range: min..max
+                    conditions = []
+                    if "min" in range_constraint:
+                        min_val = range_constraint["min"]
+                        if base_type in ("string", "list"):
+                            conditions.append(f"len(str({value_ref})) >= {min_val}")
+                            message = f"'{attr_name}' must have at least {min_val} characters"
+                        else:  # numeric
+                            conditions.append(f"{value_ref} >= {min_val}")
+                            message = f"'{attr_name}' must be at least {min_val}"
+
+                    if "max" in range_constraint:
+                        max_val = range_constraint["max"]
+                        if base_type in ("string", "list"):
+                            conditions.append(f"len(str({value_ref})) <= {max_val}")
+                            if "min" in range_constraint:
+                                message = f"'{attr_name}' must have between {range_constraint['min']} and {max_val} characters"
+                            else:
+                                message = f"'{attr_name}' must have at most {max_val} characters"
+                        else:  # numeric
+                            conditions.append(f"{value_ref} <= {max_val}")
+                            if "min" in range_constraint:
+                                message = f"'{attr_name}' must be between {range_constraint['min']} and {max_val}"
+                            else:
+                                message = f"'{attr_name}' must be at most {max_val}"
+
+                    condition = " and ".join(conditions)
+
+                validation_expr = f"""
+if not ({condition}):
+    raise HTTPException(status_code=400, detail={{"error": {repr(message)}}})
+""".strip()
+
+                validations.append({
+                    "attribute": attr_name,
+                    "pyexpr": validation_expr
+                })
+
+        # 2. Check for @validate() in exprValidators (validators after expressions)
         expr_validators = getattr(attr, "exprValidators", []) or []
 
         for validator in expr_validators:
@@ -207,7 +270,7 @@ def collect_entity_validations(entity, all_source_names):
                     # 1. Replace 'this' with the actual computed value from context
                     # 2. Replace 'null' string with None
                     # 3. Convert float status codes to integers
-                    condition = condition.replace("(this)", f"({entity_name}.get('{attr.name}') if isinstance({entity_name}, dict) else None)")
+                    condition = condition.replace("(this)", f"({entity_name}.get('{attr_name}') if isinstance({entity_name}, dict) else None)")
                     condition = condition.replace("('null')", "None")
 
                     # Clean up status code (remove extra parens and convert to int)
@@ -224,7 +287,7 @@ if not ({condition}):
 """.strip()
 
                     validations.append({
-                        "attribute": attr.name,
+                        "attribute": attr_name,
                         "pyexpr": validation_expr
                     })
 

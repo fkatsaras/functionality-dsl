@@ -116,9 +116,13 @@ def build_inbound_chain(entity_in, model, all_source_names):
             ws_inputs.append(config)
 
             if config["attrs"]:
+                # Collect validations (range constraints + @validate() decorators)
+                validations = collect_entity_validations(entity, all_source_names)
+
                 compiled_chain.append({
                     "name": entity.name,
-                    "attrs": config["attrs"]
+                    "attrs": config["attrs"],
+                    "validations": validations,
                 })
 
         # Internal WebSocket endpoint (another APIEndpoint<WS>)
@@ -133,9 +137,13 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     })
 
             if attribute_configs:
+                # Collect validations (range constraints + @validate() decorators)
+                validations = collect_entity_validations(entity, all_source_names)
+
                 compiled_chain.append({
                     "name": entity.name,
-                    "attrs": attribute_configs
+                    "attrs": attribute_configs,
+                    "validations": validations,
                 })
 
         # Pure computed entity (no explicit source)
@@ -150,9 +158,13 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     })
 
             if attribute_configs:
+                # Collect validations (range constraints + @validate() decorators)
+                validations = collect_entity_validations(entity, all_source_names)
+
                 compiled_chain.append({
                     "name": entity.name,
-                    "attrs": attribute_configs
+                    "attrs": attribute_configs,
+                    "validations": validations,
                 })
 
     # Deduplicate ws_inputs by (endpoint, url)
@@ -190,9 +202,13 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
                 })
 
         if attribute_configs:
+            # Collect validations (range constraints + @validate() decorators)
+            validations = collect_entity_validations(entity, all_source_names)
+
             compiled_chain.append({
                 "name": entity.name,
-                "attrs": attribute_configs
+                "attrs": attribute_configs,
+                "validations": validations,
             })
 
     return compiled_chain

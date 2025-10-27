@@ -8,7 +8,7 @@ end
 Entity OutgoingRaw
   source: ChatDup
   attributes:
-    - raw: string = ChatDup["text"];
+    - raw: string(3..) = ChatDup["text"];
 end
 
 Entity OutgoingProcessed(OutgoingRaw)
