@@ -28,10 +28,6 @@ def compile_expr_to_python(expr) -> str:
     
     Simplified model: All entity/source references become direct variable names.
     The runtime provides a flat namespace where all entities are available by name.
-    
-    Example:
-        DSL:    MeteoThess.hourly["temperature"]
-        Python: MeteoThess.hourly["temperature"]  (assuming MeteoThess is in context)
     """
 
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}

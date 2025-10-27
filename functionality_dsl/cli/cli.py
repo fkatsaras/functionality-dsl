@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import sys
 import click
 import os
 
@@ -8,6 +9,7 @@ from rich import pretty
 from rich.console import Console
 from textx import metamodel_from_file
 from textx.export import metamodel_export, PlantUmlRenderer
+from plantuml import PlantUML
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
 from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
@@ -114,21 +116,15 @@ def visualize_cmd(context, grammar_path):
         # build textX metamodel
         mm = metamodel_from_file(str(gpath))
 
-        # write PlantUML source
+        # write PlantUML source (.puml)
         pu_file = out_dir / (gpath.stem + "_metamodel.puml")
         metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
 
-        # render to PNG
         console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering PlantUML diagram...", style="blue")
-        proc = subprocess.run(
-            ["plantuml", "-Tpng", str(pu_file)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        if proc.returncode != 0:
-            console.print(proc.stdout or "PlantUML rendering failed.", style="red")
-            context.exit(1)
+
+        # Use Python PlantUML API (renders via public PlantUML server)
+        server = PlantUML(url="http://www.plantuml.com/plantuml/img/")
+        server.processes_file(str(pu_file))
 
         out_file = out_dir / (pu_file.stem + ".png")
         if out_file.exists():

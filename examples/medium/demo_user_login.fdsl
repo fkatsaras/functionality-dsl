@@ -1,6 +1,3 @@
-// ============================================================
-// Server Configuration
-// ============================================================
 Server AuthServer
   host: "localhost"
   port: 8081
@@ -46,9 +43,6 @@ Source<REST> UserDeleteExternal
   entity: UserDeletePayload
 end
 
-// ============================================================
-// Public endpoint (no auth)
-// ============================================================
 APIEndpoint<REST> UserList
   path: "/api/users"
   verb: GET
@@ -60,10 +54,6 @@ Entity ExistingUsers
   attributes:
     - users: list = Users;
 end
-
-// ============================================================
-// Authenticated endpoints
-// ============================================================
 
 // --- REGISTER ---
 APIEndpoint<REST> UserRegister
@@ -121,27 +111,25 @@ APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   verb: PUT
   entity: ResetPasswordRequest
-  // auth:
-  //   type: bearer
-  //   token: "required"
 end
 
 Entity ResetPasswordRequest
   source: ResetPassword
   attributes:
-    - email: string = trim(ResetPassword.email);
-    - newPassword: string = ResetPassword.newPassword;
+    - email: string @email = trim(ResetPassword.email);
+    - newPassword: string(6..) = ResetPassword.newPassword;
 end
 
 Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
   attributes:
-    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email) @validate(this != null, "User not found", 404);
+    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email)
+     @validate(this != null, "User not found", 404);
 end
 
 Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
   attributes:
-    - email: string @email = ResetPasswordRequest.email;
-    - newPassword: string(6..) = ResetPasswordRequest.newPassword
+    - email: string = ResetPasswordRequest.email;
+    - newPassword: string = ResetPasswordRequest.newPassword
         @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
 end
 
@@ -150,9 +138,6 @@ APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
   verb: PATCH
   entity: UserUpdatePayload
-  // auth:
-  //   type: bearer
-  //   token: "required"
 end
 
 Entity UserUpdatePayload
@@ -168,9 +153,6 @@ APIEndpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
   verb: DELETE
   entity: UserDeletePayload
-  // auth:
-  //   type: bearer
-  //   token: "required"
 end
 
 Entity UserDeletePayload
@@ -180,7 +162,7 @@ Entity UserDeletePayload
 end
 
 // ============================================================
-// UI Components (unchanged)
+// UI Components 
 // ============================================================
 Component<ActionForm> RegisterForm
   endpoint: UserRegister

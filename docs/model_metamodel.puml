@@ -12,10 +12,34 @@ class utils.Import  {
 }
 
 
+class entity.TypeSpec  {
+  baseType : AttrType
+  nullable : STRING
+}
+
+
+class entity.TypeConstraint  {
+}
+
+
+class entity.RangeExpr  {
+  min : Number
+  max : Number
+  exact : Number
+}
+
+
+class entity.Validator  {
+  name : ID
+}
+
+
+class entity.ValidatorArg  {
+}
+
+
 class entity.Attribute  {
   name : ID
-  type : AttrType
-  optional : optional<BOOL>
 }
 
 
@@ -26,10 +50,6 @@ class entity.Input  {
 
 class entity.Entity  {
   name : ID
-}
-
-
-class entity.ValidationRule  {
 }
 
 
@@ -105,6 +125,12 @@ class component.TableComponent  {
 }
 
 
+class component.ObjectViewComponent  {
+  name : ID
+  label : STRING
+}
+
+
 class component.LineChartComponent  {
   name : ID
   seriesLabels : list[STRING]
@@ -145,6 +171,15 @@ class component.LiveViewComponent  {
 }
 
 
+class component.ToggleComponent  {
+  name : ID
+  label : optional<list[STRING]>
+  onLabel : optional<list[STRING]>
+  offLabel : optional<list[STRING]>
+  field : optional<list[STRING]>
+}
+
+
 class server.Server  {
   name : ID
   host : STRING
@@ -164,11 +199,16 @@ model.FDSLModel *--> "1..*" entity.SourceREST: externalrest
 model.FDSLModel *--> "1..*" entity.SourceWS: externalws
 model.FDSLModel *--> "1..*" entity.Entity: entities
 model.FDSLModel *--> "1..*" component.Component: components
+entity.TypeSpec *-->  entity.TypeConstraint: constraint
+entity.TypeSpec *--> "0..*" entity.Validator: validators
+entity.TypeConstraint *-->  entity.RangeExpr: range
+entity.Validator *--> "1..*" entity.ValidatorArg: args
+entity.Attribute *-->  entity.TypeSpec: type
+entity.Attribute *--> "0..*" entity.Validator: exprValidators
 entity.Input -->  entity.Entity: target
 entity.Entity --> "1..*" entity.Entity: parents
 entity.Entity --> "0..*" entity.Source: source
 entity.Entity *--> "1..*" entity.Attribute: attributes
-entity.Entity *--> "1..*" entity.ValidationRule: validations
 entity.Source <|-- entity.APIEndpointREST
 entity.Source <|-- entity.APIEndpointWS
 entity.Source <|-- entity.SourceREST
@@ -182,6 +222,7 @@ entity.SourceWS *-->  entity.StringList: subprotocols
 entity.SourceWS *--> "1..*" entity.Header: headers
 entity.SourceWS *-->  entity.AuthBlock: auth
 entity.APIEndpointREST -->  entity.Entity: entity
+entity.APIEndpointREST *-->  entity.AuthBlock: auth
 entity.APIEndpointWS -->  entity.Entity: entity_in
 entity.APIEndpointWS -->  entity.Entity: entity_out
 entity.APIEndpointWS *-->  entity.AuthBlock: auth
@@ -192,8 +233,12 @@ component.Component <|-- component.ActionFormComponent
 component.Component <|-- component.GaugeComponent
 component.Component <|-- component.InputComponent
 component.Component <|-- component.LiveViewComponent
+component.Component <|-- component.ToggleComponent
+component.Component <|-- component.ObjectViewComponent
 component.TableComponent -->  entity.APIEndpointREST: endpoint
 component.TableComponent *-->  entity.StringList: colNames
+component.ObjectViewComponent -->  entity.APIEndpointREST: endpoint
+component.ObjectViewComponent *-->  entity.StringList: fields
 component.LineChartComponent -->  entity.APIEndpointREST: endpoint
 component.LineChartComponent *-->  component.AttrRef: rows
 component.GaugeComponent -->  entity.APIEndpointWS: endpoint
@@ -202,17 +247,19 @@ component.ActionFormComponent -->  entity.APIEndpointREST: endpoint
 component.InputComponent -->  entity.APIEndpointWS: endpoint
 component.LiveViewComponent -->  entity.APIEndpointWS: endpoint
 component.LiveViewComponent *-->  entity.StringList: fields
+component.ToggleComponent -->  entity.APIEndpointREST: endpoint
 
 legend
   Match rules:
   |= Name  |= Rule details |
   | ApiKeyLoc | header\|query |
   | FQN | ID (. ID)* |
-  | Bool | true\|false |
-  | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
   | AttrValue | STRING\|FLOAT\|INT |
+  | Bool | true\|false |
   | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | AttrType | string\|int\|float\|number\|bool\|datetime\|uuid\|dict\|list |
   | Comment | \\/\\/[^\\n]* |
+  | Number | FLOAT\|INT |
 end legend
 
 @enduml

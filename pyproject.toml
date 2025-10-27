@@ -15,6 +15,8 @@ dependencies = [
     "jinja2",
     "fastapi",
     "black",
+    "six",
+    "plantuml",
 ]
 
 [project.scripts]
