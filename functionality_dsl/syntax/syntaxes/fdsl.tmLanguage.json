@@ -5,6 +5,7 @@
     { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#component-kind" },
+    { "include": "#validators" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#http-verbs" },
@@ -44,6 +45,18 @@
         {
           "name": "support.class.componentkind.fdsl",
           "match": "\\b(Table|LineChart|Gauge|ActionForm|Input|LiveView)\\b"
+        }
+      ]
+    },
+    "validators": {
+      "patterns": [
+        {
+          "name": "entity.name.function.decorator.fdsl",
+          "match": "@(email|url|pattern|minLength|maxLength|length|startsWith|endsWith|trim|min|max|gt|lt|gte|lte|positive|negative|range|minItems|maxItems|unique|each|required|optional|oneOf|in|validate|message)\\b"
+        },
+        {
+          "name": "entity.name.function.decorator.fdsl",
+          "match": "@[A-Za-z_][A-Za-z0-9_]*"
         }
       ]
     },
@@ -94,6 +107,8 @@
         { "name": "keyword.operator.comparison.fdsl", "match": "(==|!=|>=|<=|>|<)" },
         { "name": "keyword.operator.arithmetic.fdsl", "match": "(\\+|\\-|\\*|/|%)" },
         { "name": "keyword.operator.pipeline.fdsl", "match": "\\|>" },
+        { "name": "keyword.operator.range.fdsl", "match": "\\.\\." },
+        { "name": "keyword.operator.path-param.fdsl", "match": "\\$" },
         { "name": "punctuation.separator.keyvalue.fdsl", "match": ":" },
         { "name": "punctuation.separator.comma.fdsl", "match": "," },
         { "name": "punctuation.separator.dash.fdsl", "match": "^\\s*-" }

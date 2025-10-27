@@ -14,7 +14,7 @@ security = HTTPBearer()
 {% endif %}
 
 from app.core.http import get_http_client
-from app.core.runtime.safe_eval import compile_safe, safe_globals
+from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.utils import resolve_headers, interpolate_url, normalize_path_value, seed_context_with_path_params
 
 
@@ -60,12 +60,14 @@ _COMPUTATION_CHAIN = [
         {%- for attr in step.attrs %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
-        ]{% if step.validations %},
+        ],
+        {%- if step.validations %}
         "validations": [
-        {%- for v in step.validations %}
-            {"pyexpr": {{ v.pyexpr | tojson }}},
+        {%- for validation in step.validations %}
+            {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
         {%- endfor %}
-        ]{% endif %}
+        ],
+        {%- endif %}
     },
 
 {%- endfor %}
@@ -308,22 +310,18 @@ async def query_{{ endpoint.name | lower }}(
             context[entity_name] = shaped_data
             logger.debug(f"[CONTEXT] - Stored computation result: {entity_name}")
 
-            # Run validations for this entity (after compute)
+            # Execute @validate() clauses for this entity (runtime validation)
             if compute_step.get("validations"):
-                try:
-                    for v in compute_step["validations"]:
-                        # SIMPLIFIED: Pass context directly (no wrapping)
-                        eval(compile_safe(v["pyexpr"]), safe_globals, context)
-                        logger.debug(f"[VALIDATION] - {entity_name} validation passed")
-                except HTTPException as http_e:
-                    logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
-                    raise
-                except Exception as e:
-                    logger.error(
-                        f"[VALIDATION] - {entity_name} crashed during validation: {e}",
-                        exc_info=True,
-                    )
-                    raise HTTPException(status_code=400, detail={"error": str(e)})
+                for validation in compute_step["validations"]:
+                    try:
+                        eval_globals = {**safe_globals, **context}
+                        exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
+                        logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
+                    except HTTPException:
+                        raise  # Preserve status code and message from @validate()
+                    except Exception as validation_error:
+                        logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
+                        raise HTTPException(status_code=400, detail={"error": str(validation_error)})
 
         # ----------------------------------------------------------------
         # STEP 4: Return final entity

@@ -69,24 +69,24 @@ end
 APIEndpoint<REST> UserRegister
   path: "/api/users/register"
   verb: POST
-  entity: NewUser
-  auth:
-    type: bearer
-    token: "required"
+  entity: UserRegisterRequest
 end
 
-Entity NewUser
+Entity UserRegisterRequest
   source: UserRegister
   attributes:
+    - username: string(3..50) = trim(UserRegister.username);
+    - password: string(6..) = UserRegister.password;
+    - email: string @email = trim(UserRegister.email);
+end
+
+Entity NewUser(UserRegisterRequest)
+  attributes:
     - user: dict = {
-        "username": trim(UserRegister.username),
-        "password": UserRegister.password,
-        "email":    trim(UserRegister.email)
+        "username": UserRegisterRequest.username,
+        "password": UserRegisterRequest.password,
+        "email": UserRegisterRequest.email
       };
-  validations:
-    - require(len(UserRegister.password) > 5, "Password must be at least 6 characters", 400);
-    - require(validate_email(UserRegister.email), "Invalid email format", 400);
-    - require(in_range(len(UserRegister.username), 3, 50), "Username must be 3-50 characters", 400);
 end
 
 // --- LOGIN (public) ---
@@ -107,15 +107,13 @@ Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
     - match: dict = find(ExistingUsers.users, u ->
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
-      );
+      ) @validate(this != null, "Invalid username or password", 401);
 end
 
 Entity LoginValidated(LoginCandidates)
   attributes:
     - username: string = LoginCandidates.match["username"];
     - password: string = LoginCandidates.match["password"];
-  validations:
-    - require(LoginCandidates.match != null, "Invalid username or password", 401);
 end
 
 // --- RESET PASSWORD ---
@@ -123,9 +121,9 @@ APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   verb: PUT
   entity: ResetPasswordRequest
-  auth:
-    type: bearer
-    token: "required"
+  // auth:
+  //   type: bearer
+  //   token: "required"
 end
 
 Entity ResetPasswordRequest
@@ -137,18 +135,14 @@ end
 
 Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
   attributes:
-    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email);
-  validations:
-    - require(CurrentUser.user != null, "User not found", 404);
+    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email) @validate(this != null, "User not found", 404);
 end
 
 Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
   attributes:
-    - email: string = ResetPasswordRequest.email;
-    - newPassword: string = ResetPasswordRequest.newPassword;
-  validations:
-    - require(len(ResetPasswordPayload.newPassword) > 5, "New password must be at least 6 characters", 400);
-    - require(CurrentUser.user.password != ResetPasswordPayload.newPassword, "New password must be different from old one", 400);
+    - email: string @email = ResetPasswordRequest.email;
+    - newPassword: string(6..) = ResetPasswordRequest.newPassword
+        @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
 end
 
 // --- UPDATE USER ---
@@ -156,19 +150,17 @@ APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
   verb: PATCH
   entity: UserUpdatePayload
-  auth:
-    type: bearer
-    token: "required"
+  // auth:
+  //   type: bearer
+  //   token: "required"
 end
 
 Entity UserUpdatePayload
   source: UserUpdate
   attributes:
-    - id: int = int(UserUpdate.id);
-    - email: string = trim(UserUpdate.email);
-    - password: string = UserUpdate.password;
-  validations:
-    - require(UserUpdatePayload.id > 0, "Invalid user ID", 400);
+    - id: int = int(UserUpdate$id);
+    - email: string @email = trim(UserUpdate.email);
+    - password: string(6..) = UserUpdate.password;
 end
 
 // --- DELETE USER ---
@@ -176,17 +168,15 @@ APIEndpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
   verb: DELETE
   entity: UserDeletePayload
-  auth:
-    type: bearer
-    token: "required"
+  // auth:
+  //   type: bearer
+  //   token: "required"
 end
 
 Entity UserDeletePayload
   source: UserDelete
   attributes:
-    - id: int = int(UserDelete.id);
-  validations:
-    - require(UserDeletePayload.id > 0, "Invalid user ID", 400);
+    - id: int = int(UserDelete$id);
 end
 
 // ============================================================

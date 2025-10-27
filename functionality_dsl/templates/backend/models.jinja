@@ -1,14 +1,70 @@
 # Auto-generated models.py
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Any, List, Dict
 from datetime import datetime
 from uuid import UUID
 
+{% if additional_imports %}
+{% for imp in additional_imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}
+
 {% for ent in entities %}
 class {{ ent.name }}(BaseModel):
-{% for attr in ent.attributes %}
+    """Generated Pydantic model for {{ ent.name }}."""
+
+    {% for attr in ent.attributes %}
+    {% if not attr.is_path_param_only %}
+    {% if attr.field_constraints %}
+    {{ attr.name }}: {{ attr.py_type }} = Field({% for key, value in attr.field_constraints.items() %}{{ key }}={{ value }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {% else %}
     {{ attr.name }}: {{ attr.py_type }}
-{% endfor %}
+    {% endif %}
+    {% endif %}
+    {% endfor %}
 
     model_config = ConfigDict(extra="forbid")
+
+    {% if ent.attributes | selectattr('custom_validators') | list %}
+    # Custom validators
+    {% for attr in ent.attributes %}
+    {% if attr.custom_validators %}
+    {% for validator in attr.custom_validators %}
+    @field_validator('{{ attr.name }}')
+    @classmethod
+    def validate_{{ attr.name }}_{{ loop.index }}(cls, value):
+        """Custom validator for {{ attr.name }}: {{ validator.name }}"""
+        {% if validator.name == 'validate' %}
+        # @validate(condition, message, status)
+        {% if validator.args | length >= 2 %}
+        if not ({{ validator.args[0] }}):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code={{ validator.args[2] if validator.args | length >= 3 else 400 }},
+                detail={"error": {{ validator.args[1] }}}
+            )
+        {% endif %}
+        {% elif validator.name == 'pattern' %}
+        import re
+        if not re.match({{ validator.args[0] }}, str(value)):
+            raise ValueError("Value does not match required pattern")
+        {% elif validator.name == 'oneOf' or validator.name == 'in' %}
+        if value not in {{ validator.args[0] }}:
+            raise ValueError(f"Value must be one of: {{ validator.args[0] }}")
+        {% elif validator.name == 'unique' %}
+        if len(value) != len(set(value)):
+            raise ValueError("All items must be unique")
+        {% else %}
+        # Custom validator: {{ validator.name }}
+        # TODO: Implement custom logic for {{ validator.name }}
+        pass
+        {% endif %}
+        return value
+
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
 {% endfor %}

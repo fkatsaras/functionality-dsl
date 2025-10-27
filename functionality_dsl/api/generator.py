@@ -61,8 +61,22 @@ def _get_all_source_names(model):
 
 def _map_to_python_type(attr):
     """Map DSL attribute types to Python/Pydantic types."""
-    attr_type = getattr(attr, "type", None)
-    
+    # Handle new TypeSpec structure
+    type_spec = getattr(attr, "type", None)
+
+    if type_spec is None:
+        return "Any"
+
+    # Check if it's a TypeSpec object or a plain string
+    if hasattr(type_spec, "baseType"):
+        base_type_str = getattr(type_spec, "baseType", "")
+        is_nullable = getattr(type_spec, "nullable", False)
+    else:
+        # Old format: plain string
+        base_type_str = str(type_spec) if type_spec else ""
+        is_nullable = getattr(attr, "optional", False)
+
+    # Map base types
     base_type = {
         "int": "int",
         "float": "float",
@@ -73,9 +87,19 @@ def _map_to_python_type(attr):
         "uuid": "str",
         "dict": "dict",
         "list": "list",
-    }.get((attr_type or "").lower(), "Any")
-    
-    if getattr(attr, "optional", False):
+    }.get(base_type_str.lower(), "Any")
+
+    # Check for special validators that change the type
+    # Validators can be in type_spec.validators (type validators) or attr.exprValidators (expression validators)
+    type_validators = getattr(type_spec, "validators", []) or [] if type_spec and hasattr(type_spec, "validators") else []
+    for validator in type_validators:
+        validator_name = getattr(validator, "name", "")
+        if validator_name == "email":
+            base_type = "EmailStr"
+        elif validator_name == "url":
+            base_type = "HttpUrl"
+
+    if is_nullable:
         return f"Optional[{base_type}]"
     return base_type
 
@@ -156,6 +180,175 @@ def _build_auth_headers(source):
             return [("__queryparam__", f"{key}={value}")]
     
     return []
+
+
+# ============================================================================
+#                           VALIDATOR EXTRACTION
+# ============================================================================
+
+def _extract_range_constraint(type_spec):
+    """
+    Extract range constraint from TypeSpec (e.g., string(3..50), int(18..120)).
+    Returns dict with min/max/exact or None if no constraint.
+    """
+    if not hasattr(type_spec, "constraint"):
+        return None
+
+    constraint = getattr(type_spec, "constraint", None)
+    if not constraint:
+        return None
+
+    range_expr = getattr(constraint, "range", None)
+    if not range_expr:
+        return None
+
+    result = {}
+
+    # Check for exact value: (5)
+    if hasattr(range_expr, "exact") and getattr(range_expr, "exact", None) is not None:
+        result["exact"] = getattr(range_expr, "exact")
+        return result
+
+    # Check for min: (5..)
+    if hasattr(range_expr, "min") and getattr(range_expr, "min", None) is not None:
+        result["min"] = getattr(range_expr, "min")
+
+    # Check for max: (..100)
+    if hasattr(range_expr, "max") and getattr(range_expr, "max", None) is not None:
+        result["max"] = getattr(range_expr, "max")
+
+    return result if result else None
+
+
+def _compile_validators_to_pydantic(attr, all_source_names):
+    """
+    Compile validators to Pydantic Field constraints.
+    Returns dict with:
+    - field_constraints: dict of Pydantic Field() kwargs
+    - custom_validators: list of custom validator functions needed
+    - imports: list of additional imports required
+    """
+    from functionality_dsl.lib.builtins.validators import PYDANTIC_FIELD_MAPPING
+
+    field_constraints = {}
+    custom_validators = []
+    imports = set()
+
+    type_spec = getattr(attr, "type", None)
+
+    # Extract range constraints from type: string(3..50), int(18..120)
+    if type_spec and hasattr(type_spec, "baseType"):
+        base_type = getattr(type_spec, "baseType", "").lower()
+        range_constraint = _extract_range_constraint(type_spec)
+
+        if range_constraint:
+            if "exact" in range_constraint:
+                # Exact length/value
+                if base_type in ("string", "list"):
+                    # Pydantic requires int for length constraints
+                    field_constraints["min_length"] = int(range_constraint["exact"])
+                    field_constraints["max_length"] = int(range_constraint["exact"])
+                elif base_type in ("int", "float", "number"):
+                    field_constraints["ge"] = range_constraint["exact"]
+                    field_constraints["le"] = range_constraint["exact"]
+            else:
+                # Range: min..max
+                if base_type in ("string", "list"):
+                    # Pydantic requires int for length constraints
+                    if "min" in range_constraint:
+                        field_constraints["min_length"] = int(range_constraint["min"])
+                    if "max" in range_constraint:
+                        field_constraints["max_length"] = int(range_constraint["max"])
+                elif base_type in ("int", "float", "number"):
+                    if "min" in range_constraint:
+                        field_constraints["ge"] = range_constraint["min"]
+                    if "max" in range_constraint:
+                        field_constraints["le"] = range_constraint["max"]
+
+    # Extract decorator validators: @email, @min(5), @validate(...)
+    # Validators can appear in TWO places:
+    # 1. In TypeSpec (type validators): username: string @email
+    # 2. After expression (exprValidators): = expr @validate(...)
+    type_validators = getattr(type_spec, "validators", []) or [] if type_spec else []
+    expr_validators = getattr(attr, "exprValidators", []) or []
+    validators = list(type_validators) + list(expr_validators)
+
+
+    for validator in validators:
+        validator_name = getattr(validator, "name", "")
+        validator_args = getattr(validator, "args", []) or []
+
+        # Handle special type validators
+        if validator_name == "email":
+            imports.add("from pydantic import EmailStr")
+            # Type is already changed in _map_to_python_type
+            continue
+
+        if validator_name == "url":
+            imports.add("from pydantic import HttpUrl")
+            continue
+
+        # Map to Pydantic Field constraints
+        pydantic_field = PYDANTIC_FIELD_MAPPING.get(validator_name)
+
+        if pydantic_field:
+            if pydantic_field == "email" or pydantic_field == "url":
+                # Already handled above
+                continue
+
+            # Handle special cases with hardcoded values
+            if ":" in pydantic_field:
+                constraint_name, value = pydantic_field.split(":", 1)
+                try:
+                    field_constraints[constraint_name] = float(value) if "." in value else int(value)
+                except ValueError:
+                    field_constraints[constraint_name] = value
+            else:
+                # Map validator args to Field constraints
+                if validator_args:
+                    # Compile the first arg expression
+                    arg_expr = validator_args[0]
+                    if hasattr(arg_expr, "expr"):
+                        compiled_arg = compile_expr_to_python(arg_expr.expr)
+                        # For simple values, try to eval them
+                        try:
+                            field_constraints[pydantic_field] = eval(compiled_arg, {}, {})
+                        except:
+                            # Complex expression, add as custom validator
+                            custom_validators.append({
+                                "name": validator_name,
+                                "args": [compiled_arg]
+                            })
+                    else:
+                        field_constraints[pydantic_field] = arg_expr
+        else:
+            # Custom validators that need special handling
+            if validator_name == "validate":
+                # @validate() is a RUNTIME validator, not a Pydantic schema validator
+                # It executes in the router AFTER entity computation (when context is available)
+                # Do NOT add to custom_validators for Pydantic @field_validator
+                # It will be handled separately in _collect_entity_validations()
+                continue
+            else:
+                # Other custom validators (pattern, oneOf, unique, etc.)
+                # These CAN be Pydantic @field_validator decorators
+                compiled_args = []
+                for arg in validator_args:
+                    if hasattr(arg, "expr"):
+                        compiled_args.append(compile_expr_to_python(arg.expr))
+                    else:
+                        compiled_args.append(str(arg))
+
+                custom_validators.append({
+                    "name": validator_name,
+                    "args": compiled_args
+                })
+
+    return {
+        "field_constraints": field_constraints,
+        "custom_validators": custom_validators,
+        "imports": list(imports)
+    }
 
 
 # ============================================================================
@@ -273,22 +466,7 @@ def _collect_all_external_sources(entity, model, seen=None):
     
     return results
 
-def _collect_entity_validations(entity, model, all_source_names):
-    """
-    Collect validation expressions for the entity and all its ancestors.
-    Returns a list of {'pyexpr': compiled_expr}.
-    """
-    all_validations = []
-    chain_entities = _get_all_ancestors(entity, model) + [entity]
-
-    for ent in chain_entities:
-        for v in getattr(ent, "validations", []) or []:
-            expr_code = compile_expr_to_python(
-                v.expr,
-            )
-            all_validations.append({"pyexpr": expr_code})
-
-    return all_validations
+# Removed: _collect_entity_validations - validations are now inline with attributes
 
 
 # ============================================================================
@@ -369,7 +547,10 @@ def _build_computed_parent_config(parent_entity, all_endpoints):
 def _build_entity_chain(entity, model, all_source_names, context="ctx"):
     """
     Build the computation chain for an entity (itself + all ancestors).
-    Returns list of entity configs with their compiled attribute expressions + validations.
+    Returns list of entity configs with their compiled attribute expressions and @validate() clauses.
+
+    Note: Schema validators (@email, @positive, etc.) are handled by Pydantic models.
+    Runtime validators (@validate()) are executed in the router after entity computation.
     """
     ancestors = _get_all_ancestors(entity, model)
     chain_entities = ancestors + [entity]
@@ -395,24 +576,81 @@ def _build_entity_chain(entity, model, all_source_names, context="ctx"):
                     "pyexpr": expr_code
                 })
 
-        # --- validations ---
-        validation_configs = []
-        validations = getattr(chain_entity, "validations", None)
-        if validations:
-            for v in validations:
-                expr_code = compile_expr_to_python(
-                    v.expr,
-                )
-                validation_configs.append({"pyexpr": expr_code})
+        if attribute_configs:
+            # Collect @validate() clauses for runtime validation
+            validations = _collect_entity_validations(chain_entity, all_source_names)
 
-        if attribute_configs or validation_configs:
             compiled_chain.append({
                 "name": chain_entity.name,
                 "attrs": attribute_configs,
-                "validations": validation_configs
+                "validations": validations,
             })
 
     return compiled_chain
+
+
+def _collect_entity_validations(entity, all_source_names):
+    """
+    Collect @validate() clauses from entity attributes for runtime execution.
+    These validations run in the ROUTER after entity computation, not in Pydantic.
+
+    Returns list of validation configs with compiled expressions.
+    """
+    validations = []
+    entity_name = getattr(entity, "name", "unknown")
+
+    for attr in getattr(entity, "attributes", []) or []:
+        # Check for @validate() in exprValidators (validators after expressions)
+        expr_validators = getattr(attr, "exprValidators", []) or []
+
+        for validator in expr_validators:
+            validator_name = getattr(validator, "name", "")
+
+            if validator_name == "validate":
+                validator_args = getattr(validator, "args", []) or []
+
+                # Compile the arguments
+                compiled_args = []
+                for arg in validator_args:
+                    if hasattr(arg, "expr"):
+                        compiled_args.append(compile_expr_to_python(arg.expr))
+                    else:
+                        # Literal value
+                        compiled_args.append(repr(arg))
+
+                # Build validation config
+                if len(compiled_args) >= 2:
+                    condition = compiled_args[0]
+                    message = compiled_args[1]
+                    status = compiled_args[2] if len(compiled_args) >= 3 else "400"
+
+                    # Fix common issues in generated code:
+                    # 1. Replace 'this' with the actual computed value from context
+                    # 2. Replace 'null' string with None
+                    # 3. Convert float status codes to integers
+                    condition = condition.replace("(this)", f"({entity_name}.get('{attr.name}') if isinstance({entity_name}, dict) else None)")
+                    condition = condition.replace("('null')", "None")
+
+                    # Clean up status code (remove extra parens and convert to int)
+                    import re
+                    status_match = re.search(r'[\d.]+', status)
+                    if status_match:
+                        status = str(int(float(status_match.group())))
+                    else:
+                        status = "400"
+
+                    # Build the validation expression that raises HTTPException
+                    validation_expr = f"""
+if not ({condition}):
+    raise HTTPException(status_code={status}, detail={{"error": {message}}})
+""".strip()
+
+                    validations.append({
+                        "attribute": attr.name,
+                        "pyexpr": validation_expr
+                    })
+
+    return validations
 
 
 # ============================================================================
@@ -477,21 +715,15 @@ def _resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_na
                         "name": attr.name,
                         "pyexpr": expr_code
                     })
-            
-            validation_configs = []
-            validations = getattr(ancestor, "validations", None)
-            if validations:  # Only process if validations exist
-                for v in validations:
-                    expr_code = compile_expr_to_python(
-                        v.expr,
-                    )
-                    validation_configs.append({"pyexpr": expr_code})
 
-            if attribute_configs or validation_configs:
+            if attribute_configs:
+                # Collect @validate() clauses for runtime validation
+                validations = _collect_entity_validations(ancestor, all_source_names)
+
                 inline_chain.append({
                     "name": ancestor.name,
                     "attrs": attribute_configs,
-                    "validations": validation_configs,
+                    "validations": validations,
                 })
                 print(f"[DEPENDENCY] Inline computed: {ancestor.name}")
     
@@ -655,8 +887,6 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
     # Build computation chain (entity -> terminal)
     compiled_chain = _build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
     
-    validations = _collect_entity_validations(entity, model, all_source_names)
-    
     # Build target config
     target = None
     target_obj = getattr(terminal_entity, "target", None)
@@ -698,7 +928,6 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
         route_prefix=route_path,
         compiled_chain=compiled_chain,
         server=server_config["server"],
-        validations=validations,
     )
     router_code = _format_python_code(router_code)  # PEP formatting w black
     
@@ -712,34 +941,94 @@ def _generate_mutation_router(endpoint, entity, model, all_endpoints, all_source
 # ============================================================================
 
 def _generate_domain_models(model, templates_dir, output_dir):
-    """Generate Pydantic domain models from entities."""
+    """Generate Pydantic domain models from entities with validation constraints."""
     entities_context = []
-    
+    all_source_names = _get_all_source_names(model)
+    all_imports = set()
+
     for entity in _get_entities(model):
         attribute_configs = []
+
         for attr in getattr(entity, "attributes", []) or []:
+            # Compile validators to Pydantic constraints
+            validator_info = _compile_validators_to_pydantic(attr, all_source_names)
+
+            # Collect imports
+            all_imports.update(validator_info["imports"])
+
+            # Check if attribute only references path parameters (uses $ syntax)
+            # These should be excluded from Pydantic body validation
+            # Properly detect ParamAccess nodes in the AST
+            is_path_param_only = False
             if hasattr(attr, "expr") and attr.expr is not None:
-                # Computed attribute
-                attribute_configs.append({
-                    "name": attr.name,
-                    "kind": "computed",
-                    "expr_raw": getattr(attr, "expr_str", "") or "",
-                    "py_type": _map_to_python_type(attr),
-                })
+                def contains_param_access(node, visited=None):
+                    """Recursively check if expression contains ParamAccess ($ syntax)."""
+                    if visited is None:
+                        visited = set()
+                    if node is None or id(node) in visited:
+                        return False
+                    visited.add(id(node))
+
+                    # Check if this node has 'param' attribute (PostfixTail with ParamAccess)
+                    if hasattr(node, 'param') and node.param is not None:
+                        return True
+
+                    # Check if node class name is ParamAccess
+                    if node.__class__.__name__ == 'ParamAccess':
+                        return True
+
+                    # Recursively check all child nodes
+                    for attr_name in dir(node):
+                        if attr_name.startswith('_') or attr_name == 'parent':
+                            continue
+                        try:
+                            child = getattr(node, attr_name, None)
+                            if child is None:
+                                continue
+                            # Check single child
+                            if hasattr(child, '__dict__'):
+                                if contains_param_access(child, visited):
+                                    return True
+                            # Check list of children
+                            elif isinstance(child, list):
+                                for item in child:
+                                    if hasattr(item, '__dict__') and contains_param_access(item, visited):
+                                        return True
+                        except:
+                            continue
+
+                    return False
+
+                try:
+                    is_path_param_only = contains_param_access(attr.expr)
+                except Exception as e:
+                    pass  # If detection fails, include the field (safe default)
+
+            # Build attribute config
+            attr_config = {
+                "name": attr.name,
+                "py_type": _map_to_python_type(attr),
+                "field_constraints": validator_info["field_constraints"],
+                "custom_validators": validator_info["custom_validators"],
+                "is_path_param_only": is_path_param_only,  # Mark for exclusion from body validation
+            }
+
+            if hasattr(attr, "expr") and attr.expr is not None:
+                # Computed attribute (has expression)
+                attr_config["kind"] = "computed"
+                attr_config["expr_raw"] = getattr(attr, "expr_str", "") or ""
             else:
-                # Schema attribute
-                attribute_configs.append({
-                    "name": attr.name,
-                    "kind": "schema",
-                    "py_type": _map_to_python_type(attr),
-                })
-        
+                # Schema attribute (no expression, just type definition)
+                attr_config["kind"] = "schema"
+
+            attribute_configs.append(attr_config)
+
         entities_context.append({
             "name": entity.name,
             "has_parents": bool(getattr(entity, "parents", None)),
             "attributes": attribute_configs,
         })
-    
+
     # Render template
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
@@ -749,9 +1038,13 @@ def _generate_domain_models(model, templates_dir, output_dir):
         undefined=StrictUndefined,
     )
     template = env.get_template("models.jinja")
-    
-    models_code = template.render(entities=entities_context)
-    
+
+    models_code = template.render(
+        entities=entities_context,
+        additional_imports=sorted(list(all_imports))
+    )
+    models_code = _format_python_code(models_code)
+
     output_file = output_dir / "app" / "domain" / "models.py"
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(models_code, encoding="utf-8")

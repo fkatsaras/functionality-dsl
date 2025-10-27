@@ -5,13 +5,39 @@ AttrType:
   'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
 ;
 
+// Type constraint with range syntax: type(min..max) or type(exact)
+TypeSpec:
+  baseType=AttrType constraint=TypeConstraint? nullable='?'? validators*=Validator
+;
+
+TypeConstraint:
+  '(' range=RangeExpr ')'
+;
+
+RangeExpr:
+    min=Number '..' max=Number    // Range: (1..10)
+  | min=Number '..'                // Min only: (1..)
+  | '..' max=Number                // Max only: (..10)
+  | exact=Number                   // Exact: (5)
+;
+
+Number: FLOAT | INT;
+
+// Validator decorator: @email, @min(5), @validate(...)
+Validator:
+  '@' name=ID ('(' args+=ValidatorArg[','] ')')?
+;
+
+ValidatorArg:
+  expr=Expr
+;
 
 AttrValue:
   STRING | FLOAT | INT | Bool
 ;
 
 Attribute:
-    name=ID ':' type=AttrType (optional?='?')? '=' expr=Expr ';' 
+    name=ID ':' type=TypeSpec '=' expr=Expr exprValidators*=Validator ';' 
 ;
 
 Input:
@@ -24,13 +50,8 @@ Entity:
   (
       'source:' source=[Source]
     | 'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
-    | 'validations:' '-' validations+=ValidationRule ('-' validations+=ValidationRule)*
   )*
   'end'
-;
-
-ValidationRule:
-    expr=Expr ';'
 ;
 
 // Entity sources / targets -------------------

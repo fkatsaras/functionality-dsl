@@ -48,7 +48,7 @@ PostfixTail:
 ;
 
 MemberAccess: '.' name=ID ;
-ParamAccess:  '@' name=ID ;
+ParamAccess:  '$' name=ID ;  // Changed from @ to $ to avoid conflict with validators
 IndexAccess:  '[' index=Expr ']' ;
 
 // -------- atoms --------

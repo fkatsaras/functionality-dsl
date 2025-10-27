@@ -6,12 +6,8 @@ networks:
 
 services:
   dummyorders:
-    image: node:20-alpine
-    working_dir: /app
+    build: .
     container_name: dummyorders
-    volumes:
-      - .:/app
-    command: ["node", "server.js"]
     ports:
       - "9100:9100"
     restart: unless-stopped

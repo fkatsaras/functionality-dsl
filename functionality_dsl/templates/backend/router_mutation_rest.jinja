@@ -14,8 +14,9 @@ security = HTTPBearer()
 {% endif %}
 
 from app.core.http import get_http_client
-from app.core.runtime.safe_eval import compile_safe, safe_globals
+from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.utils import resolve_headers, interpolate_url, normalize_path_value, seed_context_with_path_params
+from app.domain.models import {{ entity.name }}
 
 {% if target %}
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ target.method.lower() }}")
@@ -63,12 +64,14 @@ _TRANSFORMATION_CHAIN = [
         {%- for attr in step.attrs %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
-        ]{% if step.validations %},
+        ],
+        {%- if step.validations %}
         "validations": [
-        {%- for v in step.validations %}
-            {"pyexpr": {{ v.pyexpr | tojson }}},
+        {%- for validation in step.validations %}
+            {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
         {%- endfor %}
-        ]{% endif %}
+        ],
+        {%- endif %}
     },
 
 {%- endfor %}
@@ -126,6 +129,19 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
     except Exception as parse_error:
         logger.warning(f"[REQUEST] - Failed to parse JSON body: {parse_error}")
         request_body = {}
+
+    # Validate request body against Pydantic model (schema validation)
+    try:
+        validated_payload = {{ entity.name }}(**request_body)
+        logger.debug(f"[VALIDATION] - Pydantic schema validation passed for {{ entity.name }}")
+        # Convert back to dict for processing
+        request_body = validated_payload.model_dump()
+    except Exception as validation_error:
+        logger.error(f"[VALIDATION] - Pydantic schema validation failed: {validation_error}")
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "Invalid request data", "details": str(validation_error)}
+        )
 
     try:
         # ----------------------------------------------------------------
@@ -319,23 +335,18 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
             context[entity_name] = shaped_data
             logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
 
-            # Run validations for this entity (after compute)
+            # Execute @validate() clauses for this entity (runtime validation)
             if transform_step.get("validations"):
-                try:
-                    for v in transform_step["validations"]:
-                        # CRITICAL: Merge context into globals so lambdas can access entity references
+                for validation in transform_step["validations"]:
+                    try:
                         eval_globals = {**safe_globals, **context}
-                        eval(compile_safe(v["pyexpr"]), eval_globals, {})
-                        logger.debug(f"[VALIDATION] - {entity_name} validation passed")
-                except HTTPException as http_e:
-                    logger.warning(f"[VALIDATION] - {entity_name} failed: {http_e.detail}")
-                    raise
-                except Exception as e:
-                    logger.error(
-                        f"[VALIDATION] - {entity_name} crashed during validation: {e}",
-                        exc_info=True,
-                    )
-                    raise HTTPException(status_code=400, detail={"error": str(e)})
+                        exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
+                        logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
+                    except HTTPException:
+                        raise  # Preserve status code and message from @validate()
+                    except Exception as validation_error:
+                        logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
+                        raise HTTPException(status_code=400, detail={"error": str(validation_error)})
 
         # ----------------------------------------------------------------
         # STEP 5: Extract final payload (terminal entity)

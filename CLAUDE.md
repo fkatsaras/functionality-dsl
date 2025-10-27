@@ -111,26 +111,21 @@ end
 ```fdsl
 Entity CartWithPricing(RawCart, ProductDetails)
   attributes:
-    - items: list = RawCart.items;
-    - subtotal: float = sum(map(items, i -> i["price"] * i["quantity"]));
+    - items: list(1..) = RawCart.items;
+    - subtotal: float @positive = sum(map(items, i -> i["price"] * i["quantity"]));
     - tax: float = round(subtotal * 0.1, 2);
     - total: float = subtotal + tax;
-  validations:
-    - require(len(items) > 0, "Cart is empty", 400);
 end
 ```
 
-**Entity with Validations:**
+**Entity with Inline Validations:**
 ```fdsl
 Entity NewUser
   source: UserRegister
   attributes:
-    - username: string = trim(UserRegister.username);
-    - email: string = trim(UserRegister.email);
-    - password: string = UserRegister.password;
-  validations:
-    - require(len(password) > 5, "Password must be at least 6 characters", 400);
-    - require(validate_email(email), "Invalid email format", 400);
+    - username: string(3..50) = trim(UserRegister.username);
+    - email: string @required @email = trim(UserRegister.email);
+    - password: string(6..) = UserRegister.password;
 end
 ```
 
@@ -164,9 +159,9 @@ end
 // In endpoint path
 path: "/api/users/{userId}"
 
-// In entity - use '@' syntax to access path params from the source
+// In entity - use '$' syntax to access path params from the source
 // (Works only when entity has a 'source:' field pointing to an APIEndpoint or Source)
-- id: int = int(MyEndpoint@userId);
+- id: int = int(MyEndpoint$userId);
 
 // Example with Source
 Source<REST> CartByUserExternal
@@ -178,7 +173,7 @@ end
 Entity CartRaw
   source: CartByUserExternal
   attributes:
-    - userId: int = int(CartByUserExternal@userId);  // '@' accesses path param
+    - userId: int = int(CartByUserExternal$userId);  // '$' accesses path param
     - items: list = CartByUserExternal.items;        // '.' accesses response field
 end
 ```
@@ -191,14 +186,10 @@ trim(str), upper(str), lower(str), len(str)
 // Math functions
 sum(list), round(num, decimals), abs(num)
 
-// Validation
-validate_email(str), in_range(num, min, max)
-
 // Collections
 map(list, fn), filter(list, fn), find(list, fn), all(list, fn), any(list, fn)
 
-// Utilities
-require(condition, message, httpCode)
+// Note: For validation, use inline validators (@email, @min, etc.) instead of functions
 ```
 
 ### Operators
@@ -222,9 +213,9 @@ value if condition else otherValue
 Source.fieldName           // Access field from source response
 Entity.attributeName       // Access attribute from entity
 
-// Path parameter access (@) - Access URL path parameters
-Source@paramName          // Access path parameter (ONLY in entities with source: field)
-APIEndpoint@paramName     // Access path parameter from endpoint
+// Path parameter access ($) - Access URL path parameters
+Source$paramName          // Access path parameter (ONLY in entities with source: field)
+APIEndpoint$paramName     // Access path parameter from endpoint
 
 // Index access ([]) - Access by key or index
 myDict["key"]             // Dict access
@@ -234,7 +225,7 @@ myList[0]                 // List access
 Entity CartData
   source: CartByUserExternal  // Source has URL with {userId} param
   attributes:
-    - userId: int = int(CartByUserExternal@userId);    // @ for path param
+    - userId: int = int(CartByUserExternal$userId);    // $ for path param
     - items: list = CartByUserExternal.items;          // . for response field
     - firstItem: dict = CartByUserExternal.items[0];   // [] for indexing
 end
@@ -257,6 +248,155 @@ end
 - myDict: dict = {"key": "value", "count": 42};
 - myList: list = [1, 2, 3, 4];
 ```
+
+---
+
+## Inline Validation Syntax
+
+FDSL supports inline validation using **range syntax** and **decorator validators** for clean, declarative data validation.
+
+### Range Syntax
+
+Apply constraints directly to types using mathematical range notation:
+
+```fdsl
+// String length constraints
+- username: string(3..50)        // Between 3-50 characters
+- bio: string?(..500)            // Optional, max 500 characters
+- code: string(6)                // Exactly 6 characters
+- description: string(10..)      // Min 10 characters, no max
+
+// Numeric range constraints
+- age: int(18..120)              // Between 18-120
+- price: float(0.01..)           // Min 0.01, no max
+- quantity: int(1..100)          // Between 1-100
+
+// List length constraints
+- tags: list(1..5)               // 1 to 5 items
+- items: list(..10)              // Max 10 items
+- coords: list(2)                // Exactly 2 items
+```
+
+### Validator Decorators
+
+Chain validators using `@decorator` syntax:
+
+#### **String Validators**
+```fdsl
+- email: string @required @email;
+- url: string @url;
+- username: string @minLength(3) @maxLength(20);
+- slug: string @pattern("^[a-z0-9-]+$");
+- trimmed: string @trim;
+```
+
+#### **Numeric Validators**
+```fdsl
+- age: int @min(18) @max(120);
+- price: float @gt(0) @lte(999.99);
+- quantity: int @positive;         // Shorthand for @min(1)
+- score: float @range(0.0, 100.0);
+```
+
+#### **List Validators**
+```fdsl
+- tags: list @minItems(1) @maxItems(10);
+- coords: list @length(2);          // Exactly 2 items
+- ids: list @unique;                // All items must be unique
+```
+
+#### **General Validators**
+```fdsl
+- status: string @oneOf(["draft", "published", "archived"]);
+- role: string @in(["admin", "user", "guest"]);
+- data: dict @required;
+- avatar: string? @optional;        // Explicitly optional
+```
+
+### Custom Validation
+
+For complex validation logic, use `@validate()`:
+
+```fdsl
+Entity CartItem
+  source: CartInput
+  attributes:
+    - productId: int @required = CartInput.productId;
+    - quantity: int(1..100) = CartInput.quantity;
+    - price: float @positive = CartInput.price;
+    - discount: float?(0..1) = CartInput.discount;
+
+    // Custom cross-field validation
+    - finalPrice: float = price * (1 - (discount or 0))
+        @validate(this > 0, "Final price must be positive", 400);
+
+    - total: float = finalPrice * quantity
+        @validate(this <= 10000, "Cart item cannot exceed $10,000", 400);
+end
+```
+
+**@validate syntax:**
+```fdsl
+@validate(condition, errorMessage, httpStatusCode?)
+```
+
+### Complete Example
+
+```fdsl
+Entity CreateOrder
+  source: OrderInput
+  attributes:
+    // Customer info with validation
+    - customerId: int @required = OrderInput.customerId;
+    - email: string @email @required = trim(OrderInput.email);
+    - phone: string @pattern("^\+?[1-9]\d{1,14}$") = OrderInput.phone;
+
+    // Items with range and list constraints
+    - items: list(1..50) = OrderInput.items;
+    - itemCount: int @positive = len(items);
+
+    // Pricing with numeric constraints
+    - subtotal: float @positive = sum(map(items, i -> i["price"] * i["qty"]));
+    - tax: float(0..) = round(subtotal * 0.1, 2);
+    - total: float = subtotal + tax
+        @validate(this >= 5.00, "Minimum order total is $5.00", 400)
+        @validate(this <= 50000, "Maximum order total is $50,000", 400);
+
+    // Optional field with constraints
+    - promoCode: string?(4..20) = upper(trim(OrderInput.promoCode));
+
+    // Enum-style validation
+    - shippingMethod: string @oneOf(["standard", "express", "overnight"]);
+end
+```
+
+### How It Works
+
+1. **Range constraints** compile to Pydantic `Field()` parameters:
+   - `string(3..50)` → `Field(min_length=3, max_length=50)`
+   - `int(18..120)` → `Field(ge=18, le=120)`
+
+2. **Decorator validators** map to Pydantic validators:
+   - `@email` → Changes type to `EmailStr`
+   - `@url` → Changes type to `HttpUrl`
+   - `@min(5)` → `Field(ge=5)`
+   - `@pattern(regex)` → Custom `@field_validator`
+
+3. **Custom validators** generate `@field_validator` decorators in Pydantic models
+
+4. Validation happens automatically when Pydantic models are instantiated from request data
+
+### Available Validators
+
+**String**: `@email`, `@url`, `@pattern()`, `@minLength()`, `@maxLength()`, `@length()`, `@startsWith()`, `@endsWith()`, `@trim`
+
+**Numeric**: `@min()`, `@max()`, `@gt()`, `@lt()`, `@gte()`, `@lte()`, `@positive`, `@negative`, `@range()`
+
+**List**: `@minItems()`, `@maxItems()`, `@unique`, `@each()`
+
+**General**: `@required`, `@optional`, `@oneOf()`, `@in()`
+
+**Custom**: `@validate(condition, message, status)`
 
 ---
 
@@ -372,9 +512,9 @@ end
 Entity ValidatedInput
   source: MyEndpoint
   attributes:
-    - email: string = trim(MyEndpoint.email);
-  validations:
-    - require(validate_email(email), "Invalid email", 400);
+    - email: string @email = trim(MyEndpoint.email);
+    - age: int(18..) = MyEndpoint.age;
+    - password: string(8..) = MyEndpoint.password;
 end
 ```
 
@@ -424,9 +564,12 @@ fdsl generate my-api.fdsl --out generated/
 - Path params seeded into `context[EndpointName]`
 
 ### 4. **Validation Execution**
-- Validations run after entity attributes computed
-- `require()` throws HTTPException on failure
-- Custom status codes and messages supported
+- Inline validators compile to Pydantic Field constraints
+- Validation happens automatically on request data via Pydantic models
+- Range syntax: `string(3..50)` → `Field(min_length=3, max_length=50)`
+- Decorator validators: `@email` → `EmailStr`, `@min(18)` → `Field(ge=18)`
+- Custom `@validate()` generates `@field_validator` decorators
+- HTTPException raised on validation failure with custom status codes
 
 ### 5. **WebSocket Handling**
 - Separate computation chains for inbound/outbound
