@@ -121,7 +121,7 @@ Source<REST> ACToggleExternal
   entity: ToggleCommand
 end
 
-// REST endpoint that toggles dummy AC or Oven
+// REST endpoint that toggles dummy AC
 APIEndpoint<REST> ACToggle
   path: "/api/device/toggle/ac"
   verb: POST
