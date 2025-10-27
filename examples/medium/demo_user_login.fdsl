@@ -122,15 +122,15 @@ end
 
 Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
   attributes:
-    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email)
-     @validate(this != null, "User not found", 404);
+    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email) 
+    @validate(this != null, "User not found", 404);
 end
 
 Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
   attributes:
-    - email: string = ResetPasswordRequest.email;
-    - newPassword: string = ResetPasswordRequest.newPassword
-        @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
+    - email: string @email = ResetPasswordRequest.email;
+    - newPassword: string(6..) = ResetPasswordRequest.newPassword
+      @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
 end
 
 // --- UPDATE USER ---

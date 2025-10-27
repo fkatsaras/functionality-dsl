@@ -29,7 +29,7 @@ Entity LondonHourly
     - hourly: dict = MeteoLondon["hourly"];
 end
 
-// --- Row-shaped compare entity ---------------------------------
+// --- Row-shaped entity ---------------------------------
 Entity WeatherCompare(ThessHourly, LondonHourly)
   attributes:
     - rows: list = map(
