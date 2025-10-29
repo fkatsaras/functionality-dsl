@@ -1,0 +1,416 @@
+# ========================================================================
+# AUTO-GENERATED WEBSOCKET SERVICE
+# ========================================================================
+
+import json
+import uuid
+import asyncio
+import logging
+import websockets
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import HTTPException
+
+from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
+
+
+logger = logging.getLogger("fdsl.service.ws.{{ endpoint.name }}")
+
+
+# ============================================================================
+#                          CONFIGURATION
+# ============================================================================
+
+_EXTERNAL_TARGETS = [
+{%- for tgt in external_targets %}
+    {
+        "url": "{{ tgt.url }}",
+        "headers": {{ tgt.headers }},
+        "subprotocols": {{ (tgt.subprotocols or []) | tojson }},
+        "protocol": "{{ tgt.protocol or 'json' }}"
+    },
+{%- endfor %}
+]
+
+_WS_INPUTS = [
+{%- for w in ws_inputs %}
+    {
+        "entity": "{{ w.entity }}",
+        "endpoint": "{{ w.endpoint }}",
+        "url": "{{ w.url }}",
+        "headers": {{ w.headers }},
+        "subprotocols": {{ (w.subprotocols or []) | tojson }},
+        "protocol": "{{ w.protocol or 'json' }}",
+        "attrs": {{ w.attrs | tojson }}
+    },
+{%- endfor %}
+]
+
+_COMPILED_CHAIN_INBOUND = [
+{%- for ent in compiled_chain_inbound %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- if ent.validations %}
+    "validations": [
+    {%- for validation in ent.validations %}
+      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- endif %}
+  },
+{%- endfor %}
+]
+
+_COMPILED_CHAIN_OUTBOUND = [
+{%- for ent in compiled_chain_outbound %}
+  {
+    "name": "{{ ent.name }}",
+    "attrs": [
+    {%- for a in ent.attrs %}
+      {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- if ent.validations %}
+    "validations": [
+    {%- for validation in ent.validations %}
+      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
+    {%- endfor %}
+    ],
+    {%- endif %}
+  },
+{%- endfor %}
+]
+
+{% if sync_config_inbound %}
+# Sync buffer configuration
+_SYNC_REQUIRED_SOURCES = {{ sync_config_inbound.required_parents | tojson }}
+_parent_buffer: Dict[str, Any] = {}
+_buffer_lock = asyncio.Lock()
+{% endif %}
+
+# Persistent external connections
+_target_connections: List[Optional[Any]] = [None] * len(_EXTERNAL_TARGETS)
+_target_reader_started: List[bool] = [False] * len(_EXTERNAL_TARGETS)
+_target_lock = asyncio.Lock()
+
+
+# ============================================================================
+#                          COMPUTATION FUNCTIONS
+# ============================================================================
+
+def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source_name: str) -> Dict[str, Any]:
+    """
+    Compute entity attributes through chain with flat context.
+    """
+    logger.debug(f"[COMPUTE] - Processing payload from {source_name}")
+
+    context = {
+        source_name: payload,
+        "__sender": sender_id
+    }
+
+    logger.info(f"[COMPUTE] - Executing chain with {len(chain)} step(s)")
+    for step_index, ent in enumerate(chain, 1):
+        entity_name = ent["name"]
+        logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {entity_name}")
+
+        shaped = _shape_entity_data(ent, context, entity_name)
+        context[entity_name] = shaped
+        logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
+
+        # Execute validations
+        _validate_entity(ent, context, entity_name)
+
+    final_entity = chain[-1]["name"] if chain else source_name
+    result = context[final_entity] if chain else {source_name: payload}
+    logger.info(f"[COMPUTE] - Computation complete, final entity: {final_entity}")
+    return result
+
+
+{% if sync_config_inbound %}
+async def compute_with_sync(payload: Any, sender_id: str, chain: List[Dict], source_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Buffer and sync multiple sources, then compute with flat context.
+    """
+    logger.debug(f"[COMPUTE] - Processing payload from {source_name} (sync mode)")
+
+    async with _buffer_lock:
+        _parent_buffer[source_name] = payload
+        logger.debug(f"[COMPUTE] - Buffered {source_name}, current sources: {list(_parent_buffer.keys())}")
+
+        # Check if all required sources are present
+        missing = [src for src in _SYNC_REQUIRED_SOURCES if src not in _parent_buffer]
+        if missing:
+            logger.debug(f"[COMPUTE] - Waiting for sources: {missing}")
+            return None
+
+        logger.info(f"[COMPUTE] - All required sources present: {_SYNC_REQUIRED_SOURCES}")
+
+        # Build flat context with all source data
+        context = {
+            "__sender": sender_id,
+            **_parent_buffer
+        }
+
+        # Run the compiled chain
+        logger.info(f"[COMPUTE] - Executing chain with {len(chain)} step(s)")
+        for step_index, ent in enumerate(chain, 1):
+            entity_name = ent["name"]
+            logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {entity_name}")
+
+            shaped = _shape_entity_data(ent, context, entity_name)
+            context[entity_name] = shaped
+            logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
+
+            # Execute validations
+            _validate_entity(ent, context, entity_name)
+
+        final_entity = chain[-1]["name"] if chain else ""
+        result = context[final_entity] if chain and final_entity else {}
+        logger.info(f"[COMPUTE] - Computation complete, final entity: {final_entity}")
+        return result
+{% endif %}
+
+
+def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
+    """Shape entity data by evaluating attribute expressions."""
+    shaped = {}
+
+    for a in config.get("attrs") or []:
+        attr_name = a["name"]
+        attr_expr = a["expr"]
+        compiled = compile_safe(attr_expr)
+        try:
+            eval_globals = {**safe_globals, **context}
+            shaped[attr_name] = eval(compiled, eval_globals, {})
+            logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
+        except HTTPException:
+            raise
+        except Exception as ex:
+            logger.error(
+                f"[COMPUTE] - Error computing {entity_name}.{attr_name}: {ex}",
+                exc_info=True
+            )
+            raise
+
+    return shaped
+
+
+def _validate_entity(step: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> None:
+    """Execute runtime validations for an entity."""
+    if not step.get("validations"):
+        return
+
+    for validation in step["validations"]:
+        try:
+            eval_globals = {**safe_globals, **context}
+            exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
+            logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
+        except HTTPException:
+            raise
+        except Exception as validation_error:
+            logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
+            raise HTTPException(status_code=400, detail={"error": str(validation_error)})
+
+
+# ============================================================================
+#                          CONNECTION MANAGEMENT
+# ============================================================================
+
+async def ensure_target_connection(idx: int, inbound_entity_name: str):
+    """Ensure connection to external target is established."""
+    if idx >= len(_EXTERNAL_TARGETS):
+        return
+
+    tgt = _EXTERNAL_TARGETS[idx]
+    async with _target_lock:
+        if _target_connections[idx] is not None:
+            try:
+                await _target_connections[idx].ping()
+                return
+            except Exception:
+                _target_connections[idx] = None
+        try:
+            logger.info(f"[TARGET] - Establishing connection to {tgt['url']}")
+            try:
+                _target_connections[idx] = await websockets.connect(
+                    tgt["url"],
+                    extra_headers=tgt["headers"] or [],
+                    subprotocols=tgt["subprotocols"] or None
+                )
+            except TypeError:
+                _target_connections[idx] = await websockets.connect(
+                    tgt["url"],
+                    additional_headers=tgt["headers"] or [],
+                    subprotocols=tgt["subprotocols"] or None
+                )
+            logger.info(f"[TARGET] - Successfully connected to {tgt['url']}")
+
+            # Start reader if not already started
+            if not _target_reader_started[idx]:
+                from app.core import wsbus
+                asyncio.create_task(start_target_reader(idx, inbound_entity_name, wsbus))
+                _target_reader_started[idx] = True
+        except Exception as ex:
+            logger.error(f"[TARGET] - Failed to connect to {tgt['url']}: {ex}", exc_info=True)
+
+
+async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
+    """Read messages from external connection and run INBOUND chain."""
+    tgt = _EXTERNAL_TARGETS[idx]
+    logger.info(f"[TARGET_READER] - Starting reader for target {idx}: {tgt['url']}")
+
+    inp = next((w for w in _WS_INPUTS if w["url"] == tgt["url"]), None)
+    if not inp:
+        logger.warning(f"[TARGET_READER] - No WS input found for target URL: {tgt['url']}")
+        return
+
+    bus_in = wsbus.get_bus(inbound_entity_name)
+
+    while True:
+        conn = _target_connections[idx]
+        if conn is None:
+            logger.debug(f"[TARGET_READER] - Waiting for connection to {tgt['url']}")
+            await asyncio.sleep(1)
+            continue
+        try:
+            logger.info(f"[TARGET_READER] - Reading from target {tgt['url']}")
+            async for raw in conn:
+                logger.debug(f"[WS_MESSAGE] - Received from {tgt['url']}")
+                try:
+                    payload = json.loads(raw)
+                except Exception:
+                    payload = raw
+
+                {% if sync_config_inbound %}
+                row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                {% else %}
+                row = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                {% endif %}
+
+                if row is not None:
+                    await bus_in.publish(row)
+                    logger.debug(f"[WS_MESSAGE] - Published to bus")
+        except Exception as ex:
+            logger.error(f"[TARGET_READER] - Reader failed for {tgt['url']}: {ex}", exc_info=True)
+            _target_connections[idx] = None
+            await asyncio.sleep(2)
+
+
+async def forward_to_targets(row: Dict[str, Any], inbound_entity_name: str):
+    """Forward message to all external targets."""
+    logger.info(f"[FORWARD] - Forwarding to {len(_EXTERNAL_TARGETS)} target(s)")
+
+    for idx, tgt in enumerate(_EXTERNAL_TARGETS):
+        await ensure_target_connection(idx, inbound_entity_name)
+        conn = _target_connections[idx]
+        if conn:
+            try:
+                if tgt["protocol"] == "json":
+                    await conn.send(json.dumps(row))
+                elif tgt["protocol"] == "text":
+                    await conn.send(str(row))
+                else:
+                    await conn.send(json.dumps(row))
+                logger.debug(f"[FORWARD] - Successfully sent to {tgt['url']}")
+            except Exception as ex:
+                logger.error(f"[FORWARD] - Failed to send to {tgt['url']}: {ex}", exc_info=True)
+                _target_connections[idx] = None
+
+
+# ============================================================================
+#                          INPUT CONSUMER
+# ============================================================================
+
+_started_inputs = False
+_inputs_lock = asyncio.Lock()
+
+
+async def ws_input_consumer(inp: dict, bus_in):
+    """
+    Standalone reader for WS input URL not in _EXTERNAL_TARGETS.
+    """
+    url = inp["url"]
+    entity = inp["entity"]
+    headers = inp.get("headers") or []
+    subprotocols = inp.get("subprotocols") or None
+    protocol = inp.get("protocol") or "json"
+    source_name = inp.get("endpoint")
+
+    logger.info(f"[WS_INPUT] - Starting consumer for {entity} ({url})")
+
+    while True:
+        try:
+            logger.info(f"[WS_INPUT] - Connecting to upstream feed: {entity}")
+            try:
+                cm = websockets.connect(url, extra_headers=headers, subprotocols=subprotocols)
+            except TypeError:
+                cm = websockets.connect(url, additional_headers=headers, subprotocols=subprotocols)
+
+            async with cm as ws_conn:
+                logger.info(f"[WS_INPUT] - Connected to upstream feed: {entity}")
+                async for raw in ws_conn:
+                    try:
+                        if protocol == "json":
+                            payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+                        elif protocol == "text":
+                            payload = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+                        elif protocol == "raw":
+                            payload = raw if isinstance(raw, (bytes, bytearray)) else bytes(str(raw), "utf-8")
+                        else:
+                            payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+                    except Exception:
+                        payload = raw
+
+                    {% if sync_config_inbound %}
+                    row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    {% else %}
+                    row = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    {% endif %}
+
+                    if row is not None:
+                        if bus_in:
+                            await bus_in.publish(row)
+        except Exception as ex:
+            logger.warning(f"[WS_INPUT] - Connection lost for {entity}, reconnecting: {ex}")
+            await asyncio.sleep(1.0)
+
+
+async def ensure_ws_inputs_started(bus_in):
+    """Start readers for WS inputs not used by external targets."""
+    global _started_inputs
+    if not _WS_INPUTS or bus_in is None:
+        return
+
+    async with _inputs_lock:
+        if _started_inputs:
+            return
+        target_urls = {t.get("url") for t in _EXTERNAL_TARGETS}
+        inputs_to_start = [inp for inp in _WS_INPUTS if inp.get("url") not in target_urls]
+
+        logger.info(f"[WS_INPUT] - Starting {len(inputs_to_start)} input consumer(s)")
+        for inp in inputs_to_start:
+            asyncio.create_task(ws_input_consumer(inp, bus_in))
+        _started_inputs = True
+
+
+# ============================================================================
+#                          PUBLIC API
+# ============================================================================
+
+def get_inbound_outbound_entities():
+    """Return the entity names for inbound/outbound chains."""
+    inbound_entity = "{{ entity_in.name if entity_in else (compiled_chain_inbound[0].name if compiled_chain_inbound else '') }}"
+    outbound_entity = "{{ entity_out.name if entity_out else (compiled_chain_outbound[-1].name if compiled_chain_outbound else '') }}"
+    return inbound_entity, outbound_entity
+
+
+def get_compiled_chains():
+    """Return the compiled chains for inbound/outbound processing."""
+    return _COMPILED_CHAIN_INBOUND, _COMPILED_CHAIN_OUTBOUND

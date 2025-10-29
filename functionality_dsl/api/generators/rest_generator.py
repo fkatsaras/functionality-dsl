@@ -37,7 +37,24 @@ def generate_query_router(endpoint, entity, model, all_endpoints, all_source_nam
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
-    # Render template
+    # Prepare template context
+    template_context = {
+        "endpoint": {
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "path_params": path_params,
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
+        "entity": entity,
+        "rest_inputs": rest_inputs,
+        "computed_parents": computed_parents,
+        "route_prefix": route_path,
+        "compiled_chain": compiled_chain,
+        "server": server_config["server"],
+    }
+
+    # Setup Jinja2 environment
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -45,28 +62,26 @@ def generate_query_router(endpoint, entity, model, all_endpoints, all_source_nam
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
-    template = env.get_template("router_query_rest.jinja")
 
-    router_code = template.render(
-        endpoint={
-            "name": endpoint.name,
-            "summary": getattr(endpoint, "summary", None),
-            "path_params": path_params,
-            "auth": endpoint_auth,
-            "auth_headers": auth_headers,
-        },
-        entity=entity,
-        rest_inputs=rest_inputs,
-        computed_parents=computed_parents,
-        route_prefix=route_path,
-        compiled_chain=compiled_chain,
-        server=server_config["server"],
-    )
+    # Generate router
+    router_template = env.get_template("router_query_rest.jinja")
+    router_code = router_template.render(template_context)
     router_code = format_python_code(router_code)
 
-    output_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
-    output_file.write_text(router_code, encoding="utf-8")
-    print(f"[GENERATED] Query router: {output_file}")
+    router_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    router_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] Query router: {router_file}")
+
+    # Generate service
+    service_template = env.get_template("service_query_rest.jinja")
+    service_code = service_template.render(template_context)
+    service_code = format_python_code(service_code)
+
+    services_dir = Path(output_dir) / "app" / "services"
+    services_dir.mkdir(parents=True, exist_ok=True)
+    service_file = services_dir / f"{endpoint.name.lower()}_service.py"
+    service_file.write_text(service_code, encoding="utf-8")
+    print(f"[GENERATED] Query service: {service_file}")
 
 
 def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
@@ -113,7 +128,26 @@ def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
-    # Render template
+    # Prepare template context
+    template_context = {
+        "endpoint": {
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "path_params": path_params,
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
+        "entity": entity,
+        "terminal": terminal_entity,
+        "target": target,
+        "rest_inputs": rest_inputs,
+        "computed_parents": computed_parents,
+        "route_prefix": route_path,
+        "compiled_chain": compiled_chain,
+        "server": server_config["server"],
+    }
+
+    # Setup Jinja2 environment
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -121,27 +155,23 @@ def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
-    template = env.get_template("router_mutation_rest.jinja")
 
-    router_code = template.render(
-        endpoint={
-            "name": endpoint.name,
-            "summary": getattr(endpoint, "summary", None),
-            "path_params": path_params,
-            "auth": endpoint_auth,
-            "auth_headers": auth_headers,
-        },
-        entity=entity,
-        terminal=terminal_entity,
-        target=target,
-        rest_inputs=rest_inputs,
-        computed_parents=computed_parents,
-        route_prefix=route_path,
-        compiled_chain=compiled_chain,
-        server=server_config["server"],
-    )
-    router_code = format_python_code(router_code)  # PEP formatting w black
+    # Generate router
+    router_template = env.get_template("router_mutation_rest.jinja")
+    router_code = router_template.render(template_context)
+    router_code = format_python_code(router_code)
 
-    output_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
-    output_file.write_text(router_code, encoding="utf-8")
-    print(f"[GENERATED] Mutation router: {output_file}")
+    router_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    router_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] Mutation router: {router_file}")
+
+    # Generate service
+    service_template = env.get_template("service_mutation_rest.jinja")
+    service_code = service_template.render(template_context)
+    service_code = format_python_code(service_code)
+
+    services_dir = Path(output_dir) / "app" / "services"
+    services_dir.mkdir(parents=True, exist_ok=True)
+    service_file = services_dir / f"{endpoint.name.lower()}_service.py"
+    service_file.write_text(service_code, encoding="utf-8")
+    print(f"[GENERATED] Mutation service: {service_file}")

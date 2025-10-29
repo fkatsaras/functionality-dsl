@@ -42,7 +42,25 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
-    # Render template
+    # Prepare template context
+    template_context = {
+        "endpoint": {
+            "name": endpoint.name,
+            "summary": getattr(endpoint, "summary", None),
+            "auth": endpoint_auth,
+            "auth_headers": auth_headers,
+        },
+        "entity_in": entity_in,
+        "entity_out": entity_out,
+        "route_prefix": route_path,
+        "compiled_chain_inbound": compiled_chain_inbound,
+        "compiled_chain_outbound": compiled_chain_outbound,
+        "ws_inputs": ws_inputs,
+        "external_targets": external_targets,
+        "sync_config_inbound": sync_config_inbound,
+    }
+
+    # Setup Jinja2 environment
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -50,26 +68,23 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
-    template = env.get_template("router_ws.jinja")
 
-    router_code = template.render(
-        endpoint={
-            "name": endpoint.name,
-            "summary": getattr(endpoint, "summary", None),
-            "auth": endpoint_auth,
-            "auth_headers": auth_headers,
-        },
-        entity_in=entity_in,
-        entity_out=entity_out,
-        route_prefix=route_path,
-        compiled_chain_inbound=compiled_chain_inbound,
-        compiled_chain_outbound=compiled_chain_outbound,
-        ws_inputs=ws_inputs,
-        external_targets=external_targets,
-        sync_config_inbound=sync_config_inbound,
-    )
-    router_code = format_python_code(router_code)  # PEP formatting w black
+    # Generate router
+    router_template = env.get_template("router_ws.jinja")
+    router_code = router_template.render(template_context)
+    router_code = format_python_code(router_code)
 
-    output_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
-    output_file.write_text(router_code, encoding="utf-8")
-    print(f"[GENERATED] WebSocket router: {output_file}")
+    router_file = Path(output_dir) / "app" / "api" / "routers" / f"{endpoint.name.lower()}.py"
+    router_file.write_text(router_code, encoding="utf-8")
+    print(f"[GENERATED] WebSocket router: {router_file}")
+
+    # Generate service
+    service_template = env.get_template("service_ws.jinja")
+    service_code = service_template.render(template_context)
+    service_code = format_python_code(service_code)
+
+    services_dir = Path(output_dir) / "app" / "services"
+    services_dir.mkdir(parents=True, exist_ok=True)
+    service_file = services_dir / f"{endpoint.name.lower()}_service.py"
+    service_file.write_text(service_code, encoding="utf-8")
+    print(f"[GENERATED] WebSocket service: {service_file}")

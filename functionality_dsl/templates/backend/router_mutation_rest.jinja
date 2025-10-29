@@ -1,8 +1,7 @@
 # ========================================================================
-# AUTO-GENERATED MUTATION ROUTER (SIMPLIFIED)
+# AUTO-GENERATED MUTATION ROUTER
 # ========================================================================
 
-import json
 import logging
 from typing import Any, Dict
 
@@ -13,10 +12,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 security = HTTPBearer()
 {% endif %}
 
-from app.core.http import get_http_client
-from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
-from app.core.utils import resolve_headers, interpolate_url, normalize_path_value, seed_context_with_path_params
-from app.domain.models import {{ entity.name }}
+from app.services import {{ endpoint.name | lower }}_service
+
 
 {% if target %}
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ target.method.lower() }}")
@@ -29,67 +26,6 @@ router = APIRouter(
     tags=["{{ endpoint.summary or endpoint.name }}"]
 )
 
-# ============================================================================
-#                          CONFIGURATION
-# ============================================================================
-
-_EXTERNAL_REST_SOURCES = [
-{%- for source in rest_inputs %}
-    {
-        "entity": "{{ source.entity }}",
-        "alias": "{{ source.alias }}",
-        "url": "{{ source.url }}",
-        "headers": {{ source.headers }},
-        "method": "{{ source.method }}",
-        "attrs": [
-        {%- for attr in source.attrs %}
-            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
-        {%- endfor %}
-        ]
-    },
-{%- endfor %}
-]
-
-_INTERNAL_DEPENDENCIES = [
-{%- for dep in computed_parents | default([], true) %}
-    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
-{%- endfor %}
-]
-
-_TRANSFORMATION_CHAIN = [
-{%- for step in compiled_chain %}
-    {
-        "name": "{{ step.name }}",
-        "attrs": [
-        {%- for attr in step.attrs %}
-            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
-        {%- endfor %}
-        ],
-        {%- if step.validations %}
-        "validations": [
-        {%- for validation in step.validations %}
-            {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
-        {%- endfor %}
-        ],
-        {%- endif %}
-    },
-
-{%- endfor %}
-]
-
-{% if target %}
-_EXTERNAL_TARGET = {
-    "name": "{{ target.name }}",
-    "url": "{{ target.url }}",
-    "method": "{{ target.method }}",
-    "headers": {{ target.headers | tojson }},
-}
-{% endif %}
-
-
-# ============================================================================
-#                          MUTATION ENDPOINT
-# ============================================================================
 
 {% set pparams = endpoint.path_params or [] %}
 @router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
@@ -105,24 +41,25 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
     Transforms input data through computation chain (internal endpoint, no forwarding).
     {% endif %}
     """
-    http_client = get_http_client()
-    context: Dict[str, Any] = {}
-
     # ----------------------------------------------------------------
-    # STEP 0: Enforce Auth
+    # Authentication
     # ----------------------------------------------------------------
     {% if endpoint.auth %}
     {% if endpoint.auth.kind == 'bearer' %}
     if not credentials or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Missing bearer token")
     {% elif endpoint.auth.kind == 'basic' %}
+    # Basic auth validated automatically by FastAPI
     pass
     {% elif endpoint.auth.kind == 'api_key' %}
+    # API key validated automatically
     pass
     {% endif %}
     {% endif %}
 
-    # Parse incoming request body
+    # ----------------------------------------------------------------
+    # Parse request body
+    # ----------------------------------------------------------------
     try:
         request_body = await request.json()
         logger.info(f"[REQUEST] - Received payload with keys: {list(request_body.keys())}")
@@ -130,300 +67,17 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         logger.warning(f"[REQUEST] - Failed to parse JSON body: {parse_error}")
         request_body = {}
 
-    # Validate request body against Pydantic model (schema validation)
+    # ----------------------------------------------------------------
+    # Delegate to service layer
+    # ----------------------------------------------------------------
     try:
-        validated_payload = {{ entity.name }}(**request_body)
-        logger.debug(f"[VALIDATION] - Pydantic schema validation passed for {{ entity.name }}")
-        # Convert back to dict for processing
-        request_body = validated_payload.model_dump()
-    except Exception as validation_error:
-        logger.error(f"[VALIDATION] - Pydantic schema validation failed: {validation_error}")
-        raise HTTPException(
-            status_code=422,
-            detail={"error": "Invalid request data", "details": str(validation_error)}
-        )
+        path_params = {
+            {% for p in pparams %}
+            "{{ p }}": {{ p }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        }
 
-    try:
-        # ----------------------------------------------------------------
-        # STEP 1: Seed context with incoming payload + path params
-        # ----------------------------------------------------------------
-        seed_payload = request_body or {}
-        {% if pparams|length %}
-        context = seed_context_with_path_params(
-            context=context,
-            endpoint_name="{{ endpoint.name }}",
-            endpoint_params={
-              {% for p in pparams %}
-              "{{ p }}": {{ p }}{% if not loop.last %}, {% endif %}
-              {% endfor %}
-            },
-            external_sources=_EXTERNAL_REST_SOURCES,
-            logger=logger,
-        )
-        {% endif %}
-
-        # IMPORTANT: Store the endpoint payload in context so it's available
-        # for entities that reference it (e.g., LoginPayload sourced from UserLogin)
-        # Merge with existing context to preserve path params
-        if "{{ endpoint.name }}" in context and isinstance(context["{{ endpoint.name }}"], dict):
-            context["{{ endpoint.name }}"].update(seed_payload)
-        else:
-            context["{{ endpoint.name }}"] = seed_payload
-        logger.debug(f"[CONTEXT] - Seeded endpoint payload: {{ endpoint.name }}")
-
-        # ----------------------------------------------------------------
-        # STEP 2: Fetch external REST sources
-        # ----------------------------------------------------------------
-        for source_config in _EXTERNAL_REST_SOURCES:
-            entity_name = source_config["entity"]
-            source_alias = source_config["alias"]
-            url = source_config["url"]
-            url = interpolate_url(url, context)
-            method = source_config["method"]
-            
-            logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
-            
-            try:
-                # Prepare headers
-                headers = resolve_headers(source_config.get("headers", []))
-
-                for key, value in source_config.get("headers", []):
-                    if key == "__queryparam__":
-                        separator = "&" if "?" in url else "?"
-                        url = f"{url}{separator}{value}"
-                
-                # Make request
-                response = await http_client.request(method, url, headers=headers)
-                
-                if response.status_code >= 400:
-                    logger.error(f"[FETCH] - Failed to fetch {entity_name}: HTTP {response.status_code}")
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"External source {entity_name} returned {response.status_code}"
-                    )
-                
-                raw_payload = response.json()
-                logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
-
-                # Store raw payload by alias (merge with path params if they exist)
-                # Check if source context already exists (from path params seeding)
-                has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
-
-                if has_path_params:
-                    # Merge response data into source context (preserving path params)
-                    if isinstance(raw_payload, dict):
-                        context[source_alias].update(raw_payload)
-                    else:
-                        # Non-dict response (list, etc.), store as special key
-                        context[source_alias]["_response"] = raw_payload
-                else:
-                    # No path params, just store raw payload directly
-                    context[source_alias] = raw_payload
-                
-                # Log raw payload preview
-                logger.debug(f"[FETCH] - {source_alias} raw payload preview:")
-                try:
-                    preview = json.dumps(raw_payload, indent=2)[:800]
-                    logger.debug(preview + ("..." if len(preview) == 800 else ""))
-                except Exception as e:
-                    logger.debug(f"[FETCH] - Could not serialize raw payload: {e}")
-                
-                # Shape the data by evaluating attribute expressions
-                shaped_data: Dict[str, Any] = {}
-                
-                for attr_config in source_config.get("attrs", []):
-                    attr_name = attr_config["name"]
-                    attr_expr = attr_config["expr"]
-                    
-                    compiled_expr = compile_safe(attr_expr)
-                    # SIMPLIFIED: Pass context directly (no wrapping)
-                    shaped_data[attr_name] = eval(compiled_expr, safe_globals, context)
-                
-                # Default to raw payload if no attributes specified
-                if not shaped_data:
-                    shaped_data = {"raw": raw_payload}
-                
-                # Store shaped entity in context
-                context[entity_name] = shaped_data
-                logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
-                
-            except HTTPException:
-                raise
-            except Exception as fetch_error:
-                logger.error(f"[FETCH] - Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Failed to fetch external source: {entity_name}"
-                )
-
-        # ----------------------------------------------------------------
-        # STEP 3: Fetch internal computed dependencies
-        # ----------------------------------------------------------------
-        for dependency in _INTERNAL_DEPENDENCIES:
-            entity_name = dependency["name"]
-            endpoint_path = dependency["endpoint"]
-
-            logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
-
-            try:
-                response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
-
-                if response.status_code >= 400:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Internal dependency {entity_name} returned {response.status_code}"
-                    )
-
-                payload = response.json()
-
-                # Unwrap { "EntityName": <data> } envelope if present
-                if isinstance(payload, dict) and entity_name in payload and len(payload) == 1:
-                    context[entity_name] = payload[entity_name]
-                else:
-                    context[entity_name] = payload
-
-                logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
-
-            except HTTPException:
-                raise
-            except Exception as dep_error:
-                logger.error(f"[DEPENDENCY] - Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
-                raise HTTPException(status_code=502, detail=f"Failed to fetch internal dependency: {entity_name}")
-
-        # ----------------------------------------------------------------
-        # STEP 4: Execute transformation chain
-        # ----------------------------------------------------------------
-        logger.debug("[CONTEXT] - Current context before transformation chain:")
-        try:
-            preview = json.dumps({k: type(v).__name__ for k, v in context.items()}, indent=2)
-            logger.debug(preview)
-        except Exception as e:
-            logger.debug(f"[CONTEXT] - Could not serialize context: {e}")
-
-        logger.info(f"[TRANSFORM] - Executing chain with {len(_TRANSFORMATION_CHAIN)} step(s)")
-        
-        for step_index, transform_step in enumerate(_TRANSFORMATION_CHAIN, 1):
-            entity_name = transform_step["name"]
-            logger.debug(f"[TRANSFORM] - Step {step_index}/{len(_TRANSFORMATION_CHAIN)}: {entity_name}")
-            
-            shaped_data = {}
-            
-            for attr_config in transform_step.get("attrs", []):
-                attr_name = attr_config["name"]
-                attr_expr = attr_config["expr"]
-                
-                try:
-                    compiled_expr = compile_safe(attr_expr)
-                    # CRITICAL: Merge context into globals so lambdas can access entity references
-                    eval_globals = {**safe_globals, **context}
-                    shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
-                    logger.debug(f"[TRANSFORM] - {entity_name}.{attr_name} computed")
-                except HTTPException:
-                    raise 
-                except Exception as compute_error:
-                    logger.error(
-                        f"[TRANSFORM] - Error computing {entity_name}.{attr_name}: {compute_error}",
-                        exc_info=True
-                    )
-                    logger.error(f"[TRANSFORM] - Available context keys: {list(context.keys())}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to compute {entity_name}.{attr_name}: {str(compute_error)}"
-                    )
-            
-            # Store computed entity IMMEDIATELY so next step can reference it
-            context[entity_name] = shaped_data
-            logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
-
-            # Execute @validate() clauses for this entity (runtime validation)
-            if transform_step.get("validations"):
-                for validation in transform_step["validations"]:
-                    try:
-                        eval_globals = {**safe_globals, **context}
-                        exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
-                        logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
-                    except HTTPException:
-                        raise  # Preserve status code and message from @validate()
-                    except Exception as validation_error:
-                        logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
-                        raise HTTPException(status_code=400, detail={"error": str(validation_error)})
-
-        # ----------------------------------------------------------------
-        # STEP 5: Extract final payload (terminal entity)
-        # ----------------------------------------------------------------
-        terminal_entity_name = "{{ terminal.name }}"
-        final_payload = context.get(terminal_entity_name, {})
-
-        logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
-
-        {% if target %}
-        # ----------------------------------------------------------------
-        # STEP 6: Forward to external target
-        # ----------------------------------------------------------------
-        target_url = _EXTERNAL_TARGET["url"]
-        target_url = interpolate_url(target_url, context)
-        target_method = _EXTERNAL_TARGET["method"]
-        target_name = _EXTERNAL_TARGET["name"]
-        
-        logger.info(f"[FORWARD] - Sending to {target_name} ({target_method} {target_url})")
-        
-        try:
-            # Prepare headers
-            target_headers = resolve_headers(_EXTERNAL_TARGET.get("headers", []))
-            
-            # Handle API key query param injection
-            for key, value in _EXTERNAL_TARGET.get("headers", []):
-                if key == "__queryparam__":
-                    separator = "&" if "?" in target_url else "?"
-                    target_url = f"{target_url}{separator}{value}"
-            
-            # Prepare request kwargs
-            request_kwargs = {"headers": target_headers}
-            
-            # Don't send body for DELETE with empty payload
-            if not (target_method == "DELETE" and not final_payload):
-                request_kwargs["json"] = final_payload
-            
-            target_response = await http_client.request(target_method, target_url, **request_kwargs)
-            
-            if target_response.status_code >= 400:
-                logger.error(f"[FORWARD] - Target returned error: HTTP {target_response.status_code}")
-                try:
-                    error_detail = target_response.json()
-                except Exception:
-                    error_detail = {"message": target_response.text}
-                raise HTTPException(status_code=target_response.status_code, detail=error_detail)
-            
-            # Parse response
-            try:
-                target_data = target_response.json()
-            except Exception:
-                target_data = {"ok": True}
-            
-            logger.info(f"[SUCCESS] - Forwarded to {target_name} successfully")
-            
-            return {
-                "forwarded_to": target_url,
-                "method": target_method,
-                "payload": final_payload,
-                "response": target_data
-            }
-            
-        except HTTPException:
-            raise
-        except Exception as forward_error:
-            logger.error(f"[FORWARD] - Unexpected error forwarding to {target_name}: {forward_error}", exc_info=True)
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to forward to external target: {target_name}"
-            )
-        {% else %}
-        # ----------------------------------------------------------------
-        # STEP 6: Return final payload (no external target)
-        # ----------------------------------------------------------------
-        logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (internal)")
-        return final_payload
-        {% endif %}
+        return await {{ endpoint.name | lower }}_service.execute_mutation(request_body, path_params)
 
     except HTTPException:
         raise
