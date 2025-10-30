@@ -1,6 +1,5 @@
 """Pydantic model generation from entities."""
 
-import json
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
@@ -9,7 +8,6 @@ from ..extractors import (
     map_to_python_type,
     compile_validators_to_pydantic,
 )
-from ..graph import build_dependency_graph
 from ..utils import format_python_code
 
 
@@ -123,23 +121,3 @@ def generate_domain_models(model, templates_dir, output_dir):
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(models_code, encoding="utf-8")
     print(f"[GENERATED] Domain models: {output_file}")
-
-
-def generate_graph_endpoint(model, templates_dir, out_dir):
-    """
-    Generate the /graph endpoint (JSON + HTML visualization).
-    """
-    graph = build_dependency_graph(model)
-    routers_dir = Path(out_dir) / "app" / "api" / "routers"
-    routers_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save graph JSON
-    (routers_dir / "graph_data.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")
-
-    # Render router file
-    jenv = Environment(loader=FileSystemLoader(str(templates_dir)))
-    template = jenv.get_template("router_graph.jinja")
-    rendered = template.render()
-    (routers_dir / "router_graph.py").write_text(rendered, encoding="utf-8")
-
-    print("[GRAPH] /graph endpoint generated successfully.")

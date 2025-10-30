@@ -7,7 +7,7 @@ into a modular structure for better maintainability.
 
 Architecture:
     - extractors/: Model extraction and type mapping
-    - graph/: Entity graph traversal and dependency resolution
+    - graph/: Entity graph traversal for dependency resolution
     - builders/: Configuration and chain builders
     - generators/: Code generators for different endpoint types
     - utils/: Utility functions (formatting, headers, paths)
@@ -26,7 +26,6 @@ from .generators import (
     generate_mutation_router,
     generate_websocket_router,
     generate_domain_models,
-    generate_graph_endpoint,
     scaffold_backend_from_model,
 )
 
@@ -45,7 +44,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         - Domain models (Pydantic models with validation)
         - REST API routers (query and mutation)
         - WebSocket routers (duplex communication)
-        - Graph visualization endpoint
     """
     print("\n" + "="*70)
     print("  STARTING CODE GENERATION")
@@ -91,9 +89,6 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         generate_websocket_router(
             endpoint, model, all_source_names, templates_dir, out_dir
         )
-
-    print("\n[PHASE 4] Generating graph visualization endpoint...")
-    generate_graph_endpoint(model, templates_dir, out_dir)
 
     print("\n" + "="*70)
     print("  CODE GENERATION COMPLETE")
