@@ -32,9 +32,7 @@ async def duplex(ws: WebSocket):
     rid = uuid.uuid4().hex
     set_request_id(rid)
 
-    # ----------------------------------------------------------------
     # Authentication
-    # ----------------------------------------------------------------
     {% if endpoint.auth %}
     {% if endpoint.auth.kind == 'bearer' %}
     auth_header = ws.headers.get("authorization")
@@ -83,9 +81,7 @@ async def duplex(ws: WebSocket):
         for i in range(len(ws_service._EXTERNAL_TARGETS)):
             asyncio.create_task(ws_service.ensure_target_connection(i, inbound_entity))
 
-    # ----------------------------------------------------------------
-    # Inbound loop: Client → Compute outbound chain → Forward
-    # ----------------------------------------------------------------
+    # Inbound loop: Client -> Compute outbound chain -> Forward
     async def inbound_loop():
         logger.info(f"[CLIENT] - Starting inbound loop for {rid}")
         chain_inbound, chain_outbound = ws_service.get_compiled_chains()
@@ -134,9 +130,7 @@ async def duplex(ws: WebSocket):
                 await ws.send_json(error_response)
                 continue
 
-    # ----------------------------------------------------------------
     # Outbound loop: Subscribe to bus and send to client
-    # ----------------------------------------------------------------
     async def outbound_loop():
         logger.info(f"[CLIENT] - Starting outbound loop for {rid}, subscribed to: {inbound_entity}")
         if bus_in:
@@ -148,9 +142,7 @@ async def duplex(ws: WebSocket):
                 await bus_in.remove_ws(ws)
                 logger.info(f"[CLIENT] - Removed {rid} from bus subscription")
 
-    # ----------------------------------------------------------------
     # Run both loops concurrently
-    # ----------------------------------------------------------------
     try:
         tasks = []
         {% if compiled_chain_outbound or entity_out %}

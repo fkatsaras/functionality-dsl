@@ -54,6 +54,31 @@ def compile_validators_to_pydantic(attr, all_source_names):
 
     type_spec = getattr(attr, "type", None)
 
+    # Handle format specifications (e.g., string<email>, integer<int64>)
+    if type_spec and hasattr(type_spec, "format"):
+        format_str = getattr(type_spec, "format", None)
+        if format_str:
+            # Add appropriate imports and constraints for formats
+            format_handlers = {
+                "email": lambda: imports.add("from pydantic import EmailStr"),
+                "uri": lambda: imports.add("from pydantic import HttpUrl"),
+                "uuid_str": lambda: imports.add("from uuid import UUID"),
+                "date": lambda: imports.add("from datetime import date"),
+                "date_time": lambda: imports.add("from datetime import datetime"),
+                "time": lambda: imports.add("from datetime import time"),
+                "ipv4": lambda: imports.add("from pydantic import IPvAnyAddress"),
+                "ipv6": lambda: imports.add("from pydantic import IPvAnyAddress"),
+                "hostname": lambda: field_constraints.update({"pattern": r"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"}),
+                "byte": lambda: field_constraints.update({"pattern": r"^[A-Za-z0-9+/]*={0,2}$"}),
+                "password": lambda: None,  # Password is just a UI hint in OpenAPI
+                "regex": lambda: None,  # Regex format doesn't have special validation
+                "int32": lambda: field_constraints.update({"ge": -2147483648, "le": 2147483647}),
+                "int64": lambda: field_constraints.update({"ge": -9223372036854775808, "le": 9223372036854775807}),
+            }
+            handler = format_handlers.get(format_str)
+            if handler:
+                handler()
+
     # Extract range constraints from type: string(3..50), int(18..120)
     if type_spec and hasattr(type_spec, "baseType"):
         base_type = getattr(type_spec, "baseType", "").lower()
@@ -62,30 +87,30 @@ def compile_validators_to_pydantic(attr, all_source_names):
         if range_constraint:
             if "exact" in range_constraint:
                 # Exact length/value
-                if base_type in ("string", "list"):
+                if base_type in ("string", "array"):
                     # Pydantic requires int for length constraints
                     field_constraints["min_length"] = int(range_constraint["exact"])
                     field_constraints["max_length"] = int(range_constraint["exact"])
-                elif base_type in ("int", "float", "number"):
+                elif base_type in ("integer", "number"):
                     field_constraints["ge"] = range_constraint["exact"]
                     field_constraints["le"] = range_constraint["exact"]
             else:
                 # Range: min..max
-                if base_type in ("string", "list"):
+                if base_type in ("string", "array"):
                     # Pydantic requires int for length constraints
                     if "min" in range_constraint:
                         field_constraints["min_length"] = int(range_constraint["min"])
                     if "max" in range_constraint:
                         field_constraints["max_length"] = int(range_constraint["max"])
-                elif base_type in ("int", "float", "number"):
+                elif base_type in ("integer", "number"):
                     if "min" in range_constraint:
                         field_constraints["ge"] = range_constraint["min"]
                     if "max" in range_constraint:
                         field_constraints["le"] = range_constraint["max"]
 
-    # Extract decorator validators: @email, @min(5), @validate(...)
+    # Extract decorator validators: @min(5), @validate(...), etc.
     # Validators can appear in TWO places:
-    # 1. In TypeSpec (type validators): username: string @email
+    # 1. In TypeSpec (type validators): username: string(3..50) @required
     # 2. After expression (exprValidators): = expr @validate(...)
     type_validators = getattr(type_spec, "validators", []) or [] if type_spec else []
     expr_validators = getattr(attr, "exprValidators", []) or []
@@ -95,23 +120,10 @@ def compile_validators_to_pydantic(attr, all_source_names):
         validator_name = getattr(validator, "name", "")
         validator_args = getattr(validator, "args", []) or []
 
-        # Handle special type validators
-        if validator_name == "email":
-            imports.add("from pydantic import EmailStr")
-            # Type is already changed in map_to_python_type
-            continue
-
-        if validator_name == "url":
-            imports.add("from pydantic import HttpUrl")
-            continue
-
         # Map to Pydantic Field constraints
         pydantic_field = PYDANTIC_FIELD_MAPPING.get(validator_name)
 
         if pydantic_field:
-            if pydantic_field == "email" or pydantic_field == "url":
-                # Already handled above
-                continue
 
             # Handle special cases with hardcoded values
             if ":" in pydantic_field:

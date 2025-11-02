@@ -24,21 +24,21 @@ end
 Entity User
   source: CreateUserEndpoint
   attributes:
-    - id: int = 1;  // We can introduce another function for here: rand() or sth
+    - id: integer = 1;  // We can introduce another function for here: rand() or sth
     - name: string = CreateUserEndpoint.name;
     - job: string = CreateUserEndpoint.job;
 end
 
-Entity UserNormalized1(User) 
+Entity UserNormalized1(User)
   attributes:
-    - id: int = User.id;
+    - id: integer = User.id;
     - name: string = lower(User.name);
     - job: string = lower(User.job);
 end
 
-Entity UserNormalized2(UserNormalized1, User) 
+Entity UserNormalized2(UserNormalized1, User)
   attributes:
-    - id: int = User.id;
+    - id: integer = User.id;
     - name: string = lower(User.name) + lower(UserNormalized1.name);
     - job: string = lower(UserNormalized1.job);
 end
@@ -46,9 +46,9 @@ end
 
 
 // --- Targeted entities ; further compute or validate call ----------
-Entity UserNormalized3(UserNormalized2) 
+Entity UserNormalized3(UserNormalized2)
   attributes:
-    - id: int = UserNormalized2.id;
+    - id: integer = UserNormalized2.id;
     - name: string = lower(UserNormalized2.name);
     - job: string = lower(UserNormalized2.job);
 end

@@ -2,12 +2,22 @@ import utils
 import expression
 
 AttrType:
-  'string' | 'int' | 'float' | 'number' | 'bool' | 'datetime' | 'uuid' | 'dict' | 'list'
+  'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object'
+;
+
+// Format qualifiers for types (OpenAPI-aligned)
+// Note: For datetime values, use plain 'string' type (OpenAPI date-time is just a string format hint)
+TypeFormat:
+  // String formats
+  'email' | 'uri' | 'uuid_str' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
+  'byte' | 'binary' | 'password' | 'regex' |
+  // Number formats
+  'float' | 'double' | 'int32' | 'int64'
 ;
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 TypeSpec:
-  baseType=AttrType constraint=TypeConstraint? nullable='?'? validators*=Validator
+  baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? validators*=Validator
 ;
 
 TypeConstraint:

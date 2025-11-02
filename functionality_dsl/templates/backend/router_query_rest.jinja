@@ -34,9 +34,7 @@ async def query_{{ endpoint.name | lower }}(
     Aggregates data from external sources and internal dependencies,
     then computes the final entity attributes.
     """
-    # ----------------------------------------------------------------
     # Authentication
-    # ----------------------------------------------------------------
     {% if endpoint.auth %}
     {% if endpoint.auth.kind == 'bearer' %}
     if not credentials or not credentials.credentials:
@@ -50,9 +48,7 @@ async def query_{{ endpoint.name | lower }}(
     {% endif %}
     {% endif %}
 
-    # ----------------------------------------------------------------
-    # Delegate to service layer
-    # ----------------------------------------------------------------
+    # Forward to service layer
     try:
         path_params = {
             {% for p in pparams %}

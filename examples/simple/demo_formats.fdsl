@@ -1,0 +1,72 @@
+// Demonstration of OpenAPI format specifications in FDSL
+
+Server FormatDemoServer
+  host: "localhost"
+  port: 8090
+  cors: "http://localhost:5173"
+  loglevel: debug
+end
+
+// External mock API
+Source<REST> UserDataExternal
+  url: "http://mockapi:9100/db/users"
+  verb: POST
+  entity: UserFormattedData
+end
+
+// API Endpoint for user registration
+APIEndpoint<REST> UserRegistration
+  path: "/api/users/register"
+  verb: POST
+  entity: UserRegistrationRequest
+end
+
+// Entity demonstrating various format specifications
+Entity UserRegistrationRequest
+  source: UserRegistration
+  attributes:
+    // String formats
+    - userId: string<uuid_str> = UserRegistration.userId;
+    - email: string<email> = trim(UserRegistration.email);
+    - website: string<uri>? = UserRegistration.website;
+    - hostname: string<hostname> = UserRegistration.hostname;
+    - ipAddress: string<ipv4> = UserRegistration.ipAddress;
+
+    // Date/Time formats
+    - birthDate: string<date> = UserRegistration.birthDate;
+    - registeredAt: string = UserRegistration.registeredAt;  // ISO 8601 datetime string
+    - preferredTime: string<time>? = UserRegistration.preferredTime;
+
+    // String with length constraints and format
+    - username: string(3..30) = trim(UserRegistration.username);
+    - bio: string(..500)? = UserRegistration.bio;
+
+    // Binary/encoded data
+    - avatar: string<byte>? = UserRegistration.avatar;
+    - passwordHash: string<password> = UserRegistration.passwordHash;
+end
+
+// Entity with numeric formats
+Entity UserFormattedData(UserRegistrationRequest)
+  attributes:
+    - userId: string<uuid_str> = UserRegistrationRequest.userId;
+    - email: string<email> = UserRegistrationRequest.email;
+    - website: string<uri>? = UserRegistrationRequest.website;
+    - birthDate: string<date> = UserRegistrationRequest.birthDate;
+    - registeredAt: string = UserRegistrationRequest.registeredAt;  // ISO 8601 datetime
+
+    // Integer formats with range constraints
+    - age: integer<int32>(18..120) = 25;
+    - loginCount: integer<int64> = 0;
+
+    // Number formats
+    - accountBalance: number<double> = 0.0;
+    - rating: number<float>(0..5) = 0.0;
+end
+
+// UI Component
+Component<ActionForm> RegistrationForm
+  endpoint: UserRegistration
+  fields: [userId, email, website, hostname, ipAddress, birthDate, registeredAt, username, passwordHash]
+  submitLabel: "Register User"
+end

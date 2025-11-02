@@ -52,7 +52,7 @@ end
 Entity ExistingUsers
   source: Users
   attributes:
-    - users: list = Users;
+    - users: array = Users;
 end
 
 // --- REGISTER ---
@@ -67,12 +67,12 @@ Entity UserRegisterRequest
   attributes:
     - username: string(3..50) = trim(UserRegister.username);
     - password: string(6..) = UserRegister.password;
-    - email: string @email = trim(UserRegister.email);
+    - email: string<email> = trim(UserRegister.email);
 end
 
 Entity NewUser(UserRegisterRequest)
   attributes:
-    - user: dict = {
+    - user: object = {
         "username": UserRegisterRequest.username,
         "password": UserRegisterRequest.password,
         "email": UserRegisterRequest.email
@@ -95,7 +95,7 @@ end
 
 Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
-    - match: dict = find(ExistingUsers.users, u ->
+    - match: object = find(ExistingUsers.users, u ->
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
       ) @validate(this != null, "Invalid username or password", 401);
 end
@@ -116,19 +116,19 @@ end
 Entity ResetPasswordRequest
   source: ResetPassword
   attributes:
-    - email: string @email = trim(ResetPassword.email);
+    - email: string<email> = trim(ResetPassword.email);
     - newPassword: string(6..) = ResetPassword.newPassword;
 end
 
 Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
   attributes:
-    - user: dict = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email) 
+    - user: object = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email)
     @validate(this != null, "User not found", 404);
 end
 
 Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
   attributes:
-    - email: string @email = ResetPasswordRequest.email;
+    - email: string<email> = ResetPasswordRequest.email;
     - newPassword: string(6..) = ResetPasswordRequest.newPassword
       @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
 end
@@ -143,8 +143,8 @@ end
 Entity UserUpdatePayload
   source: UserUpdate
   attributes:
-    - id: int = int(UserUpdate$id);
-    - email: string @email = trim(UserUpdate.email);
+    - id: integer = int(UserUpdate$id);
+    - email: string<email> = trim(UserUpdate.email);
     - password: string(6..) = UserUpdate.password;
 end
 
@@ -158,7 +158,7 @@ end
 Entity UserDeletePayload
   source: UserDelete
   attributes:
-    - id: int = int(UserDelete$id);
+    - id: integer = int(UserDelete$id);
 end
 
 // ============================================================

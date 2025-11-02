@@ -39,17 +39,17 @@ end
 Entity CartRaw
   source: CartByUserExternal
   attributes:
-    - userId: int = int(CartByUserExternal$userId);
-    - items: list = CartByUserExternal.items;
+    - userId: integer = int(CartByUserExternal$userId);
+    - items: array = CartByUserExternal.items;
     - createdAt: string = CartByUserExternal.createdAt;
 end
 
 // --- Shaped list for UI ---
 Entity CartView(CartRaw)
   attributes:
-    - userId: int = CartRaw.userId;
-    - total_items: int = len(CartRaw.items);
-    - items: list = map(CartRaw.items, i -> {
+    - userId: integer = CartRaw.userId;
+    - total_items: integer = len(CartRaw.items);
+    - items: array = map(CartRaw.items, i -> {
         "productId": i["productId"],
         "quantity": i["quantity"]
       });
@@ -59,24 +59,24 @@ end
 Entity CartAddPayload
   source: CartAdd
   attributes:
-    - userId: int @positive = int(CartAdd.userId);
-    - productId: int @positive = int(CartAdd.productId);
-    - quantity: int = int(CartAdd.quantity) @validate(this > 0, "Quantity must be positive", 400);
+    - userId: integer @positive = int(CartAdd.userId);
+    - productId: integer @positive = int(CartAdd.productId);
+    - quantity: integer = int(CartAdd.quantity) @validate(this > 0, "Quantity must be positive", 400);
 end
 
 // --- Remove item ---
 Entity CartRemovePayload
   source: CartRemove
   attributes:
-    - userId: int @positive = int(CartRemove$userId);
-    - productId: int @positive = int(CartRemove$productId);
+    - userId: integer @positive = int(CartRemove$userId);
+    - productId: integer @positive = int(CartRemove$productId);
 end
 
 // --- Clear cart ---
 Entity CartClearPayload
   source: CartClear
   attributes:
-    - userId: int @positive = int(CartClear$userId);
+    - userId: integer @positive = int(CartClear$userId);
 end
 
 

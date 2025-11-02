@@ -13,7 +13,7 @@ def build_entity_chain(entity, model, all_source_names, context="ctx"):
     Build the computation chain for an entity (itself + all ancestors).
     Returns list of entity configs with their compiled attribute expressions and @validate() clauses.
 
-    Note: Schema validators (@email, @positive, etc.) are handled by Pydantic models.
+    Note: Type format specifications (string<email>, etc.) and range constraints are handled by Pydantic models.
     Runtime validators (@validate()) are executed in the router after entity computation.
     """
     ancestors = get_all_ancestors(entity, model)

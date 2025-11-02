@@ -91,7 +91,7 @@ end
 Entity ProductCatalog
   source: ProductDB
   attributes:
-    - products: list = ProductDB;
+    - products: array = ProductDB;
 end
 ```
 
@@ -100,10 +100,10 @@ end
 Entity ProductInfo
   source: ProductDetails
   attributes:
-    - id: int = ProductDetails.id;
+    - id: integer = ProductDetails.id;
     - name: string = ProductDetails.name;
-    - price: float = ProductDetails.price;
-    - inStock: bool = ProductDetails.stock > 0;
+    - price: number = ProductDetails.price;
+    - inStock: boolean = ProductDetails.stock > 0;
 end
 ```
 
@@ -111,10 +111,10 @@ end
 ```fdsl
 Entity CartWithPricing(RawCart, ProductDetails)
   attributes:
-    - items: list(1..) = RawCart.items;
-    - subtotal: float @positive = sum(map(items, i -> i["price"] * i["quantity"]));
-    - tax: float = round(subtotal * 0.1, 2);
-    - total: float = subtotal + tax;
+    - items: array(1..) = RawCart.items;
+    - subtotal: number @positive = sum(map(items, i -> i["price"] * i["quantity"]));
+    - tax: number = round(subtotal * 0.1, 2);
+    - total: number = subtotal + tax;
 end
 ```
 
@@ -124,7 +124,7 @@ Entity NewUser
   source: UserRegister
   attributes:
     - username: string(3..50) = trim(UserRegister.username);
-    - email: string @required @email = trim(UserRegister.email);
+    - email: string<email> @required = trim(UserRegister.email);
     - password: string(6..) = UserRegister.password;
 end
 ```
@@ -150,8 +150,8 @@ end
 
 ### Variables & References
 ```fdsl
-- myAttr: int = SomeEntity.field;
-- computed: float = ParentEntity.price * 2;
+- myAttr: integer = SomeEntity.field;
+- computed: number = ParentEntity.price * 2;
 ```
 
 ### Path Parameters
@@ -161,7 +161,7 @@ path: "/api/users/{userId}"
 
 // In entity - use '$' syntax to access path params from the source
 // (Works only when entity has a 'source:' field pointing to an APIEndpoint or Source)
-- id: int = int(MyEndpoint$userId);
+- id: integer = int(MyEndpoint$userId);
 
 // Example with Source
 Source<REST> CartByUserExternal
@@ -173,8 +173,8 @@ end
 Entity CartRaw
   source: CartByUserExternal
   attributes:
-    - userId: int = int(CartByUserExternal$userId);  // '$' accesses path param
-    - items: list = CartByUserExternal.items;        // '.' accesses response field
+    - userId: integer = int(CartByUserExternal$userId);  // '$' accesses path param
+    - items: array = CartByUserExternal.items;        // '.' accesses response field
 end
 ```
 
@@ -184,12 +184,12 @@ end
 trim(str), upper(str), lower(str), len(str)
 
 // Math functions
-sum(list), round(num, decimals), abs(num)
+sum(array), round(num, decimals), abs(num)
 
 // Collections
-map(list, fn), filter(list, fn), find(list, fn), all(list, fn), any(list, fn)
+map(array, fn), filter(array, fn), find(array, fn), all(array, fn), any(array, fn)
 
-// Note: For validation, use inline validators (@email, @min, etc.) instead of functions
+// Note: For type formats, use angle bracket syntax (string<email>, string<uri>, etc.)
 ```
 
 ### Operators
@@ -225,29 +225,61 @@ myList[0]                 // List access
 Entity CartData
   source: CartByUserExternal  // Source has URL with {userId} param
   attributes:
-    - userId: int = int(CartByUserExternal$userId);    // $ for path param
-    - items: list = CartByUserExternal.items;          // . for response field
-    - firstItem: dict = CartByUserExternal.items[0];   // [] for indexing
+    - userId: integer = int(CartByUserExternal$userId);    // $ for path param
+    - items: array = CartByUserExternal.items;          // . for response field
+    - firstItem: object = CartByUserExternal.items[0];   // [] for indexing
 end
 ```
 
 ### Lambdas
 ```fdsl
-- result: list = map(items, x -> x * 2);
-- filtered: list = filter(users, u -> u["active"] == true);
+- result: array = map(items, x -> x * 2);
+- filtered: array = filter(users, u -> u["active"] == true);
 ```
 
-### Dict/List Literals
+### Object/Array Literals
 ```fdsl
-- myDict: dict = {"key": "value", "count": 42};
-- myList: list = [1, 2, 3, 4];
+- myObject: object = {"key": "value", "count": 42};
+- myArray: array = [1, 2, 3, 4];
 ```
 
 ---
 
 ## Inline Validation Syntax
 
-FDSL supports inline validation using **range syntax** and **decorator validators** for clean, declarative data validation.
+FDSL supports inline validation using **format specifications**, **range syntax**, and **decorator validators** for clean, declarative data validation.
+
+### Format Specifications (OpenAPI-Aligned)
+
+FDSL supports OpenAPI format qualifiers using angle bracket syntax `<format>`:
+
+```fdsl
+// String formats
+- email: string<email>              // Email address validation (maps to EmailStr)
+- website: string<uri>              // URI validation (maps to HttpUrl)
+- userId: string<uuid_str>          // UUID string format validation
+- birthday: string<date>            // RFC 3339 date (2025-11-02)
+- createdAt: string               // Use base 'datetime' type for datetimes
+- openTime: string<time>            // Time only (10:30:00)
+- server: string<hostname>          // DNS hostname validation
+- ipAddress: string<ipv4>           // IPv4 address (192.168.1.1)
+- ipv6Addr: string<ipv6>            // IPv6 address
+- avatar: string<byte>              // Base64-encoded data
+- file: string<binary>              // Binary data (for uploads)
+- userPassword: string<password>    // Password (UI hint only)
+
+// Number formats with range constraints
+- count: integer<int32>             // 32-bit integer (-2^31 to 2^31-1)
+- bigNumber: integer<int64>         // 64-bit integer
+- ratio: number<float>              // Single precision float
+- precise: number<double>           // Double precision float
+```
+
+**How formats work:**
+- Formats change the Python/Pydantic type (e.g., `string<email>` → `EmailStr`)
+- Some formats add validation constraints (e.g., `<int32>` adds min/max bounds)
+- Formats can be combined with range syntax: `string<email>(..100)`
+- Formats generate appropriate imports automatically
 
 ### Range Syntax
 
@@ -261,14 +293,14 @@ Apply constraints directly to types using mathematical range notation:
 - description: string(10..)      // Min 10 characters, no max
 
 // Numeric range constraints
-- age: int(18..120)              // Between 18-120
-- price: float(0.01..)           // Min 0.01, no max
-- quantity: int(1..100)          // Between 1-100
+- age: integer(18..120)          // Between 18-120
+- price: number(0.01..)          // Min 0.01, no max
+- quantity: integer(1..100)      // Between 1-100
 
-// List length constraints
-- tags: list(1..5)               // 1 to 5 items
-- items: list(..10)              // Max 10 items
-- coords: list(2)                // Exactly 2 items
+// Array length constraints
+- tags: array(1..5)              // 1 to 5 items
+- items: array(..10)             // Max 10 items
+- coords: array(2)               // Exactly 2 items
 ```
 
 ### Validator Decorators
@@ -277,8 +309,8 @@ Chain validators using `@decorator` syntax:
 
 #### **String Validators**
 ```fdsl
-- email: string @required @email;
-- url: string @url;
+- email: string<email> @required;
+- url: string<uri> @required;
 - username: string @minLength(3) @maxLength(20);
 - slug: string @pattern("^[a-z0-9-]+$");
 - trimmed: string @trim;
@@ -286,24 +318,24 @@ Chain validators using `@decorator` syntax:
 
 #### **Numeric Validators**
 ```fdsl
-- age: int @min(18) @max(120);
-- price: float @gt(0) @lte(999.99);
-- quantity: int @positive;         // Shorthand for @min(1)
-- score: float @range(0.0, 100.0);
+- age: integer @min(18) @max(120);
+- price: number @gt(0) @lte(999.99);
+- quantity: integer @positive;         // Shorthand for @min(1)
+- score: number @range(0.0, 100.0);
 ```
 
-#### **List Validators**
+#### **Array Validators**
 ```fdsl
-- tags: list @minItems(1) @maxItems(10);
-- coords: list @length(2);          // Exactly 2 items
-- ids: list @unique;                // All items must be unique
+- tags: array @minItems(1) @maxItems(10);
+- coords: array @length(2);          // Exactly 2 items
+- ids: array @unique;                // All items must be unique
 ```
 
 #### **General Validators**
 ```fdsl
 - status: string @oneOf(["draft", "published", "archived"]);
 - role: string @in(["admin", "user", "guest"]);
-- data: dict @required;
+- data: object @required;
 - avatar: string? @optional;        // Explicitly optional
 ```
 
@@ -315,16 +347,16 @@ For complex validation logic, use `@validate()`:
 Entity CartItem
   source: CartInput
   attributes:
-    - productId: int @required = CartInput.productId;
-    - quantity: int(1..100) = CartInput.quantity;
-    - price: float @positive = CartInput.price;
-    - discount: float?(0..1) = CartInput.discount;
+    - productId: integer @required = CartInput.productId;
+    - quantity: integer(1..100) = CartInput.quantity;
+    - price: number @positive = CartInput.price;
+    - discount: number?(0..1) = CartInput.discount;
 
     // Custom cross-field validation
-    - finalPrice: float = price * (1 - (discount or 0))
+    - finalPrice: number = price * (1 - (discount or 0))
         @validate(this > 0, "Final price must be positive", 400);
 
-    - total: float = finalPrice * quantity
+    - total: number = finalPrice * quantity
         @validate(this <= 10000, "Cart item cannot exceed $10,000", 400);
 end
 ```
@@ -334,30 +366,36 @@ end
 @validate(condition, errorMessage, httpStatusCode?)
 ```
 
-### Complete Example
+### Complete Example with Formats
 
 ```fdsl
 Entity CreateOrder
   source: OrderInput
   attributes:
-    // Customer info with validation
-    - customerId: int @required = OrderInput.customerId;
-    - email: string @email @required = trim(OrderInput.email);
+    // Customer info with format validation
+    - customerId: string<uuid_str> @required = OrderInput.customerId;
+    - email: string<email> @required = trim(OrderInput.email);
     - phone: string @pattern("^\+?[1-9]\d{1,14}$") = OrderInput.phone;
+    - ipAddress: string<ipv4> = OrderInput.ipAddress;
 
-    // Items with range and list constraints
-    - items: list(1..50) = OrderInput.items;
-    - itemCount: int @positive = len(items);
+    // Date/time with formats
+    - orderDate: string<date> = OrderInput.orderDate;
+    - createdAt: string = OrderInput.createdAt;
 
-    // Pricing with numeric constraints
-    - subtotal: float @positive = sum(map(items, i -> i["price"] * i["qty"]));
-    - tax: float(0..) = round(subtotal * 0.1, 2);
-    - total: float = subtotal + tax
+    // Items with range and array constraints
+    - items: array(1..50) = OrderInput.items;
+    - itemCount: integer<int32> @positive = len(items);
+
+    // Pricing with numeric constraints and formats
+    - subtotal: number<double> @positive = sum(map(items, i -> i["price"] * i["qty"]));
+    - tax: number(0..) = round(subtotal * 0.1, 2);
+    - total: number = subtotal + tax
         @validate(this >= 5.00, "Minimum order total is $5.00", 400)
         @validate(this <= 50000, "Maximum order total is $50,000", 400);
 
     // Optional field with constraints
     - promoCode: string?(4..20) = upper(trim(OrderInput.promoCode));
+    - website: string<uri>? = OrderInput.website;
 
     // Enum-style validation
     - shippingMethod: string @oneOf(["standard", "express", "overnight"]);
@@ -368,21 +406,26 @@ end
 
 1. **Range constraints** compile to Pydantic `Field()` parameters:
    - `string(3..50)` → `Field(min_length=3, max_length=50)`
-   - `int(18..120)` → `Field(ge=18, le=120)`
+   - `integer(18..120)` → `Field(ge=18, le=120)`
 
-2. **Decorator validators** map to Pydantic validators:
-   - `@email` → Changes type to `EmailStr`
-   - `@url` → Changes type to `HttpUrl`
+2. **Format specifications** map to specialized Python types:
+   - `string<email>` → `EmailStr`
+   - `string<uri>` → `HttpUrl`
+   - `string<uuid_str>` → `UUID`
+   - `string<date>` → `date`
+   - `string<ipv4>` → `IPvAnyAddress`
+
+3. **Decorator validators** map to Pydantic Field constraints:
    - `@min(5)` → `Field(ge=5)`
    - `@pattern(regex)` → Custom `@field_validator`
 
-3. **Custom validators** generate `@field_validator` decorators in Pydantic models
+4. **Custom validators** generate `@field_validator` decorators in Pydantic models
 
-4. Validation happens automatically when Pydantic models are instantiated from request data
+5. Validation happens automatically when Pydantic models are instantiated from request data
 
 ### Available Validators
 
-**String**: `@email`, `@url`, `@pattern()`, `@minLength()`, `@maxLength()`, `@length()`, `@startsWith()`, `@endsWith()`, `@trim`
+**String**: `@pattern()`, `@minLength()`, `@maxLength()`, `@length()`, `@startsWith()`, `@endsWith()`, `@trim`
 
 **Numeric**: `@min()`, `@max()`, `@gt()`, `@lt()`, `@gte()`, `@lte()`, `@positive`, `@negative`, `@range()`
 
@@ -485,9 +528,9 @@ my-api-project/
 Entity EnrichedData
   source: ExternalAPI
   attributes:
-    - id: int = ExternalAPI.id;
+    - id: integer = ExternalAPI.id;
     - displayName: string = upper(ExternalAPI.name);
-    - isActive: bool = ExternalAPI.status == "active";
+    - isActive: boolean = ExternalAPI.status == "active";
 end
 ```
 
@@ -495,9 +538,9 @@ end
 ```fdsl
 Entity UserWithOrders(UserData, OrderHistory)
   attributes:
-    - user: dict = UserData;
-    - orders: list = OrderHistory.items;
-    - totalSpent: float = sum(map(orders, o -> o["total"]));
+    - user: object = UserData;
+    - orders: array = OrderHistory.items;
+    - totalSpent: number = sum(map(orders, o -> o["total"]));
 end
 ```
 
@@ -506,8 +549,8 @@ end
 Entity ValidatedInput
   source: MyEndpoint
   attributes:
-    - email: string @email = trim(MyEndpoint.email);
-    - age: int(18..) = MyEndpoint.age;
+    - email: string<email> = trim(MyEndpoint.email);
+    - age: integer(18..) = MyEndpoint.age;
     - password: string(8..) = MyEndpoint.password;
 end
 ```
@@ -517,8 +560,8 @@ end
 Entity ActiveUsers
   source: UsersDB
   attributes:
-    - activeUsers: list = filter(UsersDB.users, u -> u["active"] == true);
-    - usernames: list = map(activeUsers, u -> u["username"]);
+    - activeUsers: array = filter(UsersDB.users, u -> u["active"] == true);
+    - usernames: array = map(activeUsers, u -> u["username"]);
 end
 ```
 
@@ -558,10 +601,11 @@ fdsl generate my-api.fdsl --out generated/
 - Path params seeded into `context[EndpointName]`
 
 ### 4. **Validation Execution**
-- Inline validators compile to Pydantic Field constraints
+- Type formats and constraints compile to Pydantic Field constraints
 - Validation happens automatically on request data via Pydantic models
 - Range syntax: `string(3..50)` → `Field(min_length=3, max_length=50)`
-- Decorator validators: `@email` → `EmailStr`, `@min(18)` → `Field(ge=18)`
+- Format specifications: `string<email>` → `EmailStr`, `string<uri>` → `HttpUrl`
+- Decorator validators: `@min(18)` → `Field(ge=18)`
 - Custom `@validate()` generates `@field_validator` decorators
 - HTTPException raised on validation failure with custom status codes
 
@@ -604,8 +648,8 @@ end
 Entity ProductCatalog
   source: ProductDB
   attributes:
-    - products: list = ProductDB;
-    - count: int = len(products);
+    - products: array = ProductDB;
+    - count: integer = len(products);
 end
 
 Component<Table> ProductTable

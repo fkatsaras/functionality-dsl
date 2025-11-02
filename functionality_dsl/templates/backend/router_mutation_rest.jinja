@@ -41,9 +41,8 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
     Transforms input data through computation chain (internal endpoint, no forwarding).
     {% endif %}
     """
-    # ----------------------------------------------------------------
+
     # Authentication
-    # ----------------------------------------------------------------
     {% if endpoint.auth %}
     {% if endpoint.auth.kind == 'bearer' %}
     if not credentials or not credentials.credentials:
@@ -57,9 +56,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
     {% endif %}
     {% endif %}
 
-    # ----------------------------------------------------------------
     # Parse request body
-    # ----------------------------------------------------------------
     try:
         request_body = await request.json()
         logger.info(f"[REQUEST] - Received payload with keys: {list(request_body.keys())}")
@@ -67,9 +64,7 @@ async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.low
         logger.warning(f"[REQUEST] - Failed to parse JSON body: {parse_error}")
         request_body = {}
 
-    # ----------------------------------------------------------------
-    # Delegate to service layer
-    # ----------------------------------------------------------------
+    # Forward to service layer
     try:
         path_params = {
             {% for p in pparams %}

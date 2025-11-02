@@ -29,11 +29,11 @@ end
 Entity ProductRaw
   source: ProductByIdExternal
   attributes:
-    - id: int = int(ProductByIdExternal.id);
+    - id: integer = int(ProductByIdExternal.id);
     - name: string = ProductByIdExternal.name;
     - description: string = ProductByIdExternal.description;
-    - price: float = ProductByIdExternal.price;
-    - stock: int = ProductByIdExternal.stock;
+    - price: number = ProductByIdExternal.price;
+    - stock: integer = ProductByIdExternal.stock;
     - category: string = ProductByIdExternal.category;
     - createdAt: string = ProductByIdExternal.createdAt;
 end
@@ -42,13 +42,13 @@ end
 Entity ProductsRaw
   source: ProductsExternal
   attributes:
-    - rows: list = ProductsExternal;
+    - rows: array = ProductsExternal;
 end
 
 // --- Shaped list for UI display ---
 Entity ProductsList(ProductsRaw)
   attributes:
-    - rows: list = map(ProductsRaw.rows, p ->
+    - rows: array = map(ProductsRaw.rows, p ->
         {
           "id": p["id"],
           "name": p["name"],
@@ -63,29 +63,29 @@ end
 Entity ProductReviewsRaw
   source: ReviewsByProductExternal
   attributes:
-    - rows: list = ReviewsByProductExternal;
+    - rows: array = ReviewsByProductExternal;
 end
 
 // --- Aggregated reviews (average rating + count) ---
 Entity ProductReviewsSummary(ProductReviewsRaw)
   attributes:
-    - count: int = len(ProductReviewsRaw.rows);
-    - average_rating: float =
+    - count: integer = len(ProductReviewsRaw.rows);
+    - average_rating: number =
         (sum(map(ProductReviewsRaw.rows, r -> r["rating"])) / max(1, len(ProductReviewsRaw.rows)));
 end
 
 // --- Full product details with embedded reviews ---
 Entity ProductDetails(ProductRaw, ProductReviewsSummary, ProductReviewsRaw)
   attributes:
-    - id: int = ProductRaw.id;
+    - id: integer = ProductRaw.id;
     - name: string = ProductRaw.name;
     - description: string = ProductRaw.description;
-    - price: float = ProductRaw.price;
-    - stock: int = ProductRaw.stock;
+    - price: number = ProductRaw.price;
+    - stock: integer = ProductRaw.stock;
     - category: string = ProductRaw.category;
-    - average_rating: float = ProductReviewsSummary.average_rating;
-    - review_count: int = ProductReviewsSummary.count;
-    - reviews: list = ProductReviewsRaw.rows;
+    - average_rating: number = ProductReviewsSummary.average_rating;
+    - review_count: integer = ProductReviewsSummary.count;
+    - reviews: array = ProductReviewsRaw.rows;
 end
 
 

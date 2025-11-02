@@ -12,34 +12,44 @@ def map_to_python_type(attr):
     # Check if it's a TypeSpec object or a plain string
     if hasattr(type_spec, "baseType"):
         base_type_str = getattr(type_spec, "baseType", "")
+        format_str = getattr(type_spec, "format", None)
         is_nullable = getattr(type_spec, "nullable", False)
     else:
         # Old format: plain string
         base_type_str = str(type_spec) if type_spec else ""
+        format_str = None
         is_nullable = getattr(attr, "optional", False)
 
     # Map base types
     base_type = {
-        "int": "int",
-        "float": "float",
+        "integer": "int",
         "number": "float",
         "string": "str",
-        "bool": "bool",
-        "datetime": "datetime",
-        "uuid": "str",
-        "dict": "dict",
-        "list": "list",
+        "boolean": "bool",
+        "array": "list",
+        "object": "dict",
     }.get(base_type_str.lower(), "Any")
 
-    # Check for special validators that change the type
-    # Validators can be in type_spec.validators (type validators) or attr.exprValidators (expression validators)
-    type_validators = getattr(type_spec, "validators", []) or [] if type_spec and hasattr(type_spec, "validators") else []
-    for validator in type_validators:
-        validator_name = getattr(validator, "name", "")
-        if validator_name == "email":
-            base_type = "EmailStr"
-        elif validator_name == "url":
-            base_type = "HttpUrl"
+    # Handle format specifications (OpenAPI formats)
+    if format_str:
+        format_type_map = {
+            # String formats that change Python type
+            "email": "EmailStr",
+            "uri": "HttpUrl",
+            "uuid_str": "UUID",
+            "date": "date",
+            "date_time": "datetime",
+            "time": "time",
+            "ipv4": "IPvAnyAddress",
+            "ipv6": "IPvAnyAddress",
+            # Number formats
+            "int32": "int",
+            "int64": "int",
+            "float": "float",
+            "double": "float",
+        }
+        if format_str in format_type_map:
+            base_type = format_type_map[format_str]
 
     if is_nullable:
         return f"Optional[{base_type}]"
