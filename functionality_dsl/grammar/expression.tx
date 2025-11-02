@@ -53,9 +53,7 @@ IndexAccess:  '[' index=Expr ']' ;
 
 // -------- atoms --------
 AtomBase:
-      listcomp=ListCompExpr
-    | dictcomp=DictCompExpr
-    | literal=Literal
+      literal=Literal
     | call=Call
     | var=Var
     | '(' inner=Expr ')'
@@ -96,31 +94,11 @@ ListLiteral:
     '[' (items+=Expr (',' items+=Expr)*)? ']'
 ;
 
-// list comprehension
-ListCompExpr:
-    '[' head=Expr 'for' var=CompTarget 'in' iterable=Expr ( 'if' cond=Expr )? ']'
-;
-
-// explicit target kinds
-CompTarget:
-      single=Var         // plain loop variable
-    | tuple=TupleTarget  // tuple-unpack
-;
-
-// tuple target e.g. for (a,b) in ...
-TupleTarget:
-    '(' vars+=Var[','] ')'
-;
-
 DictLiteral:
   '{' (pairs+=KeyValue (',' pairs+=KeyValue)*)? '}'
 ;
 
 KeyValue:
   (key_str=STRING | key_id=ID) ':' value=Expr
-;
-// Dict comprehension
-DictCompExpr:
-  '{' key=Expr ':' value=Expr 'for' var=ID 'in' iterable=Expr ('if' cond=Expr)? '}'
 ;
 

@@ -231,12 +231,6 @@ Entity CartData
 end
 ```
 
-### List Comprehensions
-```fdsl
-- filtered: list = [x for x in items if x > 10];
-- mapped: list = [x * 2 for x in numbers];
-```
-
 ### Lambdas
 ```fdsl
 - result: list = map(items, x -> x * 2);
@@ -580,7 +574,7 @@ fdsl generate my-api.fdsl --out generated/
 
 ## Limitations & Considerations
 
-1. **No loops or recursion** - Only comprehensions and built-in iteration functions
+1. **No loops or recursion** - Use built-in iteration functions like map(), filter(), etc.
 2. **No imports** - Cannot use arbitrary Python libraries in expressions
 3. **No file I/O** - Pure data transformation only
 4. **localStorage not supported** - Use React state or backend storage

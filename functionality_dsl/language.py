@@ -90,7 +90,7 @@ def _as_id_str(x):
 
 def _loop_var_names(expr) -> set[str]:
     """
-    Extract loop variable names from comprehensions and lambdas.
+    Extract loop variable names from lambdas.
     These should not be flagged as unknown references.
     """
     names: set[str] = set()
@@ -98,27 +98,7 @@ def _loop_var_names(expr) -> set[str]:
     for n in _walk(expr):
         cname = n.__class__.__name__
 
-        if cname == "ListCompExpr":
-            v = getattr(n, "var", None)
-            if v is None:
-                continue
-            if hasattr(v, "single"):  # CompTarget.single -> Var
-                nm = _as_id_str(v.single)
-                if nm:
-                    names.add(nm)
-            elif hasattr(v, "tuple"):  # CompTarget.tuple -> TupleTarget
-                for vv in getattr(v.tuple, "vars", []):
-                    nm = _as_id_str(vv)
-                    if nm:
-                        names.add(nm)
-
-        elif cname == "DictCompExpr":
-            v = getattr(n, "var", None)
-            nm = _as_id_str(v)
-            if nm:
-                names.add(nm)
-
-        elif cname == "LambdaExpr":
+        if cname == "LambdaExpr":
             if getattr(n, "param", None):  # Single parameter
                 nm = _as_id_str(n.param)
                 if nm:

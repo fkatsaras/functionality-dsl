@@ -10,7 +10,7 @@ _ALLOWED_AST = {
     ast.Index, ast.Slice, ast.Attribute,
     ast.And, ast.Or, ast.Not, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
     ast.USub, ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
-    ast.ListComp, ast.comprehension, ast.Lambda, ast.arguments, ast.arg
+    ast.Lambda, ast.arguments, ast.arg
 }
 
 def _assert_safe_ast(tree: ast.AST):
@@ -30,7 +30,7 @@ def compile_expr_to_python(expr) -> str:
     """
 
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
-    loop_vars: set[str] = set()  # Track variables introduced by comprehensions/lambdas
+    loop_vars: set[str] = set()  # Track variables introduced by lambdas
 
     def to_ast(node) -> ast.AST:
         """Convert DSL node to Python AST node"""
@@ -40,6 +40,9 @@ def compile_expr_to_python(expr) -> str:
         if isinstance(node, bool):
             return ast.Constant(value=node)
         if isinstance(node, (int, float)):
+            # Convert floats that are whole numbers to ints (e.g., 0.0 -> 0)
+            if isinstance(node, float) and node.is_integer():
+                return ast.Constant(value=int(node))
             return ast.Constant(value=node)
         if isinstance(node, str):
             return ast.Constant(value=node)
@@ -57,7 +60,11 @@ def compile_expr_to_python(expr) -> str:
                     return ast.Constant(value=False)
                 return ast.Constant(value=s)
             if getattr(node, "FLOAT", None) is not None:
-                return ast.Constant(value=float(node.FLOAT))
+                val = float(node.FLOAT)
+                # Convert whole number floats to ints
+                if val.is_integer():
+                    return ast.Constant(value=int(val))
+                return ast.Constant(value=val)
             if getattr(node, "INT", None) is not None:
                 return ast.Constant(value=int(node.INT))
             if getattr(node, "Bool", None) is not None:
@@ -245,156 +252,36 @@ def compile_expr_to_python(expr) -> str:
                 return values[0]
             return ast.BoolOp(op=ast.Or(), values=values)
         
-        # ----- Accessing lists/dicts (safe) -------
+        # ----- Accessing lists/dicts -------
         if cls == "PostfixExpr":
             base = to_ast(node.base)
             for t in node.tails or []:
                 if getattr(t, "member", None) is not None:
-                    # foo.bar -> safe dict lookup: (foo.get('bar') if isinstance(foo, dict) else None)
+                    # foo.bar -> dict lookup: foo.get('bar')
                     member = t.member.name
-                    base = ast.IfExp(
-                        test=ast.Call(
-                            func=ast.Name(id='isinstance', ctx=ast.Load()),
-                            args=[base, ast.Name(id='dict', ctx=ast.Load())],
-                            keywords=[]
-                        ),
-                        body=ast.Call(
-                            func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
-                            args=[ast.Constant(value=member)],
-                            keywords=[]
-                        ),
-                        orelse=ast.Constant(value=None)
+                    base = ast.Call(
+                        func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
+                        args=[ast.Constant(value=member)],
+                        keywords=[]
                     )
                 elif getattr(t, "param", None) is not None:
-                    # foo@paramName -> path parameter access (foo.get('paramName') if isinstance(foo, dict) else None)
+                    # foo$paramName -> path parameter access: foo.get('paramName')
                     param = t.param.name
-                    base = ast.IfExp(
-                        test=ast.Call(
-                            func=ast.Name(id='isinstance', ctx=ast.Load()),
-                            args=[base, ast.Name(id='dict', ctx=ast.Load())],
-                            keywords=[]
-                        ),
-                        body=ast.Call(
-                            func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
-                            args=[ast.Constant(value=param)],
-                            keywords=[]
-                        ),
-                        orelse=ast.Constant(value=None)
+                    base = ast.Call(
+                        func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
+                        args=[ast.Constant(value=param)],
+                        keywords=[]
                     )
                 elif getattr(t, "index", None) is not None:
-                    # foo[idx] -> safe dict or list indexing
+                    # foo[idx] -> subscript access: foo[idx]
                     idx = to_ast(t.index)
-                    # (base.get(idx) if isinstance(base, dict) else
-                    #  (base[int(idx)] if isinstance(base, (list, tuple)) and isinstance(idx, (int, float))
-                    #                      and int(idx) == idx and -len(base) <= int(idx) < len(base) else None))
-                    base = ast.IfExp(
-                        test=ast.Call(
-                            func=ast.Name(id='isinstance', ctx=ast.Load()),
-                            args=[base, ast.Name(id='dict', ctx=ast.Load())],
-                            keywords=[]
-                        ),
-                        body=ast.Call(
-                            func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
-                            args=[idx],
-                            keywords=[]
-                        ),
-                        orelse=ast.IfExp(
-                            # Check if list/tuple, idx is numeric, idx is int-like, and in bounds
-                            test=ast.BoolOp(
-                                op=ast.And(),
-                                values=[
-                                    ast.Call(
-                                        func=ast.Name(id='isinstance', ctx=ast.Load()),
-                                        args=[
-                                            base,
-                                            ast.Tuple(elts=[ast.Name(id='list', ctx=ast.Load()), ast.Name(id='tuple', ctx=ast.Load())], ctx=ast.Load())
-                                        ],
-                                        keywords=[]
-                                    ),
-                                    ast.Call(
-                                        func=ast.Name(id='isinstance', ctx=ast.Load()),
-                                        args=[
-                                            idx,
-                                            ast.Tuple(elts=[ast.Name(id='int', ctx=ast.Load()), ast.Name(id='float', ctx=ast.Load())], ctx=ast.Load())
-                                        ],
-                                        keywords=[]
-                                    ),
-                                    ast.Compare(
-                                        left=ast.Call(func=ast.Name(id='int', ctx=ast.Load()), args=[idx], keywords=[]),
-                                        ops=[ast.Eq()],
-                                        comparators=[idx]
-                                    ),
-                                    ast.Compare(
-                                        left=ast.UnaryOp(op=ast.USub(), operand=ast.Call(func=ast.Name(id='len', ctx=ast.Load()), args=[base], keywords=[])),
-                                        ops=[ast.LtE(), ast.Lt()],
-                                        comparators=[
-                                            ast.Call(func=ast.Name(id='int', ctx=ast.Load()), args=[idx], keywords=[]),
-                                            ast.Call(func=ast.Name(id='len', ctx=ast.Load()), args=[base], keywords=[])
-                                        ]
-                                    )
-                                ]
-                            ),
-                            body=ast.Subscript(
-                                value=base,
-                                slice=ast.Call(func=ast.Name(id='int', ctx=ast.Load()), args=[idx], keywords=[]),
-                                ctx=ast.Load()
-                            ),
-                            orelse=ast.Constant(value=None)
-                        )
+                    base = ast.Subscript(
+                        value=base,
+                        slice=idx,
+                        ctx=ast.Load()
                     )
             return base
 
-        # ---------------- List comprehensions ----------------
-        if cls == "ListCompExpr":
-            if getattr(node.var, "single", None):
-                target_name = node.var.single.name
-                loop_vars.add(target_name)
-                target = ast.Name(id=target_name, ctx=ast.Store())
-            elif getattr(node.var, "tuple", None):
-                names = [v.name for v in node.var.tuple.vars]
-                for nm in names:
-                    loop_vars.add(nm)
-                target = ast.Tuple(elts=[ast.Name(id=nm, ctx=ast.Store()) for nm in names], ctx=ast.Store())
-            else:
-                raise ValueError("Unsupported CompTarget in ListCompExpr")
-
-            elt = to_ast(node.head)
-            iter_expr = to_ast(node.iterable)
-            ifs = [to_ast(node.cond)] if getattr(node, "cond", None) else []
-
-            # Create comprehension
-            comp = ast.comprehension(target=target, iter=iter_expr, ifs=ifs, is_async=0)
-            result = ast.ListComp(elt=elt, generators=[comp])
-
-            # Cleanup loop vars
-            if getattr(node.var, "single", None):
-                loop_vars.remove(target_name)
-            elif getattr(node.var, "tuple", None):
-                for nm in names:
-                    loop_vars.remove(nm)
-
-            return result
-
-        if cls == "DictCompExpr":
-            target_name = node.var
-            loop_vars.add(target_name)
-
-            key = to_ast(node.key)
-            value = to_ast(node.value)
-            iter_expr = to_ast(node.iterable)
-            ifs = [to_ast(node.cond)] if getattr(node, "cond", None) else []
-
-            comp = ast.comprehension(
-                target=ast.Name(id=target_name, ctx=ast.Store()),
-                iter=iter_expr,
-                ifs=ifs,
-                is_async=0
-            )
-            result = ast.DictComp(key=key, value=value, generators=[comp])
-
-            loop_vars.remove(target_name)
-            return result
-        
         if cls == "LambdaExpr":
             # Collect parameter names
             if getattr(node, "param", None):
@@ -443,7 +330,7 @@ def compile_expr_to_python(expr) -> str:
             raise ValueError("Empty Atom")
 
         if cls == "AtomBase":
-            for fld in ("listcomp", "literal", "ref", "call", "var", "ifx", "inner"):
+            for fld in ("literal", "ref", "call", "var", "ifx", "inner"):
                 v = getattr(node, fld, None)
                 if v is not None:
                     return to_ast(v)
