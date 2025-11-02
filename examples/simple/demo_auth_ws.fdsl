@@ -19,7 +19,7 @@ end
 Entity EchoEntity
   source: EchoPub
   attributes:
-    - raw: dict = EchoPub.text;
+    - raw: object = EchoPub.text;
 end
 
 // Internal publish endpoint: clients send here

@@ -16,13 +16,13 @@ end
 Entity BTCRaw
   source: BTCUSDT
   attributes:
-    - c: float = BTCUSDT["c"];  // last price in string number at key "c"
+    - c: number = BTCUSDT["c"];  // last price in string number at key "c"
 end
 
 // ------------------- Computed Entity -------------------
 Entity Prices(BTCRaw)
   attributes:
-    - tick: dict = { "t": now(), "btc": BTCRaw.c };
+    - tick: object = { "t": now(), "btc": BTCRaw.c };
 end
 
 // ------------------- Internal endpoint ---------

@@ -15,7 +15,12 @@ end
 // Table of all products
 Component<Table> ProductsTable
   endpoint: ProductList
-  colNames: ["id", "name", "price", "stock", "category"]
+  columns:
+    - "id": integer
+    - "name": string
+    - "price": number
+    - "stock": integer
+    - "category": string
 end
 
 // View of single product with review list

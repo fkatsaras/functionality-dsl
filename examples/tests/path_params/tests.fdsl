@@ -33,9 +33,9 @@ end
 Entity UserById
   source: GetUserById
   attributes:
-    - userId: int = int(GetUserById.userId);
+    - userId: integer = int(GetUserById.userId);
     - userIdType: string = str(GetUserById.userId);
-    - isNumeric: bool = GetUserById.userId > 0;
+    - isNumeric: boolean = GetUserById.userId > 0;
   validations:
     - require(UserById.userId > 0, "User ID must be positive", 400);
 end
@@ -56,7 +56,7 @@ Entity OrgUser
   source: GetOrgUser
   attributes:
     - orgId: string = str(GetOrgUser.orgId);
-    - userId: int = int(GetOrgUser.userId);
+    - userId: integer = int(GetOrgUser.userId);
     - fullPath: string = GetOrgUser.orgId + "/" + str(GetOrgUser.userId);
   validations:
     - require(len(OrgUser.orgId) > 0, "Organization ID required", 400);
@@ -78,7 +78,7 @@ end
 Entity UserUpdatePayload
   source: UpdateUser
   attributes:
-    - userId: int = int(UpdateUser.userId);
+    - userId: integer = int(UpdateUser.userId);
     - name: string = trim(UpdateUser.name);
     - email: string = trim(UpdateUser.email);
   validations:
@@ -109,16 +109,16 @@ Entity OrderItemRequest
   source: CreateOrderItem
   attributes:
     - orderId: string = upper(CreateOrderItem.orderId);
-    - productId: int = CreateOrderItem.productId;
-    - quantity: int = CreateOrderItem.quantity;
+    - productId: integer = CreateOrderItem.productId;
+    - quantity: integer = CreateOrderItem.quantity;
 end
 
 Entity OrderItemValidated(OrderItemRequest)
   attributes:
     - orderId: string = OrderItemRequest.orderId;
-    - productId: int = OrderItemRequest.productId;
-    - quantity: int = OrderItemRequest.quantity;
-    - totalItems: int = OrderItemRequest.quantity;
+    - productId: integer = OrderItemRequest.productId;
+    - quantity: integer = OrderItemRequest.quantity;
+    - totalItems: integer = OrderItemRequest.quantity;
   validations:
     - require(len(OrderItemValidated.orderId) > 0, "Order ID required", 400);
     - require(OrderItemValidated.productId > 0, "Invalid product ID", 400);
@@ -128,8 +128,8 @@ end
 Entity OrderItemEnriched(OrderItemValidated)
   attributes:
     - orderId: string = OrderItemValidated.orderId;
-    - productId: int = OrderItemValidated.productId;
-    - quantity: int = OrderItemValidated.quantity;
+    - productId: integer = OrderItemValidated.productId;
+    - quantity: integer = OrderItemValidated.quantity;
     - status: string = "pending";
     - timestamp: string = "2025-01-01T00:00:00Z";
 end
@@ -155,7 +155,7 @@ end
 Entity ProductDeletePayload
   source: DeleteProduct
   attributes:
-    - productId: int = int(DeleteProduct.productId);
+    - productId: integer = int(DeleteProduct.productId);
     - deletedAt: string = "2025-01-01T00:00:00Z";
   validations:
     - require(ProductDeletePayload.productId > 0, "Invalid product ID", 400);
@@ -183,9 +183,9 @@ Entity CategoryProductUpdate
   source: UpdateCategoryProduct
   attributes:
     - categoryId: string = lower(str(UpdateCategoryProduct.categoryId));
-    - productId: int = int(UpdateCategoryProduct.productId);
+    - productId: integer = int(UpdateCategoryProduct.productId);
     - name: string = trim(str(UpdateCategoryProduct.name));
-    - price: float = float(UpdateCategoryProduct.price);
+    - price: number = float(UpdateCategoryProduct.price);
   validations:
     - require(len(CategoryProductUpdate.categoryId) > 0, "Category required", 400);
     - require(CategoryProductUpdate.productId > 0, "Invalid product ID", 400);
@@ -213,8 +213,8 @@ end
 Entity SquareResult
   source: SquareCalculation
   attributes:
-    - input: int = SquareCalculation.number;
-    - result: int = SquareCalculation.number * SquareCalculation.number;
+    - input: integer = SquareCalculation.number;
+    - result: integer = SquareCalculation.number * SquareCalculation.number;
     - operation: string = "square";
   validations:
     - require(in_range(SquareResult.input, 1, 1000), "Number must be 1-1000", 400);
@@ -235,7 +235,7 @@ end
 Entity ConflictPayload
   source: ConflictTest
   attributes:
-    - userId: int = ConflictTest.userId;
+    - userId: integer = ConflictTest.userId;
     - message: string = "Path param wins: " + str(ConflictTest.userId);
 end
 
@@ -262,7 +262,7 @@ Entity SlugData
   attributes:
     - slug: string = GetBySlug.slug;
     - slugType: string = str(GetBySlug.slug);
-    - isString: bool = len(GetBySlug.slug) > 0;
+    - isString: boolean = len(GetBySlug.slug) > 0;
   validations:
     - require(len(SlugData.slug) >= 3, "Slug must be at least 3 characters", 400);
 end

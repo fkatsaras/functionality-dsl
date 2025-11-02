@@ -85,21 +85,76 @@ def _strip_quotes(s):
 
 @register_component
 class TableComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, endpoint=None, colNames=None):
+    def __init__(self, parent=None, name=None, endpoint=None, colNames=None, columns=None):
         super().__init__(parent, name, endpoint)
 
-        # unwrap StringList
-        if hasattr(colNames, "items"):
-            col_items = colNames.items
-        else:
-            col_items = colNames or []
+        # Support both legacy colNames and new typed columns
+        if columns:
+            # New typed columns format
+            self.columns = []
+            for col_def in columns:
+                col_name = self._strip_column_name(col_def.name)
+                col_type = self._extract_type_info(col_def)  # Pass the whole col_def, not col_def.type
+                self.columns.append({
+                    "name": col_name,
+                    "type": col_type
+                })
+            self.colNames = [c["name"] for c in self.columns]
+        elif colNames:
+            # Legacy colNames format (backward compatibility)
+            if hasattr(colNames, "items"):
+                col_items = colNames.items
+            else:
+                col_items = colNames or []
 
-        self.colNames = [self._attr_name(c) for c in col_items]
+            self.colNames = [self._attr_name(c) for c in col_items]
+            # Create columns list with default string type
+            self.columns = [{"name": name, "type": {"baseType": "string"}} for name in self.colNames]
+        else:
+            self.colNames = []
+            self.columns = []
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
         if not self.colNames:
-            raise ValueError(f"Component '{name}': 'colNames:' cannot be empty.")
+            raise ValueError(f"Component '{name}': 'colNames:' or 'columns:' cannot be empty.")
+
+    def _strip_column_name(self, name):
+        """Strip quotes from column name string."""
+        if isinstance(name, str):
+            s = name.strip()
+            if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+                return s[1:-1]
+            return s
+        return str(name)
+
+    def _extract_type_info(self, type_spec):
+        """Extract type information from ColumnDef node."""
+        result = {
+            "baseType": getattr(type_spec, "typename", "string")
+        }
+
+        # Extract format if present (e.g., string<email>, string<uri>)
+        if hasattr(type_spec, "format") and type_spec.format:
+            result["format"] = type_spec.format
+
+        # Extract constraints (e.g., range constraints)
+        if hasattr(type_spec, "constraint") and type_spec.constraint:
+            constraint = type_spec.constraint
+            if hasattr(constraint, "rangeCol"):
+                range_expr = constraint.rangeCol
+                if hasattr(range_expr, "min") and range_expr.min is not None:
+                    result["min"] = range_expr.min
+                if hasattr(range_expr, "max") and range_expr.max is not None:
+                    result["max"] = range_expr.max
+                if hasattr(range_expr, "exact") and range_expr.exact is not None:
+                    result["exact"] = range_expr.exact
+
+        # Check if nullable
+        if hasattr(type_spec, "nullable") and type_spec.nullable:
+            result["nullable"] = True
+
+        return result
 
     def _attr_name(self, a):
         if a is None:
@@ -116,6 +171,7 @@ class TableComponent(_BaseComponent):
         return {
             "endpointPath": self._endpoint_path(""),
             "colNames": self.colNames,
+            "columns": self.columns,  # Include full column type info
         }
 
 

@@ -1,8 +1,10 @@
 {# props.colNames: list of column keys, e.g. ["id","name","year"] #}
+{# props.columns: list of column info with types, e.g. [{"name": "id", "type": {"baseType": "integer"}}, ...] #}
 {# props.endpointPath: the bound APIEndpoint<REST> endpoint #}
 
 <Table
   name="{{ common.name }}"
   url="{{ props.get('endpointPath') }}"
   colNames={{ "{" }}{{ props.get('colNames') | tojson }}{{ "}" }}
+  columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}
 />

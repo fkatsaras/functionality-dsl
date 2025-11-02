@@ -31,7 +31,7 @@ Entity E1
   source: ExternalBase
   attributes:
     - message: string = "ok";
-    - source: dict = ExternalBase;
+    - source: object = ExternalBase;
 end
 
 // ========================================================================
@@ -75,19 +75,19 @@ end
 Entity M3Request
   source: ChainMutation
   attributes:
-    - value: int = ChainMutation.value;
+    - value: integer = ChainMutation.value;
 end
 
 Entity M3Validated(M3Request)
   attributes:
-    - value: int = M3Request.value;
+    - value: integer = M3Request.value;
   validations:
     - require(M3Validated.value > 0, "Value must be positive", 400);
 end
 
 Entity M3Payload(M3Validated)
   attributes:
-    - doubled: int = M3Validated.value * 2;
+    - doubled: integer = M3Validated.value * 2;
 end
 
 Source<REST> ChainExternal

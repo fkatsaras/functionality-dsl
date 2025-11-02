@@ -50,7 +50,7 @@ end
 Entity DeviceList
   source: DevicesAPI
   attributes:
-    - devices: list = DevicesAPI;
+    - devices: array = DevicesAPI;
 end
 
 // =============================================================
@@ -62,52 +62,52 @@ Entity Sensor1Raw
   source: Sensor1Feed
   attributes:
     - device_id: string = "sensor1";
-    - temperature: float = Sensor1Feed["temp"];
-    - humidity: float = Sensor1Feed["hum"];
-    - timestamp: int = Sensor1Feed["ts"];
+    - temperature: number = Sensor1Feed["temp"];
+    - humidity: number = Sensor1Feed["hum"];
+    - timestamp: integer = Sensor1Feed["ts"];
 end
 
 Entity Sensor2Raw
   source: Sensor2Feed
   attributes:
     - device_id: string = "sensor2";
-    - temperature: float = Sensor2Feed["temp"];
-    - humidity: float = Sensor2Feed["hum"];
-    - timestamp: int = Sensor2Feed["ts"];
+    - temperature: number = Sensor2Feed["temp"];
+    - humidity: number = Sensor2Feed["hum"];
+    - timestamp: integer = Sensor2Feed["ts"];
 end
 
 Entity Sensor3Raw
   source: Sensor3Feed
   attributes:
     - device_id: string = "sensor3";
-    - temperature: float = Sensor3Feed["temp"];
-    - humidity: float = Sensor3Feed["hum"];
-    - timestamp: int = Sensor3Feed["ts"];
+    - temperature: number = Sensor3Feed["temp"];
+    - humidity: number = Sensor3Feed["hum"];
+    - timestamp: integer = Sensor3Feed["ts"];
 end
 
 Entity Sensor4Raw
   source: Sensor4Feed
   attributes:
     - device_id: string = "sensor4";
-    - temperature: float = Sensor4Feed["temp"];
-    - humidity: float = Sensor4Feed["hum"];
-    - timestamp: int = Sensor4Feed["ts"];
+    - temperature: number = Sensor4Feed["temp"];
+    - humidity: number = Sensor4Feed["hum"];
+    - timestamp: integer = Sensor4Feed["ts"];
 end
 
 // Combine all into unified Telemetry stream
 Entity TelemetryCombined(Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw)
   attributes:
-    - readings: list = [Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw];
-    - ts: int = Sensor1Raw.timestamp;
+    - readings: array = [Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw];
+    - ts: integer = Sensor1Raw.timestamp;
 end
 
 // Computed metrics
 Entity TelemetryComputed(TelemetryCombined)
   attributes:
-    - t: int = TelemetryCombined.ts;
-    - avg_temp: float = avg(map(TelemetryCombined.readings, r -> r["temperature"]));
-    - avg_hum:  float = avg(map(TelemetryCombined.readings, r -> r["humidity"]));
-    - avg_heat: float = avg(map(TelemetryCombined.readings, r -> r["temperature"] + 0.2 * r["humidity"]));
+    - t: integer = TelemetryCombined.ts;
+    - avg_temp: number = avg(map(TelemetryCombined.readings, r -> r["temperature"]));
+    - avg_hum:  number = avg(map(TelemetryCombined.readings, r -> r["humidity"]));
+    - avg_heat: number = avg(map(TelemetryCombined.readings, r -> r["temperature"] + 0.2 * r["humidity"]));
 end
 
 // =============================================================
@@ -131,7 +131,7 @@ end
 Entity ToggleCommand
   source: ACToggle
   attributes:
-    - state: bool = ACToggle.state;
+    - state: boolean = ACToggle.state;
 end
 
 

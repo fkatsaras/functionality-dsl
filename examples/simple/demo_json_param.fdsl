@@ -30,12 +30,12 @@ end
 Entity RealObjectsRaw
   source: RealObjects
   attributes:
-    - raw: list = RealObjects;
+    - raw: array = RealObjects;
 end
 
 Entity RealObjectsRows(RealObjectsRaw)
   attributes:
-    - rows: list = map( RealObjectsRaw.raw, x ->
+    - rows: array = map( RealObjectsRaw.raw, x ->
         {
           "id": x["id"],
           "name": x["name"],
@@ -55,8 +55,8 @@ Entity RealObjectDetail
     - name: string = RealObjectById["name"];
     - color: string = RealObjectById["data"]["color"];
     - capacity: string = RealObjectById["data"]["capacity"];
-    - price: float = RealObjectById["data"]["price"];
-    - year: int = RealObjectById["data"]["year"];
+    - price: number = RealObjectById["data"]["price"];
+    - year: integer = RealObjectById["data"]["year"];
 end
 
 // --- Internal endpoints -----------------------------------------
@@ -75,7 +75,13 @@ end
 // --- Components -------------------------------------------------
 Component<Table> ObjectsTable
   endpoint: RealObjectsList
-  colNames: ["id", "name", "color", "capacity", "price", "year"]
+  columns:
+    - "id": string
+    - "name": string
+    - "color": string
+    - "capacity": string
+    - "price": number
+    - "year": integer
 end
 
 Component<ObjectView> ObjectDetailsCard

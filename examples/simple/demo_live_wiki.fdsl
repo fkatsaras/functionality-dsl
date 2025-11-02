@@ -18,16 +18,16 @@ Entity WikiEdit
   attributes:
     - title:  string = WikiMonEN["page_title"];
     - user:   string = WikiMonEN["user"];
-    - delta:  int    = WikiMonEN["change_size"];
-    - is_bot: bool   = WikiMonEN["is_bot"];
-    - is_minor: bool = WikiMonEN["is_minor"];
+    - delta:  integer    = WikiMonEN["change_size"];
+    - is_bot: boolean   = WikiMonEN["is_bot"];
+    - is_minor: boolean = WikiMonEN["is_minor"];
     - wiki:   string = WikiMonEN["ns"];
 end
 
 // --- Computed entity -------------------------------------------
 Entity EditGauge(WikiEdit)
   attributes:
-    - edit_size_abs: int = (
+    - edit_size_abs: integer = (
         abs(WikiEdit.delta) if WikiEdit.delta != null else 0
       );
 end

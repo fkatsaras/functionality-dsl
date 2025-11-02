@@ -26,12 +26,12 @@ end
 Entity RealObjectsRaw
   source: RealObjects
   attributes:
-    - raw: list = RealObjects;
+    - raw: array = RealObjects;
 end
 
 Entity RealObjectsRows(RealObjectsRaw)
   attributes:
-    - rows: list = map( RealObjectsRaw.raw, x ->
+    - rows: array = map( RealObjectsRaw.raw, x ->
         {
           "id": x["id"],
           "name": x["name"],
@@ -52,5 +52,11 @@ end
 // --- Components ------------------------------------------------
 Component<Table> ObjectsTable
   endpoint: RealObjectsList
-  colNames: ["id", "name", "color", "capacity", "price", "year"]
+  columns:
+    - "id": string
+    - "name": string
+    - "color": string
+    - "capacity": string
+    - "price": number
+    - "year": integer
 end

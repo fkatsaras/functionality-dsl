@@ -152,7 +152,7 @@ end
 Entity M1
   source: SharedMutation
   attributes:
-    - value: int = SharedMutation.value;
+    - value: integer = SharedMutation.value;
 end
 
 Entity M2(M1,Shared)
@@ -162,7 +162,7 @@ end
 
 Entity M3(M2)
   attributes:
-    - payload: dict = {"result": M2.joined};
+    - payload: object = {"result": M2.joined};
   validations:
     - require(len(M3.payload.result) > 0, "Empty payload", 400);
 end

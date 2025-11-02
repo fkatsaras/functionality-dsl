@@ -20,19 +20,19 @@ end
 Entity ThessHourly
   source: MeteoThess
   attributes:
-    - hourly: dict = MeteoThess["hourly"];
+    - hourly: object = MeteoThess["hourly"];
 end
 
 Entity LondonHourly
   source: MeteoLondon
   attributes:
-    - hourly: dict = MeteoLondon["hourly"];
+    - hourly: object = MeteoLondon["hourly"];
 end
 
 // --- Row-shaped entity ---------------------------------
 Entity WeatherCompare(ThessHourly, LondonHourly)
   attributes:
-    - rows: list = map(
+    - rows: array = map(
         zip(
           ThessHourly.hourly["time"],
           ThessHourly.hourly["temperature_2m"],
@@ -58,7 +58,7 @@ end
 // --- Simplified stats view (line chart) ------------------------
 Entity WeatherStats(WeatherCompare)
   attributes:
-    - rows: list = map(WeatherCompare.rows, row -> 
+    - rows: array = map(WeatherCompare.rows, row -> 
           { "time": row["time"], "th_temp": row["th_temp"], "ln_temp": row["ln_temp"] }
         );
 end
@@ -79,7 +79,17 @@ end
 // --- Components ------------------------------------------------
 Component<Table> WeatherTable
   endpoint: WeatherCompareAPI
-  colNames: ["time", "th_temp", "ln_temp", "delta_temp", "hotter_city", "big_gap", "th_hum", "ln_hum", "th_is_comfy", "ln_is_comfy"]
+  columns:
+    - "time": string<time>
+    - "th_temp": number
+    - "ln_temp": number
+    - "th_hum": number
+    - "ln_hum": number
+    - "delta_temp": number
+    - "hotter_city": string
+    - "big_gap": boolean
+    - "th_is_comfy": boolean
+    - "ln_is_comfy": boolean
 end
 
 Component<LineChart> TempComparison

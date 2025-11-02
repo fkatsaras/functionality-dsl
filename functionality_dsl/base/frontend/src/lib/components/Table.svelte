@@ -2,13 +2,27 @@
     import { onMount } from "svelte";
     import RefreshButton from "$lib/components/util/RefreshButton.svelte";
 
+    interface ColumnInfo {
+        name: string;
+        type?: {
+            baseType: string;
+            format?: string;
+            min?: number;
+            max?: number;
+            exact?: number;
+            nullable?: boolean;
+        };
+    }
+
     const {
         url = null,
         colNames = [],
+        columns = [],
         name = "Table"
     } = $props<{
         url?: string | null;
         colNames?: string[];
+        columns?: ColumnInfo[];
         name?: string;
     }>();
 
@@ -84,6 +98,87 @@
         return row[key];
     }
 
+    function formatValue(value: any, column: ColumnInfo): string {
+        if (value === null || value === undefined) {
+            return column.type?.nullable ? "null" : "—";
+        }
+
+        const typeInfo = column.type;
+        if (!typeInfo) return String(value);
+
+        // Format based on type
+        switch (typeInfo.baseType) {
+            case "integer":
+            case "number":
+                if (typeof value === "number") {
+                    // Apply decimal precision for numbers
+                    if (typeInfo.baseType === "number") {
+                        return value.toFixed(2);
+                    }
+                    return String(value);
+                }
+                return String(value);
+
+            case "boolean":
+                return value ? "✓" : "✗";
+
+            case "string":
+                // Format based on string format
+                if (typeInfo.format) {
+                    switch (typeInfo.format) {
+                        case "date":
+                            // Parse and format date if it's an ISO string
+                            if (typeof value === "string") {
+                                try {
+                                    const date = new Date(value);
+                                    return date.toLocaleDateString();
+                                } catch {
+                                    return String(value);
+                                }
+                            }
+                            return String(value);
+
+                        case "time":
+                            // Format time
+                            if (typeof value === "string") {
+                                return value; // Already in time format
+                            }
+                            return String(value);
+
+                        case "email":
+                            return String(value);
+
+                        case "uri":
+                            // Return as-is for URI (will be handled specially in rendering)
+                            return String(value);
+
+                        case "image":
+                            // Return as-is for images (will be rendered as <img>)
+                            return String(value);
+
+                        default:
+                            return String(value);
+                    }
+                }
+                return String(value);
+
+            case "array":
+                if (Array.isArray(value)) {
+                    return `[${value.length} items]`;
+                }
+                return String(value);
+
+            case "object":
+                if (typeof value === "object") {
+                    return "{...}";
+                }
+                return String(value);
+
+            default:
+                return String(value);
+        }
+    }
+
     onMount(load);
 </script>
 
@@ -131,8 +226,19 @@
               {#each data as row, i (`row-${i}`)}
                 <tr class="font-approachmono odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
                   {#each colNames as displayName, position}
+                    {@const column = columns[position] || { name: displayName, type: { baseType: "string" } }}
+                    {@const rawValue = getValueByPosition(row, position)}
                     <td class="px-3 py-2 border-b thin-border text-text/90">
-                      {getValueByPosition(row, position)}
+                      {#if column.type?.format === "image" && rawValue}
+                        <img src={String(rawValue)} alt={displayName} class="max-w-24 max-h-24 object-contain rounded" />
+                      {:else if column.type?.format === "binary" && rawValue}
+                        <!-- Base64 encoded image -->
+                        <img src={`data:image/png;base64,${String(rawValue)}`} alt={displayName} class="max-w-24 max-h-24 object-contain rounded" />
+                      {:else if column.type?.format === "uri" && rawValue && (String(rawValue).endsWith('.jpg') || String(rawValue).endsWith('.jpeg') || String(rawValue).endsWith('.png') || String(rawValue).endsWith('.gif') || String(rawValue).endsWith('.webp'))}
+                        <img src={String(rawValue)} alt={displayName} class="max-w-24 max-h-24 object-contain rounded" />
+                      {:else}
+                        {formatValue(rawValue, column)}
+                      {/if}
                     </td>
                   {/each}
                 </tr>

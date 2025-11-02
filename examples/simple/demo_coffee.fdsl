@@ -13,55 +13,36 @@ Source<REST> CoffeeHot
   verb: GET
 end
 
-Source<REST> CoffeeIced
-  url: "https://api.sampleapis.com/coffee/iced"
-  verb: GET
-end
-
 // ----------- Entities (data) -----------
-Entity HotCoffees
+Entity CoffeeList
   source: CoffeeHot
   attributes:
-    - rows: list = map(CoffeeHot, x ->
+    - rows: array = map(CoffeeHot, x ->
         {
-          "temp": "Hot",
+          "image": (x["image"] if (x["image"] and len(x["image"] or "") > 10) else "https://via.placeholder.com/150?text=No+Image"),
+          "id": x["id"],
           "name": x["title"],
           "title_length": len(x["title"] or ""),
-          "description": x["description"],
-          "image": x["image"]
+          "description": x["description"]
         }
     );
-end
-
-Entity ColdCoffees
-  source: CoffeeIced
-  attributes:
-    - rows: list = map(CoffeeIced, x -> 
-        {
-          "temp": "Iced",
-          "name": x["title"],
-          "title_length": len(x["title"] or ""),
-          "description": x["description"],
-          "image": x["image"]
-        }
-    );
-end
-
-Entity CoffeeStatsList(HotCoffees,ColdCoffees)
-  attributes:
-    - rows: list = (HotCoffees.rows + ColdCoffees.rows);
 end
 // ----------- Internal endpoints (what the UI calls) -----------
-// REST: expose computed CoffeeStats
+// REST: expose computed coffee list
 APIEndpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
   verb: GET
-  entity: CoffeeStatsList
+  entity: CoffeeList
 end
 
 // ----------- Components (UI bindings) -----------
 // Components now bind to INTERNAL endpoints only
 Component<Table> CoffeeTable
   endpoint: CoffeeStats
-  colNames: ["temp", "name", "title_length", "description", "image"]
+  columns:
+    - "image": string<image>
+    - "id": integer
+    - "name": string
+    - "title_length": integer
+    - "description": string
 end

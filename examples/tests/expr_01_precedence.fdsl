@@ -19,14 +19,14 @@ Entity MoistureZone1
   source: Soil1
   attributes:
     - timestamp: datetime
-    - moisture_percent: float
+    - moisture_percent: number
 end
 
 Entity MoistureZone2
   source: Soil2
   attributes:
     - timestamp: datetime
-    - moisture_percent: float
+    - moisture_percent: number
 end
 
 // Entities -------------------------------

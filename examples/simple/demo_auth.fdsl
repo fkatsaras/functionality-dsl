@@ -38,19 +38,19 @@ end
 Entity BearerEntity
   source: BearerTest
   attributes:
-    - raw: dict = BearerTest;
+    - raw: object = BearerTest;
 end
 
 Entity BasicEntity
   source: BasicTest
   attributes:
-    - raw: dict = BasicTest;
+    - raw: object = BasicTest;
 end
 
 Entity ApiKeyEntity
   source: ApiKeyQuery
   attributes:
-    - raw: dict = ApiKeyQuery;
+    - raw: object = ApiKeyQuery;
 end
 
 // --- Internal endpoints --------------------------------------
