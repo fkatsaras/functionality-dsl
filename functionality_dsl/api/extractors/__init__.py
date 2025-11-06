@@ -11,7 +11,6 @@ from .type_mapper import map_to_python_type
 from .validator_compiler import (
     extract_range_constraint,
     compile_validators_to_pydantic,
-    collect_entity_validations,
 )
 
 __all__ = [
@@ -23,5 +22,4 @@ __all__ = [
     "map_to_python_type",
     "extract_range_constraint",
     "compile_validators_to_pydantic",
-    "collect_entity_validations",
 ]

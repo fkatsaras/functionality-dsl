@@ -56,13 +56,6 @@ _COMPILED_CHAIN_INBOUND = [
       {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
     {%- endfor %}
     ],
-    {%- if ent.validations %}
-    "validations": [
-    {%- for validation in ent.validations %}
-      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
-    {%- endfor %}
-    ],
-    {%- endif %}
   },
 {%- endfor %}
 ]
@@ -76,13 +69,6 @@ _COMPILED_CHAIN_OUTBOUND = [
       {"name": "{{ a.name }}", "expr": {{ a.pyexpr | tojson }}},
     {%- endfor %}
     ],
-    {%- if ent.validations %}
-    "validations": [
-    {%- for validation in ent.validations %}
-      {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
-    {%- endfor %}
-    ],
-    {%- endif %}
   },
 {%- endfor %}
 ]
@@ -123,9 +109,6 @@ def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source
         shaped = _shape_entity_data(ent, context, entity_name)
         context[entity_name] = shaped
         logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
-
-        # Execute validations
-        _validate_entity(ent, context, entity_name)
 
     final_entity = chain[-1]["name"] if chain else source_name
     result = context[final_entity] if chain else {source_name: payload}
@@ -168,9 +151,6 @@ async def compute_with_sync(payload: Any, sender_id: str, chain: List[Dict], sou
             context[entity_name] = shaped
             logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
 
-            # Execute validations
-            _validate_entity(ent, context, entity_name)
-
         final_entity = chain[-1]["name"] if chain else ""
         result = context[final_entity] if chain and final_entity else {}
         logger.info(f"[COMPUTE] - Computation complete, final entity: {final_entity}")
@@ -200,23 +180,6 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
             raise
 
     return shaped
-
-
-def _validate_entity(step: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> None:
-    """Execute runtime validations for an entity."""
-    if not step.get("validations"):
-        return
-
-    for validation in step["validations"]:
-        try:
-            eval_globals = {**safe_globals, **context}
-            exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
-            logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
-        except HTTPException:
-            raise
-        except Exception as validation_error:
-            logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
-            raise HTTPException(status_code=400, detail={"error": str(validation_error)})
 
 
 # ============================================================================

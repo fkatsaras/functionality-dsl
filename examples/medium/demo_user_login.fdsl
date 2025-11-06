@@ -97,7 +97,7 @@ Entity LoginCandidates(LoginPayload, ExistingUsers)
   attributes:
     - match: object = find(ExistingUsers.users, u ->
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
-      ) @validate(this != null, "Invalid username or password", 401);
+      );
 end
 
 Entity LoginValidated(LoginCandidates)
@@ -122,15 +122,13 @@ end
 
 Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
   attributes:
-    - user: object = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email)
-    @validate(this != null, "User not found", 404);
+    - user: object = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email);
 end
 
 Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
   attributes:
     - email: string<email> = ResetPasswordRequest.email;
-    - newPassword: string(6..) = ResetPasswordRequest.newPassword
-      @validate(CurrentUser.user["password"] != this, "New password must be different from old one", 400);
+    - newPassword: string(6..) = ResetPasswordRequest.newPassword;
 end
 
 // --- UPDATE USER ---

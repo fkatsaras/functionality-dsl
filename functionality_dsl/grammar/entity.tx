@@ -17,7 +17,7 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 TypeSpec:
-  baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? validators*=Validator
+  baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?
 ;
 
 TypeConstraint:
@@ -33,21 +33,12 @@ RangeExpr:
 
 Number: FLOAT | INT;
 
-// Validator decorator: @email, @min(5), @validate(...)
-Validator:
-  '@' name=ID ('(' args+=ValidatorArg[','] ')')?
-;
-
-ValidatorArg:
-  expr=Expr
-;
-
 AttrValue:
   STRING | FLOAT | INT | Bool
 ;
 
 Attribute:
-    name=ID ':' type=TypeSpec '=' expr=Expr exprValidators*=Validator ';' 
+    name=ID ':' type=TypeSpec '=' expr=Expr ';'
 ;
 
 Input:

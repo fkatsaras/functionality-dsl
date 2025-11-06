@@ -4,17 +4,15 @@ from textx import get_children_of_type
 from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
 
 from ..graph import get_all_ancestors, calculate_distance_to_ancestor
-from ..extractors import collect_entity_validations
 from .config_builders import build_ws_input_config
 
 
 def build_entity_chain(entity, model, all_source_names, context="ctx"):
     """
     Build the computation chain for an entity (itself + all ancestors).
-    Returns list of entity configs with their compiled attribute expressions and @validate() clauses.
+    Returns list of entity configs with their compiled attribute expressions.
 
     Note: Type format specifications (string<email>, etc.) and range constraints are handled by Pydantic models.
-    Runtime validators (@validate()) are executed in the router after entity computation.
     """
     ancestors = get_all_ancestors(entity, model)
     chain_entities = ancestors + [entity]
@@ -39,13 +37,9 @@ def build_entity_chain(entity, model, all_source_names, context="ctx"):
                 })
 
         if attribute_configs:
-            # Collect @validate() clauses for runtime validation
-            validations = collect_entity_validations(chain_entity, all_source_names)
-
             compiled_chain.append({
                 "name": chain_entity.name,
                 "attrs": attribute_configs,
-                "validations": validations,
             })
 
     return compiled_chain
@@ -116,13 +110,9 @@ def build_inbound_chain(entity_in, model, all_source_names):
             ws_inputs.append(config)
 
             if config["attrs"]:
-                # Collect validations (range constraints + @validate() decorators)
-                validations = collect_entity_validations(entity, all_source_names)
-
                 compiled_chain.append({
                     "name": entity.name,
                     "attrs": config["attrs"],
-                    "validations": validations,
                 })
 
         # Internal WebSocket endpoint (another APIEndpoint<WS>)
@@ -137,13 +127,9 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     })
 
             if attribute_configs:
-                # Collect validations (range constraints + @validate() decorators)
-                validations = collect_entity_validations(entity, all_source_names)
-
                 compiled_chain.append({
                     "name": entity.name,
                     "attrs": attribute_configs,
-                    "validations": validations,
                 })
 
         # Pure computed entity (no explicit source)
@@ -158,13 +144,9 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     })
 
             if attribute_configs:
-                # Collect validations (range constraints + @validate() decorators)
-                validations = collect_entity_validations(entity, all_source_names)
-
                 compiled_chain.append({
                     "name": entity.name,
                     "attrs": attribute_configs,
-                    "validations": validations,
                 })
 
     # Deduplicate ws_inputs by (endpoint, url)
@@ -202,13 +184,9 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
                 })
 
         if attribute_configs:
-            # Collect validations (range constraints + @validate() decorators)
-            validations = collect_entity_validations(entity, all_source_names)
-
             compiled_chain.append({
                 "name": entity.name,
                 "attrs": attribute_configs,
-                "validations": validations,
             })
 
     return compiled_chain

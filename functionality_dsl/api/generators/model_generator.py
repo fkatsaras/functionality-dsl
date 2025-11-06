@@ -81,7 +81,6 @@ def generate_domain_models(model, templates_dir, output_dir):
                 "name": attr.name,
                 "py_type": map_to_python_type(attr),
                 "field_constraints": validator_info["field_constraints"],
-                "custom_validators": validator_info["custom_validators"],
                 "is_path_param_only": is_path_param_only,  # Mark for exclusion from body validation
             }
 

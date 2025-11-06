@@ -3,7 +3,6 @@
 from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
 
 from ..graph import get_all_ancestors, find_terminal_entity, collect_all_external_sources
-from ..extractors import collect_entity_validations
 from .config_builders import build_rest_input_config, build_computed_parent_config
 
 
@@ -65,13 +64,9 @@ def resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_nam
                     })
 
             if attribute_configs:
-                # Collect @validate() clauses for runtime validation
-                validations = collect_entity_validations(ancestor, all_source_names)
-
                 inline_chain.append({
                     "name": ancestor.name,
                     "attrs": attribute_configs,
-                    "validations": validations,
                 })
                 print(f"[DEPENDENCY] Inline computed: {ancestor.name}")
 

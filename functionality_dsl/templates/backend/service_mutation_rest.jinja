@@ -53,13 +53,6 @@ _TRANSFORMATION_CHAIN = [
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
         ],
-        {%- if step.validations %}
-        "validations": [
-        {%- for validation in step.validations %}
-            {"attribute": "{{ validation.attribute }}", "pyexpr": {{ validation.pyexpr | tojson }}},
-        {%- endfor %}
-        ],
-        {%- endif %}
     },
 
 {%- endfor %}
@@ -224,9 +217,6 @@ def transform_entity_chain(context: Dict[str, Any]) -> None:
         context[entity_name] = shaped_data
         logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
 
-        # Execute validations
-        _validate_entity(transform_step, context, entity_name)
-
 
 def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
     """Shape entity data by evaluating attribute expressions."""
@@ -254,23 +244,6 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
             )
 
     return shaped_data
-
-
-def _validate_entity(step: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> None:
-    """Execute runtime validations for an entity."""
-    if not step.get("validations"):
-        return
-
-    for validation in step["validations"]:
-        try:
-            eval_globals = {**safe_globals, **context}
-            exec(compile_safe_exec(validation["pyexpr"]), eval_globals, {})
-            logger.debug(f"[VALIDATION] - {entity_name}.{validation['attribute']} passed")
-        except HTTPException:
-            raise
-        except Exception as validation_error:
-            logger.error(f"[VALIDATION] - {entity_name} validation failed: {validation_error}", exc_info=True)
-            raise HTTPException(status_code=400, detail={"error": str(validation_error)})
 
 
 {% if target %}

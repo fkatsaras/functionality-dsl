@@ -303,69 +303,6 @@ Apply constraints directly to types using mathematical range notation:
 - coords: array(2)               // Exactly 2 items
 ```
 
-### Validator Decorators
-
-Chain validators using `@decorator` syntax:
-
-#### **String Validators**
-```fdsl
-- email: string<email> @required;
-- url: string<uri> @required;
-- username: string @minLength(3) @maxLength(20);
-- slug: string @pattern("^[a-z0-9-]+$");
-- trimmed: string @trim;
-```
-
-#### **Numeric Validators**
-```fdsl
-- age: integer @min(18) @max(120);
-- price: number @gt(0) @lte(999.99);
-- quantity: integer @positive;         // Shorthand for @min(1)
-- score: number @range(0.0, 100.0);
-```
-
-#### **Array Validators**
-```fdsl
-- tags: array @minItems(1) @maxItems(10);
-- coords: array @length(2);          // Exactly 2 items
-- ids: array @unique;                // All items must be unique
-```
-
-#### **General Validators**
-```fdsl
-- status: string @oneOf(["draft", "published", "archived"]);
-- role: string @in(["admin", "user", "guest"]);
-- data: object @required;
-- avatar: string? @optional;        // Explicitly optional
-```
-
-### Custom Validation
-
-For complex validation logic, use `@validate()`:
-
-```fdsl
-Entity CartItem
-  source: CartInput
-  attributes:
-    - productId: integer @required = CartInput.productId;
-    - quantity: integer(1..100) = CartInput.quantity;
-    - price: number @positive = CartInput.price;
-    - discount: number?(0..1) = CartInput.discount;
-
-    // Custom cross-field validation
-    - finalPrice: number = price * (1 - (discount or 0))
-        @validate(this > 0, "Final price must be positive", 400);
-
-    - total: number = finalPrice * quantity
-        @validate(this <= 10000, "Cart item cannot exceed $10,000", 400);
-end
-```
-
-**@validate syntax:**
-```fdsl
-@validate(condition, errorMessage, httpStatusCode?)
-```
-
 ### Complete Example with Formats
 
 ```fdsl
@@ -373,9 +310,9 @@ Entity CreateOrder
   source: OrderInput
   attributes:
     // Customer info with format validation
-    - customerId: string<uuid_str> @required = OrderInput.customerId;
-    - email: string<email> @required = trim(OrderInput.email);
-    - phone: string @pattern("^\+?[1-9]\d{1,14}$") = OrderInput.phone;
+    - customerId: string<uuid_str> = OrderInput.customerId;
+    - email: string<email> = trim(OrderInput.email);
+    - phone: string = OrderInput.phone;
     - ipAddress: string<ipv4> = OrderInput.ipAddress;
 
     // Date/time with formats
@@ -384,21 +321,19 @@ Entity CreateOrder
 
     // Items with range and array constraints
     - items: array(1..50) = OrderInput.items;
-    - itemCount: integer<int32> @positive = len(items);
+    - itemCount: integer<int32>(1..) = len(items);
 
     // Pricing with numeric constraints and formats
-    - subtotal: number<double> @positive = sum(map(items, i -> i["price"] * i["qty"]));
+    - subtotal: number<double>(0..) = sum(map(items, i -> i["price"] * i["qty"]));
     - tax: number(0..) = round(subtotal * 0.1, 2);
-    - total: number = subtotal + tax
-        @validate(this >= 5.00, "Minimum order total is $5.00", 400)
-        @validate(this <= 50000, "Maximum order total is $50,000", 400);
+    - total: number = subtotal + tax;
 
     // Optional field with constraints
     - promoCode: string?(4..20) = upper(trim(OrderInput.promoCode));
     - website: string<uri>? = OrderInput.website;
 
-    // Enum-style validation
-    - shippingMethod: string @oneOf(["standard", "express", "overnight"]);
+    // Shipping method
+    - shippingMethod: string = OrderInput.shippingMethod;
 end
 ```
 
@@ -407,33 +342,30 @@ end
 1. **Range constraints** compile to Pydantic `Field()` parameters:
    - `string(3..50)` → `Field(min_length=3, max_length=50)`
    - `integer(18..120)` → `Field(ge=18, le=120)`
+   - `integer(1..)` → `Field(ge=1)` (minimum value, no maximum)
+   - `number(0..)` → `Field(ge=0)` (non-negative)
 
 2. **Format specifications** map to specialized Python types:
    - `string<email>` → `EmailStr`
    - `string<uri>` → `HttpUrl`
    - `string<uuid_str>` → `UUID`
    - `string<date>` → `date`
+   - `string<time>` → `time`
    - `string<ipv4>` → `IPvAnyAddress`
+   - `string<ipv6>` → `IPvAnyAddress`
+   - `string<hostname>` → `str` with hostname pattern
+   - `string<byte>` → `str` with base64 pattern
+   - `integer<int32>` → `int` with 32-bit range constraint
+   - `integer<int64>` → `int` with 64-bit range constraint
+   - `number<float>` → `float`
+   - `number<double>` → `float`
 
-3. **Decorator validators** map to Pydantic Field constraints:
-   - `@min(5)` → `Field(ge=5)`
-   - `@pattern(regex)` → Custom `@field_validator`
+3. **Nullable types** use `?` suffix:
+   - `string?` → `Optional[str]`
+   - `string<email>?` → `Optional[EmailStr]`
+   - `integer(1..)?` → `Optional[int]` with `Field(ge=1)`
 
-4. **Custom validators** generate `@field_validator` decorators in Pydantic models
-
-5. Validation happens automatically when Pydantic models are instantiated from request data
-
-### Available Validators
-
-**String**: `@pattern()`, `@minLength()`, `@maxLength()`, `@length()`, `@startsWith()`, `@endsWith()`, `@trim`
-
-**Numeric**: `@min()`, `@max()`, `@gt()`, `@lt()`, `@gte()`, `@lte()`, `@positive`, `@negative`, `@range()`
-
-**List**: `@minItems()`, `@maxItems()`, `@unique`, `@each()`
-
-**General**: `@required`, `@optional`, `@oneOf()`, `@in()`
-
-**Custom**: `@validate(condition, message, status)`
+4. Validation happens automatically when Pydantic models are instantiated from request data
 
 ---
 
@@ -606,7 +538,6 @@ fdsl generate my-api.fdsl --out generated/
 - Range syntax: `string(3..50)` → `Field(min_length=3, max_length=50)`
 - Format specifications: `string<email>` → `EmailStr`, `string<uri>` → `HttpUrl`
 - Decorator validators: `@min(18)` → `Field(ge=18)`
-- Custom `@validate()` generates `@field_validator` decorators
 - HTTPException raised on validation failure with custom status codes
 
 ### 5. **WebSocket Handling**

@@ -59,24 +59,24 @@ end
 Entity CartAddPayload
   source: CartAdd
   attributes:
-    - userId: integer @positive = int(CartAdd.userId);
-    - productId: integer @positive = int(CartAdd.productId);
-    - quantity: integer = int(CartAdd.quantity) @validate(this > 0, "Quantity must be positive", 400);
+    - userId: integer(1..) = int(CartAdd.userId);
+    - productId: integer(1..) = int(CartAdd.productId);
+    - quantity: integer(1..) = int(CartAdd.quantity);
 end
 
 // --- Remove item ---
 Entity CartRemovePayload
   source: CartRemove
   attributes:
-    - userId: integer @positive = int(CartRemove$userId);
-    - productId: integer @positive = int(CartRemove$productId);
+    - userId: integer(1..) = int(CartRemove$userId);
+    - productId: integer(1..) = int(CartRemove$productId);
 end
 
 // --- Clear cart ---
 Entity CartClearPayload
   source: CartClear
   attributes:
-    - userId: integer @positive = int(CartClear$userId);
+    - userId: integer(1..) = int(CartClear$userId);
 end
 
 
