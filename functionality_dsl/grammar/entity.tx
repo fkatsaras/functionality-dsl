@@ -41,10 +41,6 @@ Attribute:
     name=ID ':' type=TypeSpec '=' expr=Expr ';'
 ;
 
-Input:
-  alias=ID ':' target=[Entity]
-;
-
 Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?

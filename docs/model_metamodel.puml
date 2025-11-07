@@ -35,11 +35,6 @@ class entity.Attribute  {
 }
 
 
-class entity.Input  {
-  alias : ID
-}
-
-
 class entity.Entity  {
   name : ID
 }
@@ -213,7 +208,6 @@ model.FDSLModel *--> "1..*" component.Component: components
 entity.TypeSpec *-->  entity.TypeConstraint: constraint
 entity.TypeConstraint *-->  entity.RangeExpr: range
 entity.Attribute *-->  entity.TypeSpec: type
-entity.Input -->  entity.Entity: target
 entity.Entity --> "1..*" entity.Entity: parents
 entity.Entity --> "0..*" entity.Source: source
 entity.Entity *--> "1..*" entity.Attribute: attributes
@@ -263,16 +257,16 @@ component.ToggleComponent -->  entity.APIEndpointREST: endpoint
 legend
   Match rules:
   |= Name  |= Rule details |
-  | TypeFormat | email\|uri\|uuid_str\|date\|time\|hostname\|ipv4\|ipv6\|byte\|binary\|password\|regex\|float\|double\|int32\|int64 |
-  | AttrValue | STRING\|FLOAT\|INT |
-  | NumberCol | FLOAT\|INT |
-  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
-  | ApiKeyLoc | header\|query |
-  | Bool | true\|false |
-  | AttrType | string\|integer\|number\|boolean\|array\|object |
   | Number | FLOAT\|INT |
-  | FQN | ID (. ID)* |
+  | TypeFormat | email\|uri\|uuid_str\|date\|time\|hostname\|ipv4\|ipv6\|byte\|binary\|password\|regex\|float\|double\|int32\|int64 |
+  | HttpVerb | GET\|POST\|PUT\|DELETE\|PATCH |
+  | NumberCol | FLOAT\|INT |
   | Comment | \\/\\/[^\\n]* |
+  | Bool | true\|false |
+  | FQN | ID (. ID)* |
+  | AttrValue | STRING\|FLOAT\|INT |
+  | AttrType | string\|integer\|number\|boolean\|array\|object |
+  | ApiKeyLoc | header\|query |
 end legend
 
 @enduml

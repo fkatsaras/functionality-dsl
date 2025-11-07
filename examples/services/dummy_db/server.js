@@ -18,9 +18,7 @@ function generateId() {
   return Math.floor(Math.random() * 9000) + 1000;
 }
 
-// -----------------------------------------------------
 // Register new user (POST)
-// -----------------------------------------------------
 app.post("/db/users/register", (req, res) => {
   const data = req.body.user || req.body;
   if (!data.username || !data.email || !data.password) {
@@ -39,16 +37,12 @@ app.post("/db/users/register", (req, res) => {
   res.json({ ok: true, message: "User registered (dummy)", user: newUser });
 });
 
-// -----------------------------------------------------
 // Get all users (GET)
-// -----------------------------------------------------
 app.get("/db/users", (req, res) => {
   res.json(users);
 });
 
-// -----------------------------------------------------
 // Login (POST)
-// -----------------------------------------------------
 app.post("/db/users/login", (req, res) => {
   const { username, password } = req.body;
   const match = users.find(
@@ -65,9 +59,7 @@ app.post("/db/users/login", (req, res) => {
   res.json({ ok: true, token });
 });
 
-// -----------------------------------------------------
 // Forgot password (POST) — record reset request
-// -----------------------------------------------------
 let resetRequests = [];
 
 app.post("/db/users/forgot-password", (req, res) => {
@@ -88,9 +80,7 @@ app.post("/db/users/forgot-password", (req, res) => {
   });
 });
 
-// -----------------------------------------------------
 // Reset password (PUT) — actually updates stored user
-// -----------------------------------------------------
 app.put("/db/users/reset-password", (req, res) => {
   const { email, newPassword } = req.body;
   const user = users.find((u) => u.email === email);
@@ -108,9 +98,7 @@ app.put("/db/users/reset-password", (req, res) => {
   });
 });
 
-// -----------------------------------------------------
 // Update user (PATCH)
-// -----------------------------------------------------
 app.patch("/db/users/:id", (req, res) => {
   const id = parseInt(req.params.id);
   const user = users.find((u) => u.id === id);
@@ -126,9 +114,8 @@ app.patch("/db/users/:id", (req, res) => {
   res.json({ ok: true, message: `User ${id} updated`, user });
 });
 
-// -----------------------------------------------------
+
 // Delete user (DELETE)
-// -----------------------------------------------------
 app.delete("/db/users/:id", (req, res) => {
   const id = parseInt(req.params.id);
   const before = users.length;
@@ -142,7 +129,8 @@ app.delete("/db/users/:id", (req, res) => {
   res.json({ ok: true, message: `User ${id} deleted` });
 });
 
-// -----------------------------------------------------
+
+
 app.listen(PORT, () => {
   console.log(`Dummy DB running on http://localhost:${PORT}`);
 });
