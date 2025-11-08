@@ -38,7 +38,7 @@ AttrValue:
 ;
 
 Attribute:
-    name=ID ':' type=TypeSpec '=' expr=Expr ';'
+    name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'
 ;
 
 Entity:
@@ -101,14 +101,69 @@ SourceWS:
 ;
 
 // ---------- API (presentation) ----------
+
+// Parameter definition for path/query params
+ParamDef:
+  '-' name=ID ':' type=TypeSpec
+;
+
+PathParamsBlock:
+  'path:' params+=ParamDef*
+;
+
+QueryParamsBlock:
+  'query:' params+=ParamDef*
+;
+
+ParametersBlock:
+  'parameters:'
+    (path_params=PathParamsBlock)?
+    (query_params=QueryParamsBlock)?
+;
+
+// Content type can be specified, defaults to application/json
+ContentType:
+  'application/json' | 'text/plain' | 'multipart/form-data' | 'application/xml'
+;
+
+// Schema reference: either inline type or Entity reference
+// Try inline types first (primitive types), then entity references
+SchemaRef:
+    inline_type=InlineTypeSpec                // Inline type (integer, string, array<Entity>, etc.)
+  | entity=[Entity]                           // Reference to Entity (must be uppercase first letter by convention)
+;
+
+// Inline type specification for request/response schemas
+// Supports: integer, string, array<Product>, array<string>, etc.
+InlineTypeSpec:
+    'array' '<' itemType=[Entity] '>' constraint=TypeConstraint? nullable='?'?     // array<Product>
+  | 'array' '<' primitive=AttrType '>' constraint=TypeConstraint? nullable='?'?     // array<string>
+  | 'array' constraint=TypeConstraint? nullable='?'?                                // array (untyped)
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?  // string, integer, string<email>, etc.
+;
+
+RequestBlock:
+  'request:'
+    (content_type=ContentType ':')?
+      'schema:' schema=SchemaRef
+;
+
+ResponseBlock:
+  'response:'
+    (content_type=ContentType ':')?
+      'schema:' schema=SchemaRef
+;
+
 APIEndpointREST:
   'APIEndpoint<' kind='REST' '>' name=ID
   (
     'path:' path=STRING
     'verb:' verb=HttpVerb
-    'entity:' entity=[Entity]
+    (parameters=ParametersBlock)?
+    (request=RequestBlock)?
+    (response=ResponseBlock)?
     ('summary:' summary=STRING)?
-    ('auth:' auth=AuthBlock)?  
+    ('auth:' auth=AuthBlock)?
   )
   'end'
 ;

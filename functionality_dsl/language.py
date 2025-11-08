@@ -253,17 +253,40 @@ def _find_websocket_source_in_hierarchy(entity):
 
 def _validate_computed_attrs(model, metamodel=None):
     """
-    Validate and compile attributes .
+    Validate and compile attributes.
     - Accepts loop vars inside comprehensions
     - Accepts parent entity references
     - Accepts references to external sources
+    - Skips schema-only entities (no expressions required)
     """
+    # Collect schema-only entities (used in request/response)
+    schema_entities = set()
+    for obj in get_model_internal_rest_endpoints(model):
+        request = getattr(obj, "request", None)
+        response = getattr(obj, "response", None)
+        if request:
+            schema = getattr(request, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
         for e in get_children_of_type("Entity", model)
     }
 
     for ent in get_children_of_type("Entity", model):
+        # Skip validation for schema-only entities
+        if ent.name in schema_entities:
+            continue
+
         parents = getattr(ent, "parents", []) or []
 
         for a in getattr(ent, "attributes", []) or []:
@@ -609,15 +632,13 @@ def external_ws_endpoint_obj_processor(ep):
 def internal_rest_endpoint_obj_processor(iep):
     """
     APIEndpointREST validation:
-    - Must bind an entity
+    - Must have request or response (at least one)
     - Default verb = GET
     - Verb must be valid HTTP method
+    - Validate request/response schemas
+    - Validate parameters match path
     """
-    if getattr(iep, "entity", None) is None:
-        raise TextXSemanticError(
-            "APIEndpoint<REST> must bind an 'entity:'.", **get_location(iep)
-        )
-
+    # Validate verb
     verb = getattr(iep, "verb", None)
     if not verb:
         iep.verb = "GET"
@@ -629,6 +650,51 @@ def internal_rest_endpoint_obj_processor(iep):
             f"APIEndpoint<REST> verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
             **get_location(iep)
         )
+
+    # Must have at least request or response
+    request = getattr(iep, "request", None)
+    response = getattr(iep, "response", None)
+
+    if request is None and response is None:
+        raise TextXSemanticError(
+            f"APIEndpoint<REST> '{iep.name}' must define 'request:' or 'response:' (or both).",
+            **get_location(iep)
+        )
+
+    # Request only makes sense for POST/PUT/PATCH
+    if request is not None and iep.verb in {"GET", "DELETE"}:
+        raise TextXSemanticError(
+            f"APIEndpoint<REST> '{iep.name}' has 'request:' but verb is {iep.verb}. Only POST/PUT/PATCH can have request bodies.",
+            **get_location(iep)
+        )
+
+    # Validate path parameters match URL
+    parameters = getattr(iep, "parameters", None)
+    path = getattr(iep, "path", "")
+
+    if parameters:
+        path_params = getattr(parameters, "path_params", None)
+        if path_params:
+            # Extract {param} from path
+            import re
+            url_params = set(re.findall(r'\{(\w+)\}', path))
+            declared_params = set(p.name for p in path_params.params) if path_params.params else set()
+
+            # Check all URL params are declared
+            missing = url_params - declared_params
+            if missing:
+                raise TextXSemanticError(
+                    f"APIEndpoint<REST> '{iep.name}' has path parameters {missing} in URL but not declared in parameters block.",
+                    **get_location(iep)
+                )
+
+            # Check no extra declared params
+            extra = declared_params - url_params
+            if extra:
+                raise TextXSemanticError(
+                    f"APIEndpoint<REST> '{iep.name}' declares path parameters {extra} but they are not in the URL path.",
+                    **get_location(iep)
+                )
 
 
 def internal_ws_endpoint_obj_processor(iep):
@@ -850,8 +916,67 @@ def verify_path_params(model):
 
 
 def verify_entities(model):
-    """Entity-specific cross-model validation (currently empty)."""
-    pass
+    """Entity-specific cross-model validation."""
+    _validate_schema_only_entities(model)
+
+
+def _validate_schema_only_entities(model):
+    """
+    Validate that entities referenced in request/response schemas are schema-only:
+    - No 'source:' field
+    - No expressions in attributes (attributes must be simple type declarations)
+    """
+    # Collect all entities used in request/response schemas
+    schema_entities = set()
+
+    for obj in get_model_internal_rest_endpoints(model):
+        request = getattr(obj, "request", None)
+        response = getattr(obj, "response", None)
+
+        if request:
+            schema = getattr(request, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity)
+
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity)
+
+    # Validate each schema entity
+    for entity in schema_entities:
+        # Check for source field
+        if getattr(entity, "source", None) is not None:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' is used as a request/response schema and cannot have a 'source:' field. "
+                f"Schema entities must be pure data structures.",
+                **get_location(entity)
+            )
+
+        # Check for parent entities
+        parents = getattr(entity, "parents", [])
+        if parents and len(parents) > 0:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' is used as a request/response schema and cannot have parent entities. "
+                f"Schema entities must be simple, self-contained data structures.",
+                **get_location(entity)
+            )
+
+        # Check for expressions in attributes
+        attrs = getattr(entity, "attributes", [])
+        for attr in attrs:
+            expr = getattr(attr, "expr", None)
+            if expr:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' attribute '{attr.name}' has an expression. "
+                    f"Schema entities must have simple type declarations only (no '= expression' part). "
+                    f"Use: '- {attr.name}: {attr.type}' (without expressions).",
+                    **get_location(attr)
+                )
 
 
 def verify_components(model):

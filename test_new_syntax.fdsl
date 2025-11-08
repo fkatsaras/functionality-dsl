@@ -1,0 +1,36 @@
+Server TestAPI
+  host: "localhost"
+  port: 8080
+end
+
+// Schema-only entity (no expressions)
+Entity UserRegisterRequest
+  attributes:
+    - username: string(3..50);
+    - password: string(6..);
+    - email: string<email>;
+end
+
+// POST endpoint with request and response
+APIEndpoint<REST> UserRegister
+  path: "/api/users/register"
+  verb: POST
+  request:
+    schema: UserRegisterRequest
+  response:
+    schema: integer
+end
+
+// GET endpoint with path and query params
+APIEndpoint<REST> GetUserOrders
+  path: "/api/users/{userId}/orders"
+  verb: GET
+  parameters:
+    path:
+      - userId: integer
+    query:
+      - status: string?
+      - limit: integer(1..100)?
+  response:
+    schema: integer
+end
