@@ -721,6 +721,103 @@ def _validate_decorator_attributes(model, metamodel=None):
                     pass
 
 
+def _validate_parameter_flow(model, metamodel=None):
+    """
+    Validate that parameters flow correctly from APIEndpoint to Source.
+    When a Source has path parameters in its URL, those parameters must be:
+    1. Declared in the Source's parameters block
+    2. Available from the APIEndpoint that uses the Source's response entity
+    """
+    from functionality_dsl.api.extractors.model_extractor import find_source_for_entity
+    from functionality_dsl.api.utils import extract_path_params
+
+    # Helper to get parameters from an endpoint/source
+    def get_params(obj):
+        """Extract path and query parameters from endpoint/source."""
+        params_block = getattr(obj, "parameters", None)
+        if not params_block:
+            return {}, {}
+
+        path_params = {}
+        query_params = {}
+
+        path_block = getattr(params_block, "path_params", None)
+        if path_block:
+            for param in getattr(path_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                if param_name:
+                    path_params[param_name] = param
+
+        query_block = getattr(params_block, "query_params", None)
+        if query_block:
+            for param in getattr(query_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                if param_name:
+                    query_params[param_name] = param
+
+        return path_params, query_params
+
+    # Check each APIEndpoint
+    for endpoint in get_children_of_type("APIEndpointREST", model):
+        endpoint_path_params, endpoint_query_params = get_params(endpoint)
+
+        # Get response entity
+        response = getattr(endpoint, "response", None)
+        if not response:
+            continue
+
+        schema = getattr(response, "schema", None)
+        if not schema:
+            continue
+
+        entity = getattr(schema, "entity", None)
+        if not entity:
+            continue
+
+        # Find the Source that provides this entity (or its ancestors)
+        current_entity = entity
+        visited = set()
+
+        while current_entity and current_entity.name not in visited:
+            visited.add(current_entity.name)
+            source, source_type = find_source_for_entity(current_entity, model)
+
+            if source and source_type == "REST":
+                # Extract path params from Source URL
+                source_url = getattr(source, "url", "")
+                url_params = extract_path_params(source_url)
+
+                # Get declared params from Source
+                source_path_params, _ = get_params(source)
+
+                # Validate: each URL param must be declared in Source parameters
+                for param_name in url_params:
+                    if param_name not in source_path_params:
+                        raise TextXSemanticError(
+                            f"Source '{source.name}' has path parameter '{param_name}' in URL, "
+                            f"but it's not declared in the parameters block. "
+                            f"Add: parameters: path: - {param_name}: <type>",
+                            **get_location(source)
+                        )
+
+                    # Validate: each Source param must be available from APIEndpoint
+                    if param_name not in endpoint_path_params:
+                        available = list(endpoint_path_params.keys()) if endpoint_path_params else []
+                        raise TextXSemanticError(
+                            f"Source '{source.name}' requires path parameter '{param_name}', "
+                            f"but APIEndpoint '{endpoint.name}' doesn't provide it. "
+                            f"Available endpoint parameters: {available}. "
+                            f"Add: parameters: path: - {param_name}: <type> to '{endpoint.name}'",
+                            **get_location(endpoint)
+                        )
+
+                break  # Found the source, no need to check ancestors
+
+            # Move to parent entities
+            parents = getattr(current_entity, "parents", []) or []
+            current_entity = parents[0] if parents else None
+
+
 # ------------------------------------------------------------------------------
 # Public model builders
 
@@ -1398,6 +1495,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
     mm.register_model_processor(_validate_decorator_attributes)
+    mm.register_model_processor(_validate_parameter_flow)
 
     return mm
 

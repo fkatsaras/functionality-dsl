@@ -3,6 +3,7 @@ Server IntCompare
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 // --- External REST sources -------------------------------------
@@ -23,25 +24,32 @@ end
 // --- Raw entities ----------------------------------------------
 Entity IntARaw
   attributes:
-    - value: integer = RandomA[0];
+    - value: array;
 end
 
 Entity IntBRaw
   attributes:
-    - value: integer = RandomB[0];
+    - value: array;
 end
 
-// --- Computed entity -------------------------------------------
-Entity CompareInts(IntARaw,IntBRaw)
+Entity Ints(IntARaw, IntBRaw)
   attributes:
-    - a_val: integer       = IntARaw.value;
-    - b_val: integer       = IntBRaw.value;
-    - delta: integer       = IntBRaw.value - IntARaw.value;
-    - is_equal: boolean   = IntARaw.value == IntBRaw.value;
-    - a_greater: boolean  = IntARaw.value > IntBRaw.value;
-    - b_greater: boolean  = IntBRaw.value > IntARaw.value;
+    - first: integer = IntARaw.value[0];
+    - second: integer = IntBRaw.value[0];
 end
 
+// --- Table wrapper entity --------------------------------------
+Entity CompareInts(Ints)
+  attributes:
+    - rows: array = [{
+        "a_val": Ints.first,
+        "b_val": Ints.second,
+        "delta": Ints.first - Ints.second,
+        "is_equal": Ints.first == Ints.second,
+        "a_greater": Ints.first > Ints.second,
+        "b_greater": Ints.first < Ints.second
+      }];
+end
 
 // --- Internal endpoint -----------------------------------------
 APIEndpoint<REST> CompareIntsList
