@@ -8,7 +8,8 @@ AttrRef: 'data' '.' attr=[entity.Attribute] ;
 
 Component:
     TableComponent
-  | LineChartComponent
+  | ChartComponent
+  | LiveChartComponent
   | ActionFormComponent
   | GaugeComponent
   | InputComponent
@@ -55,14 +56,36 @@ ObjectViewComponent:
   'end'
 ;
 
-LineChartComponent:
-  'Component' '<' 'LineChart' '>' name=ID
-  ('endpoint:' endpoint=[entity.Endpoint])?
+// Typed label for chart axes
+TypedLabel:
+  typename=ID ('<' format=ID '>')? label=STRING
+;
+
+ChartComponent:
+  'Component' '<' 'Chart' '>' name=ID
+  'endpoint:' endpoint=[APIEndpointREST]
   (
-    ('rows:' rows=AttrRef)?
+    ('values:' values=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
-    ('xLabel:' xLabel=STRING)?
-    ('yLabel:' yLabel=STRING)?
+    ('xLabel:' xLabel=TypedLabel)?
+    ('yLabel:' yLabel=TypedLabel)?
+    ('refreshMs:' refreshMs=INT)?
+    ('windowSize:' windowSize=INT)?
+    ('height:' height=INT)?
+  )#
+  'end'
+;
+
+LiveChartComponent:
+  'Component' '<' 'LiveChart' '>' name=ID
+  'endpoint:' endpoint=[APIEndpointWS]
+  (
+    ('values:' values=ID)?
+    ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
+    ('xLabel:' xLabel=TypedLabel)?
+    ('yLabel:' yLabel=TypedLabel)?
+    ('windowSize:' windowSize=INT)?
+    ('height:' height=INT)?
   )#
   'end'
 ;

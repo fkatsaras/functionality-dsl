@@ -4,47 +4,49 @@ Server EventServer
   loglevel: debug
 end
 
-// OUTBOUND CHAIN (what we send)
-Entity OutgoingRaw
-  attributes:
-    - raw: string = ChatDup["text"];
-end
-
-Entity OutgoingProcessed(OutgoingRaw)
-  attributes:
-    - text: string = upper(OutgoingRaw["raw"]);
-end
-
-// INBOUND CHAIN (what we receive)
-Entity EchoInOut
-  attributes:
-    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo'
-end
-
-Entity IncomingProcessed(EchoInOut)
-  attributes:
-    - text: string = lower(EchoInOut["echo"]);
-end
-
 // External duplex - handles OUTBOUND
 Source<WS> EchoWS
   channel: "ws://host.docker.internal:8765"
   subscribe:
     schema: OutgoingProcessed
   publish:
-    schema: EchoInOut
+    schema: Echo
   auth:
     type: bearer
     token: "secret123"
 end
 
+// OUTBOUND CHAIN (what we send)
+Entity Outgoing
+  attributes:
+    - raw: string;
+end
+
+Entity OutgoingProcessed(Outgoing)
+  attributes:
+    - text: string = upper(OutgoingRaw.raw);
+end
+
+// INBOUND CHAIN (what we receive)
+Entity Echo
+  attributes:
+    - echo_json: string; 
+end
+
+Entity EchoProcessed(Echo)
+  attributes:
+    - text: string = lower(Echo.echo_json.echo);
+end
+
+
+
 // Internal duplex - handles INBOUND display
 APIEndpoint<WS> ChatDup
   path: "/api/chat"
-  subscribe:
-    schema: OutgoingRaw
   publish:
-    schema: IncomingProcessed
+    schema: Outgoing
+  subscribe:
+    schema: EchoProcessed
 end
 
 // ------------------ UI ------------------

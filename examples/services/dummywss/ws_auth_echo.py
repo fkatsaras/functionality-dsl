@@ -31,7 +31,7 @@ async def echo(ws):
             print("[ECHO]", message)
             try:
                 payload = json.loads(message)
-                await ws.send(json.dumps({"echo": payload}))
+                await ws.send(json.dumps(payload))
             except Exception:
                 await ws.send(message)
     except Exception as ex:

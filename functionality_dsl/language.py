@@ -1194,6 +1194,7 @@ def verify_path_params(model):
 def verify_entities(model):
     """Entity-specific cross-model validation."""
     _validate_schema_only_entities(model)
+    _validate_source_response_entities(model)
 
 
 def _validate_schema_only_entities(model):
@@ -1239,6 +1240,92 @@ def _validate_schema_only_entities(model):
                     f"Use: '- {attr.name}: {attr.type}' (without expressions).",
                     **get_location(attr)
                 )
+
+
+def _validate_source_response_entities(model):
+    """
+    Validate that entities referenced in Source response/publish schemas don't have
+    expressions that reference the source itself.
+
+    This catches patterns like:
+        Source<WS> BTCUSDT
+          subscribe:
+            schema: BTCRaw
+        end
+
+        Entity BTCRaw
+          attributes:
+            - c: number = BTCUSDT["c"];  # WRONG: Schema entity referencing source
+        end
+
+    Schema entities from external sources should be pure (no expressions).
+    """
+    # Map entity -> source name for entities directly sourced from external Sources
+    entity_to_source = {}
+
+    # Collect from REST sources
+    for source in get_children_of_type("SourceREST", model):
+        response = getattr(source, "response", None)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    entity_to_source[entity.name] = source.name
+
+    # Collect from WS sources (both subscribe and publish)
+    for source in get_children_of_type("SourceWS", model):
+        # Check subscribe schema
+        subscribe = getattr(source, "subscribe", None)
+        if subscribe:
+            schema = getattr(subscribe, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    entity_to_source[entity.name] = source.name
+
+        # Check publish schema (less common for external sources)
+        publish = getattr(source, "publish", None)
+        if publish:
+            schema = getattr(publish, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    entity_to_source[entity.name] = source.name
+
+    # Validate that these entities don't have expressions referencing the source
+    for entity in get_children_of_type("Entity", model):
+        if entity.name not in entity_to_source:
+            continue
+
+        source_name = entity_to_source[entity.name]
+        attrs = getattr(entity, "attributes", []) or []
+
+        for attr in attrs:
+            expr = getattr(attr, "expr", None)
+            if not expr:
+                continue
+
+            # Check if expression references the source name
+            # Walk the expression tree and look for references to the source
+            for alias, _, node in _collect_refs(expr):
+                if alias == source_name:
+                    raise TextXSemanticError(
+                        f"Entity '{entity.name}' attribute '{attr.name}' references Source '{source_name}'. "
+                        f"Entities directly sourced from external Sources (REST/WS) should be pure schema entities "
+                        f"without expressions. Instead, create a transformation entity that inherits from '{entity.name}' "
+                        f"to compute values. Example:\n"
+                        f"  Entity {entity.name}\n"
+                        f"    attributes:\n"
+                        f"      - {attr.name}: {getattr(attr.type, 'typename', 'type')};\n"
+                        f"  end\n"
+                        f"  \n"
+                        f"  Entity {entity.name}Computed({entity.name})\n"
+                        f"    attributes:\n"
+                        f"      - computed: ... = {entity.name}.{attr.name};\n"
+                        f"  end",
+                        **get_location(attr)
+                    )
 
 
 def verify_components(model):

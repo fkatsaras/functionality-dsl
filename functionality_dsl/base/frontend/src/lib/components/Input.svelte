@@ -30,8 +30,10 @@
   function send() {
     if (ws && connected) {
       try {
-        ws.send(JSON.stringify({"text": value}));
-        console.log("Sent over WS:", value);
+
+        const payload = JSON.stringify(value)
+        ws.send(payload);
+        console.log("Sent over WS:", payload);
         value = ""; // clear after send
       } catch (err) {
         error = "Send failed";

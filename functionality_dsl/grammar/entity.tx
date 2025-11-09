@@ -198,8 +198,8 @@ APIEndpointWS:
   'APIEndpoint<' kind='WS' '>' name=ID
   (
     'path:' path=STRING
-    (subscribe=SubscribeBlock)?
     (publish=PublishBlock)?
+    (subscribe=SubscribeBlock)?
     ('auth:' auth=AuthBlock)?
     ('summary:' summary=STRING)?
   )

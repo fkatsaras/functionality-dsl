@@ -8,14 +8,14 @@ end
 // ------------------- External WebSocket ----------------
 Source<WS> BTCUSDT
   channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
-  publish:
+  subscribe:
     schema: BTCRaw
 end
 
 // ------------------- Raw Entity (snapshot from WS) ----------------
 Entity BTCRaw
   attributes:
-    - c: number = BTCUSDT["c"];  // last price in string number at key "c"
+    - c: number;
 end
 
 // ------------------- Computed Entity -------------------
@@ -27,15 +27,15 @@ end
 // ------------------- Internal endpoint ---------
 APIEndpoint<WS> PricesStream
   path: "/api/prices"
-  publish:
+  subscribe:
     schema: Prices
 end
 
 // ------------------- Component (bound to internal endpoint) -------
-Component<LineChart> BitcoinPrice
+Component<LiveChart> BitcoinPrice
   endpoint: PricesStream
-  rows: data.tick
+  values: tick
   seriesLabels: ["BTC Price"]
-  xLabel: "Time"
-  yLabel: "USDT"
+  xLabel: string<datetime> "Time"
+  yLabel: string "USDT"
 end

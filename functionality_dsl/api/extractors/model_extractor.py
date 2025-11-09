@@ -56,18 +56,18 @@ def find_source_for_entity(entity, model):
                         if item_type["entity"].name == entity.name:
                             return (source, "REST")
 
-    # Check WS sources (NEW DESIGN: publish schema = entity going out from source)
+    # Check WS sources (subscribe schema = entity coming FROM external source into our system)
     for source in get_children_of_type("SourceWS", model):
-        from .schema_extractor import get_publish_schema
-        publish_schema = get_publish_schema(source)
-        if publish_schema:
+        from .schema_extractor import get_subscribe_schema
+        subscribe_schema = get_subscribe_schema(source)
+        if subscribe_schema:
             # Direct entity reference
-            if publish_schema["type"] == "entity":
-                if publish_schema["entity"].name == entity.name:
+            if subscribe_schema["type"] == "entity":
+                if subscribe_schema["entity"].name == entity.name:
                     return (source, "WS")
             # Inline type with entity reference (array<Entity>)
-            elif publish_schema["type"] == "inline":
-                inline_spec = publish_schema["inline_spec"]
+            elif subscribe_schema["type"] == "inline":
+                inline_spec = subscribe_schema["inline_spec"]
                 if inline_spec and inline_spec.get("is_array"):
                     item_type = inline_spec.get("item_type")
                     if item_type and item_type["type"] == "entity":

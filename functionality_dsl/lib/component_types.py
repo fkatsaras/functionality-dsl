@@ -177,13 +177,16 @@ class TableComponent(_BaseComponent):
 
 
 @register_component
-class LineChartComponent(_BaseComponent):
+class ChartComponent(_BaseComponent):
+    """
+    Chart component for REST endpoints - displays time-series data with polling.
+    """
     def __init__(
         self,
         parent=None,
         name=None,
         endpoint=None,
-        rows=None,
+        values=None,
         xLabel=None,
         yLabel=None,
         seriesLabels=None,
@@ -192,22 +195,40 @@ class LineChartComponent(_BaseComponent):
         height=None,
     ):
         super().__init__(parent, name, endpoint)
-        self.rows = self._attr_name(rows) if rows is not None else None
-        self.xLabel = _strip_quotes(xLabel)
-        self.yLabel = _strip_quotes(yLabel)
+        self.values = values  # Just the attribute name (string)
+
+        # Parse typed labels
+        self.xLabel = self._parse_typed_label(xLabel)
+        self.yLabel = self._parse_typed_label(yLabel)
+
         self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
         self.refreshMs = int(refreshMs) if refreshMs is not None else 0
         self.windowSize = int(windowSize) if windowSize is not None else 0
-        self.height = int(height) if height is not None else 300  # some sensible default
+        self.height = int(height) if height is not None else 300
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if self.rows is None:
-            raise ValueError(f"Component '{name}': 'rows:' is required.")
+        if self.values is None:
+            raise ValueError(f"Component '{name}': 'values:' is required.")
+
+        # Validate: Chart only works with REST endpoints
+        if endpoint.__class__.__name__ != "APIEndpointREST":
+            raise ValueError(f"Component '{name}': Chart component requires APIEndpoint<REST>, got {endpoint.__class__.__name__}")
+
+    def _parse_typed_label(self, typed_label):
+        """Parse TypedLabel node into dict with type, format, and text."""
+        if not typed_label:
+            return None
+        return {
+            "type": getattr(typed_label, "typename", "string"),
+            "format": getattr(typed_label, "format", None),
+            "text": _strip_quotes(getattr(typed_label, "label", ""))
+        }
 
     def to_props(self):
-        base = {
+        return {
             "endpointPath": self._endpoint_path(""),
+            "values": self.values,
             "seriesLabels": self.seriesLabels,
             "xLabel": self.xLabel,
             "yLabel": self.yLabel,
@@ -215,9 +236,65 @@ class LineChartComponent(_BaseComponent):
             "windowSize": self.windowSize,
             "height": self.height,
         }
-        if self.endpoint.__class__.__name__ == "APIEndpointWS":
-            base["streamPath"] = self._endpoint_path("")
-        return base
+
+
+@register_component
+class LiveChartComponent(_BaseComponent):
+    """
+    LiveChart component for WebSocket endpoints - displays real-time streaming data.
+    """
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        endpoint=None,
+        values=None,
+        xLabel=None,
+        yLabel=None,
+        seriesLabels=None,
+        windowSize=None,
+        height=None,
+    ):
+        super().__init__(parent, name, endpoint)
+        self.values = values  # Just the attribute name (string)
+
+        # Parse typed labels
+        self.xLabel = self._parse_typed_label(xLabel)
+        self.yLabel = self._parse_typed_label(yLabel)
+
+        self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
+        self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
+        self.height = int(height) if height is not None else 300
+
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if self.values is None:
+            raise ValueError(f"Component '{name}': 'values:' is required.")
+
+        # Validate: LiveChart only works with WebSocket endpoints
+        if endpoint.__class__.__name__ != "APIEndpointWS":
+            raise ValueError(f"Component '{name}': LiveChart component requires APIEndpoint<WS>, got {endpoint.__class__.__name__}")
+
+    def _parse_typed_label(self, typed_label):
+        """Parse TypedLabel node into dict with type, format, and text."""
+        if not typed_label:
+            return None
+        return {
+            "type": getattr(typed_label, "typename", "string"),
+            "format": getattr(typed_label, "format", None),
+            "text": _strip_quotes(getattr(typed_label, "label", ""))
+        }
+
+    def to_props(self):
+        return {
+            "streamPath": self._endpoint_path(""),
+            "values": self.values,
+            "seriesLabels": self.seriesLabels,
+            "xLabel": self.xLabel,
+            "yLabel": self.yLabel,
+            "windowSize": self.windowSize,
+            "height": self.height,
+        }
 
 
 @register_component

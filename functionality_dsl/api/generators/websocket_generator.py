@@ -15,6 +15,9 @@ from ..builders import (
 def generate_websocket_router(endpoint, model, all_source_names, templates_dir, output_dir):
     """Generate a WebSocket (duplex) router for an APIEndpoint<WS>."""
     # Extract entities from subscribe/publish blocks
+    # IMPORTANT: From client perspective:
+    #   subscribe: clients subscribe (receive from server) = outbound from server perspective
+    #   publish: clients publish (send to server) = inbound from server perspective
     entity_in = None
     entity_out = None
 
@@ -22,13 +25,13 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     if subscribe_block:
         schema = getattr(subscribe_block, "schema", None)
         if schema:
-            entity_in = getattr(schema, "entity", None)
+            entity_out = getattr(schema, "entity", None)  # Clients subscribe = server sends = outbound
 
     publish_block = getattr(endpoint, "publish", None)
     if publish_block:
         schema = getattr(publish_block, "schema", None)
         if schema:
-            entity_out = getattr(schema, "entity", None)
+            entity_in = getattr(schema, "entity", None)  # Clients publish = server receives = inbound
 
     route_path = get_route_path(endpoint)
 
