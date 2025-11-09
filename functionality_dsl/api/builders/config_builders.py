@@ -123,21 +123,21 @@ def build_ws_external_targets(entity_out, model):
     Find all external WebSocket targets that consume entity_out.
     Returns list of target configs with URL, headers, subprotocols.
 
-    NEW DESIGN: Uses subscribe schema to find which entities the source consumes.
+    NEW DESIGN: Uses publish schema to find which entities we send TO external sources.
     """
-    from ..extractors import get_subscribe_schema
+    from ..extractors import get_publish_schema
     external_targets = []
 
     for external_ws in get_children_of_type("SourceWS", model):
-        # NEW DESIGN: Check subscribe schema to see if it consumes this entity
-        subscribe_schema = get_subscribe_schema(external_ws)
-        if not subscribe_schema or subscribe_schema["type"] != "entity":
+        # NEW DESIGN: Check publish schema - this is what we send TO the external source
+        publish_schema = get_publish_schema(external_ws)
+        if not publish_schema or publish_schema["type"] != "entity":
             continue
 
-        consumer_entity = subscribe_schema["entity"]
+        target_entity = publish_schema["entity"]
 
-        # Include if external_ws consumes entity_out (or its descendants)
-        if calculate_distance_to_ancestor(consumer_entity, entity_out) is not None:
+        # Include if we send entity_out (or its descendants) TO this external source
+        if calculate_distance_to_ancestor(target_entity, entity_out) is not None:
             # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
             channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
             external_targets.append({

@@ -93,12 +93,12 @@ def find_target_for_entity(entity, model):
             if request_schema["entity"].name == entity.name:
                 return (source, "REST")
 
-    # Check WS sources (NEW DESIGN: subscribe schema = entity going into source)
+    # Check WS sources (publish schema = entity we send TO external source)
     for source in get_children_of_type("SourceWS", model):
-        from .schema_extractor import get_subscribe_schema
-        subscribe_schema = get_subscribe_schema(source)
-        if subscribe_schema and subscribe_schema["type"] == "entity":
-            if subscribe_schema["entity"].name == entity.name:
+        from .schema_extractor import get_publish_schema
+        publish_schema = get_publish_schema(source)
+        if publish_schema and publish_schema["type"] == "entity":
+            if publish_schema["entity"].name == entity.name:
                 return (source, "WS")
 
     return (None, None)

@@ -4,47 +4,49 @@ Server EventServer
   loglevel: debug
 end
 
-// External duplex - handles OUTBOUND
+// External echo WebSocket service
+// We SEND OutgoingProcessed TO external (publish)
+// We RECEIVE EchoWrapper FROM external (subscribe)
 Source<WS> EchoWS
   channel: "ws://host.docker.internal:8765"
   subscribe:
-    schema: OutgoingProcessed
+    schema: EchoWrapper
   publish:
-    schema: Echo
-  auth:
-    type: bearer
-    token: "secret123"
+    schema: OutgoingProcessed
+  // auth:
+  //   type: bearer
+  //   token: "secret123"
 end
 
 // OUTBOUND CHAIN (what we send)
-Entity Outgoing
+// Wrapper for primitive string from client
+Entity OutgoingWrapper
   attributes:
-    - raw: string;
+    - value: string;
 end
 
-Entity OutgoingProcessed(Outgoing)
+Entity OutgoingProcessed(OutgoingWrapper)
   attributes:
-    - text: string = upper(OutgoingRaw.raw);
+    - text: string = upper(OutgoingWrapper.value);
 end
 
 // INBOUND CHAIN (what we receive)
-Entity Echo
+// Echo service returns the object we sent, which has "text" field
+Entity EchoWrapper
   attributes:
-    - echo_json: string; 
+    - text: string;
 end
 
-Entity EchoProcessed(Echo)
+Entity EchoProcessed(EchoWrapper)
   attributes:
-    - text: string = lower(Echo.echo_json.echo);
+    - text: string = lower(EchoWrapper.text);
 end
-
-
 
 // Internal duplex - handles INBOUND display
 APIEndpoint<WS> ChatDup
-  path: "/api/chat"
+  channel: "/api/chat"
   publish:
-    schema: Outgoing
+    schema: OutgoingWrapper
   subscribe:
     schema: EchoProcessed
 end

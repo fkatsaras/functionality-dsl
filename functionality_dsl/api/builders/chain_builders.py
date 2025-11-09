@@ -107,19 +107,48 @@ def _find_ws_terminal_entity(entity_out, model):
     return entity_out
 
 
+def _find_inbound_terminal_entity(entity_in, model):
+    """
+    Starting from an APIEndpoint<WS>.publish entity, walk forward to find
+    the terminal entity that gets sent to external Source<WS>.publish.
+    Returns the terminal entity if found, otherwise returns entity_in.
+    """
+    from ..extractors import find_target_for_entity
+
+    # Find which external source accepts entity_in or its descendants
+    for candidate in get_children_of_type("Entity", model):
+        # Check if candidate descends from entity_in
+        distance = calculate_distance_to_ancestor(candidate, entity_in)
+        if distance is None:
+            continue
+
+        # Check if this candidate is sent to an external target
+        target, target_type = find_target_for_entity(candidate, model)
+        if target and target_type == "WS":
+            # Found a descendant that goes to external WS
+            return candidate
+
+    # No external target found, just return entity_in
+    return entity_in
+
+
 def build_inbound_chain(entity_in, model, all_source_names):
     """
     Build the inbound computation chain for WebSocket messages.
     Handles Source<WS>, APIEndpoint<WS>, and pure computed entities.
-    Returns: (compiled_chain, ws_inputs)
+
+    Walks from entity_in to the terminal entity that gets sent to external targets.
+    Returns: (compiled_chain, ws_inputs, terminal_entity)
     """
     if not entity_in:
-        return [], []
+        return [], [], None
 
     compiled_chain = []
     ws_inputs = []
 
-    chain_entities = get_all_ancestors(entity_in, model) + [entity_in]
+    # Find terminal entity (the one that gets sent to external targets)
+    terminal = _find_inbound_terminal_entity(entity_in, model)
+    chain_entities = get_all_ancestors(terminal, model) + [terminal]
 
     for entity in chain_entities:
         # NEW DESIGN: Find source via reverse lookup
@@ -139,13 +168,25 @@ def build_inbound_chain(entity_in, model, all_source_names):
         # Note: Internal WebSocket endpoints (APIEndpoint<WS>) don't appear in find_source_for_entity
         # They would need separate handling if needed
         elif source is None:
+            attributes = getattr(entity, "attributes", []) or []
+            is_wrapper = len(attributes) == 1
+
             attribute_configs = []
-            for attr in getattr(entity, "attributes", []) or []:
+            for attr in attributes:
                 if hasattr(attr, "expr") and attr.expr is not None:
                     expr_code = compile_expr_to_python(attr.expr)
                     attribute_configs.append({
                         "name": attr.name,
                         "pyexpr": expr_code
+                    })
+                elif is_wrapper:
+                    # Wrapper entity: wrap primitive/array from endpoint in dict
+                    # The source_name in compute_entity_chain is the endpoint name
+                    # We need to reference the first available source in context (excluding __sender)
+                    # Use a special marker that the template will handle
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": "__WRAP_PAYLOAD__"
                     })
 
             if attribute_configs:
@@ -178,7 +219,7 @@ def build_inbound_chain(entity_in, model, all_source_names):
         if key not in unique_inputs:
             unique_inputs[key] = ws_input
 
-    return compiled_chain, list(unique_inputs.values())
+    return compiled_chain, list(unique_inputs.values()), terminal
 
 
 def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):

@@ -40,7 +40,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     print(f"    entity_out: {entity_out.name if entity_out else 'None'}")
 
     # Build inbound chain (incoming messages from clients)
-    compiled_chain_inbound, ws_inputs_from_subscribe = build_inbound_chain(
+    compiled_chain_inbound, ws_inputs_from_subscribe, terminal_in = build_inbound_chain(
         entity_in, model, all_source_names
     )
 
@@ -54,15 +54,15 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     ws_inputs_from_publish = []
     if entity_out and not entity_in:
         # Build the chain for entity_out to find its WS source dependencies
-        _, ws_inputs_from_publish = build_inbound_chain(
+        _, ws_inputs_from_publish, _ = build_inbound_chain(
             entity_out, model, all_source_names
         )
 
     # Combine WS inputs from both directions
     ws_inputs = ws_inputs_from_subscribe + ws_inputs_from_publish
 
-    # Find external targets for outbound messages
-    external_targets = build_ws_external_targets(entity_out, model) if entity_out else []
+    # Find external targets for inbound messages (using terminal entity from inbound chain)
+    external_targets = build_ws_external_targets(terminal_in, model) if terminal_in else []
 
     # Check if synchronization is needed
     sync_config_inbound = build_sync_config(entity_in, model)

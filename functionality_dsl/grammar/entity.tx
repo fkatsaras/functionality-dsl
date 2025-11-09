@@ -197,7 +197,7 @@ APIEndpointREST:
 APIEndpointWS:
   'APIEndpoint<' kind='WS' '>' name=ID
   (
-    'path:' path=STRING
+    'channel:' path=STRING
     (publish=PublishBlock)?
     (subscribe=SubscribeBlock)?
     ('auth:' auth=AuthBlock)?

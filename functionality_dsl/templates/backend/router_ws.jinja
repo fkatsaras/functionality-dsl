@@ -83,7 +83,7 @@ async def duplex(ws: WebSocket):
         for i in range(len(ws_service._EXTERNAL_TARGETS)):
             asyncio.create_task(ws_service.ensure_target_connection(i, inbound_entity))
 
-    # Inbound loop: Client -> Compute outbound chain -> Forward
+    # Inbound loop: Client -> Compute inbound chain -> Forward
     async def inbound_loop():
         logger.info(f"[CLIENT] - Starting inbound loop for {rid}")
         chain_inbound, chain_outbound = ws_service.get_compiled_chains()
@@ -99,7 +99,7 @@ async def duplex(ws: WebSocket):
 
             try:
                 row = ws_service.compute_entity_chain(
-                    payload, rid, chain_outbound, "{{ endpoint.name }}"
+                    payload, rid, chain_inbound, "{{ endpoint.name }}"
                 )
 
                 if row is not None and bus_out:

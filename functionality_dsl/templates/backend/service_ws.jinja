@@ -182,6 +182,19 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
     for a in attrs:
         attr_name = a["name"]
         attr_expr = a["expr"]
+
+        # Special handling for wrapper entities
+        if attr_expr == "__WRAP_PAYLOAD__":
+            # Find the first non-special key in context (the payload source)
+            payload_value = None
+            for key in context:
+                if not key.startswith("__") and key != entity_name:
+                    payload_value = context[key]
+                    break
+            shaped[attr_name] = payload_value
+            logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} wrapped payload")
+            continue
+
         compiled = compile_safe(attr_expr)
         try:
             eval_globals = {**safe_globals, **context}
