@@ -12,15 +12,23 @@ def build_rest_input_config(entity, source, all_source_names):
     Build a REST input configuration for template rendering.
     Returns a dict with entity name, source alias, URL, headers, and attribute mappings.
     """
+    # Check if this is a wrapper entity (exactly one attribute = wraps primitive/array)
+    attributes = getattr(entity, "attributes", []) or []
+    is_wrapper = len(attributes) == 1
+
     # Build attribute expressions
     attribute_configs = []
-    for attr in getattr(entity, "attributes", []) or []:
+    for attr in attributes:
         if getattr(attr, "expr", None):
             # Compile the expression
             expr_code = compile_expr_to_python(attr.expr)
         else:
-            # Default: use raw source payload
-            expr_code = source.name
+            # Wrapper entity: assign raw response (array/primitive) to the single attribute
+            if is_wrapper:
+                expr_code = source.name
+            else:
+                # Multi-attribute entity: extract specific field from response object
+                expr_code = f"dsl_funcs['get']({source.name}, '{attr.name}', None)"
 
         attribute_configs.append({
             "name": attr.name,
@@ -73,13 +81,22 @@ def build_ws_input_config(entity, ws_source, all_source_names):
     Build a WebSocket input configuration for template rendering.
     Similar to REST input config but for WebSocket sources.
     """
+    # Check if this is a wrapper entity (exactly one attribute = wraps primitive/array)
+    attributes = getattr(entity, "attributes", []) or []
+    is_wrapper = len(attributes) == 1
+
     # Build attribute expressions
     attribute_configs = []
-    for attr in getattr(entity, "attributes", []) or []:
+    for attr in attributes:
         if hasattr(attr, "expr") and attr.expr is not None:
             expr_code = compile_expr_to_python(attr.expr)
         else:
-            expr_code = ws_source.name
+            # Wrapper entity: assign raw response (array/primitive) to the single attribute
+            if is_wrapper:
+                expr_code = ws_source.name
+            else:
+                # Multi-attribute entity: extract specific field from response object
+                expr_code = f"dsl_funcs['get']({ws_source.name}, '{attr.name}', None)"
 
         attribute_configs.append({
             "name": attr.name,

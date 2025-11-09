@@ -56,6 +56,6 @@ end
 
 Component<LiveView> WikiEditsFeed
   endpoint: WikiEditsStream
-  fields: ["user", "title", "bot"]
+  fields: ["user", "page_title", "action"]
   label: "Who is editing what (live)"
 end

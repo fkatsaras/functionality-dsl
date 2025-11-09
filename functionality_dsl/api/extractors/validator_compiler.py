@@ -77,10 +77,11 @@ def compile_validators_to_pydantic(attr, all_source_names):
 
     # Extract range constraints from type: string(3..50), integer(18..120)
     if type_spec and hasattr(type_spec, "baseType"):
-        base_type = getattr(type_spec, "baseType", "").lower()
+        base_type_raw = getattr(type_spec, "baseType", None)
+        base_type = base_type_raw.lower() if base_type_raw else None
         range_constraint = extract_range_constraint(type_spec)
 
-        if range_constraint:
+        if range_constraint and base_type:
             if "exact" in range_constraint:
                 # Exact length/value
                 if base_type in ("string", "array"):

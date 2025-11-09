@@ -35,23 +35,44 @@ def find_source_for_entity(entity, model):
 
     In the new design, entities don't have source: fields.
     Instead, Sources have response: blocks that reference entities.
+    Also checks inline types like array<Entity> in response schemas.
     """
     from .schema_extractor import get_response_schema
 
     # Check REST sources
     for source in get_children_of_type("SourceREST", model):
         response_schema = get_response_schema(source)
-        if response_schema and response_schema["type"] == "entity":
-            if response_schema["entity"].name == entity.name:
-                return (source, "REST")
+        if response_schema:
+            # Direct entity reference
+            if response_schema["type"] == "entity":
+                if response_schema["entity"].name == entity.name:
+                    return (source, "REST")
+            # Inline type with entity reference (array<Entity>)
+            elif response_schema["type"] == "inline":
+                inline_spec = response_schema["inline_spec"]
+                if inline_spec and inline_spec.get("is_array"):
+                    item_type = inline_spec.get("item_type")
+                    if item_type and item_type["type"] == "entity":
+                        if item_type["entity"].name == entity.name:
+                            return (source, "REST")
 
     # Check WS sources (NEW DESIGN: publish schema = entity going out from source)
     for source in get_children_of_type("SourceWS", model):
         from .schema_extractor import get_publish_schema
         publish_schema = get_publish_schema(source)
-        if publish_schema and publish_schema["type"] == "entity":
-            if publish_schema["entity"].name == entity.name:
-                return (source, "WS")
+        if publish_schema:
+            # Direct entity reference
+            if publish_schema["type"] == "entity":
+                if publish_schema["entity"].name == entity.name:
+                    return (source, "WS")
+            # Inline type with entity reference (array<Entity>)
+            elif publish_schema["type"] == "inline":
+                inline_spec = publish_schema["inline_spec"]
+                if inline_spec and inline_spec.get("is_array"):
+                    item_type = inline_spec.get("item_type")
+                    if item_type and item_type["type"] == "entity":
+                        if item_type["entity"].name == entity.name:
+                            return (source, "WS")
 
     return (None, None)
 

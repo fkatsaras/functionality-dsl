@@ -4,14 +4,6 @@ Server SimpleJSON
   cors: "http://localhost:3000"
 end
 
-// --- External REST sources -------------------------------------
-Source<REST> RealObjects
-  url: "https://api.restful-api.dev/objects"
-  verb: GET
-  response:
-    schema: array<RealObject>
-end
-
 // --- Entity ----------------------------------------------------
 Entity RealObject
   attributes:
@@ -25,17 +17,31 @@ Entity ObjectData
     - color: string;
     - capacity: string;
     - price: number;
+end
 
-Entity RealObjectsRows(RealObject)
+// Wrapper entity for the array response
+Entity RealObjectsWrapper
   attributes:
-    - rows: array = map( RealObject.raw, x ->
+    - items: array<RealObject>;
+end
+
+Source<REST> RealObjects
+  url: "https://api.restful-api.dev/objects"
+  verb: GET
+  response:
+    schema: RealObjectsWrapper
+end
+
+Entity RealObjectsRows(RealObjectsWrapper)
+  attributes:
+    - rows: array = map(RealObjectsWrapper.items, x ->
         {
           "id": x["id"],
           "name": x["name"],
-          "color": x["data"]["color"],
-          "capacity": x["data"]["capacity"],
-          "price": x["data"]["price"],
-          "year": x["data"]["year"]
+          "color": get(get(x, "data", {}), "color", ""),
+          "capacity": get(get(x, "data", {}), "capacity", ""),
+          "price": get(get(x, "data", {}), "price", 0.0),
+          "year": get(get(x, "data", {}), "year", 0)
         }
       );
 end

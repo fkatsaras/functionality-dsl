@@ -259,6 +259,37 @@ def _validate_computed_attrs(model, metamodel=None):
     - Accepts references to external sources
     - Skips REQUEST schema entities (no expressions required for input validation)
     """
+
+    def collect_inline_type_entities(inline_type, collected):
+        """Recursively collect entity references from inline type specs."""
+        if inline_type is None:
+            return
+
+        # Check for array<Entity>
+        item_type = getattr(inline_type, "itemType", None)
+        if item_type:
+            collected.add(item_type.name)
+            return
+
+        # Check for object<Entity> (not in InlineTypeSpec but in TypeSpec for attributes)
+        # This is handled separately when processing entity attributes
+
+    def collect_schema_entities(schema, collected):
+        """Collect entity references from a schema (direct or inline)."""
+        if schema is None:
+            return
+
+        # Direct entity reference
+        entity = getattr(schema, "entity", None)
+        if entity:
+            collected.add(entity.name)
+            return
+
+        # Inline type with entity reference
+        inline_type = getattr(schema, "inline_type", None)
+        if inline_type:
+            collect_inline_type_entities(inline_type, collected)
+
     # Collect all schema entities (request + response + subscribe + publish) that might be schema-only
     # These entities are allowed to have no expressions (pure data structures)
     schema_entities = set()
@@ -270,17 +301,11 @@ def _validate_computed_attrs(model, metamodel=None):
 
         if request:
             schema = getattr(request, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
         if response:
             schema = getattr(response, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
     # REST Sources
     for obj in get_children_of_type("SourceREST", model):
@@ -289,17 +314,11 @@ def _validate_computed_attrs(model, metamodel=None):
 
         if request:
             schema = getattr(request, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
         if response:
             schema = getattr(response, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
     # WebSocket endpoints
     for obj in get_model_internal_ws_endpoints(model):
@@ -308,17 +327,11 @@ def _validate_computed_attrs(model, metamodel=None):
 
         if subscribe:
             schema = getattr(subscribe, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
         if publish:
             schema = getattr(publish, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
     # WebSocket Sources
     for obj in get_children_of_type("SourceWS", model):
@@ -327,17 +340,55 @@ def _validate_computed_attrs(model, metamodel=None):
 
         if subscribe:
             schema = getattr(subscribe, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
 
         if publish:
             schema = getattr(publish, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity.name)
+            collect_schema_entities(schema, schema_entities)
+
+    # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
+    # These nested entities are also schema entities if the parent is
+    def collect_nested_schema_entities(entity_name, collected, visited=None):
+        """Recursively collect nested entity references from attributes."""
+        if visited is None:
+            visited = set()
+
+        if entity_name in visited:
+            return
+        visited.add(entity_name)
+
+        # Find the entity
+        entity = None
+        for e in get_children_of_type("Entity", model):
+            if e.name == entity_name:
+                entity = e
+                break
+
+        if not entity:
+            return
+
+        # Check attributes for entity references
+        for attr in getattr(entity, "attributes", []) or []:
+            type_spec = getattr(attr, "type", None)
+            if not type_spec:
+                continue
+
+            # Check for array<Entity>
+            item_entity = getattr(type_spec, "itemEntity", None)
+            if item_entity:
+                collected.add(item_entity.name)
+                collect_nested_schema_entities(item_entity.name, collected, visited)
+
+            # Check for object<Entity>
+            nested_entity = getattr(type_spec, "nestedEntity", None)
+            if nested_entity:
+                collected.add(nested_entity.name)
+                collect_nested_schema_entities(nested_entity.name, collected, visited)
+
+    # Recursively collect nested entities
+    initial_schema_entities = set(schema_entities)
+    for entity_name in initial_schema_entities:
+        collect_nested_schema_entities(entity_name, schema_entities)
 
     target_attrs = {
         e.name: {a.name for a in getattr(e, "attributes", []) or []}
@@ -353,9 +404,12 @@ def _validate_computed_attrs(model, metamodel=None):
 
         for a in getattr(ent, "attributes", []) or []:
             expr = getattr(a, "expr", None)
-            if expr is None:
+            decorators = getattr(a, "decorators", []) or []
+
+            # Decorated attributes (@path, @query, @header) don't need expressions
+            if expr is None and not decorators:
                 has_schema_only_attrs = True
-            else:
+            elif expr is not None:
                 has_computed_attrs = True
 
         # If entity is referenced in request/response and has no expressions, it's schema-only (OK)
@@ -365,6 +419,12 @@ def _validate_computed_attrs(model, metamodel=None):
         # If entity is NOT in schema_entities or has mixed attrs, validate all have expressions
         for a in getattr(ent, "attributes", []) or []:
             expr = getattr(a, "expr", None)
+            decorators = getattr(a, "decorators", []) or []
+
+            # Skip validation for decorated attributes
+            if decorators:
+                continue
+
             if expr is None:
                 raise TextXSemanticError(
                     f"Attribute '{a.name}' is missing expression. "
@@ -540,6 +600,125 @@ def _validate_entity_validations(model, metamodel=None):
                     f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",
                     **get_location(val)
                 )
+
+
+# ------------------------------------------------------------------------------
+# Decorator attribute validations
+
+def _validate_decorator_attributes(model, metamodel=None):
+    """
+    Validate that @path, @query, @header decorated attributes match defined parameters
+    in Sources and APIEndpoints.
+    """
+    # Helper to get parameters from an endpoint/source
+    def get_params(obj):
+        """Extract path and query parameters from endpoint/source."""
+        params_block = getattr(obj, "parameters", None)
+        if not params_block:
+            return {}, {}
+
+        path_params = {}
+        query_params = {}
+
+        path_block = getattr(params_block, "path_params", None)
+        if path_block:
+            for param in getattr(path_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                if param_name:
+                    path_params[param_name] = param
+
+        query_block = getattr(params_block, "query_params", None)
+        if query_block:
+            for param in getattr(query_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                if param_name:
+                    query_params[param_name] = param
+
+        return path_params, query_params
+
+    # Build a map of entity -> (source/endpoint, path_params, query_params)
+    entity_params_map = {}
+
+    # Check REST sources
+    for source in get_children_of_type("SourceREST", model):
+        response = getattr(source, "response", None)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    path_params, query_params = get_params(source)
+                    entity_params_map[entity.name] = (source, path_params, query_params)
+
+    # Check APIEndpoints
+    for endpoint in get_children_of_type("APIEndpointREST", model):
+        # Check response schema
+        response = getattr(endpoint, "response", None)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    path_params, query_params = get_params(endpoint)
+                    entity_params_map[entity.name] = (endpoint, path_params, query_params)
+
+        # Check request schema
+        request = getattr(endpoint, "request", None)
+        if request:
+            schema = getattr(request, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    path_params, query_params = get_params(endpoint)
+                    entity_params_map[entity.name] = (endpoint, path_params, query_params)
+
+    # Now validate entities with decorated attributes
+    for entity in get_children_of_type("Entity", model):
+        attributes = getattr(entity, "attributes", []) or []
+
+        for attr in attributes:
+            decorators = getattr(attr, "decorators", []) or []
+
+            # Skip if no decorators
+            if not decorators:
+                continue
+
+            # Check if this entity has associated parameters
+            if entity.name not in entity_params_map:
+                # Entity doesn't have associated endpoint/source with parameters
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' attribute '{attr.name}' has decorator(s) {decorators}, "
+                    f"but the entity is not used in a Source/APIEndpoint response/request schema.",
+                    **get_location(attr)
+                )
+
+            source_or_endpoint, path_params, query_params = entity_params_map[entity.name]
+
+            # Validate each decorator
+            for decorator in decorators:
+                if decorator == "path":
+                    if attr.name not in path_params:
+                        available = list(path_params.keys()) if path_params else []
+                        raise TextXSemanticError(
+                            f"Entity '{entity.name}' attribute '{attr.name}' has @path decorator, "
+                            f"but '{attr.name}' is not defined in path parameters of '{source_or_endpoint.name}'. "
+                            f"Available path parameters: {available}",
+                            **get_location(attr)
+                        )
+
+                elif decorator == "query":
+                    if attr.name not in query_params:
+                        available = list(query_params.keys()) if query_params else []
+                        raise TextXSemanticError(
+                            f"Entity '{entity.name}' attribute '{attr.name}' has @query decorator, "
+                            f"but '{attr.name}' is not defined in query parameters of '{source_or_endpoint.name}'. "
+                            f"Available query parameters: {available}",
+                            **get_location(attr)
+                        )
+
+                elif decorator == "header":
+                    # Headers don't have explicit parameter definitions, so we just allow them
+                    pass
 
 
 # ------------------------------------------------------------------------------
@@ -1218,6 +1397,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
+    mm.register_model_processor(_validate_decorator_attributes)
 
     return mm
 

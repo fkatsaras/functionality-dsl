@@ -2,7 +2,7 @@
 
 ## Overview
 
-FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications. THe main focus is the backend API. UI is just for visualization purposes.
+FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications. The main focus is the backend API. UI is just for visualization purposes.
 
 ---
 
@@ -23,30 +23,37 @@ end
 
 **REST Sources:**
 ```fdsl
+// Source with direct entity schema
 Source<REST> ProductDB
   url: "http://external-api:9000/db/products"
   verb: GET
+  response:
+    schema: ProductList
 end
 
+// Source with path parameters
 Source<REST> ProductDetails
   url: "http://external-api:9000/db/products/{productId}"
   verb: GET
+  response:
+    schema: Product
 end
 
+// Source accepting request body
 Source<REST> CreateProduct
   url: "http://external-api:9000/db/products/create"
   verb: POST
-  entity: NewProduct
+  request:
+    schema: NewProduct
 end
 ```
 
 **WebSocket Sources:**
 ```fdsl
 Source<WS> StockFeed
-  url: "ws://inventory:9002/ws/stock"
-  protocol: "json"
-  entity_in: StockUpdate // For data entities subscribing to this source
-  entity_out: ... // For data entities pulled from this source 
+  channel: "ws://inventory:9002/ws/stock"
+  publish:
+    schema: StockUpdate
 end
 ```
 
@@ -54,18 +61,38 @@ end
 
 **REST Endpoints:**
 ```fdsl
-// Public endpoint (no auth)
+// GET endpoint (query)
 APIEndpoint<REST> ProductList
   path: "/api/products"
   verb: GET
-  entity: ProductCatalog
+  response:
+    schema: ProductCatalog
+end
+
+// GET with path parameter
+APIEndpoint<REST> ProductDetails
+  path: "/api/products/{productId}"
+  verb: GET
+  response:
+    schema: Product
+end
+
+// POST endpoint (mutation)
+APIEndpoint<REST> CreateProduct
+  path: "/api/products"
+  verb: POST
+  request:
+    schema: NewProduct
+  response:
+    schema: Product
 end
 
 // Protected endpoint (with auth)
 APIEndpoint<REST> GetCart
   path: "/api/cart"
   verb: GET
-  entity: CartData
+  response:
+    schema: CartData
   auth:
     type: bearer
     token: "required"
@@ -74,58 +101,86 @@ end
 
 **WebSocket Endpoints:**
 ```fdsl
+// Publish-only (server → clients)
 APIEndpoint<WS> StockUpdates
   path: "/api/ws/stock"
-  entity_in: StockUpdate
-  entity_out: ...
+  publish:
+    schema: StockData
+end
+
+// Duplex (bidirectional)
+APIEndpoint<WS> ChatRoom
+  path: "/api/ws/chat"
+  subscribe:
+    schema: ChatMessage
+  publish:
+    schema: ChatMessage
   auth:
     type: bearer
     token: "required"
 end
 ```
 
-### 4. **Entities** (Data Transformations)
+### 4. **Entities** (Data Structures & Transformations)
 
-**Simple Entity (from external source):**
+**Pure Schema Entities** (no expressions - just type declarations):
 ```fdsl
-Entity ProductCatalog
-  source: ProductDB
+// Schema entity for an object
+Entity Product
   attributes:
-    - products: array = ProductDB;
+    - id: string;
+    - name: string;
+    - price: number;
+    - data: object<ProductData>?;  // Nested entity reference
+end
+
+Entity ProductData
+  attributes:
+    - color: string;
+    - capacity: string;
 end
 ```
 
-**Entity with Computed Attributes:**
+**Wrapper Entities** (for array/primitive responses):
 ```fdsl
-Entity ProductInfo
-  source: ProductDetails
+// Wrapper for array response
+Entity ProductListWrapper
   attributes:
-    - id: integer = ProductDetails.id;
-    - name: string = ProductDetails.name;
-    - price: number = ProductDetails.price;
-    - inStock: boolean = ProductDetails.stock > 0;
+    - items: array<Product>;
+end
+
+Source<REST> ProductsAPI
+  url: "http://api.example.com/products"
+  verb: GET
+  response:
+    schema: ProductListWrapper  // Source provides the wrapper directly
 end
 ```
 
-**Entity with Parents (composition):**
+**Transformation Entities** (with computed attributes):
 ```fdsl
-Entity CartWithPricing(RawCart, ProductDetails)
+Entity ProductView(ProductListWrapper)
+  attributes:
+    - products: array = map(ProductListWrapper.items, p ->
+        {
+          "id": p["id"],
+          "name": p["name"],
+          "price": p["price"],
+          "color": get(get(p, "data", {}), "color", "")
+        }
+      );
+    - count: integer = len(ProductListWrapper.items);
+end
+```
+
+**Entity with Parents** (inheritance/composition):
+```fdsl
+Entity CartWithPricing(RawCart)
   attributes:
     - items: array(1..) = RawCart.items;
-    - subtotal: number @positive = sum(map(items, i -> i["price"] * i["quantity"]));
+    - subtotal: number = sum(map(items, i -> i["price"] * i["quantity"]));
     - tax: number = round(subtotal * 0.1, 2);
     - total: number = subtotal + tax;
-end
-```
-
-**Entity with Inline Validations:**
-```fdsl
-Entity NewUser
-  source: UserRegister
-  attributes:
-    - username: string(3..50) = trim(UserRegister.username);
-    - email: string<email> @required = trim(UserRegister.email);
-    - password: string(6..) = UserRegister.password;
 end
 ```
 
@@ -134,7 +189,10 @@ end
 ```fdsl
 Component<Table> ProductTable
   endpoint: ProductList
-  colNames: ["id", "name", "price", "category"]
+  columns:
+    - "id": string
+    - "name": string
+    - "price": number
 end
 
 Component<ActionForm> AddToCartForm
@@ -146,53 +204,123 @@ end
 
 ---
 
+## Type System
+
+### Entity Type References
+
+Use entities as type formats for clean, typed data structures:
+
+```fdsl
+// Array of entities
+- items: array<Product>;
+
+// Nested entity
+- data: object<ProductData>?;
+
+// Generated Python types:
+// items: List[Product]
+// data: Optional[ProductData]
+```
+
+### Format Specifications (OpenAPI-Aligned)
+
+FDSL supports OpenAPI format qualifiers using angle bracket syntax `<format>`:
+
+```fdsl
+// String formats
+- email: string<email>              // EmailStr validation
+- website: string<uri>              // HttpUrl validation
+- userId: string<uuid_str>          // UUID string format
+- birthday: string<date>            // RFC 3339 date (2025-11-02)
+- createdAt: string                 // Use base 'string' for datetime
+- openTime: string<time>            // Time only (10:30:00)
+- server: string<hostname>          // DNS hostname
+- ipAddress: string<ipv4>           // IPv4 address
+- avatar: string<byte>              // Base64-encoded data
+- userPassword: string<password>    // Password (UI hint)
+
+// Number formats with range constraints
+- count: integer<int32>             // 32-bit integer
+- bigNumber: integer<int64>         // 64-bit integer
+- ratio: number<float>              // Single precision
+- precise: number<double>           // Double precision
+```
+
+### Range Syntax
+
+Apply constraints directly to types:
+
+```fdsl
+// String length constraints
+- username: string(3..50)        // Between 3-50 characters
+- bio: string?(..500)            // Optional, max 500 characters
+- code: string(6)                // Exactly 6 characters
+
+// Numeric range constraints
+- age: integer(18..120)          // Between 18-120
+- price: number(0.01..)          // Min 0.01, no max
+- quantity: integer(1..100)      // Between 1-100
+
+// Array length constraints
+- tags: array(1..5)              // 1 to 5 items
+- items: array(..10)             // Max 10 items
+```
+
+### Complete Type Example
+
+```fdsl
+Entity CreateOrder
+  attributes:
+    // Format validation
+    - customerId: string<uuid_str>;
+    - email: string<email>;
+    - website: string<uri>?;
+
+    // Date/time
+    - orderDate: string<date>;
+    - createdAt: string;
+
+    // Nested entities
+    - items: array<OrderItem>(1..50);
+    - shipping: object<ShippingInfo>;
+
+    // Range constraints with formats
+    - itemCount: integer<int32>(1..);
+    - total: number<double>(0..);
+
+    // Optional with constraints
+    - promoCode: string?(4..20);
+end
+```
+
+---
+
 ## Expression Language Features
 
-### Variables & References
-```fdsl
-- myAttr: integer = SomeEntity.field;
-- computed: number = ParentEntity.price * 2;
-```
-
-### Path Parameters
-```fdsl
-// In endpoint path
-path: "/api/users/{userId}"
-
-// In entity - use '$' syntax to access path params from the source
-// (Works only when entity has a 'source:' field pointing to an APIEndpoint or Source)
-- id: integer = int(MyEndpoint$userId);
-
-// Example with Source
-Source<REST> CartByUserExternal
-  url: "http://api:9100/carts/user/{userId}"
-  verb: GET
-  entity: CartRaw
-end
-
-Entity CartRaw
-  source: CartByUserExternal
-  attributes:
-    - userId: integer = int(CartByUserExternal$userId);  // '$' accesses path param
-    - items: array = CartByUserExternal.items;        // '.' accesses response field
-end
-```
-
 ### Built-in Functions
+
 ```fdsl
 // String functions
 trim(str), upper(str), lower(str), len(str)
+contains(str, substr), startswith(str, prefix), endswith(str, suffix)
 
 // Math functions
-sum(array), round(num, decimals), abs(num)
+sum(array), round(num, decimals), abs(num), min(a, b), max(a, b)
+avg(array)
 
 // Collections
-map(array, fn), filter(array, fn), find(array, fn), all(array, fn), any(array, fn)
+map(array, fn), filter(array, fn), find(array, fn)
+all(array, fn), any(array, fn)
 
-// Note: For type formats, use angle bracket syntax (string<email>, string<uri>, etc.)
+// Safe access
+get(dict, "key", default)  // Safe dict access with default
+
+// Error handling
+error(status, message)  // Raise HTTP error
 ```
 
 ### Operators
+
 ```fdsl
 // Arithmetic
 +, -, *, /, %
@@ -208,36 +336,35 @@ value if condition else otherValue
 ```
 
 ### Access Syntax
+
 ```fdsl
-// Member access (.) - Access fields from response data
-Source.fieldName           // Access field from source response
-Entity.attributeName       // Access attribute from entity
+// Member access (.)
+Entity.attribute
+dict["key"]
+dict.get("key", default)  // Python method if available
 
-// Path parameter access ($) - Access URL path parameters
-Source$paramName          // Access path parameter (ONLY in entities with source: field)
-APIEndpoint$paramName     // Access path parameter from endpoint
+// Array/Dict access ([])
+myList[0]
+myDict["key"]
 
-// Index access ([]) - Access by key or index
-myDict["key"]             // Dict access
-myList[0]                 // List access
-
-// Examples:
-Entity CartData
-  source: CartByUserExternal  // Source has URL with {userId} param
-  attributes:
-    - userId: integer = int(CartByUserExternal$userId);    // $ for path param
-    - items: array = CartByUserExternal.items;          // . for response field
-    - firstItem: object = CartByUserExternal.items[0];   // [] for indexing
-end
+// Safe access with get()
+get(dict, "key", "default")
+get(get(x, "data", {}), "color", "")  // Nested safe access
 ```
 
 ### Lambdas
+
 ```fdsl
 - result: array = map(items, x -> x * 2);
 - filtered: array = filter(users, u -> u["active"] == true);
+- enriched: array = map(items, i -> {
+    "id": i["id"],
+    "price": i["price"] * 1.1
+  });
 ```
 
 ### Object/Array Literals
+
 ```fdsl
 - myObject: object = {"key": "value", "count": 42};
 - myArray: array = [1, 2, 3, 4];
@@ -245,127 +372,181 @@ end
 
 ---
 
-## Inline Validation Syntax
+## Path Parameters
 
-FDSL supports inline validation using **format specifications**, **range syntax**, and **decorator validators** for clean, declarative data validation.
+Path parameters can be defined using the `parameters:` block or inline in URLs. The framework automatically passes parameters through the dependency chain.
 
-### Format Specifications (OpenAPI-Aligned)
-
-FDSL supports OpenAPI format qualifiers using angle bracket syntax `<format>`:
+### Parameters Block Syntax
 
 ```fdsl
-// String formats
-- email: string<email>              // Email address validation (maps to EmailStr)
-- website: string<uri>              // URI validation (maps to HttpUrl)
-- userId: string<uuid_str>          // UUID string format validation
-- birthday: string<date>            // RFC 3339 date (2025-11-02)
-- createdAt: string               // Use base 'datetime' type for datetimes
-- openTime: string<time>            // Time only (10:30:00)
-- server: string<hostname>          // DNS hostname validation
-- ipAddress: string<ipv4>           // IPv4 address (192.168.1.1)
-- ipv6Addr: string<ipv6>            // IPv6 address
-- avatar: string<byte>              // Base64-encoded data
-- file: string<binary>              // Binary data (for uploads)
-- userPassword: string<password>    // Password (UI hint only)
+// External source with explicit path parameters
+Source<REST> ProductById
+  url: "http://api.example.com/products/{productId}"
+  verb: GET
+  parameters:
+    path:
+      - productId: string
+  response:
+    schema: Product
+end
 
-// Number formats with range constraints
-- count: integer<int32>             // 32-bit integer (-2^31 to 2^31-1)
-- bigNumber: integer<int64>         // 64-bit integer
-- ratio: number<float>              // Single precision float
-- precise: number<double>           // Double precision float
-```
-
-**How formats work:**
-- Formats change the Python/Pydantic type (e.g., `string<email>` → `EmailStr`)
-- Some formats add validation constraints (e.g., `<int32>` adds min/max bounds)
-- Formats can be combined with range syntax: `string<email>(..100)`
-- Formats generate appropriate imports automatically
-
-### Range Syntax
-
-Apply constraints directly to types using mathematical range notation:
-
-```fdsl
-// String length constraints
-- username: string(3..50)        // Between 3-50 characters
-- bio: string?(..500)            // Optional, max 500 characters
-- code: string(6)                // Exactly 6 characters
-- description: string(10..)      // Min 10 characters, no max
-
-// Numeric range constraints
-- age: integer(18..120)          // Between 18-120
-- price: number(0.01..)          // Min 0.01, no max
-- quantity: integer(1..100)      // Between 1-100
-
-// Array length constraints
-- tags: array(1..5)              // 1 to 5 items
-- items: array(..10)             // Max 10 items
-- coords: array(2)               // Exactly 2 items
-```
-
-### Complete Example with Formats
-
-```fdsl
-Entity CreateOrder
-  source: OrderInput
-  attributes:
-    // Customer info with format validation
-    - customerId: string<uuid_str> = OrderInput.customerId;
-    - email: string<email> = trim(OrderInput.email);
-    - phone: string = OrderInput.phone;
-    - ipAddress: string<ipv4> = OrderInput.ipAddress;
-
-    // Date/time with formats
-    - orderDate: string<date> = OrderInput.orderDate;
-    - createdAt: string = OrderInput.createdAt;
-
-    // Items with range and array constraints
-    - items: array(1..50) = OrderInput.items;
-    - itemCount: integer<int32>(1..) = len(items);
-
-    // Pricing with numeric constraints and formats
-    - subtotal: number<double>(0..) = sum(map(items, i -> i["price"] * i["qty"]));
-    - tax: number(0..) = round(subtotal * 0.1, 2);
-    - total: number = subtotal + tax;
-
-    // Optional field with constraints
-    - promoCode: string?(4..20) = upper(trim(OrderInput.promoCode));
-    - website: string<uri>? = OrderInput.website;
-
-    // Shipping method
-    - shippingMethod: string = OrderInput.shippingMethod;
+// Internal endpoint with path and query parameters
+APIEndpoint<REST> SearchProducts
+  path: "/api/products/{category}"
+  verb: GET
+  parameters:
+    path:
+      - category: string
+    query:
+      - minPrice: number?
+      - maxPrice: number?
+      - inStock: boolean?
+  response:
+    schema: ProductList
 end
 ```
 
-### How It Works
+### Accessing Parameters in Entities (@path, @query, @header)
 
-1. **Range constraints** compile to Pydantic `Field()` parameters:
-   - `string(3..50)` → `Field(min_length=3, max_length=50)`
-   - `integer(18..120)` → `Field(ge=18, le=120)`
-   - `integer(1..)` → `Field(ge=1)` (minimum value, no maximum)
-   - `number(0..)` → `Field(ge=0)` (non-negative)
+Use attribute decorators to access parameters from the **incoming HTTP request** in your response entities:
 
-2. **Format specifications** map to specialized Python types:
-   - `string<email>` → `EmailStr`
-   - `string<uri>` → `HttpUrl`
-   - `string<uuid_str>` → `UUID`
-   - `string<date>` → `date`
-   - `string<time>` → `time`
-   - `string<ipv4>` → `IPvAnyAddress`
-   - `string<ipv6>` → `IPvAnyAddress`
-   - `string<hostname>` → `str` with hostname pattern
-   - `string<byte>` → `str` with base64 pattern
-   - `integer<int32>` → `int` with 32-bit range constraint
-   - `integer<int64>` → `int` with 64-bit range constraint
-   - `number<float>` → `float`
-   - `number<double>` → `float`
+```fdsl
+// Schema entity for external API response
+Entity ProductRaw
+  attributes:
+    - id: string;
+    - name: string;
+    - price: number;
+end
 
-3. **Nullable types** use `?` suffix:
-   - `string?` → `Optional[str]`
-   - `string<email>?` → `Optional[EmailStr]`
-   - `integer(1..)?` → `Optional[int]` with `Field(ge=1)`
+// Response entity with path parameter from HTTP request
+Entity ProductDetail(ProductRaw)
+  attributes:
+    - productId: string @path;           // From APIEndpoint HTTP request
+    - id: string = ProductRaw["id"];
+    - name: string = ProductRaw["name"];
+    - price: number = ProductRaw["price"];
+end
 
-4. Validation happens automatically when Pydantic models are instantiated from request data
+Source<REST> ProductById
+  url: "http://api.example.com/products/{productId}"
+  verb: GET
+  parameters:
+    path:
+      - productId: string               // Receives from APIEndpoint via name matching
+  response:
+    schema: ProductRaw
+end
+
+APIEndpoint<REST> GetProduct
+  path: "/api/products/{productId}"
+  verb: GET
+  parameters:
+    path:
+      - productId: string               // Defines incoming HTTP parameter
+  response:
+    schema: ProductDetail              // Can access productId via @path
+end
+```
+
+**Key Rules:**
+
+1. **@decorators reference APIEndpoint parameters** - They capture values from the incoming HTTP request, not from external APIs
+2. **Sources receive parameters via name matching** - If Source URL has `{productId}` and APIEndpoint defines `productId`, it flows automatically
+3. **Parameter names must match** - For automatic flow from APIEndpoint → Source
+
+**Available decorators:**
+- `@path` - Populates from APIEndpoint path parameters
+- `@query` - Populates from APIEndpoint query parameters
+- `@header` - Populates from incoming HTTP request headers
+
+**Validation:**
+- Decorated attributes must match the **APIEndpoint's** `parameters:` block
+- Decorated attributes cannot have expressions (no `=` assignment)
+- Flow: HTTP Request → @decorated attributes → Transformation entities
+
+---
+
+## Data Flow Patterns
+
+### Array Response Pattern (Wrapper Entity)
+
+```fdsl
+// 1. Define the item schema
+Entity Product
+  attributes:
+    - id: string;
+    - name: string;
+    - price: number;
+end
+
+// 2. Define wrapper for array response
+Entity ProductListWrapper
+  attributes:
+    - items: array<Product>;
+end
+
+// 3. Source provides the wrapper
+Source<REST> ProductsAPI
+  url: "http://api.example.com/products"
+  verb: GET
+  response:
+    schema: ProductListWrapper
+end
+
+// 4. Transform if needed
+Entity ProductView(ProductListWrapper)
+  attributes:
+    - products: array = map(ProductListWrapper.items, p -> {...});
+end
+
+// 5. Expose via endpoint
+APIEndpoint<REST> ProductList
+  path: "/api/products"
+  verb: GET
+  response:
+    schema: ProductView
+end
+```
+
+### Primitive Response Pattern
+
+```fdsl
+// Wrapper for primitive
+Entity CountWrapper
+  attributes:
+    - value: integer;
+end
+
+Source<REST> UserCount
+  url: "http://api.example.com/count"
+  verb: GET
+  response:
+    schema: CountWrapper
+end
+```
+
+### Query Flow (GET - External → Internal)
+
+```
+External Source → Pure Schema Entity → Transformation Entity → APIEndpoint → Response
+```
+
+Example:
+```fdsl
+Source → ProductListWrapper → ProductView → APIEndpoint
+```
+
+### Mutation Flow (POST/PUT/DELETE - Internal → External)
+
+```
+APIEndpoint → Request Entity → Transformation Entity → External Target
+```
+
+Example:
+```fdsl
+APIEndpoint → NewProduct → ValidatedProduct → Source
+```
 
 ---
 
@@ -376,7 +557,8 @@ end
 APIEndpoint<REST> GetProfile
   path: "/api/profile"
   verb: GET
-  entity: UserProfile
+  response:
+    schema: UserProfile
   auth:
     type: bearer
     token: "required"
@@ -410,90 +592,103 @@ end
 
 ---
 
-## Data Flows
-
-### Query Flow (GET - External → Internal)
-```
-External Source → Entity1 → Entity2 → APIEndpoint → Response
-```
-
-Example:
-```fdsl
-Source<REST> ProductDB → Entity ProductCatalog → APIEndpoint ProductList
-```
-
-### Mutation Flow (POST/PUT/PATCH/DELETE - Internal → External)
-```
-APIEndpoint → Entity1 → Entity2 → External Target
-```
-
-Example:
-```fdsl
-APIEndpoint AddToCart → Entity AddToCartInput → Entity CartUpdatePayload → Source UpdateCartDB
-```
-
----
-
 ## File Structure
 
 ```
 my-api-project/
+├── entities.fdsl          # Entity definitions
 ├── sources.fdsl           # External service definitions
-├── entities.fdsl          # Shared entity definitions
+├── endpoints.fdsl         # API endpoint definitions
 ├── components.fdsl        # UI component definitions
-├── main.fdsl              # Main API configuration (imports others)
+├── main.fdsl              # Main file (can import others)
 └── generated/             # Generated code (after running fdsl generate)
     ├── main.py
-    ├── routers/
-    │   ├── product_list.py -> One for each APIEndpoint defined 
-    │   └── get_cart.py
-    └── components/
-        └── ProductTable.tsx
+    ├── app/
+    │   ├── api/
+    │   │   └── routers/   # One file per APIEndpoint
+    │   ├── services/      # Business logic
+    │   └── domain/
+    │       └── models.py  # Pydantic models
+    └── frontend/
+        └── components/    # UI components
 ```
 
 ---
 
 ## Common Patterns
 
-### 1. **Fetch and Transform**
+### 1. **Fetch and Transform Array Response**
 ```fdsl
-Entity EnrichedData
-  source: ExternalAPI
+Entity RealObject
   attributes:
-    - id: integer = ExternalAPI.id;
-    - displayName: string = upper(ExternalAPI.name);
-    - isActive: boolean = ExternalAPI.status == "active";
+    - id: string;
+    - name: string;
+    - data: object?;
+end
+
+Entity RealObjectsWrapper
+  attributes:
+    - items: array<RealObject>;
+end
+
+Source<REST> RealObjects
+  url: "https://api.restful-api.dev/objects"
+  verb: GET
+  response:
+    schema: RealObjectsWrapper
+end
+
+Entity RealObjectsView(RealObjectsWrapper)
+  attributes:
+    - objects: array = map(RealObjectsWrapper.items, x ->
+        {
+          "id": x["id"],
+          "name": x["name"],
+          "color": get(get(x, "data", {}), "color", "")
+        }
+      );
 end
 ```
 
-### 2. **Aggregate Multiple Sources**
+### 2. **Aggregate Multiple Parents**
 ```fdsl
 Entity UserWithOrders(UserData, OrderHistory)
   attributes:
     - user: object = UserData;
-    - orders: array = OrderHistory.items;
+    - orders: array = OrderHistory.orders;
     - totalSpent: number = sum(map(orders, o -> o["total"]));
 end
 ```
 
-### 3. **Validate Before Mutation**
+### 3. **Validate Request Input**
 ```fdsl
 Entity ValidatedInput
-  source: MyEndpoint
   attributes:
-    - email: string<email> = trim(MyEndpoint.email);
-    - age: integer(18..) = MyEndpoint.age;
-    - password: string(8..) = MyEndpoint.password;
+    - email: string<email> = trim(RequestData.email);
+    - age: integer(18..) = RequestData.age;
+    - password: string(8..) = RequestData.password;
 end
 ```
 
 ### 4. **Filter and Map Collections**
 ```fdsl
-Entity ActiveUsers
-  source: UsersDB
+Entity ActiveUsers(UsersWrapper)
   attributes:
-    - activeUsers: array = filter(UsersDB.users, u -> u["active"] == true);
+    - activeUsers: array = filter(UsersWrapper.items, u -> u["active"] == true);
     - usernames: array = map(activeUsers, u -> u["username"]);
+end
+```
+
+### 5. **Safe Nested Access**
+```fdsl
+Entity SafeAccess(DataWrapper)
+  attributes:
+    - items: array = map(DataWrapper.items, x ->
+        {
+          "id": x["id"],
+          "nested": get(get(x, "data", {}), "value", "default")
+        }
+      );
 end
 ```
 
@@ -508,42 +703,47 @@ fdsl generate my-api.fdsl --out generated/
 
 ### Generated Structure
 - `main.py` - FastAPI app entry point
-- `routers/` - One file per endpoint
-- `components/` - React/Vue components (if defined)
-- `core/` - Runtime utilities (safe eval, http client, etc.)
+- `app/api/routers/` - One file per endpoint
+- `app/services/` - Business logic services
+- `app/domain/models.py` - Pydantic models
+- `app/core/` - Runtime utilities (safe eval, http client, etc.)
+- `frontend/components/` - UI components (if defined)
 
 ---
 
 ## Key Implementation Details
 
-### 1. **Expression Compilation**
+### 1. **Entity Types**
+- **Pure Schema Entities**: No expressions, just type declarations. Used for request/response schemas.
+- **Transformation Entities**: Have computed attributes with expressions. Transform data.
+- **Wrapper Entities**: Wrap primitive or array responses from sources.
+
+### 2. **Source → Entity Mapping**
+- Sources specify which entity they provide via `response: schema: EntityName`
+- Wrapper entities handle array/primitive responses
+- Path parameters flow automatically by name matching
+
+### 3. **Expression Compilation**
 - FDSL expressions compile to Python code
 - Evaluated safely at runtime using restricted `eval()`
 - All entity references available in flat namespace
-- Lambdas require special scoping (merge into globals)
+- Lambdas require special scoping
 
-### 2. **Entity Computation Order**
+### 4. **Entity Computation Order**
 - Generator uses topological sort for dependency resolution
 - Parent entities computed before children
 - External sources fetched first, then computed entities
 
-### 3. **Context Management**
-- All entities stored in flat `context` dict by name
-- `eval(compiled_expr, {**safe_globals, **context}, {})`
-- Path params seeded into `context[EndpointName]`
+### 5. **Type Validation**
+- Format specifications compile to Pydantic types
+- Range constraints compile to `Field()` parameters
+- Validation happens automatically via Pydantic models
+- HTTPException raised on validation failure
 
-### 4. **Validation Execution**
-- Type formats and constraints compile to Pydantic Field constraints
-- Validation happens automatically on request data via Pydantic models
-- Range syntax: `string(3..50)` → `Field(min_length=3, max_length=50)`
-- Format specifications: `string<email>` → `EmailStr`, `string<uri>` → `HttpUrl`
-- Decorator validators: `@min(18)` → `Field(ge=18)`
-- HTTPException raised on validation failure with custom status codes
-
-### 5. **WebSocket Handling**
+### 6. **WebSocket Handling**
 - Separate computation chains for inbound/outbound
 - Bus-based pub/sub for message distribution
-- Persistent connections to external WS sources
+- Persistent connections to external WS sources via `channel:` field
 
 ---
 
@@ -552,42 +752,8 @@ fdsl generate my-api.fdsl --out generated/
 1. **No loops or recursion** - Use built-in iteration functions like map(), filter(), etc.
 2. **No imports** - Cannot use arbitrary Python libraries in expressions
 3. **No file I/O** - Pure data transformation only
-4. **localStorage not supported** - Use React state or backend storage
-5. **No cycles in entity dependencies** - Must form a DAG
-
----
-
-## Example: Complete E-Commerce Flow
-
-```fdsl
-Server ECommerceAPI
-  host: "localhost"
-  port: 8080
-end
-
-Source<REST> ProductDB
-  url: "http://catalog:9001/db/products"
-  verb: GET
-end
-
-APIEndpoint<REST> ProductList
-  path: "/api/products"
-  verb: GET
-  entity: ProductCatalog
-end
-
-Entity ProductCatalog
-  source: ProductDB
-  attributes:
-    - products: array = ProductDB;
-    - count: integer = len(products);
-end
-
-Component<Table> ProductTable
-  endpoint: ProductList
-  colNames: ["id", "name", "price"]
-end
-```
+4. **No cycles in entity dependencies** - Must form a DAG
+5. **Pure schema entities** - Cannot mix schema-only and computed attributes in same entity
 
 ---
 
@@ -596,24 +762,20 @@ end
 1. **Check logs** - Generated routers have extensive debug logging
 2. **Inspect context** - Logger shows what's in context before each step
 3. **Test expressions** - Use Python REPL to test compiled expressions
-4. **Validate entity order** - Check `_TRANSFORMATION_CHAIN` in generated router
+4. **Validate entity order** - Check computation chains in generated services
 5. **Test sources directly** - Use curl to verify external services work
+6. **Use safe access** - Use `get()` function for optional/nested fields
 
 ---
 
 ## Resources
 
-- Grammar: `functionality_dsl/lib/compiler/grammar/model.tx`
+- Grammar: `functionality_dsl/grammar/entity.tx`, `functionality_dsl/grammar/component.tx`
 - Compiler: `functionality_dsl/lib/compiler/expr_compiler.py`
-- Generator: `functionality_dsl/lib/compiler/model.py`
+- Generator: `functionality_dsl/api/generators/`
 - Built-ins: `functionality_dsl/lib/builtins/`
-- Templates: Router templates for query/mutation/websocket
+- Templates: `functionality_dsl/templates/backend/`
 
 ---
 
 **Remember**: FDSL is declarative - you describe WHAT you want, not HOW to do it. The framework handles all the plumbing (HTTP, WebSockets, validation, error handling, etc.).
-
-Claude Code should:
--  Create files, edit code, generate artifacts
--  Commit changes locally (with confirmation)
--  **NEVER push to remote** (manual push only)

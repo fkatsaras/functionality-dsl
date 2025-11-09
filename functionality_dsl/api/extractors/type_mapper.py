@@ -9,16 +9,38 @@ def map_to_python_type(attr):
     if type_spec is None:
         return "Any"
 
-    # Check if it's a TypeSpec object or a plain string
+    # Check for entity references in type spec (array<Entity>, object<Entity>)
+    is_nullable = getattr(type_spec, "nullable", False)
+
+    # Handle array<Entity>
+    if hasattr(type_spec, "itemEntity") and type_spec.itemEntity is not None:
+        entity_name = type_spec.itemEntity.name
+        base_type = f"List[{entity_name}]"
+        if is_nullable:
+            return f"Optional[{base_type}]"
+        return base_type
+
+    # Handle object<Entity>
+    if hasattr(type_spec, "nestedEntity") and type_spec.nestedEntity is not None:
+        entity_name = type_spec.nestedEntity.name
+        base_type = entity_name
+        if is_nullable:
+            return f"Optional[{base_type}]"
+        return base_type
+
+    # Check if it's a TypeSpec object with baseType or a plain string
     if hasattr(type_spec, "baseType"):
-        base_type_str = getattr(type_spec, "baseType", "")
+        base_type_str = getattr(type_spec, "baseType", None)
         format_str = getattr(type_spec, "format", None)
-        is_nullable = getattr(type_spec, "nullable", False)
     else:
         # Old format: plain string
-        base_type_str = str(type_spec) if type_spec else ""
+        base_type_str = str(type_spec) if type_spec else None
         format_str = None
         is_nullable = getattr(attr, "optional", False)
+
+    # If no base type, return Any
+    if not base_type_str:
+        return "Optional[Any]" if is_nullable else "Any"
 
     # Map base types
     base_type = {

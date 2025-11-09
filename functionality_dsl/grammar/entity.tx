@@ -16,8 +16,11 @@ TypeFormat:
 ;
 
 // Type constraint with range syntax: type(min..max) or type(exact)
+// Extended to support entity references: array<Entity>, object<Entity>
 TypeSpec:
-  baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?
 ;
 
 TypeConstraint:
@@ -37,8 +40,13 @@ AttrValue:
   STRING | FLOAT | INT | Bool
 ;
 
+// Attribute decorators for marking parameter sources
+AttrDecorator:
+  'path' | 'query' | 'header'
+;
+
 Attribute:
-    name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'
+    name=ID ':' type=TypeSpec ('@' decorators+=AttrDecorator)* ('=' expr=Expr)? ';'
 ;
 
 Entity:

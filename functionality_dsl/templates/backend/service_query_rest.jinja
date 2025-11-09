@@ -49,7 +49,11 @@ _COMPUTATION_CHAIN = [
         "name": "{{ step.name }}",
         "attrs": [
         {%- for attr in step.attrs %}
+            {%- if attr.decorator is defined %}
+            {"name": "{{ attr.name }}", "decorator": "{{ attr.decorator }}"},
+            {%- else %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+            {%- endif %}
         {%- endfor %}
         ],
     },
@@ -177,26 +181,53 @@ def compute_entity_chain(context: Dict[str, Any]) -> None:
 
 
 def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
-    """Shape entity data by evaluating attribute expressions."""
+    """Shape entity data by evaluating attribute expressions or populating from params."""
     shaped_data: Dict[str, Any] = {}
 
     for attr_config in config.get("attrs", []):
         attr_name = attr_config["name"]
-        attr_expr = attr_config["expr"]
 
-        try:
-            compiled_expr = compile_safe(attr_expr)
-            eval_globals = {**safe_globals, **context}
-            shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
-            logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
-        except HTTPException:
-            raise
-        except Exception as eval_error:
-            logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to compute {entity_name}.{attr_name}"
-            )
+        # Check if this is a decorated attribute (@path, @query, @header)
+        if "decorator" in attr_config:
+            decorator = attr_config["decorator"]
+
+            if decorator == "path":
+                # Get from path params in context (seeded by seed_context_with_path_params)
+                param_value = context.get("__path_params__", {}).get(attr_name)
+                if param_value is None:
+                    logger.warning(f"[SHAPE] - @path attribute {entity_name}.{attr_name} not found in path params")
+                shaped_data[attr_name] = param_value
+                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @path: {param_value}")
+
+            elif decorator == "query":
+                # Get from query params in context
+                param_value = context.get("__query_params__", {}).get(attr_name)
+                shaped_data[attr_name] = param_value
+                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @query: {param_value}")
+
+            elif decorator == "header":
+                # Get from headers in context
+                param_value = context.get("__headers__", {}).get(attr_name)
+                shaped_data[attr_name] = param_value
+                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @header: {param_value}")
+
+        else:
+            # Regular computed attribute with expression
+            attr_expr = attr_config["expr"]
+
+            try:
+                compiled_expr = compile_safe(attr_expr)
+                eval_globals = {**safe_globals, **context}
+                shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
+                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
+            except HTTPException:
+                raise
+            except Exception as eval_error:
+                logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to compute {entity_name}.{attr_name}"
+                )
 
     # Default to raw payload if no attributes specified
     if not shaped_data and config.get("alias"):
@@ -205,7 +236,7 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
     return shaped_data
 
 
-async def execute_query(path_params: Dict[str, str]) -> Dict[str, Any]:
+async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any] = None, headers: Dict[str, str] = None) -> Dict[str, Any]:
     """
     Main service function to execute the complete query flow.
 
@@ -213,7 +244,20 @@ async def execute_query(path_params: Dict[str, str]) -> Dict[str, Any]:
     """
     context: Dict[str, Any] = {}
 
-    # Seed context with path parameters
+    # Store params in context for @path/@query/@header decorated attributes
+    if path_params:
+        context["__path_params__"] = path_params
+        logger.debug(f"[CONTEXT] - Stored path parameters: {list(path_params.keys())}")
+
+    if query_params:
+        context["__query_params__"] = query_params
+        logger.debug(f"[CONTEXT] - Stored query parameters: {list(query_params.keys())}")
+
+    if headers:
+        context["__headers__"] = headers
+        logger.debug(f"[CONTEXT] - Stored headers: {list(headers.keys())}")
+
+    # Seed context with path parameters (for interpolating external source URLs)
     if path_params:
         context = seed_context_with_path_params(
             context=context,
@@ -222,7 +266,7 @@ async def execute_query(path_params: Dict[str, str]) -> Dict[str, Any]:
             external_sources=_EXTERNAL_REST_SOURCES,
             logger=logger,
         )
-        logger.debug(f"[CONTEXT] - Seeded path parameters: {list(path_params.keys())}")
+        logger.debug(f"[CONTEXT] - Seeded path parameters for URL interpolation")
 
     # Execute the query pipeline
     await fetch_external_sources(context)

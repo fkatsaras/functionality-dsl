@@ -33,8 +33,21 @@ def _safe_zip(*args):
         cleaned.append(list(a))
     return list(zip(*cleaned))
 
+def _get(obj, key, default=None):
+    """
+    Safe dictionary/object access with default value.
+    Usage: get(dict, "key", "default")
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    # For objects with attributes
+    return getattr(obj, key, default)
+
 DSL_FUNCTIONS = {
     "zip":        (_safe_zip,   (1, None)),
+    "get":        (_get,        (2, 3)),
     "error":      (_error,      (2, 2)),
     "contains":   (_contains,   (2, 2)),
     "icontains":  (_icontains,  (2, 2)),

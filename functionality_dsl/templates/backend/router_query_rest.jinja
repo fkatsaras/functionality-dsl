@@ -3,9 +3,9 @@
 # ========================================================================
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Query
 {% if endpoint.auth and endpoint.auth.type == 'bearer' %}
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -26,8 +26,9 @@ router = APIRouter(
 {% set pparams = endpoint.path_params or [] %}
 @router.get("", response_model=Dict[str, Any])
 async def query_{{ endpoint.name | lower }}(
-    {% for p in pparams %}{{ p }}: str{% if not loop.last %}, {% endif %}{% endfor %}
-    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}{% if pparams %}, {% endif %}credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
+    request: Request,
+    {% for p in pparams %}{{ p }}: str, {% endfor %}
+    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
 ):
     """
     Query endpoint for {{ entity.name }}.
@@ -56,7 +57,11 @@ async def query_{{ endpoint.name | lower }}(
             {% endfor %}
         }
 
-        return await {{ endpoint.name | lower }}_service.execute_query(path_params)
+        # Extract query params and headers for decorated attributes
+        query_params = dict(request.query_params)
+        headers = dict(request.headers)
+
+        return await {{ endpoint.name | lower }}_service.execute_query(path_params, query_params, headers)
 
     except HTTPException:
         raise

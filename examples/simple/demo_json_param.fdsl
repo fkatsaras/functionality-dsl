@@ -3,21 +3,7 @@ Server SimpleJSON
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
-end
-
-// --- External REST sources -------------------------------------
-Source<REST> RealObjects
-  url: "https://api.restful-api.dev/objects"
-  verb: GET
-  response:
-    schema: RealObjectsRaw
-end
-
-Source<REST> RealObjectById
-  url: "https://api.restful-api.dev/objects/{objectId}"
-  verb: GET
-  response:
-    schema: RealObjectDetail
+  loglevel: debug
 end
 
 // --- Entities ---------------------------------------------------
@@ -31,34 +17,58 @@ end
 //   ...
 // ]
 
-Entity RealObjectsRaw
+Entity RealObject
   attributes:
-    - raw: array = RealObjects;
+    - id: string;
+    - name: string;
+    - data: object?;
 end
 
-Entity RealObjectsRows(RealObjectsRaw)
+// Wrapper entity for array response
+Entity RealObjectsWrapper
   attributes:
-    - rows: array = map( RealObjectsRaw.raw, x ->
+    - items: array<RealObject>;
+end
+
+Entity RealObjectsRows(RealObjectsWrapper)
+  attributes:
+    - rows: array = map(RealObjectsWrapper.items, x ->
         {
           "id": x["id"],
           "name": x["name"],
-          "color": x["data"]["color"],
-          "capacity": x["data"]["capacity"],
-          "price": x["data"]["price"],
-          "year": x["data"]["year"]
+          "color": get(get(x, "data", {}), "color", ""),
+          "capacity": get(get(x, "data", {}), "capacity", ""),
+          "price": get(get(x, "data", {}), "price", 0.0),
+          "year": get(get(x, "data", {}), "year", 0)
         }
       );
 end
 
-// For a single item view (GET /objects/{objectId})
-Entity RealObjectDetail
+Entity RealObjectDetail(RealObject)
   attributes:
-    - id: string = RealObjectById["id"];
-    - name: string = RealObjectById["name"];
-    - color: string = RealObjectById["data"]["color"];
-    - capacity: string = RealObjectById["data"]["capacity"];
-    - price: number = RealObjectById["data"]["price"];
-    - year: integer = RealObjectById["data"]["year"];
+    - name: string = RealObject.name;
+    - color: string = get(get(RealObject, "data", {}), "color", "");
+    - capacity: string = get(get(RealObject, "data", {}), "capacity", "");
+    - price: number = get(get(RealObject, "data", {}), "price", 0.0);
+    - year: integer = get(get(RealObject, "data", {}), "year", 0);
+end
+
+// --- External REST sources -------------------------------------
+Source<REST> RealObjects
+  url: "https://api.restful-api.dev/objects"
+  verb: GET
+  response:
+    schema: RealObjectsWrapper
+end
+
+Source<REST> RealObjectById
+  url: "https://api.restful-api.dev/objects/{objectId}"
+  verb: GET
+  parameters:
+    path:
+      - objectId: string
+  response:
+    schema: RealObject
 end
 
 // --- Internal endpoints -----------------------------------------
@@ -72,6 +82,9 @@ end
 APIEndpoint<REST> RealObjectDetails
   path: "/api/objects/{objectId}"
   verb: GET
+  parameters:
+    path:
+      - objectId: string
   response:
     schema: RealObjectDetail
 end
@@ -90,6 +103,6 @@ end
 
 Component<ObjectView> ObjectDetailsCard
   endpoint: RealObjectDetails
-  fields: ["id", "name", "color", "capacity", "price", "year"]
+  fields: ["name", "color", "capacity", "price", "year"]
   label: "Object Details"
 end
