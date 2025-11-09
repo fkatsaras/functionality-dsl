@@ -9,22 +9,24 @@ end
 Source<REST> RandomA
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
+  response:
+    schema: IntARaw
 end
 
 Source<REST> RandomB
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
+  response:
+    schema: IntBRaw
 end
 
 // --- Raw entities ----------------------------------------------
 Entity IntARaw
-  source: RandomA
   attributes:
     - value: integer = RandomA[0];
 end
 
 Entity IntBRaw
-  source: RandomB
   attributes:
     - value: integer = RandomB[0];
 end
@@ -45,7 +47,8 @@ end
 APIEndpoint<REST> CompareIntsList
   path: "/api/compare"
   verb: GET
-  entity: CompareInts
+  response:
+    schema: CompareInts
 end
 
 // --- Component -------------------------------------------------

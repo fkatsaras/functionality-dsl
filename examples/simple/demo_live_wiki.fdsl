@@ -2,46 +2,46 @@ Server WikiLive
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
+  loglevel: debug
 end
 
 // --- External WS feed ------------------------------------------
 Source<WS> WikiMonEN
-  url: "wss://wikimon.hatnote.com/en/"
-  protocol: "json"
-  entity_out: WikiEdit
+  channel: "wss://wikimon.hatnote.com/en/"
+  publish:
+    schema: WikiEdit
 end
 
 // --- Raw entity ------------------------------------------------
 // Raw snapshot from the WS frame (map exact keys)
 Entity WikiEdit
-  source: WikiMonEN
   attributes:
-    - title:  string = WikiMonEN["page_title"];
-    - user:   string = WikiMonEN["user"];
-    - delta:  integer    = WikiMonEN["change_size"];
-    - is_bot: boolean   = WikiMonEN["is_bot"];
-    - is_minor: boolean = WikiMonEN["is_minor"];
-    - wiki:   string = WikiMonEN["ns"];
+    - action: string;
+    - change_size: integer;
+    - flags: object?;
+    - page_namespace: integer?;
+    - page_title: string;
+    - user: string;
+    - server_name: string;
 end
 
 // --- Computed entity -------------------------------------------
 Entity EditGauge(WikiEdit)
   attributes:
-    - edit_size_abs: integer = (
-        abs(WikiEdit.delta) if WikiEdit.delta != null else 0
-      );
+    - edit_size_abs: integer = WikiEdit.change_size;
 end
-
 
 // --- Internal endpoints -----------------------------------------
 APIEndpoint<WS> EditGaugeStream
   path: "/api/wiki/edits"
-  entity_in: EditGauge
+  publish:
+    schema: EditGauge
 end
 
 APIEndpoint<WS> WikiEditsStream
   path: "/api/wiki/edits/feed"
-  entity_in: WikiEdit
+  publish:
+    schema: WikiEdit
 end
 
 // --- Components -------------------------------------------------
@@ -56,6 +56,6 @@ end
 
 Component<LiveView> WikiEditsFeed
   endpoint: WikiEditsStream
-  fields: ["user", "title"]
+  fields: ["user", "title", "bot"]
   label: "Who is editing what (live)"
 end

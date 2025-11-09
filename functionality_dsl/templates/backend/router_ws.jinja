@@ -74,7 +74,9 @@ async def duplex(ws: WebSocket):
     bus_out = wsbus.get_bus(outbound_entity) if outbound_entity else None
 
     # Start WS input consumers and pre-warm target connections
-    await ws_service.ensure_ws_inputs_started(bus_in)
+    # For publish-only endpoints, WS inputs feed into the outbound bus
+    ws_input_bus = bus_in if inbound_entity else bus_out
+    await ws_service.ensure_ws_inputs_started(ws_input_bus)
 
     if ws_service._EXTERNAL_TARGETS:
         logger.info(f"[CLIENT] - Pre-warming {len(ws_service._EXTERNAL_TARGETS)} external target(s)")
@@ -132,23 +134,23 @@ async def duplex(ws: WebSocket):
 
     # Outbound loop: Subscribe to bus and send to client
     async def outbound_loop():
-        logger.info(f"[CLIENT] - Starting outbound loop for {rid}, subscribed to: {inbound_entity}")
-        if bus_in:
-            await bus_in.add_ws(ws)
+        logger.info(f"[CLIENT] - Starting outbound loop for {rid}, subscribed to: {outbound_entity}")
+        if bus_out:
+            await bus_out.add_ws(ws)
             try:
                 while True:
                     await asyncio.sleep(1)
             finally:
-                await bus_in.remove_ws(ws)
+                await bus_out.remove_ws(ws)
                 logger.info(f"[CLIENT] - Removed {rid} from bus subscription")
 
     # Run both loops concurrently
     try:
         tasks = []
-        {% if compiled_chain_outbound or entity_out %}
+        {% if compiled_chain_inbound or entity_in %}
         tasks.append(asyncio.create_task(inbound_loop()))
         {% endif %}
-        {% if compiled_chain_inbound or entity_in %}
+        {% if compiled_chain_outbound or entity_out %}
         tasks.append(asyncio.create_task(outbound_loop()))
         {% endif %}
 

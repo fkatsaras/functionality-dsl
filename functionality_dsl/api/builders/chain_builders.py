@@ -5,6 +5,7 @@ from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
 
 from ..graph import get_all_ancestors, calculate_distance_to_ancestor
 from .config_builders import build_ws_input_config
+from ..extractors import find_source_for_entity
 
 
 def build_entity_chain(entity, model, all_source_names, context="ctx"):
@@ -22,7 +23,8 @@ def build_entity_chain(entity, model, all_source_names, context="ctx"):
         # --- build list of known source names ---
         known_aliases = set(all_source_names)
         known_aliases.add(chain_entity.name)
-        src = getattr(chain_entity, "source", None)
+        # NEW DESIGN: Find source via reverse lookup
+        src, _ = find_source_for_entity(chain_entity, model)
         if src and getattr(src, "name", None):
             known_aliases.add(src.name)
 
@@ -52,8 +54,9 @@ def _get_ws_source_parents(entity, model):
     """
     feed_names = []
     for ancestor in get_all_ancestors(entity, model):
-        source = getattr(ancestor, "source", None)
-        if source and source.__class__.__name__ == "SourceWS":
+        # NEW DESIGN: Find source via reverse lookup
+        source, source_type = find_source_for_entity(ancestor, model)
+        if source and source_type == "WS":
             feed_names.append(source.name)  # Use endpoint name, not entity name
 
     # Deduplicate while preserving order
@@ -69,12 +72,19 @@ def _get_ws_source_parents(entity, model):
 
 def _find_ws_terminal_entity(entity_out, model):
     """
-    Starting from an APIEndpoint<WS>.entity_out, walk forward to find
-    the Source<WS>.entity_in that eventually consumes it.
+    Starting from an APIEndpoint<WS>.publish entity, walk forward to find
+    the Source<WS>.subscribe entity that eventually consumes it.
     Returns the consuming entity if found, otherwise returns entity_out.
     """
     for external_ws in get_children_of_type("SourceWS", model):
-        consumer_entity = getattr(external_ws, "entity_in", None)
+        # Extract entity from subscribe block
+        consumer_entity = None
+        subscribe_block = getattr(external_ws, "subscribe", None)
+        if subscribe_block:
+            schema = getattr(subscribe_block, "schema", None)
+            if schema:
+                consumer_entity = getattr(schema, "entity", None)
+
         if not consumer_entity:
             continue
 
@@ -101,11 +111,11 @@ def build_inbound_chain(entity_in, model, all_source_names):
     chain_entities = get_all_ancestors(entity_in, model) + [entity_in]
 
     for entity in chain_entities:
-        source = getattr(entity, "source", None)
-        source_class = source.__class__.__name__ if source else None
+        # NEW DESIGN: Find source via reverse lookup
+        source, source_type = find_source_for_entity(entity, model)
 
         # External WebSocket source
-        if source and source_class == "SourceWS":
+        if source and source_type == "WS":
             config = build_ws_input_config(entity, source, all_source_names)
             ws_inputs.append(config)
 
@@ -115,8 +125,9 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     "attrs": config["attrs"],
                 })
 
-        # Internal WebSocket endpoint (another APIEndpoint<WS>)
-        elif source and source_class == "APIEndpointWS":
+        # Note: Internal WebSocket endpoints (APIEndpoint<WS>) don't appear in find_source_for_entity
+        # They would need separate handling if needed
+        elif source is None:
             attribute_configs = []
             for attr in getattr(entity, "attributes", []) or []:
                 if hasattr(attr, "expr") and attr.expr is not None:
@@ -163,6 +174,9 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
     """
     Build the outbound computation chain for WebSocket messages.
     Walks from entity_out to the terminal entity that will be sent.
+
+    Includes all ancestor entities (even those without expressions)
+    so their data is available in the eval context.
     """
     if not entity_out:
         return []
@@ -183,11 +197,11 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
                     "pyexpr": expr_code
                 })
 
-        if attribute_configs:
-            compiled_chain.append({
-                "name": entity.name,
-                "attrs": attribute_configs,
-            })
+        # Always include the entity — even if it has no expressions.
+        compiled_chain.append({
+            "name": entity.name,
+            "attrs": attribute_configs,
+        })
 
     return compiled_chain
 

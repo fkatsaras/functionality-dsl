@@ -1,4 +1,4 @@
-// This demo requires an external ws server with AUTh middleware to be set up
+// This demo requires an external ws server with AUTH middleware to be set up
 
 Server LIVEAuthJSON
   host: "localhost"
@@ -6,18 +6,17 @@ Server LIVEAuthJSON
   cors: "http://localhost:3000"
 end
 
-// custom websocket server 
+// custom websocket server
 Source<WS> EchoBearer
-  url: "ws://host.docker.internal:8765"
-  protocol: "json"
+  channel: "ws://host.docker.internal:8765"
+  subscribe:
+    schema: EchoEntity
   auth:
     type: bearer
     token: "secret123"
-  entity_in: EchoEntity
 end
 
 Entity EchoEntity
-  source: EchoPub
   attributes:
     - raw: object = EchoPub.text;
 end
@@ -25,7 +24,8 @@ end
 // Internal publish endpoint: clients send here
 APIEndpoint<WS> EchoPub
   path: "/api/ws/echo/send"
-  entity_out: EchoEntity
+  subscribe:
+    schema: EchoEntity
 end
 
 // ----- UI -----------------------------------

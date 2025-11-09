@@ -257,21 +257,83 @@ def _validate_computed_attrs(model, metamodel=None):
     - Accepts loop vars inside comprehensions
     - Accepts parent entity references
     - Accepts references to external sources
-    - Skips schema-only entities (no expressions required)
+    - Skips REQUEST schema entities (no expressions required for input validation)
     """
-    # Collect schema-only entities (used in request/response)
+    # Collect all schema entities (request + response + subscribe + publish) that might be schema-only
+    # These entities are allowed to have no expressions (pure data structures)
     schema_entities = set()
+
+    # REST endpoints
     for obj in get_model_internal_rest_endpoints(model):
         request = getattr(obj, "request", None)
         response = getattr(obj, "response", None)
+
         if request:
             schema = getattr(request, "schema", None)
             if schema:
                 entity = getattr(schema, "entity", None)
                 if entity:
                     schema_entities.add(entity.name)
+
         if response:
             schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+    # REST Sources
+    for obj in get_children_of_type("SourceREST", model):
+        request = getattr(obj, "request", None)
+        response = getattr(obj, "response", None)
+
+        if request:
+            schema = getattr(request, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+    # WebSocket endpoints
+    for obj in get_model_internal_ws_endpoints(model):
+        subscribe = getattr(obj, "subscribe", None)
+        publish = getattr(obj, "publish", None)
+
+        if subscribe:
+            schema = getattr(subscribe, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+        if publish:
+            schema = getattr(publish, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+    # WebSocket Sources
+    for obj in get_children_of_type("SourceWS", model):
+        subscribe = getattr(obj, "subscribe", None)
+        publish = getattr(obj, "publish", None)
+
+        if subscribe:
+            schema = getattr(subscribe, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    schema_entities.add(entity.name)
+
+        if publish:
+            schema = getattr(publish, "schema", None)
             if schema:
                 entity = getattr(schema, "entity", None)
                 if entity:
@@ -283,17 +345,31 @@ def _validate_computed_attrs(model, metamodel=None):
     }
 
     for ent in get_children_of_type("Entity", model):
-        # Skip validation for schema-only entities
-        if ent.name in schema_entities:
-            continue
-
         parents = getattr(ent, "parents", []) or []
+
+        # Check if entity has any attribute without an expression
+        has_schema_only_attrs = False
+        has_computed_attrs = False
 
         for a in getattr(ent, "attributes", []) or []:
             expr = getattr(a, "expr", None)
             if expr is None:
+                has_schema_only_attrs = True
+            else:
+                has_computed_attrs = True
+
+        # If entity is referenced in request/response and has no expressions, it's schema-only (OK)
+        if ent.name in schema_entities and has_schema_only_attrs and not has_computed_attrs:
+            continue
+
+        # If entity is NOT in schema_entities or has mixed attrs, validate all have expressions
+        for a in getattr(ent, "attributes", []) or []:
+            expr = getattr(a, "expr", None)
+            if expr is None:
                 raise TextXSemanticError(
-                    f"Attribute '{a.name}' is missing expression.",
+                    f"Attribute '{a.name}' is missing expression. "
+                    f"Entities with computed attributes must have expressions for ALL attributes, "
+                    f"or be pure schema entities (no expressions at all) when used in request/response.",
                     **get_location(a)
                 )
 
@@ -301,59 +377,39 @@ def _validate_computed_attrs(model, metamodel=None):
 
             # Validate references in computed expressions
             # --------------------------------------------------------------
-            ent_src = getattr(ent, "source", None)
-            allowed_aliases = set(p.name for p in parents)
-            if ent_src is not None:
-                allowed_aliases.add(getattr(ent_src, "name", None))
+            # Entities can reference:
+            # - Parent entities
+            # - Other entities (for composition)
+            # - APIEndpoints/Sources (via context, using $ for path params)
 
             for alias, attr, node in _collect_refs(expr, loop_vars):
                 if alias is None or alias in loop_vars:
                     continue
 
-                # Bare alias
-                if attr is None:
-                    # Allow only if it's our source or parent
-                    if not ((ent_src and alias == getattr(ent_src, "name", None)) or
-                            any(alias == p.name for p in parents)):
-                        raise TextXSemanticError(
-                            f"Entity '{ent.name}' illegal bare reference '{alias}'. "
-                            f"Only its source or parents can be referenced directly.",
-                            **get_location(node)
-                        )
-                    continue
-
-                # Path parameter access with '@' (e.g., Source@paramName)
-                if attr and attr.startswith("@"):
-                    # Allow only if referencing the entity's source (Source or APIEndpoint)
-                    if not (ent_src and alias == getattr(ent_src, "name", None)):
-                        raise TextXSemanticError(
-                            f"Entity '{ent.name}' path parameter access '{alias}{attr}' "
-                            f"is only allowed on the entity's source.",
-                            **get_location(node)
-                        )
+                # Path parameter access with '$' (e.g., UserRegister$userId)
+                # This is allowed for APIEndpoints and Sources in context
+                if attr and attr.startswith("$"):
+                    # Skip validation - will be checked at runtime
                     continue
 
                 # Allow references to parent entities (and validate attr existence)
                 if alias in (p.name for p in parents):
                     tgt_attrs = target_attrs.get(alias, set())
-                    if attr != "__jsonpath__" and attr not in tgt_attrs:
+                    if attr and attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
                             f"'{alias}.{attr}' not found on parent entity '{alias}'.",
                             **get_location(node),
                         )
                     continue
 
-                # Allow references to this entity's source
-                if ent_src and alias == getattr(ent_src, "name", None):
+                # Allow references to other entities (will be validated at generation time)
+                # This includes APIEndpoints, Sources, and other Entities
+                if alias in target_attrs:
                     continue
 
-                # Everything else is invalid
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' illegal reference '{alias}'. "
-                    f"Only its parents ({[p.name for p in parents]}) "
-                    f"and its own source ({getattr(ent_src, 'name', None)}) are allowed.",
-                    **get_location(node)
-                )
+                # If it's not in target_attrs, it might be an APIEndpoint or Source
+                # We'll allow it and validate at generation time
+                pass
 
             # Validate function calls
             for fname, argc, node in _collect_calls(expr):
@@ -426,14 +482,11 @@ def _validate_entity_validations(model, metamodel=None):
             loop_vars = _loop_var_names(expr)
 
             # ------------------------------------------------------
-            # Allowed aliases: this entity's source + parents + self
+            # Allowed aliases: parents + self + other entities
             # ------------------------------------------------------
-            ent_src = getattr(ent, "source", None)
             parent_list = list(getattr(ent, "parents", []) or [])
             parent_names = [p.name for p in parent_list]
             allowed_aliases = set(parent_names)
-            if ent_src is not None:
-                allowed_aliases.add(getattr(ent_src, "name", None))
             allowed_aliases.add(ent.name)  # allow self reference
 
             # ------------------------------------------------------
@@ -445,7 +498,7 @@ def _validate_entity_validations(model, metamodel=None):
 
                 # Allow self-reference (same entity)
                 if alias == ent.name:
-                    if attr not in attr_names and attr != "__jsonpath__":
+                    if attr and attr not in attr_names and attr != "__jsonpath__":
                         raise TextXSemanticError(
                             f"'{alias}.{attr}' not found on entity '{ent.name}'.",
                             **get_location(node),
@@ -456,24 +509,15 @@ def _validate_entity_validations(model, metamodel=None):
                 if alias in parent_names:
                     parent_ent = next(p for p in parent_list if p.name == alias)
                     parent_attr_names = {a.name for a in _get_all_entity_attributes(parent_ent)}
-                    if attr != "__jsonpath__" and attr not in parent_attr_names and attr is not None:
+                    if attr and attr != "__jsonpath__" and attr not in parent_attr_names:
                         raise TextXSemanticError(
                             f"'{alias}.{attr}' not found on parent entity '{alias}'.",
                             **get_location(node),
                         )
                     continue
 
-                # This entity's source reference is allowed
-                if ent_src and alias == getattr(ent_src, "name", None):
-                    continue
-
-                # Illegal alias
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' illegal reference '{alias}' in validation #{idx+1}. "
-                    f"Only itself, its parents ({sorted(a for a in allowed_aliases if a)}), "
-                    f"and its own source are allowed.",
-                    **get_location(node),
-                )
+                # Allow references to other entities/sources (validated at generation)
+                pass
 
             # Validate function calls
             for fname, argc, node in _collect_calls(expr):
@@ -576,11 +620,11 @@ def external_rest_endpoint_obj_processor(ep):
     SourceREST validation:
     - Default verb to GET if omitted
     - Must have absolute url (http/https)
-    - Mutation verbs must bind an entity
+    - Mutation verbs (POST/PUT/PATCH) should have request schema
     """
     if not getattr(ep, "verb", None):
         ep.verb = "GET"
-    
+
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
@@ -592,13 +636,14 @@ def external_rest_endpoint_obj_processor(ep):
             f"Source<REST> '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
-    
-    # Mutation verbs require entity binding
-    if getattr(ep, "entity", None) is None and ep.verb.upper() != "GET":
-        raise TextXSemanticError(
-            f"Source<REST> '{ep.name}' with verb {ep.verb} must bind an 'entity:'.",
-            **get_location(ep),
-        )
+
+    # Mutation verbs should have request or response (at least warn if missing)
+    request = getattr(ep, "request", None)
+    response = getattr(ep, "response", None)
+
+    if request is None and response is None and ep.verb.upper() != "DELETE":
+        # It's okay for DELETE to have no schemas, but warn for others
+        pass  # Could add warning here if desired
 
 
 def external_ws_endpoint_obj_processor(ep):
@@ -615,16 +660,16 @@ def external_ws_endpoint_obj_processor(ep):
         )
     if not (url.startswith("ws://") or url.startswith("wss://")):
         raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' url must start with ws:// or wss://.",
+            f"Source<WS> '{ep.name}' channel must start with ws:// or wss://.",
             **get_location(ep),
         )
 
-    ent_in = getattr(ep, "entity_in", None)
-    ent_out = getattr(ep, "entity_out", None)
+    subscribe_block = getattr(ep, "subscribe", None)
+    publish_block = getattr(ep, "publish", None)
 
-    if ent_in is None and ent_out is None:
+    if subscribe_block is None and publish_block is None:
         raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define 'entity_in:' or 'entity_out:'.",
+            f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both).",
             **get_location(ep)
         )
 
@@ -700,14 +745,14 @@ def internal_rest_endpoint_obj_processor(iep):
 def internal_ws_endpoint_obj_processor(iep):
     """
     APIEndpointWS validation:
-    - Require entity_in and/or entity_out
+    - Require subscribe and/or publish blocks
     """
-    ent_in = getattr(iep, "entity_in", None)
-    ent_out = getattr(iep, "entity_out", None)
+    subscribe_block = getattr(iep, "subscribe", None)
+    publish_block = getattr(iep, "publish", None)
 
-    if ent_in is None and ent_out is None:
+    if subscribe_block is None and publish_block is None:
         raise TextXSemanticError(
-            f"APIEndpoint<WS> '{iep.name}' must define 'entity_in:' or 'entity_out:'.",
+            f"APIEndpoint<WS> '{iep.name}' must define 'subscribe:' or 'publish:' (or both).",
             **get_location(iep)
         )
 
@@ -717,8 +762,6 @@ def entity_obj_processor(ent):
     Entity validation:
     - Must declare at least one attribute
     - Attribute names must be unique
-    - Normalize source/target lists
-    - Mark _source_kind for templates
     """
     attrs = getattr(ent, "attributes", None) or []
     if len(attrs) == 0:
@@ -742,43 +785,6 @@ def entity_obj_processor(ent):
                 **get_location(a),
             )
         seen.add(aname)
-
-    # Normalize source (list -> single or None)
-    src = getattr(ent, "source", None)
-    if isinstance(src, list):
-        if len(src) == 1:
-            ent.source = src[0]
-        elif len(src) == 0:
-            ent.source = None
-        else:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' has multiple sources, not supported.",
-                **get_location(ent)
-            )
-
-    # Normalize target (list -> single or None)
-    tgt = getattr(ent, "target", None)
-    if isinstance(tgt, list):
-        if len(tgt) == 1:
-            ent.target = tgt[0]
-        elif len(tgt) == 0:
-            ent.target = None
-        else:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' has multiple targets, not supported.",
-                **get_location(ent)
-            )
-
-    # Mark source kind for templates
-    src = getattr(ent, "source", None)
-    kind = None
-    if src is not None:
-        t = src.__class__.__name__
-        if t == "SourceREST":
-            kind = "source-rest"
-        elif t == "SourceWS":
-            kind = "source-ws"
-    setattr(ent, "_source_kind", kind)
 
 
 # ------------------------------------------------------------------------------
@@ -808,47 +814,41 @@ def verify_unique_names(model):
 def verify_endpoints(model):
     """
     Validate WebSocket endpoints:
-    - Must have entity_in and/or entity_out
+    - Must have subscribe and/or publish blocks
     - Each bound entity must trace back to a source (via inheritance)
     """
     for iwep in get_model_internal_ws_endpoints(model):
-        ent_in = getattr(iwep, "entity_in", None)
-        ent_out = getattr(iwep, "entity_out", None)
+        subscribe_block = getattr(iwep, "subscribe", None)
+        publish_block = getattr(iwep, "publish", None)
 
-        # Must have at least one entity bound
-        if ent_in is None and ent_out is None:
+        # Must have at least one block
+        if subscribe_block is None and publish_block is None:
             raise TextXSemanticError(
-                f"APIEndpoint<WS> '{iwep.name}' must define 'entity_in:' or 'entity_out:'.",
+                f"APIEndpoint<WS> '{iwep.name}' must define 'subscribe:' or 'publish:' (or both).",
                 **get_location(iwep),
             )
 
-        # Check both directions if they exist
-        for direction, ent in (("entity_in", ent_in), ("entity_out", ent_out)):
-            if ent is None:
-                continue
+        # Extract entities from schemas
+        ent_subscribe = None
+        ent_publish = None
 
-            # BFS through all parents until we find a source
-            queue = deque([ent])
-            visited = set()
-            found_source = False
+        if subscribe_block:
+            schema = getattr(subscribe_block, "schema", None)
+            if schema:
+                ent_subscribe = getattr(schema, "entity", None)
 
-            while queue:
-                current = queue.popleft()
-                if id(current) in visited:
-                    continue
-                visited.add(id(current))
-                if getattr(current, "source", None) is not None:
-                    found_source = True
-                    break
-                parents = getattr(current, "parents", []) or []
-                queue.extend(parents)
+        if publish_block:
+            schema = getattr(publish_block, "schema", None)
+            if schema:
+                ent_publish = getattr(schema, "entity", None)
 
-            if not found_source:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' (from {direction}) bound to endpoint '{iwep.name}' "
-                    f"must have a source (directly or via inheritance).",
-                    **get_location(iwep),
-                )
+        # NOTE: In the new design, entities don't have source: fields.
+        # Instead, Sources have response:/publish: blocks that reference entities.
+        # This validation would need to be redesigned to check reverse lookups.
+        # For now, we skip the source validation for WebSocket entities.
+        #
+        # TODO: Add validation that checks if entities referenced in subscribe:/publish:
+        # are provided by a Source<WS> or computed from parent entities.
                 
 def verify_path_params(model):
     """
@@ -922,16 +922,17 @@ def verify_entities(model):
 
 def _validate_schema_only_entities(model):
     """
-    Validate that entities referenced in request/response schemas are schema-only:
+    Validate that entities referenced in REQUEST schemas are schema-only:
     - No 'source:' field
     - No expressions in attributes (attributes must be simple type declarations)
+
+    Note: RESPONSE schemas CAN reference computed entities (with expressions/sources).
     """
-    # Collect all entities used in request/response schemas
+    # Collect all entities used in REQUEST schemas only
     schema_entities = set()
 
     for obj in get_model_internal_rest_endpoints(model):
         request = getattr(obj, "request", None)
-        response = getattr(obj, "response", None)
 
         if request:
             schema = getattr(request, "schema", None)
@@ -940,29 +941,14 @@ def _validate_schema_only_entities(model):
                 if entity:
                     schema_entities.add(entity)
 
-        if response:
-            schema = getattr(response, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    schema_entities.add(entity)
-
-    # Validate each schema entity
+    # Validate each request schema entity
     for entity in schema_entities:
-        # Check for source field
-        if getattr(entity, "source", None) is not None:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' is used as a request/response schema and cannot have a 'source:' field. "
-                f"Schema entities must be pure data structures.",
-                **get_location(entity)
-            )
-
         # Check for parent entities
         parents = getattr(entity, "parents", [])
         if parents and len(parents) > 0:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' is used as a request/response schema and cannot have parent entities. "
-                f"Schema entities must be simple, self-contained data structures.",
+                f"Entity '{entity.name}' is used as a request schema and cannot have parent entities. "
+                f"Request schema entities must be simple, self-contained data structures.",
                 **get_location(entity)
             )
 
@@ -973,7 +959,7 @@ def _validate_schema_only_entities(model):
             if expr:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' attribute '{attr.name}' has an expression. "
-                    f"Schema entities must have simple type declarations only (no '= expression' part). "
+                    f"Request schema entities must have simple type declarations only (no '= expression' part). "
                     f"Use: '- {attr.name}: {attr.type}' (without expressions).",
                     **get_location(attr)
                 )
@@ -995,10 +981,11 @@ def _validate_table_component(comp):
             **get_location(comp)
         )
 
-    ent = getattr(comp.endpoint, "entity", None)
-    if ent is None:
+    # Check if endpoint has response schema
+    response = getattr(comp.endpoint, "response", None)
+    if response is None:
         raise TextXSemanticError(
-            f"Table '{comp.name}': endpoint has no entity bound.",
+            f"Table '{comp.name}': endpoint has no response schema defined.",
             **get_location(comp.endpoint)
         )
 
@@ -1018,11 +1005,13 @@ def _validate_table_component(comp):
 
 
 def _backlink_external_targets(model):
-    """Create back-references from entities to their external REST targets."""
-    for er in get_children_of_type("SourceREST", model):
-        e = getattr(er, "entity", None)
-        if e is not None:
-            setattr(e, "target", er)
+    """
+    Create back-references from entities to their external REST targets.
+    Note: With new design, Sources use request/response schemas instead of entity field.
+    This function is kept for backward compatibility but may not be needed.
+    """
+    # No longer needed since Sources don't have 'entity' field
+    pass
 
 
 def _populate_aggregates(model):
@@ -1074,16 +1063,43 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
 
     iep = comp.endpoint
 
-    # Prefer .entity, fall back to .entity_in or .entity_out
-    entity = (
-        getattr(iep, "entity", None)
-        or getattr(iep, "entity_in", None)
-        or getattr(iep, "entity_out", None)
-    )
+    # NEW DESIGN: Extract entity from request/response/subscribe/publish blocks
+    entity = None
+
+    # Try response schema (for REST GET or WS publish)
+    response_block = getattr(iep, "response", None)
+    if response_block:
+        schema = getattr(response_block, "schema", None)
+        if schema:
+            entity = getattr(schema, "entity", None)
+
+    # Try request schema (for REST POST/PUT/PATCH)
+    if not entity:
+        request_block = getattr(iep, "request", None)
+        if request_block:
+            schema = getattr(request_block, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+
+    # Try publish schema (for WS)
+    if not entity:
+        publish_block = getattr(iep, "publish", None)
+        if publish_block:
+            schema = getattr(publish_block, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+
+    # Try subscribe schema (for WS)
+    if not entity:
+        subscribe_block = getattr(iep, "subscribe", None)
+        if subscribe_block:
+            schema = getattr(subscribe_block, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
 
     if entity is None:
         raise TextXSemanticError(
-            "Internal endpoint has no bound entity (entity/entity_in/entity_out).",
+            "Internal endpoint has no bound entity in request/response/subscribe/publish schemas.",
             **get_location(attr_ref)
         )
 

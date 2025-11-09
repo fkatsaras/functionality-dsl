@@ -45,9 +45,8 @@ Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   (
-      'source:' source=[Source]
-    | 'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
-  )*
+    'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
+  )?
   'end'
 ;
 
@@ -57,6 +56,12 @@ Source:
   | APIEndpointWS
   | SourceREST
   | SourceWS
+;
+
+// Unified Endpoint type for component references
+Endpoint:
+    APIEndpointREST
+  | APIEndpointWS
 ;
 
 ApiKeyLoc: 'header' | 'query';
@@ -79,24 +84,37 @@ SourceREST:
   (
     'url:' url=STRING
     'verb:' verb=HttpVerb
-    ('entity:' entity=[Entity])?
+    (parameters=ParametersBlock)?
+    (request=RequestBlock)?
+    (response=ResponseBlock)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?  
+    ('auth:' auth=AuthBlock)?
   )
   'end'
+;
+
+// Subscribe/Publish blocks for WebSocket (similar to Request/Response)
+SubscribeBlock:
+  'subscribe:'
+    (content_type=ContentType ':')?
+      'schema:' schema=SchemaRef
+;
+
+PublishBlock:
+  'publish:'
+    (content_type=ContentType ':')?
+      'schema:' schema=SchemaRef
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   (
-    'url:' url=STRING
-    ('entity_in:' entity_in=[Entity])?
-    ('entity_out:' entity_out=[Entity])?
-    ('protocol:' protocol=STRING)?
-    ('subprotocols:' subprotocols=StringList)?
+    'channel:' url=STRING
+    (subscribe=SubscribeBlock)?
+    (publish=PublishBlock)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?  
-  )#
+    ('auth:' auth=AuthBlock)?
+  )
   'end'
 ;
 
@@ -172,10 +190,10 @@ APIEndpointWS:
   'APIEndpoint<' kind='WS' '>' name=ID
   (
     'path:' path=STRING
-    ('entity_in:' entity_in=[Entity])?
-    ('entity_out:' entity_out=[Entity])?
-    ('auth:' auth=AuthBlock)? 
-    ('summary:' summary=STRING)? 
+    (subscribe=SubscribeBlock)?
+    (publish=PublishBlock)?
+    ('auth:' auth=AuthBlock)?
+    ('summary:' summary=STRING)?
   )
   'end'
 ;

@@ -25,7 +25,7 @@ end
 
 // View of single product with review list
 Component<ObjectView> ProductDetailView
-  endpoint: ProductDetails
+  endpoint: ProductDetailsAPI
   fields: ["id", "name", "description", "price", "stock", "category", "average_rating", "review_count"]
   label: "Product Details"
 end

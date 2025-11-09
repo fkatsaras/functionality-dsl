@@ -6,28 +6,32 @@
 Source<REST> CartByUserExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
   verb: GET
-  entity: CartRaw
+  response:
+    schema: CartRaw
 end
 
 // --- Add item to cart ---
 Source<REST> CartAddItemExternal
   url: "http://dummyorders:9100/db/carts"
   verb: POST
-  entity: CartAddPayload
+  request:
+    schema: CartAddPayload
 end
 
 // --- Remove single product from cart ---
 Source<REST> CartRemoveItemExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}/product/{productId}"
   verb: DELETE
-  entity: CartRemovePayload
+  request:
+    schema: CartRemovePayload
 end
 
 // --- Clear entire cart for a user ---
 Source<REST> CartClearExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
   verb: DELETE
-  entity: CartClearPayload
+  request:
+    schema: CartClearPayload
 end
 
 
@@ -37,7 +41,6 @@ end
 
 // --- Raw cart returned from external source ---
 Entity CartRaw
-  source: CartByUserExternal
   attributes:
     - userId: integer = int(CartByUserExternal$userId);
     - items: array = CartByUserExternal.items;
@@ -56,17 +59,16 @@ Entity CartView(CartRaw)
 end
 
 // --- Payload to add an item ---
+// Pure schema entity for request body
 Entity CartAddPayload
-  source: CartAdd
   attributes:
-    - userId: integer(1..) = int(CartAdd.userId);
-    - productId: integer(1..) = int(CartAdd.productId);
-    - quantity: integer(1..) = int(CartAdd.quantity);
+    - userId: integer(1..);
+    - productId: integer(1..);
+    - quantity: integer(1..);
 end
 
 // --- Remove item ---
 Entity CartRemovePayload
-  source: CartRemove
   attributes:
     - userId: integer(1..) = int(CartRemove$userId);
     - productId: integer(1..) = int(CartRemove$productId);
@@ -74,7 +76,6 @@ end
 
 // --- Clear cart ---
 Entity CartClearPayload
-  source: CartClear
   attributes:
     - userId: integer(1..) = int(CartClear$userId);
 end
@@ -88,28 +89,31 @@ end
 APIEndpoint<REST> CartByUser
   path: "/api/carts/user/{userId}"
   verb: GET
-  entity: CartView
+  response:
+    schema: CartView
 end
 
 // --- Add item to cart ---
 APIEndpoint<REST> CartAdd
   path: "/api/carts/add"
   verb: POST
-  entity: CartAddPayload
+  request:
+    schema: CartAddPayload
 end
 
 // --- Remove item ---
 APIEndpoint<REST> CartRemove
   path: "/api/carts/remove/{userId}/{productId}"
   verb: DELETE
-  entity: CartRemovePayload
+  response:
+    schema: CartRemovePayload
 end
 
 // --- Clear cart ---
 APIEndpoint<REST> CartClear
   path: "/api/carts/clear/{userId}"
   verb: DELETE
-  entity: CartClearPayload
+  response:
+    schema: CartClearPayload
 end
-
 

@@ -9,11 +9,15 @@ end
 Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
   verb: GET
+  response:
+    schema: RealObjectsRaw
 end
 
 Source<REST> RealObjectById
   url: "https://api.restful-api.dev/objects/{objectId}"
   verb: GET
+  response:
+    schema: RealObjectDetail
 end
 
 // --- Entities ---------------------------------------------------
@@ -28,7 +32,6 @@ end
 // ]
 
 Entity RealObjectsRaw
-  source: RealObjects
   attributes:
     - raw: array = RealObjects;
 end
@@ -49,7 +52,6 @@ end
 
 // For a single item view (GET /objects/{objectId})
 Entity RealObjectDetail
-  source: RealObjectById
   attributes:
     - id: string = RealObjectById["id"];
     - name: string = RealObjectById["name"];
@@ -60,16 +62,18 @@ Entity RealObjectDetail
 end
 
 // --- Internal endpoints -----------------------------------------
-APIEndpoint<REST> RealObjectsList 
+APIEndpoint<REST> RealObjectsList
   path: "/api/objects"
   verb: GET
-  entity: RealObjectsRows
+  response:
+    schema: RealObjectsRows
 end
 
 APIEndpoint<REST> RealObjectDetails
   path: "/api/objects/{objectId}"
   verb: GET
-  entity: RealObjectDetail
+  response:
+    schema: RealObjectDetail
 end
 
 // --- Components -------------------------------------------------

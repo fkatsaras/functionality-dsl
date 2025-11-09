@@ -11,21 +11,32 @@ from ..builders import (
     resolve_universal_dependencies,
 )
 from ..graph import find_terminal_entity
+from ..extractors import find_source_for_entity, find_target_for_entity
 
 
-def generate_query_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
+def generate_query_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a query (GET) router for an APIEndpoint<REST>."""
-    route_path = get_route_path(endpoint, entity)
+    route_path = get_route_path(endpoint)
     path_params = extract_path_params(route_path)
+
+    # Extract response entity (for GET, we only care about response)
+    if not response_schema:
+        raise ValueError(f"Query endpoint {endpoint.name} must have a response schema")
+
+    # Get the entity from response schema (inline types not supported for root response yet)
+    if response_schema["type"] != "entity":
+        raise ValueError(f"Query endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
+
+    entity = response_schema["entity"]
 
     # Resolve dependencies (external sources + computed parents)
     rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
         entity, model, all_endpoints, all_source_names
     )
 
-    # Check if entity itself has a Source<REST>
-    entity_source = getattr(entity, "source", None)
-    if entity_source and entity_source.__class__.__name__ == "SourceREST":
+    # Check if entity is provided by a Source<REST> (new design: reverse lookup)
+    entity_source, source_type = find_source_for_entity(entity, model)
+    if entity_source and source_type == "REST":
         config = build_rest_input_config(entity, entity_source, all_source_names)
         rest_inputs.append(config)
 
@@ -84,11 +95,36 @@ def generate_query_router(endpoint, entity, model, all_endpoints, all_source_nam
     print(f"[GENERATED] Query service: {service_file}")
 
 
-def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
+def generate_mutation_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
-    route_path = get_route_path(endpoint, entity)
+    route_path = get_route_path(endpoint)
     verb = getattr(endpoint, "verb", "POST").upper()
     path_params = extract_path_params(route_path)
+
+    # For mutations, we need request schema (response is optional)
+    if not request_schema:
+        # DELETE might not have request body, but PATCH/POST/PUT should
+        if verb in {"POST", "PUT", "PATCH"}:
+            raise ValueError(f"Mutation endpoint {endpoint.name} ({verb}) must have a request schema")
+
+    # Extract request entity
+    request_entity = None
+    if request_schema:
+        if request_schema["type"] != "entity":
+            raise ValueError(f"Mutation endpoint {endpoint.name} request must be an entity reference (inline types not yet supported)")
+        request_entity = request_schema["entity"]
+
+    # Extract response entity (optional)
+    response_entity = None
+    if response_schema:
+        if response_schema["type"] != "entity":
+            raise ValueError(f"Mutation endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
+        response_entity = response_schema["entity"]
+
+    # Use request entity as the primary entity for dependency resolution
+    entity = request_entity or response_entity
+    if not entity:
+        raise ValueError(f"Mutation endpoint {endpoint.name} must have at least request or response schema")
 
     # Find the terminal entity (has external target)
     terminal_entity = find_terminal_entity(entity, model) or entity
@@ -112,10 +148,10 @@ def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_
     # Build computation chain (entity -> terminal)
     compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
 
-    # Build target config
+    # Build target config (new design: reverse lookup for target Source)
     target = None
-    target_obj = getattr(terminal_entity, "target", None)
-    if target_obj:
+    target_obj, target_type = find_target_for_entity(terminal_entity, model)
+    if target_obj and target_type == "REST":
         from ..utils import normalize_headers
         target = {
             "name": target_obj.name,
@@ -138,6 +174,8 @@ def generate_mutation_router(endpoint, entity, model, all_endpoints, all_source_
             "auth_headers": auth_headers,
         },
         "entity": entity,
+        "request_entity": request_entity,  # NEW: Pass request entity for seeding from request body
+        "response_entity": response_entity,  # NEW: Pass response entity
         "terminal": terminal_entity,
         "target": target,
         "rest_inputs": rest_inputs,

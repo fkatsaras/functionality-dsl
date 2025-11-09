@@ -28,6 +28,61 @@ def get_all_source_names(model):
     return sources
 
 
+def find_source_for_entity(entity, model):
+    """
+    Find the Source (REST or WS) that provides the given entity via its response schema.
+    Returns tuple of (source, source_type) or (None, None) if not found.
+
+    In the new design, entities don't have source: fields.
+    Instead, Sources have response: blocks that reference entities.
+    """
+    from .schema_extractor import get_response_schema
+
+    # Check REST sources
+    for source in get_children_of_type("SourceREST", model):
+        response_schema = get_response_schema(source)
+        if response_schema and response_schema["type"] == "entity":
+            if response_schema["entity"].name == entity.name:
+                return (source, "REST")
+
+    # Check WS sources (NEW DESIGN: publish schema = entity going out from source)
+    for source in get_children_of_type("SourceWS", model):
+        from .schema_extractor import get_publish_schema
+        publish_schema = get_publish_schema(source)
+        if publish_schema and publish_schema["type"] == "entity":
+            if publish_schema["entity"].name == entity.name:
+                return (source, "WS")
+
+    return (None, None)
+
+
+def find_target_for_entity(entity, model):
+    """
+    Find the Source (REST or WS) that accepts the given entity as request/input.
+    Returns tuple of (source, source_type) or (None, None) if not found.
+
+    Used for mutations: find where to send the transformed data.
+    """
+    from .schema_extractor import get_request_schema
+
+    # Check REST sources
+    for source in get_children_of_type("SourceREST", model):
+        request_schema = get_request_schema(source)
+        if request_schema and request_schema["type"] == "entity":
+            if request_schema["entity"].name == entity.name:
+                return (source, "REST")
+
+    # Check WS sources (NEW DESIGN: subscribe schema = entity going into source)
+    for source in get_children_of_type("SourceWS", model):
+        from .schema_extractor import get_subscribe_schema
+        subscribe_schema = get_subscribe_schema(source)
+        if subscribe_schema and subscribe_schema["type"] == "entity":
+            if subscribe_schema["entity"].name == entity.name:
+                return (source, "WS")
+
+    return (None, None)
+
+
 def extract_server_config(model):
     """
     Extract server configuration from the model.

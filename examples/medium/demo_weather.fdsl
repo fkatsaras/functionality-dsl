@@ -9,22 +9,24 @@ end
 Source<REST> MeteoThess
   url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
+  response:
+    schema: ThessHourly
 end
 
 Source<REST> MeteoLondon
   url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   verb: GET
+  response:
+    schema: LondonHourly
 end
 
 // --- Raw entities ----------------------------------------------
 Entity ThessHourly
-  source: MeteoThess
   attributes:
     - hourly: object = MeteoThess["hourly"];
 end
 
 Entity LondonHourly
-  source: MeteoLondon
   attributes:
     - hourly: object = MeteoLondon["hourly"];
 end
@@ -58,7 +60,7 @@ end
 // --- Simplified stats view (line chart) ------------------------
 Entity WeatherStats(WeatherCompare)
   attributes:
-    - rows: array = map(WeatherCompare.rows, row -> 
+    - rows: array = map(WeatherCompare.rows, row ->
           { "time": row["time"], "th_temp": row["th_temp"], "ln_temp": row["ln_temp"] }
         );
 end
@@ -67,13 +69,15 @@ end
 APIEndpoint<REST> WeatherCompareAPI
   path: "/api/weather/compare"
   verb: GET
-  entity: WeatherCompare
+  response:
+    schema: WeatherCompare
 end
 
 APIEndpoint<REST> WeatherStatsAPI
   path: "/api/weather/stats"
   verb: GET
-  entity: WeatherStats
+  response:
+    schema: WeatherStats
 end
 
 // --- Components ------------------------------------------------

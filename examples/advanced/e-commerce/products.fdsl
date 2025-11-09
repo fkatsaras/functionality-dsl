@@ -6,18 +6,24 @@
 Source<REST> ProductsExternal
   url: "http://dummyorders:9100/db/products"
   verb: GET
+  response:
+    schema: ProductsRaw
 end
 
 // --- Product by ID ---
 Source<REST> ProductByIdExternal
   url: "http://dummyorders:9100/db/products/{id}"
   verb: GET
+  response:
+    schema: ProductRaw
 end
 
 // --- Product reviews ---
 Source<REST> ReviewsByProductExternal
   url: "http://dummyorders:9100/db/reviews/product/{id}"
   verb: GET
+  response:
+    schema: ProductReviewsRaw
 end
 
 
@@ -27,7 +33,6 @@ end
 
 // --- Raw product entity from /db/products/:id ---
 Entity ProductRaw
-  source: ProductByIdExternal
   attributes:
     - id: integer = int(ProductByIdExternal.id);
     - name: string = ProductByIdExternal.name;
@@ -40,7 +45,6 @@ end
 
 // --- Raw list of all products ---
 Entity ProductsRaw
-  source: ProductsExternal
   attributes:
     - rows: array = ProductsExternal;
 end
@@ -61,7 +65,6 @@ end
 
 // --- Raw reviews from external source ---
 Entity ProductReviewsRaw
-  source: ReviewsByProductExternal
   attributes:
     - rows: array = ReviewsByProductExternal;
 end
@@ -90,19 +93,21 @@ end
 
 
 // ============================================================
-// Internal REST API Endpoints 
+// Internal REST API Endpoints
 // ============================================================
 
 // --- Public: list all products ---
 APIEndpoint<REST> ProductList
   path: "/api/products"
   verb: GET
-  entity: ProductsList
+  response:
+    schema: ProductsList
 end
 
 // --- Public: product details (with reviews) ---
-APIEndpoint<REST> ProductDetails
+APIEndpoint<REST> ProductDetailsAPI
   path: "/api/products/{id}"
   verb: GET
-  entity: ProductDetails
+  response:
+    schema: ProductDetails
 end

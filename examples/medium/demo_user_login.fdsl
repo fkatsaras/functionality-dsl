@@ -6,161 +6,226 @@ Server AuthServer
 end
 
 // ============================================================
-// External Endpoints (dummy DB interfaces)
+// SCHEMAS (Pure Data Structures)
 // ============================================================
-Source<REST> UserRegisterExternal
-  url: "http://dummydb:9000/db/users/register"
-  verb: POST
-  entity: NewUser
-end
 
-Source<REST> UserLoginExternal
-  url: "http://dummydb:9000/db/users/login"
-  verb: POST
-  entity: LoginValidated
-end
-
-Source<REST> Users
-  url: "http://dummydb:9000/db/users"
-  verb: GET
-end
-
-Source<REST> ResetPasswordExternal
-  url: "http://dummydb:9000/db/users/reset-password"
-  verb: PUT
-  entity: ResetPasswordPayload
-end
-
-Source<REST> UserUpdateExternal
-  url: "http://dummydb:9000/db/users/{id}" 
-  verb: PATCH
-  entity: UserUpdatePayload
-end
-
-Source<REST> UserDeleteExternal
-  url: "http://dummydb:9000/db/users/{id}"
-  verb: DELETE
-  entity: UserDeletePayload
-end
-
-APIEndpoint<REST> UserList
-  path: "/api/users"
-  verb: GET
-  entity: ExistingUsers
-end
-
-Entity ExistingUsers
-  source: Users
+// Common reusable schemas
+Entity StandardMessageResponse
   attributes:
-    - users: array = Users;
+    - id: integer;
+    - message: string;
 end
 
-// --- REGISTER ---
-APIEndpoint<REST> UserRegister
-  path: "/api/users/register"
-  verb: POST
-  entity: UserRegisterRequest
+Entity SuccessResponse
+  attributes:
+    - success: boolean;
+    - message: string;
 end
 
+Entity UsersListSchema
+  attributes:
+    - users: array;
+end
+
+// Request schemas (input validation)
 Entity UserRegisterRequest
-  source: UserRegister
   attributes:
-    - username: string(3..50) = trim(UserRegister.username);
-    - password: string(6..) = UserRegister.password;
-    - email: string<email> = trim(UserRegister.email);
+    - username: string(3..50);
+    - password: string(6..);
+    - email: string<email>;
 end
 
-Entity NewUser(UserRegisterRequest)
+Entity LoginRequest
+  attributes:
+    - username: string;
+    - password: string;
+end
+
+Entity ResetPasswordRequest
+  attributes:
+    - email: string<email>;
+    - newPassword: string(6..);
+end
+
+Entity UserUpdateRequest
+  attributes:
+    - email: string<email>;
+    - password: string(6..);
+end
+
+// Response schemas
+Entity LoginResponse
+  attributes:
+    - username: string;
+    - token: string;
+end
+
+// ============================================================
+// TRANSFORMATION ENTITIES (Computed/Enriched Data)
+// ============================================================
+
+// Transform and build payload for external user registration
+Entity NewUserPayload(UserRegisterRequest)
   attributes:
     - user: object = {
-        "username": UserRegisterRequest.username,
+        "username": trim(UserRegisterRequest.username),
         "password": UserRegisterRequest.password,
-        "email": UserRegisterRequest.email
+        "email": trim(UserRegisterRequest.email)
       };
 end
 
-// --- LOGIN (public) ---
-APIEndpoint<REST> UserLogin
-  path: "/api/users/login"
-  verb: POST
-  entity: LoginPayload
+// Transform login request
+Entity LoginPayload(LoginRequest)
+  attributes:
+    - username: string = trim(LoginRequest.username);
+    - password: string = trim(LoginRequest.password);
 end
 
-Entity LoginPayload
-  source: UserLogin
+// Find matching user for login validation
+Entity LoginCandidates(LoginPayload, UsersListSchema)
   attributes:
-    - username: string = trim(UserLogin.username);
-    - password: string = trim(UserLogin.password);
-end
-
-Entity LoginCandidates(LoginPayload, ExistingUsers)
-  attributes:
-    - match: object = find(ExistingUsers.users, u ->
+    - match: object = find(UsersListSchema.users, u ->
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
       );
 end
 
+// Validated login data
 Entity LoginValidated(LoginCandidates)
   attributes:
     - username: string = LoginCandidates.match["username"];
     - password: string = LoginCandidates.match["password"];
 end
 
+// Reset password transformation
+Entity ResetPasswordPayload(ResetPasswordRequest, UsersListSchema)
+  attributes:
+    - user: object = find(UsersListSchema.users, u -> u["email"] == ResetPasswordRequest.email);
+    - email: string = ResetPasswordRequest.email;
+    - newPassword: string = ResetPasswordRequest.newPassword;
+end
+
+// ============================================================
+// EXTERNAL SOURCES (Backend Services)
+// ============================================================
+
+Source<REST> UsersDB
+  url: "http://dummydb:9000/db/users"
+  verb: GET
+  response:
+    schema: UsersListSchema
+end
+
+Source<REST> UserRegisterExternal
+  url: "http://dummydb:9000/db/users/register"
+  verb: POST
+  request:
+    schema: NewUserPayload
+  response:
+    schema: StandardMessageResponse
+end
+
+Source<REST> UserLoginExternal
+  url: "http://dummydb:9000/db/users/login"
+  verb: POST
+  request:
+    schema: LoginValidated
+  response:
+    schema: LoginResponse
+end
+
+Source<REST> ResetPasswordExternal
+  url: "http://dummydb:9000/db/users/reset-password"
+  verb: PUT
+  request:
+    schema: ResetPasswordRequest
+  response:
+    schema: SuccessResponse
+end
+
+Source<REST> UserUpdateExternal
+  url: "http://dummydb:9000/db/users/{id}"
+  verb: PATCH
+  request:
+    schema: UserUpdateRequest
+  response:
+    schema: StandardMessageResponse
+end
+
+Source<REST> UserDeleteExternal
+  url: "http://dummydb:9000/db/users/{id}"
+  verb: DELETE
+  response:
+    schema: StandardMessageResponse
+end
+
+// ============================================================
+// API ENDPOINTS (Public API)
+// ============================================================
+
+// --- USER LIST (GET) ---
+APIEndpoint<REST> UserList
+  path: "/api/users"
+  verb: GET
+  response:
+    schema: UsersListSchema
+end
+
+// --- REGISTER ---
+APIEndpoint<REST> UserRegister
+  path: "/api/users/register"
+  verb: POST
+  request:
+    schema: UserRegisterRequest
+  response:
+    schema: StandardMessageResponse
+end
+
+// --- LOGIN ---
+APIEndpoint<REST> UserLogin
+  path: "/api/users/login"
+  verb: POST
+  request:
+    schema: LoginRequest
+  response:
+    schema: LoginResponse
+end
+
 // --- RESET PASSWORD ---
 APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   verb: PUT
-  entity: ResetPasswordRequest
-end
-
-Entity ResetPasswordRequest
-  source: ResetPassword
-  attributes:
-    - email: string<email> = trim(ResetPassword.email);
-    - newPassword: string(6..) = ResetPassword.newPassword;
-end
-
-Entity CurrentUser(ExistingUsers, ResetPasswordRequest)
-  attributes:
-    - user: object = find(ExistingUsers.users, u -> u["email"] == ResetPasswordRequest.email);
-end
-
-Entity ResetPasswordPayload(CurrentUser, ResetPasswordRequest)
-  attributes:
-    - email: string<email> = ResetPasswordRequest.email;
-    - newPassword: string(6..) = ResetPasswordRequest.newPassword;
+  request:
+    schema: ResetPasswordRequest
+  response:
+    schema: SuccessResponse
 end
 
 // --- UPDATE USER ---
 APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
   verb: PATCH
-  entity: UserUpdatePayload
-end
-
-Entity UserUpdatePayload
-  source: UserUpdate
-  attributes:
-    - id: integer = int(UserUpdate$id);
-    - email: string<email> = trim(UserUpdate.email);
-    - password: string(6..) = UserUpdate.password;
+  parameters:
+    path:
+      - id: integer
+  request:
+    schema: UserUpdateRequest
+  response:
+    schema: StandardMessageResponse
 end
 
 // --- DELETE USER ---
 APIEndpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
   verb: DELETE
-  entity: UserDeletePayload
-end
-
-Entity UserDeletePayload
-  source: UserDelete
-  attributes:
-    - id: integer = int(UserDelete$id);
+  parameters:
+    path:
+      - id: integer
+  response:
+    schema: StandardMessageResponse
 end
 
 // ============================================================
-// UI Components 
+// UI Components
 // ============================================================
 Component<ActionForm> RegisterForm
   endpoint: UserRegister

@@ -3,7 +3,7 @@
 from collections import deque
 from textx import TextXSemanticError
 
-from ..extractors import get_entities
+from ..extractors import get_entities, find_source_for_entity, find_target_for_entity
 
 
 def get_all_ancestors(entity, model):
@@ -74,11 +74,15 @@ def find_terminal_entity(entity, model):
     Find the nearest descendant entity (minimum distance) that has an
     external target (Source<REST>). Used for mutation flows.
     Returns None if no target is found.
+
+    NEW DESIGN: Uses reverse lookup to find which entities are accepted by Sources.
     """
     candidates = []
 
     for candidate in get_entities(model):
-        if getattr(candidate, "target", None) is None:
+        # NEW DESIGN: Check if candidate has a target via reverse lookup
+        target, target_type = find_target_for_entity(candidate, model)
+        if target is None:
             continue
 
         distance = calculate_distance_to_ancestor(candidate, entity)
@@ -97,15 +101,17 @@ def collect_all_external_sources(entity, model, seen=None):
     """
     Recursively collect all (Entity, SourceREST) pairs reachable from entity.
     This ensures transitive dependencies are included.
+
+    NEW DESIGN: Uses reverse lookup to find sources that provide entities.
     """
     if seen is None:
         seen = set()
 
     results = []
 
-    # Check if this entity has a Source<REST>
-    source = getattr(entity, "source", None)
-    if source and source.__class__.__name__ == "SourceREST":
+    # NEW DESIGN: Check if this entity is provided by a Source<REST>
+    source, source_type = find_source_for_entity(entity, model)
+    if source and source_type == "REST":
         key = (entity.name, source.url)
         if key not in seen:
             results.append((entity, source))

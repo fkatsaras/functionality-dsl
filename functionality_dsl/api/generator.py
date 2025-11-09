@@ -20,6 +20,8 @@ from .extractors import (
     get_ws_endpoints,
     get_all_source_names,
     extract_server_config,
+    get_request_schema,
+    get_response_schema,
 )
 from .generators import (
     generate_query_router,
@@ -67,19 +69,24 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     # Generate REST routers
     print("\n[PHASE 2] Generating REST API routers...")
     for endpoint in all_rest_endpoints:
-        entity = getattr(endpoint, "entity")
         verb = getattr(endpoint, "verb", "GET").upper()
+
+        # Extract request/response schemas from new structure
+        request_schema = get_request_schema(endpoint)
+        response_schema = get_response_schema(endpoint)
 
         print(f"\n--- Processing REST: {endpoint.name} ({verb}) ---")
 
         if verb == "GET":
+            # For GET requests, only response schema is used
             generate_query_router(
-                endpoint, entity, model, all_rest_endpoints,
+                endpoint, request_schema, response_schema, model, all_rest_endpoints,
                 all_source_names, templates_dir, out_dir, server_config
             )
         else:
+            # For mutations (POST/PUT/PATCH/DELETE), both request and response are used
             generate_mutation_router(
-                endpoint, entity, model, all_rest_endpoints,
+                endpoint, request_schema, response_schema, model, all_rest_endpoints,
                 all_source_names, templates_dir, out_dir, server_config
             )
 

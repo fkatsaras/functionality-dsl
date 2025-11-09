@@ -43,42 +43,36 @@ def build_computed_parent_config(parent_entity, all_endpoints):
     Build a computed parent configuration (internal endpoint dependency).
     Returns None if no internal endpoint is found for the parent.
     """
+    from ..extractors import get_response_schema
+
     for endpoint in all_endpoints:
-        if getattr(endpoint, "entity").name == parent_entity.name:
-            path = get_route_path(endpoint, getattr(endpoint, "entity"))
-            return {
-                "name": parent_entity.name,
-                "endpoint": path,
-            }
+        # Check if endpoint's response schema matches the parent entity
+        response_schema = get_response_schema(endpoint)
+        if response_schema and response_schema["type"] == "entity":
+            if response_schema["entity"].name == parent_entity.name:
+                path = get_route_path(endpoint)
+                return {
+                    "name": parent_entity.name,
+                    "endpoint": path,
+                }
     return None
 
 
 def _normalize_ws_source(ws_source):
     """
     Normalize WebSocket source attributes for template rendering.
-    Converts subprotocols and headers to JSON-serializable formats.
+    Converts headers to JSON-serializable formats.
     """
-    if ws_source is None:
-        return
-
-    # Normalize subprotocols to list
-    subprotocols = getattr(ws_source, "subprotocols", None)
-    try:
-        if subprotocols and hasattr(subprotocols, "items"):
-            ws_source.subprotocols = list(subprotocols.items)
-        else:
-            ws_source.subprotocols = subprotocols or []
-    except Exception:
-        ws_source.subprotocols = []
+    # This function is kept for potential future normalization needs
+    # Currently just a placeholder since subprotocols and protocol were removed
+    pass
 
 
 def build_ws_input_config(entity, ws_source, all_source_names):
     """
     Build a WebSocket input configuration for template rendering.
-    Similar to REST input config but with WS-specific fields (subprotocols, protocol).
+    Similar to REST input config but for WebSocket sources.
     """
-    _normalize_ws_source(ws_source)
-
     # Build attribute expressions
     attribute_configs = []
     for attr in getattr(entity, "attributes", []) or []:
@@ -92,14 +86,17 @@ def build_ws_input_config(entity, ws_source, all_source_names):
             "pyexpr": expr_code
         })
 
+    # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
+    channel_url = getattr(ws_source, "channel", None) or getattr(ws_source, "url", None)
+
     return {
         "entity": entity.name,
         "endpoint": ws_source.name,
         "alias": ws_source.name,
-        "url": ws_source.url,
+        "url": channel_url,
         "headers": normalize_headers(ws_source) + build_auth_headers(ws_source),
-        "subprotocols": list(getattr(ws_source, "subprotocols", []) or []),
-        "protocol": getattr(ws_source, "protocol", "json") or "json",
+        "subprotocols": [],  # Removed subprotocols field in new design
+        "protocol": "json",  # Default protocol
         "attrs": attribute_configs,
     }
 
@@ -107,23 +104,30 @@ def build_ws_input_config(entity, ws_source, all_source_names):
 def build_ws_external_targets(entity_out, model):
     """
     Find all external WebSocket targets that consume entity_out.
-    Returns list of target configs with URL, headers, protocols.
+    Returns list of target configs with URL, headers, subprotocols.
+
+    NEW DESIGN: Uses subscribe schema to find which entities the source consumes.
     """
+    from ..extractors import get_subscribe_schema
     external_targets = []
 
     for external_ws in get_children_of_type("SourceWS", model):
-        consumer_entity = getattr(external_ws, "entity_in", None)
-        if not consumer_entity:
+        # NEW DESIGN: Check subscribe schema to see if it consumes this entity
+        subscribe_schema = get_subscribe_schema(external_ws)
+        if not subscribe_schema or subscribe_schema["type"] != "entity":
             continue
+
+        consumer_entity = subscribe_schema["entity"]
 
         # Include if external_ws consumes entity_out (or its descendants)
         if calculate_distance_to_ancestor(consumer_entity, entity_out) is not None:
-            _normalize_ws_source(external_ws)
+            # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
+            channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
             external_targets.append({
-                "url": external_ws.url,
+                "url": channel_url,
                 "headers": normalize_headers(external_ws) + build_auth_headers(external_ws),
-                "subprotocols": list(getattr(external_ws, "subprotocols", []) or []),
-                "protocol": getattr(external_ws, "protocol", "json") or "json",
+                "subprotocols": [],  # Removed subprotocols field in new design
+                "protocol": "json",  # Default protocol
             })
 
     return external_targets

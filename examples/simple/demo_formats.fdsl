@@ -11,39 +11,41 @@ end
 Source<REST> UserDataExternal
   url: "http://mockapi:9100/db/users"
   verb: POST
-  entity: UserFormattedData
+  request:
+    schema: UserFormattedData
 end
 
 // API Endpoint for user registration
 APIEndpoint<REST> UserRegistration
   path: "/api/users/register"
   verb: POST
-  entity: UserRegistrationRequest
+  request:
+    schema: UserRegistrationRequest
 end
 
 // Entity demonstrating various format specifications
+// Pure schema entity for request body (no expressions)
 Entity UserRegistrationRequest
-  source: UserRegistration
   attributes:
     // String formats
-    - userId: string<uuid_str> = UserRegistration.userId;
-    - email: string<email> = trim(UserRegistration.email);
-    - website: string<uri>? = UserRegistration.website;
-    - hostname: string<hostname> = UserRegistration.hostname;
-    - ipAddress: string<ipv4> = UserRegistration.ipAddress;
+    - userId: string<uuid_str>;
+    - email: string<email>;
+    - website: string<uri>?;
+    - hostname: string<hostname>;
+    - ipAddress: string<ipv4>;
 
     // Date/Time formats
-    - birthDate: string<date> = UserRegistration.birthDate;
-    - registeredAt: string = UserRegistration.registeredAt;  // ISO 8601 datetime string
-    - preferredTime: string<time>? = UserRegistration.preferredTime;
+    - birthDate: string<date>;
+    - registeredAt: string;  // ISO 8601 datetime string
+    - preferredTime: string<time>?;
 
     // String with length constraints and format
-    - username: string(3..30) = trim(UserRegistration.username);
-    - bio: string(..500)? = UserRegistration.bio;
+    - username: string(3..30);
+    - bio: string(..500)?;
 
     // Binary/encoded data
-    - avatar: string<byte>? = UserRegistration.avatar;
-    - passwordHash: string<password> = UserRegistration.passwordHash;
+    - avatar: string<byte>?;
+    - passwordHash: string<password>;
 end
 
 // Entity with numeric formats

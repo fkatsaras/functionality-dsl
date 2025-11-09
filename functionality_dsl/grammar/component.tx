@@ -39,7 +39,7 @@ NumberCol: FLOAT | INT;
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointREST])?
+  ('endpoint:' endpoint=[entity.Endpoint])?
   (
       ('colNames:' colNames=StringList)                   // legacy: explicit list of column names ['id','name',...]
     | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
@@ -49,7 +49,7 @@ TableComponent:
 
 ObjectViewComponent:
   'Component' '<' 'ObjectView' '>' name=ID
-  'endpoint:' endpoint=[APIEndpointREST]
+  'endpoint:' endpoint=[entity.Endpoint]
   'fields:' fields=StringList                // explicit list of attributes to display
   ('label:' label=STRING)?
   'end'
@@ -57,7 +57,7 @@ ObjectViewComponent:
 
 LineChartComponent:
   'Component' '<' 'LineChart' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointREST])?
+  ('endpoint:' endpoint=[entity.Endpoint])?
   (
     ('rows:' rows=AttrRef)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
@@ -69,7 +69,7 @@ LineChartComponent:
 
 GaugeComponent:
   'Component' '<' 'Gauge' '>' name=ID
-  ('endpoint:' endpoint=[APIEndpointWS])?
+  ('endpoint:' endpoint=[entity.Endpoint])?
   ( ('value:' value=AttrRef)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
   'end'
 ;

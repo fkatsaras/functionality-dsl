@@ -16,31 +16,33 @@ end
 Source<REST> DevicesAPI
   url: "http://dummyiot:9500/api/devices"
   verb: GET
+  response:
+    schema: DeviceList
 end
 
 // --- Individual live sensor WebSocket feeds ---
 Source<WS> Sensor1Feed
-  entity_out: Sensor1Raw
-  url: "ws://dummyiot:9601"
-  protocol: "json"
+  channel: "ws://dummyiot:9601"
+  publish:
+    schema: Sensor1Raw
 end
 
 Source<WS> Sensor2Feed
-  entity_out: Sensor2Raw
-  url: "ws://dummyiot:9602"
-  protocol: "json"
+  channel: "ws://dummyiot:9602"
+  publish:
+    schema: Sensor2Raw
 end
 
 Source<WS> Sensor3Feed
-  entity_out: Sensor3Raw
-  url: "ws://dummyiot:9603"
-  protocol: "json"
+  channel: "ws://dummyiot:9603"
+  publish:
+    schema: Sensor3Raw
 end
 
 Source<WS> Sensor4Feed
-  entity_out: Sensor4Raw
-  url: "ws://dummyiot:9604"
-  protocol: "json"
+  channel: "ws://dummyiot:9604"
+  publish:
+    schema: Sensor4Raw
 end
 
 
@@ -48,7 +50,6 @@ end
 //                     DEVICE SNAPSHOT
 // =============================================================
 Entity DeviceList
-  source: DevicesAPI
   attributes:
     - devices: array = DevicesAPI;
 end
@@ -59,7 +60,6 @@ end
 
 // Each raw entity normalizes WS frame shape
 Entity Sensor1Raw
-  source: Sensor1Feed
   attributes:
     - device_id: string = "sensor1";
     - temperature: number = Sensor1Feed["temp"];
@@ -68,7 +68,6 @@ Entity Sensor1Raw
 end
 
 Entity Sensor2Raw
-  source: Sensor2Feed
   attributes:
     - device_id: string = "sensor2";
     - temperature: number = Sensor2Feed["temp"];
@@ -77,7 +76,6 @@ Entity Sensor2Raw
 end
 
 Entity Sensor3Raw
-  source: Sensor3Feed
   attributes:
     - device_id: string = "sensor3";
     - temperature: number = Sensor3Feed["temp"];
@@ -86,7 +84,6 @@ Entity Sensor3Raw
 end
 
 Entity Sensor4Raw
-  source: Sensor4Feed
   attributes:
     - device_id: string = "sensor4";
     - temperature: number = Sensor4Feed["temp"];
@@ -118,20 +115,21 @@ end
 Source<REST> ACToggleExternal
   url: "http://dummyiot:9500/api/device/toggle/ac"
   verb: POST
-  entity: ToggleCommand
+  request:
+    schema: ToggleCommand
 end
 
 // REST endpoint that toggles dummy AC
 APIEndpoint<REST> ACToggle
   path: "/api/device/toggle/ac"
   verb: POST
-  entity: ToggleCommand
+  request:
+    schema: ToggleCommand
 end
 
 Entity ToggleCommand
-  source: ACToggle
   attributes:
-    - state: boolean = ACToggle.state;
+    - state: boolean;
 end
 
 
@@ -140,7 +138,8 @@ end
 // =============================================================
 APIEndpoint<WS> TelemetryStream
   path: "/api/telemetry/live"
-  entity_in: TelemetryComputed
+  publish:
+    schema: TelemetryComputed
 end
 
 

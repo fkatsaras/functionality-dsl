@@ -17,16 +17,16 @@ end
 APIEndpoint<REST> CreateUserEndpoint
   path: "/api/users"
   verb: POST
-  entity: User
+  request:
+    schema: User
 end
 
 // --- Base entity ; consumes direct call ------------------------------
 Entity User
-  source: CreateUserEndpoint
   attributes:
-    - id: integer = 1;  // We can introduce another function for here: rand() or sth
-    - name: string = CreateUserEndpoint.name;
-    - job: string = CreateUserEndpoint.job;
+    - id: integer;
+    - name: string;
+    - job: string;
 end
 
 Entity UserNormalized1(User)
@@ -43,8 +43,6 @@ Entity UserNormalized2(UserNormalized1, User)
     - job: string = lower(UserNormalized1.job);
 end
 
-
-
 // --- Targeted entities ; further compute or validate call ----------
 Entity UserNormalized3(UserNormalized2)
   attributes:
@@ -53,10 +51,9 @@ Entity UserNormalized3(UserNormalized2)
     - job: string = lower(UserNormalized2.job);
 end
 
-
-
 Source<REST> UserCreate
   url: "https://httpbin.org/anything"
   verb: POST
-  entity: UserNormalized3
+  request:
+    schema: UserNormalized3
 end

@@ -8,30 +8,27 @@ end
 Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
   verb: GET
+  response:
+    schema: array<RealObject>
 end
 
 // --- Entity ----------------------------------------------------
-// Upstream JSON looks like:
-// {
-//   "id": "...",
-//   "name": "...",
-//   "data": {
-//      "color": "...",
-//      "capacity": "...",
-//      "price": ...,
-//      "year": ...
-//   }
-// }
-
-Entity RealObjectsRaw
-  source: RealObjects
+Entity RealObject
   attributes:
-    - raw: array = RealObjects;
+    - id: string;
+    - name: string;
+    - data: object<ObjectData>?;
 end
 
-Entity RealObjectsRows(RealObjectsRaw)
+Entity ObjectData
   attributes:
-    - rows: array = map( RealObjectsRaw.raw, x ->
+    - color: string;
+    - capacity: string;
+    - price: number;
+
+Entity RealObjectsRows(RealObject)
+  attributes:
+    - rows: array = map( RealObject.raw, x ->
         {
           "id": x["id"],
           "name": x["name"],
@@ -46,7 +43,8 @@ end
 APIEndpoint<REST> RealObjectsList
   path: "/api/objects"
   verb: GET
-  entity: RealObjectsRows
+  response:
+    schema: RealObjectsRows
 end
 
 // --- Components ------------------------------------------------

@@ -159,10 +159,27 @@ async def compute_with_sync(payload: Any, sender_id: str, chain: List[Dict], sou
 
 
 def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
-    """Shape entity data by evaluating attribute expressions."""
-    shaped = {}
+    """Shape entity data by evaluating attribute expressions.
 
-    for a in config.get("attrs") or []:
+    For pure schema entities (no attrs to compute), looks for source data in context.
+    """
+    attrs = config.get("attrs") or []
+
+    # If no attributes to compute, this is a pure schema entity
+    # Look for its source data in the context (pass-through)
+    if not attrs:
+        # Try to find the source data in context
+        # Look for keys that aren't special (__sender, etc.)
+        for key in context:
+            if not key.startswith("__") and key != entity_name:
+                # Found a source - use it as the entity data
+                logger.debug(f"[COMPUTE] - {entity_name} using source data from {key} (passthrough)")
+                return context[key] if isinstance(context[key], dict) else {}
+        return {}
+
+    # Has attributes - compute them
+    shaped = {}
+    for a in attrs:
         attr_name = a["name"]
         attr_expr = a["expr"]
         compiled = compile_safe(attr_expr)
@@ -331,10 +348,17 @@ async def ws_input_consumer(inp: dict, bus_in):
                     except Exception:
                         payload = raw
 
-                    {% if sync_config_inbound %}
-                    row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    # For publish-only endpoints, use outbound chain; otherwise use inbound chain
+                    {% if entity_out and not entity_in %}
+                    chain_to_use = _COMPILED_CHAIN_OUTBOUND
                     {% else %}
-                    row = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, source_name)
+                    chain_to_use = _COMPILED_CHAIN_INBOUND
+                    {% endif %}
+
+                    {% if sync_config_inbound %}
+                    row = await compute_with_sync(payload, uuid.uuid4().hex, chain_to_use, source_name)
+                    {% else %}
+                    row = compute_entity_chain(payload, uuid.uuid4().hex, chain_to_use, source_name)
                     {% endif %}
 
                     if row is not None:

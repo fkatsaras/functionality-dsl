@@ -100,13 +100,11 @@ def seed_initial_context(request_body: Dict[str, Any], path_params: Dict[str, st
             logger=logger,
         )
 
-    # Store endpoint payload in context
-    if "{{ endpoint.name }}" in context and isinstance(context["{{ endpoint.name }}"], dict):
-        context["{{ endpoint.name }}"].update(request_body)
-    else:
-        context["{{ endpoint.name }}"] = request_body
-
-    logger.debug(f"[CONTEXT] - Seeded endpoint payload: {{ endpoint.name }}")
+    # Seed request entity with request body
+    {% if request_entity %}
+    context["{{ request_entity.name }}"] = request_body
+    logger.debug(f"[CONTEXT] - Seeded request entity: {{ request_entity.name }}")
+    {% endif %}
 
     return context
 

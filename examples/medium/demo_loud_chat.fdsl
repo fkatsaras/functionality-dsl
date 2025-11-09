@@ -6,7 +6,6 @@ end
 
 // OUTBOUND CHAIN (what we send)
 Entity OutgoingRaw
-  source: ChatDup
   attributes:
     - raw: string = ChatDup["text"];
 end
@@ -18,9 +17,8 @@ end
 
 // INBOUND CHAIN (what we receive)
 Entity EchoInOut
-  source: EchoWS
   attributes:
-    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo' 
+    - echo: string = EchoWS["echo"]["text"]; // Dummy server wraps its received messages in 'echo'
 end
 
 Entity IncomingProcessed(EchoInOut)
@@ -30,20 +28,23 @@ end
 
 // External duplex - handles OUTBOUND
 Source<WS> EchoWS
-  url: "ws://host.docker.internal:8765"
-  protocol: "json"
+  channel: "ws://host.docker.internal:8765"
+  subscribe:
+    schema: OutgoingProcessed
+  publish:
+    schema: EchoInOut
   auth:
     type: bearer
     token: "secret123"
-  entity_in: OutgoingProcessed
-  entity_out: EchoInOut
 end
 
 // Internal duplex - handles INBOUND display
 APIEndpoint<WS> ChatDup
   path: "/api/chat"
-  entity_in: IncomingProcessed
-  entity_out: OutgoingRaw
+  subscribe:
+    schema: OutgoingRaw
+  publish:
+    schema: IncomingProcessed
 end
 
 // ------------------ UI ------------------
