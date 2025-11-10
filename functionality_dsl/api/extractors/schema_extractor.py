@@ -40,7 +40,7 @@ def get_request_schema(endpoint):
 def get_response_schema(endpoint):
     """
     Extract response schema from endpoint.
-    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None}
+    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str}
     """
     response = getattr(endpoint, "response", None)
     if not response:
@@ -50,6 +50,9 @@ def get_response_schema(endpoint):
     if not schema:
         return None
 
+    # Extract the response type (string, number, integer, boolean, array, object)
+    response_type = getattr(response, "type", "object")  # Default to object if not specified
+
     # Check if it's an entity reference
     entity = getattr(schema, "entity", None)
     if entity:
@@ -57,7 +60,8 @@ def get_response_schema(endpoint):
             "type": "entity",
             "entity": entity,
             "inline_spec": None,
-            "content_type": getattr(response, "content_type", "application/json")
+            "content_type": getattr(response, "content_type", "application/json"),
+            "response_type": response_type
         }
 
     # Check if it's an inline type
@@ -67,7 +71,8 @@ def get_response_schema(endpoint):
             "type": "inline",
             "entity": None,
             "inline_spec": parse_inline_type(inline_type),
-            "content_type": getattr(response, "content_type", "application/json")
+            "content_type": getattr(response, "content_type", "application/json"),
+            "response_type": response_type
         }
 
     return None

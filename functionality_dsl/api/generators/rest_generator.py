@@ -48,6 +48,9 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
+    # Get response type for unwrapping logic
+    response_type = response_schema.get("response_type", "object")
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -63,6 +66,7 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
         "route_prefix": route_path,
         "compiled_chain": compiled_chain,
         "server": server_config["server"],
+        "response_type": response_type,
     }
 
     # Setup Jinja2 environment

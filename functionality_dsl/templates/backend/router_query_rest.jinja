@@ -3,7 +3,7 @@
 # ========================================================================
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Query, Header
 {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
@@ -24,7 +24,13 @@ router = APIRouter(
 
 
 {% set pparams = endpoint.path_params or [] %}
+{% if response_type == 'array' %}
+@router.get("", response_model=List[Any])
+{% elif response_type in ('string', 'integer', 'number', 'boolean') %}
+@router.get("", response_model=Any)
+{% else %}
 @router.get("", response_model=Dict[str, Any])
+{% endif %}
 async def query_{{ endpoint.name | lower }}(
     request: Request,
     {% for p in pparams %}{{ p }}: str, {% endfor %}
