@@ -11,6 +11,7 @@ Source<REST> RandomA
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
   response:
+    type: array
     schema: IntARaw
 end
 
@@ -18,6 +19,7 @@ Source<REST> RandomB
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
   verb: GET
   response:
+    type: array
     schema: IntBRaw
 end
 
@@ -56,6 +58,7 @@ APIEndpoint<REST> CompareIntsList
   path: "/api/compare"
   verb: GET
   response:
+    type: object
     schema: CompareInts
 end
 

@@ -31,6 +31,7 @@ Source<REST> BearerTest
   url: "https://httpbin.org/bearer"
   verb: GET
   response:
+    type: object
     schema: BearerRaw
   auth:
     type: bearer
@@ -41,6 +42,7 @@ Source<REST> BasicTest
   url: "https://httpbin.org/basic-auth/user/pass"
   verb: GET
   response:
+    type: object
     schema: BasicRaw
   auth:
     type: basic
@@ -52,6 +54,7 @@ Source<REST> ApiKeyQuery
   url: "https://httpbin.org/get"
   verb: GET
   response:
+    type: object
     schema: ApiKeyRaw
   auth:
     type: api_key
@@ -88,6 +91,7 @@ APIEndpoint<REST> BearerEndpoint
   path: "/api/test/bearer"
   verb: GET
   response:
+    type: object
     schema: BearerEntity
 end
 
@@ -96,6 +100,7 @@ APIEndpoint<REST> BasicEndpoint
   path: "/api/test/basic"
   verb: GET
   response:
+    type: object
     schema: BasicEntity
   auth:
     type: bearer
@@ -107,6 +112,7 @@ APIEndpoint<REST> ApiKeyEndpoint
   path: "/api/test/apikey"
   verb: GET
   response:
+    type: object
     schema: ApiKeyEntity
   auth:
     type: api_key

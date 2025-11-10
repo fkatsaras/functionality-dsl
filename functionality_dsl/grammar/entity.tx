@@ -105,12 +105,14 @@ SourceREST:
 SubscribeBlock:
   'subscribe:'
     (content_type=ContentType ':')?
+      'type:' type=AttrType
       'schema:' schema=SchemaRef
 ;
 
 PublishBlock:
   'publish:'
     (content_type=ContentType ':')?
+      'type:' type=AttrType
       'schema:' schema=SchemaRef
 ;
 
@@ -171,12 +173,14 @@ InlineTypeSpec:
 RequestBlock:
   'request:'
     (content_type=ContentType ':')?
+      'type:' type=AttrType
       'schema:' schema=SchemaRef
 ;
 
 ResponseBlock:
   'response:'
     (content_type=ContentType ':')?
+      'type:' type=AttrType
       'schema:' schema=SchemaRef
 ;
 

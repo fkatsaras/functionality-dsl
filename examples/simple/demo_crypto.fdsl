@@ -9,6 +9,7 @@ end
 Source<WS> BTCUSDT
   channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
   subscribe:
+    type: object
     schema: BTCRaw
 end
 
@@ -28,6 +29,7 @@ end
 APIEndpoint<WS> PricesStream
   channel: "/api/prices"
   subscribe:
+    type: object
     schema: Prices
 end
 

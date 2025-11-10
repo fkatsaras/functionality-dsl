@@ -17,6 +17,7 @@ Source<REST> DevicesAPI
   url: "http://dummyiot:9500/api/devices"
   verb: GET
   response:
+    type: object
     schema: DeviceList
 end
 
@@ -24,24 +25,28 @@ end
 Source<WS> Sensor1Feed
   channel: "ws://dummyiot:9601"
   publish:
+    type: object
     schema: Sensor1Raw
 end
 
 Source<WS> Sensor2Feed
   channel: "ws://dummyiot:9602"
   publish:
+    type: object
     schema: Sensor2Raw
 end
 
 Source<WS> Sensor3Feed
   channel: "ws://dummyiot:9603"
   publish:
+    type: object
     schema: Sensor3Raw
 end
 
 Source<WS> Sensor4Feed
   channel: "ws://dummyiot:9604"
   publish:
+    type: object
     schema: Sensor4Raw
 end
 
@@ -116,6 +121,7 @@ Source<REST> ACToggleExternal
   url: "http://dummyiot:9500/api/device/toggle/ac"
   verb: POST
   request:
+    type: object
     schema: ToggleCommand
 end
 
@@ -124,6 +130,7 @@ APIEndpoint<REST> ACToggle
   path: "/api/device/toggle/ac"
   verb: POST
   request:
+    type: object
     schema: ToggleCommand
 end
 
@@ -139,6 +146,7 @@ end
 APIEndpoint<WS> TelemetryStream
   path: "/api/telemetry/live"
   publish:
+    type: object
     schema: TelemetryComputed
 end
 

@@ -18,6 +18,7 @@ APIEndpoint<REST> CreateUserEndpoint
   path: "/api/users"
   verb: POST
   request:
+    type: object
     schema: User
 end
 
@@ -55,5 +56,6 @@ Source<REST> UserCreate
   url: "https://httpbin.org/anything"
   verb: POST
   request:
+    type: object
     schema: UserNormalized3
 end

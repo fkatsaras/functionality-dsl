@@ -889,6 +889,72 @@ def get_model_components(model):
 
 
 # ------------------------------------------------------------------------------
+# Validation helpers
+
+def _validate_type_schema_compatibility(block, block_name, parent_name):
+    """
+    Validate that type and schema are compatible in request/response/subscribe/publish blocks.
+
+    Rules:
+    1) type and schema are both required
+    2) For primitive types (string, number, integer, boolean, array), the schema Entity MUST have exactly ONE attribute
+    3) For type=object, the schema Entity attributes will be populated with object fields by name
+
+    Args:
+        block: RequestBlock, ResponseBlock, SubscribeBlock, or PublishBlock
+        block_name: 'request', 'response', 'subscribe', or 'publish'
+        parent_name: Name of the parent (Source/APIEndpoint)
+    """
+    if block is None:
+        return
+
+    block_type = getattr(block, "type", None)
+    schema_ref = getattr(block, "schema", None)
+
+    # Both type and schema are required (enforced by grammar, but double-check)
+    if not block_type:
+        raise TextXSemanticError(
+            f"{parent_name} {block_name} block is missing required 'type:' field.",
+            **get_location(block)
+        )
+
+    if not schema_ref:
+        raise TextXSemanticError(
+            f"{parent_name} {block_name} block is missing required 'schema:' field.",
+            **get_location(block)
+        )
+
+    # Get the entity reference (schema_ref can be SchemaRef with .entity attribute)
+    entity = None
+    if hasattr(schema_ref, "entity"):
+        entity = schema_ref.entity
+    elif _is_node(schema_ref) and hasattr(schema_ref, "name"):
+        entity = schema_ref
+
+    if not entity:
+        # Schema is an inline type (e.g., array<Product>), not an Entity reference
+        # For now, we'll allow this but could add more validation later
+        return
+
+    # Get entity attributes
+    attrs = getattr(entity, "attributes", []) or []
+    attr_count = len(attrs)
+
+    # Rule 2: For primitive and array types, entity must have exactly ONE attribute
+    if block_type in ("string", "number", "integer", "boolean", "array"):
+        if attr_count != 1:
+            raise TextXSemanticError(
+                f"{parent_name} {block_name} has type='{block_type}' but schema entity '{entity.name}' "
+                f"has {attr_count} attribute(s). "
+                f"Wrapper entities for primitive/array types must have EXACTLY ONE attribute.",
+                **get_location(block)
+            )
+
+    # Rule 3: For type=object, no specific constraint on attribute count (can have any number)
+    # The entity's attributes will be populated with object fields by name
+
+
+# ------------------------------------------------------------------------------
 # Object processors (run during model construction)
 
 def external_rest_endpoint_obj_processor(ep):
@@ -921,6 +987,10 @@ def external_rest_endpoint_obj_processor(ep):
         # It's okay for DELETE to have no schemas, but warn for others
         pass  # Could add warning here if desired
 
+    # Validate type/schema compatibility
+    _validate_type_schema_compatibility(request, "request", f"Source<REST> '{ep.name}'")
+    _validate_type_schema_compatibility(response, "response", f"Source<REST> '{ep.name}'")
+
 
 def external_ws_endpoint_obj_processor(ep):
     """
@@ -948,6 +1018,10 @@ def external_ws_endpoint_obj_processor(ep):
             f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both).",
             **get_location(ep)
         )
+
+    # Validate type/schema compatibility
+    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Source<WS> '{ep.name}'")
+    _validate_type_schema_compatibility(publish_block, "publish", f"Source<WS> '{ep.name}'")
 
 
 def internal_rest_endpoint_obj_processor(iep):
@@ -1017,6 +1091,10 @@ def internal_rest_endpoint_obj_processor(iep):
                     **get_location(iep)
                 )
 
+    # Validate type/schema compatibility
+    _validate_type_schema_compatibility(request, "request", f"APIEndpoint<REST> '{iep.name}'")
+    _validate_type_schema_compatibility(response, "response", f"APIEndpoint<REST> '{iep.name}'")
+
 
 def internal_ws_endpoint_obj_processor(iep):
     """
@@ -1031,6 +1109,10 @@ def internal_ws_endpoint_obj_processor(iep):
             f"APIEndpoint<WS> '{iep.name}' must define 'subscribe:' or 'publish:' (or both).",
             **get_location(iep)
         )
+
+    # Validate type/schema compatibility
+    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"APIEndpoint<WS> '{iep.name}'")
+    _validate_type_schema_compatibility(publish_block, "publish", f"APIEndpoint<WS> '{iep.name}'")
 
 
 def entity_obj_processor(ent):

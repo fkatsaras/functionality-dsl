@@ -12,6 +12,7 @@ Source<REST> UserDataExternal
   url: "http://mockapi:9100/db/users"
   verb: POST
   request:
+    type: object
     schema: UserFormattedData
 end
 
@@ -20,6 +21,7 @@ APIEndpoint<REST> UserRegistration
   path: "/api/users/register"
   verb: POST
   request:
+    type: object
     schema: UserRegistrationRequest
 end
 

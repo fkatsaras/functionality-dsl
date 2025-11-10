@@ -19,6 +19,7 @@ end
 Source<WS> EchoBearer
   channel: "ws://host.docker.internal:8765"
   subscribe:
+    type: object
     schema: EchoRaw
   auth:
     type: bearer
@@ -37,6 +38,7 @@ end
 APIEndpoint<WS> PublicEcho
   channel: "/api/ws/echo/public"
   subscribe:
+    type: object
     schema: EchoProcessed
 end
 
@@ -44,6 +46,7 @@ end
 APIEndpoint<WS> ProtectedEcho
   channel: "/api/ws/echo/protected"
   subscribe:
+    type: object
     schema: EchoProcessed
   auth:
     type: bearer

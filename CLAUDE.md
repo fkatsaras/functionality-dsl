@@ -28,6 +28,7 @@ Source<REST> ProductDB
   url: "http://external-api:9000/db/products"
   verb: GET
   response:
+    type: array
     schema: ProductList
 end
 
@@ -36,6 +37,7 @@ Source<REST> ProductDetails
   url: "http://external-api:9000/db/products/{productId}"
   verb: GET
   response:
+    type: object
     schema: Product
 end
 
@@ -44,6 +46,7 @@ Source<REST> CreateProduct
   url: "http://external-api:9000/db/products/create"
   verb: POST
   request:
+    type: object
     schema: NewProduct
 end
 ```
@@ -53,6 +56,7 @@ end
 Source<WS> StockFeed
   channel: "ws://inventory:9002/ws/stock"
   publish:
+    type: object
     schema: StockUpdate
 end
 ```
@@ -66,6 +70,7 @@ APIEndpoint<REST> ProductList
   path: "/api/products"
   verb: GET
   response:
+    type: object
     schema: ProductCatalog
 end
 
@@ -74,6 +79,7 @@ APIEndpoint<REST> ProductDetails
   path: "/api/products/{productId}"
   verb: GET
   response:
+    type: object
     schema: Product
 end
 
@@ -82,8 +88,10 @@ APIEndpoint<REST> CreateProduct
   path: "/api/products"
   verb: POST
   request:
+    type: object
     schema: NewProduct
   response:
+    type: object
     schema: Product
 end
 
@@ -92,6 +100,7 @@ APIEndpoint<REST> GetCart
   path: "/api/cart"
   verb: GET
   response:
+    type: object
     schema: CartData
   auth:
     type: bearer
@@ -105,6 +114,7 @@ end
 APIEndpoint<WS> StockUpdates
   path: "/api/ws/stock"
   publish:
+    type: object
     schema: StockData
 end
 
@@ -112,8 +122,10 @@ end
 APIEndpoint<WS> ChatRoom
   path: "/api/ws/chat"
   subscribe:
+    type: object
     schema: ChatMessage
   publish:
+    type: object
     schema: ChatMessage
   auth:
     type: bearer
@@ -153,8 +165,45 @@ Source<REST> ProductsAPI
   url: "http://api.example.com/products"
   verb: GET
   response:
+    type: array
     schema: ProductListWrapper  // Source provides the wrapper directly
 end
+```
+
+**IMPORTANT - Type/Schema Validation Rules:**
+
+All `request:`, `response:`, `subscribe:`, and `publish:` blocks **MUST** include both `type:` and `schema:` fields:
+
+1. **Required fields:** Both `type` and `schema` must be present
+2. **For primitive/array types** (`string`, `number`, `integer`, `boolean`, `array`):
+   - The schema entity **MUST have EXACTLY ONE attribute**
+   - This is a wrapper entity that wraps the primitive/array value
+3. **For object type:**
+   - The schema entity can have any number of attributes
+   - Entity attributes are populated with the object's fields by name
+
+**Examples:**
+```fdsl
+// ✓ CORRECT: Array type with single-attribute wrapper
+Entity ItemsWrapper
+  attributes:
+    - items: array;
+end
+
+response:
+  type: array
+  schema: ItemsWrapper
+
+// ✗ INCORRECT: Array type with multi-attribute entity
+Entity BadWrapper
+  attributes:
+    - items: array;
+    - count: integer;  // ← ERROR: Wrapper entities must have exactly ONE attribute
+end
+
+response:
+  type: array
+  schema: BadWrapper
 ```
 
 **Transformation Entities** (with computed attributes):
@@ -387,6 +436,7 @@ Source<REST> ProductById
     path:
       - productId: string
   response:
+    type: object
     schema: Product
 end
 
@@ -402,6 +452,7 @@ APIEndpoint<REST> SearchProducts
       - maxPrice: number?
       - inStock: boolean?
   response:
+    type: object
     schema: ProductList
 end
 ```
@@ -435,6 +486,7 @@ Source<REST> ProductById
     path:
       - productId: string               // Receives from APIEndpoint via name matching
   response:
+    type: object
     schema: ProductRaw
 end
 
@@ -445,6 +497,7 @@ APIEndpoint<REST> GetProduct
     path:
       - productId: string               // Defines incoming HTTP parameter
   response:
+    type: object
     schema: ProductDetail              // Can access productId via @path
 end
 ```
@@ -491,6 +544,7 @@ Source<REST> ProductsAPI
   url: "http://api.example.com/products"
   verb: GET
   response:
+    type: array
     schema: ProductListWrapper
 end
 
@@ -505,6 +559,7 @@ APIEndpoint<REST> ProductList
   path: "/api/products"
   verb: GET
   response:
+    type: object
     schema: ProductView
 end
 ```
@@ -522,6 +577,7 @@ Source<REST> UserCount
   url: "http://api.example.com/count"
   verb: GET
   response:
+    type: integer
     schema: CountWrapper
 end
 ```
@@ -567,8 +623,10 @@ APIEndpoint → NewProduct → ValidatedProduct → Source
 Source<WS> EchoWS
   channel: "ws://external-service:8765"
   subscribe:
+    type: object
     schema: EchoWrapper      // What we receive FROM external
   publish:
+    type: object
     schema: OutgoingProcessed // What we send TO external
 end
 
@@ -598,8 +656,10 @@ end
 APIEndpoint<WS> ChatDup
   channel: "/api/chat"
   publish:
+    type: string
     schema: OutgoingWrapper      // Clients send this (inbound to server)
   subscribe:
+    type: object
     schema: EchoProcessed        // Clients receive this (outbound from server)
 end
 ```

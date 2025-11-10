@@ -9,6 +9,7 @@ end
 Source<WS> WikiMonEN
   channel: "wss://wikimon.hatnote.com/en/"
   publish:
+    type: object
     schema: WikiEdit
 end
 
@@ -35,12 +36,14 @@ end
 APIEndpoint<WS> EditGaugeStream
   path: "/api/wiki/edits"
   publish:
+    type: object
     schema: EditGauge
 end
 
 APIEndpoint<WS> WikiEditsStream
   path: "/api/wiki/edits/feed"
   publish:
+    type: object
     schema: WikiEdit
 end
 

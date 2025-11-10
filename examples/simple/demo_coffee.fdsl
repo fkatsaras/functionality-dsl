@@ -19,6 +19,7 @@ Source<REST> CoffeeHot
   url: "https://api.sampleapis.com/coffee/hot"
   verb: GET
   response:
+    type: array
     schema: CoffeeRawList
 end
 
@@ -41,6 +42,7 @@ APIEndpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
   verb: GET
   response:
+    type: object
     schema: CoffeeList
 end
 

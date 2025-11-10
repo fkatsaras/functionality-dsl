@@ -10,8 +10,10 @@ end
 Source<WS> EchoWS
   channel: "ws://host.docker.internal:8765"
   subscribe:
+    type: object
     schema: EchoWrapper
   publish:
+    type: object
     schema: OutgoingProcessed
   // auth:
   //   type: bearer
@@ -46,8 +48,10 @@ end
 APIEndpoint<WS> ChatDup
   channel: "/api/chat"
   publish:
+    type: string
     schema: OutgoingWrapper
   subscribe:
+    type: object
     schema: EchoProcessed
 end
 
