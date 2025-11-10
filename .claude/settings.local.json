@@ -58,7 +58,10 @@
       "Bash(else echo \"No .gitignore found\")",
       "Bash(docker compose:*)",
       "Bash(bash cleanup.sh:*)",
-      "Bash(python test_ws_auth.py:*)"
+      "Bash(python test_ws_auth.py:*)",
+      "Bash(docker ps:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []

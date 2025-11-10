@@ -6,19 +6,26 @@ Server CoffeeAPI
   loglevel: debug
 end
 
+// ----------- Entities (data) -----------
+// Schema entity - what the external API returns (array of coffee objects)
+Entity CoffeeRawList
+  attributes:
+    - items: array;
+end
+
 // ----------- External sources  -----------
 // Returns an ARRAY of coffee drinks: [{ id, title, description, ingredients, image, ...}, ...]
 Source<REST> CoffeeHot
   url: "https://api.sampleapis.com/coffee/hot"
   verb: GET
   response:
-    schema: CoffeeList
+    schema: CoffeeRawList
 end
 
-// ----------- Entities (data) -----------
-Entity CoffeeList
+// Transformation entity - process the raw data
+Entity CoffeeList(CoffeeRawList)
   attributes:
-    - rows: array = map(CoffeeHot, x ->
+    - rows: array = map(CoffeeRawList.items, x ->
         {
           "image": (x["image"] if (x["image"] and len(x["image"] or "") > 10) else "https://via.placeholder.com/150?text=No+Image"),
           "id": x["id"],
