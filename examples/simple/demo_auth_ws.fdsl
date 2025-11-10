@@ -1,4 +1,5 @@
-// This demo requires an external ws server with AUTH middleware to be set up
+// This demo shows WebSocket with authentication
+// Tests both Source auth (backend → external) and APIEndpoint auth (client → backend)
 
 Server LIVEAuthJSON
   host: "localhost"
@@ -6,32 +7,45 @@ Server LIVEAuthJSON
   cors: "http://localhost:3000"
 end
 
-// custom websocket server
+// --- Schema entities -----------------------------------------
+// What external WS server sends (from Source.subscribe)
+Entity EchoRaw
+  attributes:
+    - text: string;
+end
+
+// --- External WebSocket with auth ----------------------------
+// Backend authenticates to external WS server with bearer token
 Source<WS> EchoBearer
   channel: "ws://host.docker.internal:8765"
   subscribe:
-    schema: EchoEntity
+    schema: EchoRaw
   auth:
     type: bearer
     token: "secret123"
 end
 
-Entity EchoEntity
+// --- Transformation entities ---------------------------------
+Entity EchoProcessed(EchoRaw)
   attributes:
-    - raw: object = EchoPub.text;
+    - text: string = EchoRaw.text;
+    - message: string = "Echo received with auth";
 end
 
-// Internal publish endpoint: clients send here
-APIEndpoint<WS> EchoPub
-  path: "/api/ws/echo/send"
+// --- Internal WebSocket endpoints ----------------------------
+// Public endpoint - no client auth required
+APIEndpoint<WS> PublicEcho
+  channel: "/api/ws/echo/public"
   subscribe:
-    schema: EchoEntity
+    schema: EchoProcessed
 end
 
-// ----- UI -----------------------------------
-Component<Input> ChatBox
-  endpoint: EchoPub
-  placeholder: "Type your message..."
-  label: "Chat"
-  submitLabel: "Send"
+// Protected endpoint - clients must authenticate with bearer token
+APIEndpoint<WS> ProtectedEcho
+  channel: "/api/ws/echo/protected"
+  subscribe:
+    schema: EchoProcessed
+  auth:
+    type: bearer
+    token: "required"
 end

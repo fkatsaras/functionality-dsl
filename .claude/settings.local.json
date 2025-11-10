@@ -55,7 +55,10 @@
       "Bash(docker compose up:*)",
       "Bash(if [ -f .gitignore ])",
       "Bash(then cat .gitignore)",
-      "Bash(else echo \"No .gitignore found\")"
+      "Bash(else echo \"No .gitignore found\")",
+      "Bash(docker compose:*)",
+      "Bash(bash cleanup.sh:*)",
+      "Bash(python test_ws_auth.py:*)"
     ],
     "deny": [],
     "ask": []

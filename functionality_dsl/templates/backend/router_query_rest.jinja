@@ -5,8 +5,8 @@
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request, Query
-{% if endpoint.auth and endpoint.auth.type == 'bearer' %}
+from fastapi import APIRouter, HTTPException, Request, Query, Header
+{% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 security = HTTPBearer()
@@ -28,7 +28,15 @@ router = APIRouter(
 async def query_{{ endpoint.name | lower }}(
     request: Request,
     {% for p in pparams %}{{ p }}: str, {% endfor %}
-    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
+    {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    {% elif endpoint.auth and endpoint.auth.kind == 'api_key' %}
+        {% if endpoint.auth.location == 'header' %}
+    {{ endpoint.auth.key | replace('-', '_') | lower }}: Optional[str] = Header(None, alias="{{ endpoint.auth.key }}"),
+        {% elif endpoint.auth.location == 'query' %}
+    {{ endpoint.auth.key }}: Optional[str] = Query(None),
+        {% endif %}
+    {% endif %}
 ):
     """
     Query endpoint for {{ entity.name }}.
@@ -44,8 +52,12 @@ async def query_{{ endpoint.name | lower }}(
     # Basic auth validated automatically by FastAPI
     pass
     {% elif endpoint.auth.kind == 'api_key' %}
-    # API key validated automatically
-    pass
+    # Validate API key
+    {% set api_key_param = endpoint.auth.key | replace('-', '_') | lower %}
+    if not {{ api_key_param }}:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    if {{ api_key_param }} != "{{ endpoint.auth.value }}":
+        raise HTTPException(status_code=403, detail="Invalid API key")
     {% endif %}
     {% endif %}
 
