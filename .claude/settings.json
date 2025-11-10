@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "after-edit": [
+      {
+        "pattern": "**/*.py",
+        "command": "python -m py_compile {file}",
+        "description": "Validate Python syntax after edit"
+      }
+    ]
+  },
+  "context": {
+    "alwaysInclude": [
+      ".claude/glossary.md",
+      ".claude/paths.md"
+    ]
+  },
+  "search": {
+    "excludePatterns": [
+      "**/node_modules/**",
+      "**/venv*/**",
+      "**/__pycache__/**",
+      "**/test_gen*/**",
+      "**/.git/**",
+      "**/generated/**"
+    ]
+  },
+  "preferences": {
+    "codeStyle": {
+      "python": {
+        "lineLength": 100,
+        "quoteStyle": "double"
+      }
+    },
+    "fileReferences": {
+      "preferMarkdownLinks": true,
+      "includeLineNumbers": true
+    }
+  }
+}

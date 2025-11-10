@@ -548,6 +548,85 @@ Example:
 APIEndpoint → NewProduct → ValidatedProduct → Source
 ```
 
+### WebSocket Duplex Flow (Bidirectional with External Echo/Transform Service)
+
+**Important**: WebSocket `subscribe`/`publish` semantics differ between APIEndpoint and Source:
+
+**For APIEndpoint<WS>:**
+- `subscribe:` = Data clients **receive** (displayed in UI) = OUTBOUND from server
+- `publish:` = Data clients **send** (from UI to server) = INBOUND to server
+
+**For Source<WS>:**
+- `subscribe:` = Data we **receive FROM** external = INBOUND to our system
+- `publish:` = Data we **send TO** external = OUTBOUND from our system
+
+**Complete duplex example** (chat with external echo service):
+
+```fdsl
+// External echo service
+Source<WS> EchoWS
+  channel: "ws://external-service:8765"
+  subscribe:
+    schema: EchoWrapper      // What we receive FROM external
+  publish:
+    schema: OutgoingProcessed // What we send TO external
+end
+
+// CLIENT → SERVER → EXTERNAL flow
+Entity OutgoingWrapper
+  attributes:
+    - value: string;  // Primitive wrapper (auto-wrapped from client)
+end
+
+Entity OutgoingProcessed(OutgoingWrapper)
+  attributes:
+    - text: string = upper(OutgoingWrapper.value);  // Transform before sending to external
+end
+
+// EXTERNAL → SERVER → CLIENT flow
+Entity EchoWrapper
+  attributes:
+    - text: string;  // Schema from external service
+end
+
+Entity EchoProcessed(EchoWrapper)
+  attributes:
+    - text: string = lower(EchoWrapper.text);  // Transform before sending to client
+end
+
+// Internal WebSocket endpoint
+APIEndpoint<WS> ChatDup
+  channel: "/api/chat"
+  publish:
+    schema: OutgoingWrapper      // Clients send this (inbound to server)
+  subscribe:
+    schema: EchoProcessed        // Clients receive this (outbound from server)
+end
+```
+
+**Flow visualization:**
+```
+Client sends "hello"
+  ↓ (publish)
+OutgoingWrapper {value: "hello"}
+  ↓ (transform)
+OutgoingProcessed {text: "HELLO"}
+  ↓ (forward to external)
+External Echo Service
+  ↓ (echo back)
+EchoWrapper {text: "HELLO"}
+  ↓ (transform)
+EchoProcessed {text: "hello"}
+  ↓ (subscribe)
+Client receives {text: "hello"}
+```
+
+**Key points:**
+- Wrapper entities (single attribute, no expression) auto-wrap primitive values from clients
+- The framework automatically forwards terminal entities to external targets
+- Inbound chain: APIEndpoint.publish → ... → Source.publish (terminal entity)
+- Outbound chain: Source.subscribe → ... → APIEndpoint.subscribe (terminal entity)
+
 ---
 
 ## Authentication

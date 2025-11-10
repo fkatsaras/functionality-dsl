@@ -116,8 +116,8 @@ ENV/
 generated/*
 generated*/
 
-# AI
-.claude/
+# AI - keep Claude Code configuration, ignore temporary files
+# .claude/
 
 
 # Examples 
