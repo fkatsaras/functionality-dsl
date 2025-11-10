@@ -10,7 +10,7 @@ Source<WS> BTCUSDT
   channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
   subscribe:
     type: object
-    schema: BTCRaw
+    message: BTCRaw
 end
 
 // ------------------- Raw Entity (snapshot from WS) ----------------
@@ -30,7 +30,7 @@ APIEndpoint<WS> PricesStream
   channel: "/api/prices"
   subscribe:
     type: object
-    schema: Prices
+    message: Prices
 end
 
 // ------------------- Component (bound to internal endpoint) -------

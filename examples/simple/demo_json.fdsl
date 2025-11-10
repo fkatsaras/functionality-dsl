@@ -27,7 +27,7 @@ end
 
 Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: RealObjectsWrapper
@@ -49,7 +49,7 @@ end
 // --- Internal endpoint -----------------------------------------
 APIEndpoint<REST> RealObjectsList
   path: "/api/objects"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: RealObjectsRows

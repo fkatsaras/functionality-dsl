@@ -26,7 +26,7 @@ end
 
 APIEndpoint<REST> GetUserById
   path: "/api/users/{userId}"
-  verb: GET
+  method: GET
   entity: UserById
 end
 
@@ -48,7 +48,7 @@ end
 
 APIEndpoint<REST> GetOrgUser
   path: "/api/organizations/{orgId}/users/{userId}"
-  verb: GET
+  method: GET
   entity: OrgUser
 end
 
@@ -71,7 +71,7 @@ end
 
 APIEndpoint<REST> UpdateUser
   path: "/api/users/{userId}/update"
-  verb: PATCH
+  method: PATCH
   entity: UserUpdatePayload
 end
 
@@ -89,7 +89,7 @@ end
 
 Source<REST> UserUpdateExternal
   url: "https://httpbin.org/anything/users/{userId}"
-  verb: PATCH
+  method: PATCH
   entity: UserUpdatePayload
 end
 
@@ -101,7 +101,7 @@ end
 
 APIEndpoint<REST> CreateOrderItem
   path: "/api/orders/{orderId}/items"
-  verb: POST
+  method: POST
   entity: OrderItemRequest
 end
 
@@ -136,7 +136,7 @@ end
 
 Source<REST> OrderItemCreate
   url: "https://httpbin.org/anything/orders/{orderId}/items"
-  verb: POST
+  method: POST
   entity: OrderItemEnriched
 end
 
@@ -148,7 +148,7 @@ end
 
 APIEndpoint<REST> DeleteProduct
   path: "/api/products/{productId}"
-  verb: DELETE
+  method: DELETE
   entity: ProductDeletePayload
 end
 
@@ -163,7 +163,7 @@ end
 
 Source<REST> ProductDeleteExternal
   url: "https://httpbin.org/anything/products/{productId}"
-  verb: DELETE
+  method: DELETE
   entity: ProductDeletePayload
 end
 
@@ -175,7 +175,7 @@ end
 
 APIEndpoint<REST> UpdateCategoryProduct
   path: "/api/categories/{categoryId}/products/{productId}"
-  verb: PUT
+  method: PUT
   entity: CategoryProductUpdate
 end
 
@@ -194,7 +194,7 @@ end
 
 Source<REST> CategoryProductUpdateExternal
   url: "https://httpbin.org/anything/categories/{categoryId}/products/{productId}"
-  verb: PUT
+  method: PUT
   entity: CategoryProductUpdate
 end
 
@@ -206,7 +206,7 @@ end
 
 APIEndpoint<REST> SquareCalculation
   path: "/api/calculations/{number}/square"
-  verb: GET
+  method: GET
   entity: SquareResult
 end
 
@@ -228,7 +228,7 @@ end
 
 APIEndpoint<REST> ConflictTest
   path: "/api/conflict/{userId}"
-  verb: POST
+  method: POST
   entity: ConflictPayload
 end
 
@@ -241,7 +241,7 @@ end
 
 Source<REST> ConflictExternal
   url: "https://httpbin.org/anything/conflict"
-  verb: POST
+  method: POST
   entity: ConflictPayload
 end
 
@@ -253,7 +253,7 @@ end
 
 APIEndpoint<REST> GetBySlug
   path: "/api/slugs/{slug}"
-  verb: GET
+  method: GET
   entity: SlugData
 end
 

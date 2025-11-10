@@ -26,7 +26,7 @@ end
 // Source with direct entity schema
 Source<REST> ProductDB
   url: "http://external-api:9000/db/products"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: ProductList
@@ -35,7 +35,7 @@ end
 // Source with path parameters
 Source<REST> ProductDetails
   url: "http://external-api:9000/db/products/{productId}"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: Product
@@ -44,7 +44,7 @@ end
 // Source accepting request body
 Source<REST> CreateProduct
   url: "http://external-api:9000/db/products/create"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: NewProduct
@@ -57,7 +57,7 @@ Source<WS> StockFeed
   channel: "ws://inventory:9002/ws/stock"
   publish:
     type: object
-    schema: StockUpdate
+    message: StockUpdate
 end
 ```
 
@@ -68,7 +68,7 @@ end
 // GET endpoint (query)
 APIEndpoint<REST> ProductList
   path: "/api/products"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: ProductCatalog
@@ -77,7 +77,7 @@ end
 // GET with path parameter
 APIEndpoint<REST> ProductDetails
   path: "/api/products/{productId}"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: Product
@@ -86,7 +86,7 @@ end
 // POST endpoint (mutation)
 APIEndpoint<REST> CreateProduct
   path: "/api/products"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: NewProduct
@@ -98,7 +98,7 @@ end
 // Protected endpoint (with auth)
 APIEndpoint<REST> GetCart
   path: "/api/cart"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: CartData
@@ -115,7 +115,7 @@ APIEndpoint<WS> StockUpdates
   path: "/api/ws/stock"
   publish:
     type: object
-    schema: StockData
+    message: StockData
 end
 
 // Duplex (bidirectional)
@@ -123,10 +123,10 @@ APIEndpoint<WS> ChatRoom
   path: "/api/ws/chat"
   subscribe:
     type: object
-    schema: ChatMessage
+    message: ChatMessage
   publish:
     type: object
-    schema: ChatMessage
+    message: ChatMessage
   auth:
     type: bearer
     token: "required"
@@ -163,7 +163,7 @@ end
 
 Source<REST> ProductsAPI
   url: "http://api.example.com/products"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: ProductListWrapper  // Source provides the wrapper directly
@@ -172,14 +172,17 @@ end
 
 **IMPORTANT - Type/Schema Validation Rules:**
 
-All `request:`, `response:`, `subscribe:`, and `publish:` blocks **MUST** include both `type:` and `schema:` fields:
+All `request:`, `response:`, `subscribe:`, and `publish:` blocks **MUST** include both `type:` and entity reference fields:
 
-1. **Required fields:** Both `type` and `schema` must be present
+1. **Required fields:**
+   - `type:` must be present
+   - For `request:`/`response:` blocks: use `schema:` field
+   - For `subscribe:`/`publish:` blocks: use `message:` field
 2. **For primitive/array types** (`string`, `number`, `integer`, `boolean`, `array`):
-   - The schema entity **MUST have EXACTLY ONE attribute**
+   - The entity **MUST have EXACTLY ONE attribute**
    - This is a wrapper entity that wraps the primitive/array value
 3. **For object type:**
-   - The schema entity can have any number of attributes
+   - The entity can have any number of attributes
    - Entity attributes are populated with the object's fields by name
 
 **Examples:**
@@ -431,7 +434,7 @@ Path parameters can be defined using the `parameters:` block or inline in URLs. 
 // External source with explicit path parameters
 Source<REST> ProductById
   url: "http://api.example.com/products/{productId}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - productId: string
@@ -443,7 +446,7 @@ end
 // Internal endpoint with path and query parameters
 APIEndpoint<REST> SearchProducts
   path: "/api/products/{category}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - category: string
@@ -481,7 +484,7 @@ end
 
 Source<REST> ProductById
   url: "http://api.example.com/products/{productId}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - productId: string               // Receives from APIEndpoint via name matching
@@ -492,7 +495,7 @@ end
 
 APIEndpoint<REST> GetProduct
   path: "/api/products/{productId}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - productId: string               // Defines incoming HTTP parameter
@@ -542,7 +545,7 @@ end
 // 3. Source provides the wrapper
 Source<REST> ProductsAPI
   url: "http://api.example.com/products"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: ProductListWrapper
@@ -557,7 +560,7 @@ end
 // 5. Expose via endpoint
 APIEndpoint<REST> ProductList
   path: "/api/products"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: ProductView
@@ -575,7 +578,7 @@ end
 
 Source<REST> UserCount
   url: "http://api.example.com/count"
-  verb: GET
+  method: GET
   response:
     type: integer
     schema: CountWrapper
@@ -624,10 +627,10 @@ Source<WS> EchoWS
   channel: "ws://external-service:8765"
   subscribe:
     type: object
-    schema: EchoWrapper      // What we receive FROM external
+    message: EchoWrapper      // What we receive FROM external
   publish:
     type: object
-    schema: OutgoingProcessed // What we send TO external
+    message: OutgoingProcessed // What we send TO external
 end
 
 // CLIENT → SERVER → EXTERNAL flow
@@ -657,10 +660,10 @@ APIEndpoint<WS> ChatDup
   channel: "/api/chat"
   publish:
     type: string
-    schema: OutgoingWrapper      // Clients send this (inbound to server)
+    message: OutgoingWrapper      // Clients send this (inbound to server)
   subscribe:
     type: object
-    schema: EchoProcessed        // Clients receive this (outbound from server)
+    message: EchoProcessed        // Clients receive this (outbound from server)
 end
 ```
 
@@ -695,7 +698,7 @@ Client receives {text: "hello"}
 ```fdsl
 APIEndpoint<REST> GetProfile
   path: "/api/profile"
-  verb: GET
+  method: GET
   response:
     schema: UserProfile
   auth:
@@ -708,7 +711,7 @@ end
 ```fdsl
 Source<REST> ExternalAPI
   url: "https://api.example.com/data"
-  verb: GET
+  method: GET
   auth:
     type: basic
     username: "user"
@@ -720,7 +723,7 @@ end
 ```fdsl
 Source<REST> ThirdPartyAPI
   url: "https://api.service.com/endpoint"
-  verb: GET
+  method: GET
   auth:
     type: api_key
     key: "X-API-Key"
@@ -772,7 +775,7 @@ end
 
 Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
-  verb: GET
+  method: GET
   response:
     schema: RealObjectsWrapper
 end

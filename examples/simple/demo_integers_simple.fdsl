@@ -9,7 +9,7 @@ end
 // --- External REST sources -------------------------------------
 Source<REST> RandomA
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: IntARaw
@@ -17,7 +17,7 @@ end
 
 Source<REST> RandomB
   url: "https://www.randomnumberapi.com/api/v1.0/random?min=1&max=100&count=1"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: IntBRaw
@@ -56,7 +56,7 @@ end
 // --- Internal endpoint -----------------------------------------
 APIEndpoint<REST> CompareIntsList
   path: "/api/compare"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: CompareInts

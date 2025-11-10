@@ -16,7 +16,7 @@ end
 // --- Internal endpoints ----------------------------------------
 APIEndpoint<REST> CreateUserEndpoint
   path: "/api/users"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: User
@@ -54,7 +54,7 @@ end
 
 Source<REST> UserCreate
   url: "https://httpbin.org/anything"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: UserNormalized3

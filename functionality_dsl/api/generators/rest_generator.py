@@ -102,14 +102,14 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
 def generate_mutation_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
     route_path = get_route_path(endpoint)
-    verb = getattr(endpoint, "verb", "POST").upper()
+    method = getattr(endpoint, "method", "POST").upper()
     path_params = extract_path_params(route_path)
 
     # For mutations, we need request schema (response is optional)
     if not request_schema:
         # DELETE might not have request body, but PATCH/POST/PUT should
-        if verb in {"POST", "PUT", "PATCH"}:
-            raise ValueError(f"Mutation endpoint {endpoint.name} ({verb}) must have a request schema")
+        if method in {"POST", "PUT", "PATCH"}:
+            raise ValueError(f"Mutation endpoint {endpoint.name} ({method}) must have a request schema")
 
     # Extract request entity
     request_entity = None
@@ -160,7 +160,7 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
         target = {
             "name": target_obj.name,
             "url": target_obj.url,
-            "method": getattr(target_obj, "verb", verb).upper(),
+            "method": getattr(target_obj, "method", method).upper(),
             "headers": normalize_headers(target_obj) + build_auth_headers(target_obj),
         }
 

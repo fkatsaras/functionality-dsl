@@ -40,7 +40,7 @@ def build_rest_input_config(entity, source, all_source_names):
         "alias": source.name,        # How expressions reference it
         "url": source.url,
         "headers": normalize_headers(source) + build_auth_headers(source),
-        "method": (getattr(source, "verb", "GET") or "GET").upper(),
+        "method": (getattr(source, "method", "GET") or "GET").upper(),
         "attrs": attribute_configs,
         "path_params": extract_path_params(source.url),
     }

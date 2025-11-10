@@ -29,7 +29,7 @@ end
 // --- External REST sources with auth -------------------------
 Source<REST> BearerTest
   url: "https://httpbin.org/bearer"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: BearerRaw
@@ -40,7 +40,7 @@ end
 
 Source<REST> BasicTest
   url: "https://httpbin.org/basic-auth/user/pass"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: BasicRaw
@@ -52,7 +52,7 @@ end
 
 Source<REST> ApiKeyQuery
   url: "https://httpbin.org/get"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: ApiKeyRaw
@@ -89,7 +89,7 @@ end
 // Public endpoint - no client auth required
 APIEndpoint<REST> BearerEndpoint
   path: "/api/test/bearer"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: BearerEntity
@@ -98,7 +98,7 @@ end
 // Protected with bearer token - clients must authenticate
 APIEndpoint<REST> BasicEndpoint
   path: "/api/test/basic"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: BasicEntity
@@ -110,7 +110,7 @@ end
 // Protected with API key in header - clients must provide key
 APIEndpoint<REST> ApiKeyEndpoint
   path: "/api/test/apikey"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: ApiKeyEntity

@@ -87,12 +87,12 @@ def get_subscribe_schema(endpoint_or_source):
     if not subscribe:
         return None
 
-    schema = getattr(subscribe, "schema", None)
-    if not schema:
+    message = getattr(subscribe, "message", None)
+    if not message:
         return None
 
     # Check if it's an entity reference
-    entity = getattr(schema, "entity", None)
+    entity = getattr(message, "entity", None)
     if entity:
         return {
             "type": "entity",
@@ -102,7 +102,7 @@ def get_subscribe_schema(endpoint_or_source):
         }
 
     # Check if it's an inline type
-    inline_type = getattr(schema, "inline_type", None)
+    inline_type = getattr(message, "inline_type", None)
     if inline_type:
         return {
             "type": "inline",
@@ -123,12 +123,12 @@ def get_publish_schema(endpoint_or_source):
     if not publish:
         return None
 
-    schema = getattr(publish, "schema", None)
-    if not schema:
+    message = getattr(publish, "message", None)
+    if not message:
         return None
 
     # Check if it's an entity reference
-    entity = getattr(schema, "entity", None)
+    entity = getattr(message, "entity", None)
     if entity:
         return {
             "type": "entity",
@@ -138,7 +138,7 @@ def get_publish_schema(endpoint_or_source):
         }
 
     # Check if it's an inline type
-    inline_type = getattr(schema, "inline_type", None)
+    inline_type = getattr(message, "inline_type", None)
     if inline_type:
         return {
             "type": "inline",

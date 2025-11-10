@@ -69,15 +69,15 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     # Generate REST routers
     print("\n[PHASE 2] Generating REST API routers...")
     for endpoint in all_rest_endpoints:
-        verb = getattr(endpoint, "verb", "GET").upper()
+        method = getattr(endpoint, "method", "GET").upper()
 
         # Extract request/response schemas from new structure
         request_schema = get_request_schema(endpoint)
         response_schema = get_response_schema(endpoint)
 
-        print(f"\n--- Processing REST: {endpoint.name} ({verb}) ---")
+        print(f"\n--- Processing REST: {endpoint.name} ({method}) ---")
 
-        if verb == "GET":
+        if method == "GET":
             # For GET requests, only response schema is used
             generate_query_router(
                 endpoint, request_schema, response_schema, model, all_rest_endpoints,

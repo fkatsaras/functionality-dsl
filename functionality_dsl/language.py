@@ -326,12 +326,12 @@ def _validate_computed_attrs(model, metamodel=None):
         publish = getattr(obj, "publish", None)
 
         if subscribe:
-            schema = getattr(subscribe, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+            message = getattr(subscribe, "message", None)
+            collect_schema_entities(message, schema_entities)
 
         if publish:
-            schema = getattr(publish, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+            message = getattr(publish, "message", None)
+            collect_schema_entities(message, schema_entities)
 
     # WebSocket Sources
     for obj in get_children_of_type("SourceWS", model):
@@ -339,12 +339,12 @@ def _validate_computed_attrs(model, metamodel=None):
         publish = getattr(obj, "publish", None)
 
         if subscribe:
-            schema = getattr(subscribe, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+            message = getattr(subscribe, "message", None)
+            collect_schema_entities(message, schema_entities)
 
         if publish:
-            schema = getattr(publish, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+            message = getattr(publish, "message", None)
+            collect_schema_entities(message, schema_entities)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is
@@ -909,9 +909,11 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
         return
 
     block_type = getattr(block, "type", None)
-    schema_ref = getattr(block, "schema", None)
+    # For request/response: use 'schema', for subscribe/publish: use 'message'
+    schema_ref = getattr(block, "schema", None) or getattr(block, "message", None)
+    field_name = "message" if block_name in ("subscribe", "publish") else "schema"
 
-    # Both type and schema are required (enforced by grammar, but double-check)
+    # Both type and schema/message are required (enforced by grammar, but double-check)
     if not block_type:
         raise TextXSemanticError(
             f"{parent_name} {block_name} block is missing required 'type:' field.",
@@ -920,7 +922,7 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 
     if not schema_ref:
         raise TextXSemanticError(
-            f"{parent_name} {block_name} block is missing required 'schema:' field.",
+            f"{parent_name} {block_name} block is missing required '{field_name}:' field.",
             **get_location(block)
         )
 
@@ -960,12 +962,12 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 def external_rest_endpoint_obj_processor(ep):
     """
     SourceREST validation:
-    - Default verb to GET if omitted
+    - Default method to GET if omitted
     - Must have absolute url (http/https)
-    - Mutation verbs (POST/PUT/PATCH) should have request schema
+    - Mutation methods (POST/PUT/PATCH) should have request schema
     """
-    if not getattr(ep, "verb", None):
-        ep.verb = "GET"
+    if not getattr(ep, "method", None):
+        ep.method = "GET"
 
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
@@ -979,11 +981,11 @@ def external_rest_endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
-    # Mutation verbs should have request or response (at least warn if missing)
+    # Mutation methods should have request or response (at least warn if missing)
     request = getattr(ep, "request", None)
     response = getattr(ep, "response", None)
 
-    if request is None and response is None and ep.verb.upper() != "DELETE":
+    if request is None and response is None and ep.method.upper() != "DELETE":
         # It's okay for DELETE to have no schemas, but warn for others
         pass  # Could add warning here if desired
 
@@ -1028,21 +1030,21 @@ def internal_rest_endpoint_obj_processor(iep):
     """
     APIEndpointREST validation:
     - Must have request or response (at least one)
-    - Default verb = GET
-    - Verb must be valid HTTP method
+    - Default method = GET
+    - Method must be valid HTTP method
     - Validate request/response schemas
     - Validate parameters match path
     """
-    # Validate verb
-    verb = getattr(iep, "verb", None)
-    if not verb:
-        iep.verb = "GET"
+    # Validate method
+    method = getattr(iep, "method", None)
+    if not method:
+        iep.method = "GET"
     else:
-        iep.verb = iep.verb.upper()
+        iep.method = iep.method.upper()
 
-    if iep.verb not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+    if iep.method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> verb must be one of GET/POST/PUT/PATCH/DELETE, got {iep.verb}.",
+            f"APIEndpoint<REST> method must be one of GET/POST/PUT/PATCH/DELETE, got {iep.method}.",
             **get_location(iep)
         )
 
@@ -1057,9 +1059,9 @@ def internal_rest_endpoint_obj_processor(iep):
         )
 
     # Request only makes sense for POST/PUT/PATCH
-    if request is not None and iep.verb in {"GET", "DELETE"}:
+    if request is not None and iep.method in {"GET", "DELETE"}:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> '{iep.name}' has 'request:' but verb is {iep.verb}. Only POST/PUT/PATCH can have request bodies.",
+            f"APIEndpoint<REST> '{iep.name}' has 'request:' but method is {iep.method}. Only POST/PUT/PATCH can have request bodies.",
             **get_location(iep)
         )
 
@@ -1191,14 +1193,14 @@ def verify_endpoints(model):
         ent_publish = None
 
         if subscribe_block:
-            schema = getattr(subscribe_block, "schema", None)
-            if schema:
-                ent_subscribe = getattr(schema, "entity", None)
+            message = getattr(subscribe_block, "message", None)
+            if message:
+                ent_subscribe = getattr(message, "entity", None)
 
         if publish_block:
-            schema = getattr(publish_block, "schema", None)
-            if schema:
-                ent_publish = getattr(schema, "entity", None)
+            message = getattr(publish_block, "message", None)
+            if message:
+                ent_publish = getattr(message, "entity", None)
 
         # NOTE: In the new design, entities don't have source: fields.
         # Instead, Sources have response:/publish: blocks that reference entities.
@@ -1357,21 +1359,21 @@ def _validate_source_response_entities(model):
 
     # Collect from WS sources (both subscribe and publish)
     for source in get_children_of_type("SourceWS", model):
-        # Check subscribe schema
+        # Check subscribe message
         subscribe = getattr(source, "subscribe", None)
         if subscribe:
-            schema = getattr(subscribe, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
+            message = getattr(subscribe, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
                 if entity:
                     entity_to_source[entity.name] = source.name
 
-        # Check publish schema (less common for external sources)
+        # Check publish message (less common for external sources)
         publish = getattr(source, "publish", None)
         if publish:
-            schema = getattr(publish, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
+            message = getattr(publish, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
                 if entity:
                     entity_to_source[entity.name] = source.name
 
@@ -1526,21 +1528,21 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
             if schema:
                 entity = getattr(schema, "entity", None)
 
-    # Try publish schema (for WS)
+    # Try publish message (for WS)
     if not entity:
         publish_block = getattr(iep, "publish", None)
         if publish_block:
-            schema = getattr(publish_block, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
+            message = getattr(publish_block, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
 
-    # Try subscribe schema (for WS)
+    # Try subscribe message (for WS)
     if not entity:
         subscribe_block = getattr(iep, "subscribe", None)
         if subscribe_block:
-            schema = getattr(subscribe_block, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
+            message = getattr(subscribe_block, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
 
     if entity is None:
         raise TextXSemanticError(

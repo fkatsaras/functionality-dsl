@@ -17,7 +17,7 @@ end
 // Returns an ARRAY of coffee drinks: [{ id, title, description, ingredients, image, ...}, ...]
 Source<REST> CoffeeHot
   url: "https://api.sampleapis.com/coffee/hot"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: CoffeeRawList
@@ -40,7 +40,7 @@ end
 // REST: expose computed coffee list
 APIEndpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: CoffeeList

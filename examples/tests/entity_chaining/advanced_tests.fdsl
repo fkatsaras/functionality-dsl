@@ -15,22 +15,22 @@ end
 
 Source<REST> Source1
   url: "https://httpbin.org/anything/source1"
-  verb: GET
+  method: GET
 end
 
 Source<REST> Source2
   url: "https://httpbin.org/anything/source2"
-  verb: GET
+  method: GET
 end
 
 Source<REST> Source3
   url: "https://httpbin.org/anything/source3"
-  verb: GET
+  method: GET
 end
 
 Source<REST> Source4
   url: "https://httpbin.org/anything/source4"
-  verb: GET
+  method: GET
 end
 
 // Source<WS> StreamA
@@ -52,7 +52,7 @@ end
 
 APIEndpoint<REST> DeepChain
   path: "/api/deep"
-  verb: GET
+  method: GET
   entity: E3
 end
 
@@ -111,7 +111,7 @@ end
 
 APIEndpoint<REST> CircularLike
   path: "/api/circular"
-  verb: GET
+  method: GET
   entity: E11
 end
 
@@ -139,7 +139,7 @@ end
 
 APIEndpoint<REST> SharedMutation
   path: "/api/mutate"
-  verb: POST
+  method: POST
   entity: M3
 end
 
@@ -169,7 +169,7 @@ end
 
 Source<REST> SharedExternal
   url: "https://httpbin.org/anything/shared"
-  verb: POST
+  method: POST
   entity: M3
 end
 
@@ -228,6 +228,6 @@ end
 //
 //Source<REST> BridgeSink
 //  url: "https://httpbin.org/anything/bridge"
-//  verb: POST
+//  method: POST
 //  entity: BridgePayload
 //end

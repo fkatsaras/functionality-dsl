@@ -23,15 +23,15 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
 
     subscribe_block = getattr(endpoint, "subscribe", None)
     if subscribe_block:
-        schema = getattr(subscribe_block, "schema", None)
-        if schema:
-            entity_out = getattr(schema, "entity", None)  # Clients subscribe = server sends = outbound
+        message = getattr(subscribe_block, "message", None)
+        if message:
+            entity_out = getattr(message, "entity", None)  # Clients subscribe = server sends = outbound
 
     publish_block = getattr(endpoint, "publish", None)
     if publish_block:
-        schema = getattr(publish_block, "schema", None)
-        if schema:
-            entity_in = getattr(schema, "entity", None)  # Clients publish = server receives = inbound
+        message = getattr(publish_block, "message", None)
+        if message:
+            entity_in = getattr(message, "entity", None)  # Clients publish = server receives = inbound
 
     route_path = get_route_path(endpoint)
 

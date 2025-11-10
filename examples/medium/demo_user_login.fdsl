@@ -110,7 +110,7 @@ end
 
 Source<REST> UsersDB
   url: "http://dummydb:9000/db/users"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: UsersListSchema
@@ -118,7 +118,7 @@ end
 
 Source<REST> UserRegisterExternal
   url: "http://dummydb:9000/db/users/register"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: NewUserPayload
@@ -129,7 +129,7 @@ end
 
 Source<REST> UserLoginExternal
   url: "http://dummydb:9000/db/users/login"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: LoginValidated
@@ -140,7 +140,7 @@ end
 
 Source<REST> ResetPasswordExternal
   url: "http://dummydb:9000/db/users/reset-password"
-  verb: PUT
+  method: PUT
   request:
     type: object
     schema: ResetPasswordRequest
@@ -151,7 +151,7 @@ end
 
 Source<REST> UserUpdateExternal
   url: "http://dummydb:9000/db/users/{id}"
-  verb: PATCH
+  method: PATCH
   request:
     type: object
     schema: UserUpdateRequest
@@ -162,7 +162,7 @@ end
 
 Source<REST> UserDeleteExternal
   url: "http://dummydb:9000/db/users/{id}"
-  verb: DELETE
+  method: DELETE
   response:
     type: object
     schema: StandardMessageResponse
@@ -175,7 +175,7 @@ end
 // --- USER LIST (GET) ---
 APIEndpoint<REST> UserList
   path: "/api/users"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: UsersListSchema
@@ -184,7 +184,7 @@ end
 // --- REGISTER ---
 APIEndpoint<REST> UserRegister
   path: "/api/users/register"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: UserRegisterRequest
@@ -196,7 +196,7 @@ end
 // --- LOGIN ---
 APIEndpoint<REST> UserLogin
   path: "/api/users/login"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: LoginRequest
@@ -208,7 +208,7 @@ end
 // --- RESET PASSWORD ---
 APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
-  verb: PUT
+  method: PUT
   request:
     type: object
     schema: ResetPasswordRequest
@@ -220,7 +220,7 @@ end
 // --- UPDATE USER ---
 APIEndpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
-  verb: PATCH
+  method: PATCH
   parameters:
     path:
       - id: integer
@@ -235,7 +235,7 @@ end
 // --- DELETE USER ---
 APIEndpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
-  verb: DELETE
+  method: DELETE
   parameters:
     path:
       - id: integer

@@ -10,7 +10,7 @@ end
 // External mock API
 Source<REST> UserDataExternal
   url: "http://mockapi:9100/db/users"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: UserFormattedData
@@ -19,7 +19,7 @@ end
 // API Endpoint for user registration
 APIEndpoint<REST> UserRegistration
   path: "/api/users/register"
-  verb: POST
+  method: POST
   request:
     type: object
     schema: UserRegistrationRequest

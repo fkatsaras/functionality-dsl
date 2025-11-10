@@ -56,7 +56,7 @@ end
 // --- External REST sources -------------------------------------
 Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
-  verb: GET
+  method: GET
   response:
     type: array
     schema: RealObjectsWrapper
@@ -64,7 +64,7 @@ end
 
 Source<REST> RealObjectById
   url: "https://api.restful-api.dev/objects/{objectId}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - objectId: string
@@ -76,7 +76,7 @@ end
 // --- Internal endpoints -----------------------------------------
 APIEndpoint<REST> RealObjectsList
   path: "/api/objects"
-  verb: GET
+  method: GET
   response:
     type: object
     schema: RealObjectsRows
@@ -84,7 +84,7 @@ end
 
 APIEndpoint<REST> RealObjectDetails
   path: "/api/objects/{objectId}"
-  verb: GET
+  method: GET
   parameters:
     path:
       - objectId: string

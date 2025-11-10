@@ -310,9 +310,9 @@ class ActionFormComponent(_BaseComponent):
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
 
-        # Choose HTTP verb: allow override, else default to GET (or future 'method' on APIEndpoint<REST>)
-        verb_from_action = getattr(endpoint, "verb", None) or "GET"
-        self.method = (method or verb_from_action).upper()
+        # Choose HTTP method: allow override, else default to GET
+        method_from_action = getattr(endpoint, "method", None) or "GET"
+        self.method = (method or method_from_action).upper()
 
         if self.endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint.")

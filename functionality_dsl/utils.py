@@ -128,10 +128,10 @@ def print_model_debug(model):
         print("=== REST ENDPOINTS ===")
         for ep in rest_eps:
             url = getattr(ep, "url", "?")
-            verb = getattr(ep, "verb", "GET")
+            method = getattr(ep, "method", "GET")
             headers = getattr(ep, "headers", None)
             hdr = f" headers={headers}" if headers else ""
-            print(f"- {ep.name}: {verb} {url}{hdr}")
+            print(f"- {ep.name}: {method} {url}{hdr}")
         print()
 
     if ws_eps:

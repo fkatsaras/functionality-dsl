@@ -7,12 +7,12 @@ end
 
 RESTEndpoint Soil1
   url: "http://localhost:8080/api/soil/z1"
-  verb: GET
+  method: GET
 end
 
 RESTEndpoint Soil2
   url: "http://localhost:8080/api/soil/z2"
-  verb: GET
+  method: GET
 end
 
 Entity MoistureZone1

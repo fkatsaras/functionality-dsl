@@ -91,7 +91,7 @@ SourceREST:
   'Source<' kind='REST' '>' name=ID
   (
     'url:' url=STRING
-    'verb:' verb=HttpVerb
+    'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
     (response=ResponseBlock)?
@@ -106,14 +106,14 @@ SubscribeBlock:
   'subscribe:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'schema:' schema=SchemaRef
+      'message:' message=SchemaRef
 ;
 
 PublishBlock:
   'publish:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'schema:' schema=SchemaRef
+      'message:' message=SchemaRef
 ;
 
 SourceWS:
@@ -188,7 +188,7 @@ APIEndpointREST:
   'APIEndpoint<' kind='REST' '>' name=ID
   (
     'path:' path=STRING
-    'verb:' verb=HttpVerb
+    'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
     (response=ResponseBlock)?

@@ -5,7 +5,7 @@
 // --- Product list ---
 Source<REST> ProductsExternal
   url: "http://dummyorders:9100/db/products"
-  verb: GET
+  method: GET
   response:
     schema: ProductsRaw
 end
@@ -13,7 +13,7 @@ end
 // --- Product by ID ---
 Source<REST> ProductByIdExternal
   url: "http://dummyorders:9100/db/products/{id}"
-  verb: GET
+  method: GET
   response:
     schema: ProductRaw
 end
@@ -21,7 +21,7 @@ end
 // --- Product reviews ---
 Source<REST> ReviewsByProductExternal
   url: "http://dummyorders:9100/db/reviews/product/{id}"
-  verb: GET
+  method: GET
   response:
     schema: ProductReviewsRaw
 end
@@ -99,7 +99,7 @@ end
 // --- Public: list all products ---
 APIEndpoint<REST> ProductList
   path: "/api/products"
-  verb: GET
+  method: GET
   response:
     schema: ProductsList
 end
@@ -107,7 +107,7 @@ end
 // --- Public: product details (with reviews) ---
 APIEndpoint<REST> ProductDetailsAPI
   path: "/api/products/{id}"
-  verb: GET
+  method: GET
   response:
     schema: ProductDetails
 end

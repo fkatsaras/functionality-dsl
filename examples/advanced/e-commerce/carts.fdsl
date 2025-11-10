@@ -5,7 +5,7 @@
 // --- Get cart for a given user ---
 Source<REST> CartByUserExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
-  verb: GET
+  method: GET
   response:
     schema: CartRaw
 end
@@ -13,7 +13,7 @@ end
 // --- Add item to cart ---
 Source<REST> CartAddItemExternal
   url: "http://dummyorders:9100/db/carts"
-  verb: POST
+  method: POST
   request:
     schema: CartAddPayload
 end
@@ -21,7 +21,7 @@ end
 // --- Remove single product from cart ---
 Source<REST> CartRemoveItemExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}/product/{productId}"
-  verb: DELETE
+  method: DELETE
   request:
     schema: CartRemovePayload
 end
@@ -29,7 +29,7 @@ end
 // --- Clear entire cart for a user ---
 Source<REST> CartClearExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
-  verb: DELETE
+  method: DELETE
   request:
     schema: CartClearPayload
 end
@@ -88,7 +88,7 @@ end
 // --- Get user's cart ---
 APIEndpoint<REST> CartByUser
   path: "/api/carts/user/{userId}"
-  verb: GET
+  method: GET
   response:
     schema: CartView
 end
@@ -96,7 +96,7 @@ end
 // --- Add item to cart ---
 APIEndpoint<REST> CartAdd
   path: "/api/carts/add"
-  verb: POST
+  method: POST
   request:
     schema: CartAddPayload
 end
@@ -104,7 +104,7 @@ end
 // --- Remove item ---
 APIEndpoint<REST> CartRemove
   path: "/api/carts/remove/{userId}/{productId}"
-  verb: DELETE
+  method: DELETE
   response:
     schema: CartRemovePayload
 end
@@ -112,7 +112,7 @@ end
 // --- Clear cart ---
 APIEndpoint<REST> CartClear
   path: "/api/carts/clear/{userId}"
-  verb: DELETE
+  method: DELETE
   response:
     schema: CartClearPayload
 end

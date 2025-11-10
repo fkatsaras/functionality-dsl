@@ -20,7 +20,7 @@ Source<WS> EchoBearer
   channel: "ws://host.docker.internal:8765"
   subscribe:
     type: object
-    schema: EchoRaw
+    message: EchoRaw
   auth:
     type: bearer
     token: "secret123"
@@ -39,7 +39,7 @@ APIEndpoint<WS> PublicEcho
   channel: "/api/ws/echo/public"
   subscribe:
     type: object
-    schema: EchoProcessed
+    message: EchoProcessed
 end
 
 // Protected endpoint - clients must authenticate with bearer token
@@ -47,7 +47,7 @@ APIEndpoint<WS> ProtectedEcho
   channel: "/api/ws/echo/protected"
   subscribe:
     type: object
-    schema: EchoProcessed
+    message: EchoProcessed
   auth:
     type: bearer
     token: "required"

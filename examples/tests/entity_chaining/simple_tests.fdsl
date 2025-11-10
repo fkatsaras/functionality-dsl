@@ -13,7 +13,7 @@ end
 // --- External Sources ---------------------------------------------------
 Source<REST> ExternalBase
   url: "https://httpbin.org/anything/base"
-  verb: GET
+  method: GET
 end
 
 
@@ -23,7 +23,7 @@ end
 
 APIEndpoint<REST> SingleLevel
   path: "/api/single"
-  verb: GET
+  method: GET
   entity: E1
 end
 
@@ -40,7 +40,7 @@ end
 
 APIEndpoint<REST> ChainQuery
   path: "/api/chain"
-  verb: GET
+  method: GET
   entity: E2
 end
 
@@ -68,7 +68,7 @@ end
 
 APIEndpoint<REST> ChainMutation
   path: "/api/chain"
-  verb: POST
+  method: POST
   entity: M3Request
 end
 
@@ -92,7 +92,7 @@ end
 
 Source<REST> ChainExternal
   url: "https://httpbin.org/anything/mutation"
-  verb: POST
+  method: POST
   entity: M3Payload
 end
 
