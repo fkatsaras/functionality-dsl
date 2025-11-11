@@ -122,6 +122,94 @@ app.get("/orders/:orderId", (req, res) => {
   res.json(order);
 });
 
+// Create new order (POST /orders)
+app.post("/orders", (req, res) => {
+  const { userId, items } = req.body;
+
+  if (!userId || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "userId and items array required" });
+  }
+
+  // Calculate total
+  const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  // Generate order ID
+  const orderCount = orders.length + 1;
+  const orderId = `ord-${String(orderCount).padStart(3, "0")}`;
+
+  const newOrder = {
+    orderId,
+    userId,
+    status: "pending",
+    total: Math.round(total * 100) / 100,
+    createdAt: new Date().toISOString(),
+    items,
+  };
+
+  orders.push(newOrder);
+  console.log(`[ORDER-SERVICE] Created order: ${orderId} for user ${userId}`);
+  res.status(201).json(newOrder);
+});
+
+// Update order status (PATCH /orders/:orderId/status)
+app.patch("/orders/:orderId/status", (req, res) => {
+  const orderId = req.params.orderId;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ error: "status field required" });
+  }
+
+  const validStatuses = ["pending", "shipped", "delivered", "cancelled"];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+  }
+
+  const order = orders.find((o) => o.orderId === orderId);
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  order.status = status;
+  console.log(`[ORDER-SERVICE] Updated order ${orderId} status to: ${status}`);
+  res.json(order);
+});
+
+// Add item to order (POST /orders/:orderId/items)
+app.post("/orders/:orderId/items", (req, res) => {
+  const orderId = req.params.orderId;
+  const item = req.body;
+
+  if (!item.productId || !item.name || !item.price || !item.quantity) {
+    return res.status(400).json({ error: "productId, name, price, and quantity required" });
+  }
+
+  const order = orders.find((o) => o.orderId === orderId);
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  order.items.push(item);
+  order.total = Math.round(order.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 100) / 100;
+
+  console.log(`[ORDER-SERVICE] Added item to order ${orderId}: ${item.name}`);
+  res.json(order);
+});
+
+// Delete order (DELETE /orders/:orderId)
+app.delete("/orders/:orderId", (req, res) => {
+  const orderId = req.params.orderId;
+  const index = orders.findIndex((o) => o.orderId === orderId);
+
+  if (index === -1) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  const deletedOrder = orders.splice(index, 1)[0];
+  console.log(`[ORDER-SERVICE] Deleted order: ${orderId}`);
+  res.json({ message: "Order deleted", order: deletedOrder });
+});
+
 app.listen(PORT, () => {
   console.log(`Order Service running on http://localhost:${PORT}`);
   console.log(`Total orders: ${orders.length}`);

@@ -40,6 +40,48 @@ APIEndpoint<REST> GetUserOrders
     schema: UserOrdersView
 end
 
+// Create new order
+APIEndpoint<REST> CreateOrder
+  path: "/api/orders"
+  method: POST
+  request:
+    type: object
+    schema: CreateOrderRequest
+  response:
+    type: object
+    schema: CreatedOrderResponse
+end
+
+// Update order status
+APIEndpoint<REST> UpdateOrderStatus
+  path: "/api/orders/{orderId}/status"
+  method: PATCH
+  parameters:
+    path:
+      - orderId: string
+  request:
+    type: object
+    schema: UpdateStatusRequest
+  response:
+    type: object
+    schema: UpdatedOrderResponse
+end
+
+// Add item to existing order
+APIEndpoint<REST> AddOrderItem
+  path: "/api/orders/{orderId}/items"
+  method: POST
+  parameters:
+    path:
+      - orderId: string
+  request:
+    type: object
+    schema: AddItemRequest
+  response:
+    type: object
+    schema: UpdatedOrderResponse
+end
+
 // ============================================
 // Sources - External microservices
 // ============================================
@@ -72,6 +114,48 @@ Source<REST> OrderHistory
   response:
     type: array
     schema: OrderListWrapper
+end
+
+// Create order in external service
+Source<REST> CreateOrderTarget
+  url: "http://dummy-order-service:8002/orders"
+  method: POST
+  request:
+    type: object
+    schema: CreateOrderPayload
+  response:
+    type: object
+    schema: CreatedOrder
+end
+
+// Update order status in external service
+Source<REST> UpdateStatusTarget
+  url: "http://dummy-order-service:8002/orders/{orderId}/status"
+  method: PATCH
+  parameters:
+    path:
+      - orderId: string = UpdateOrderStatus.orderId;
+  request:
+    type: object
+    schema: StatusPayload
+  response:
+    type: object
+    schema: UpdatedOrder
+end
+
+// Add item to order in external service
+Source<REST> AddItemTarget
+  url: "http://dummy-order-service:8002/orders/{orderId}/items"
+  method: POST
+  parameters:
+    path:
+      - orderId: string = AddOrderItem.orderId;
+  request:
+    type: object
+    schema: ItemPayload
+  response:
+    type: object
+    schema: UpdatedOrder
 end
 
 // ============================================
@@ -160,6 +244,101 @@ Entity UserOrdersView(UserData, FilteredOrders)
 end
 
 // ============================================
+// Entities for Mutations (Create/Update)
+// ============================================
+
+// Request entity for creating orders
+Entity CreateOrderRequest
+  attributes:
+    - userId: string;
+    - items: array;
+end
+
+// Payload sent to external service
+Entity CreateOrderPayload(CreateOrderRequest)
+  attributes:
+    - userId: string = CreateOrderRequest["userId"];
+    - items: array = CreateOrderRequest["items"];
+end
+
+// Response from external service
+Entity CreatedOrder
+  attributes:
+    - orderId: string;
+    - userId: string;
+    - status: string;
+    - total: number;
+    - createdAt: string;
+    - items: array;
+end
+
+// Response entity with success message
+Entity CreatedOrderResponse(CreatedOrder)
+  attributes:
+    - success: boolean = true;
+    - orderId: string = CreatedOrder["orderId"];
+    - message: string = "Order created successfully";
+    - order: object = {
+        "orderId": CreatedOrder["orderId"],
+        "userId": CreatedOrder["userId"],
+        "status": CreatedOrder["status"],
+        "total": CreatedOrder["total"],
+        "createdAt": CreatedOrder["createdAt"],
+        "itemCount": len(CreatedOrder["items"])
+      };
+end
+
+// Request entity for updating status
+Entity UpdateStatusRequest
+  attributes:
+    - status: string;
+end
+
+// Payload sent to external service
+Entity StatusPayload(UpdateStatusRequest)
+  attributes:
+    - status: string = UpdateStatusRequest["status"];
+end
+
+// Response from external service
+Entity UpdatedOrder
+  attributes:
+    - orderId: string;
+    - userId: string;
+    - status: string;
+    - total: number;
+    - createdAt: string;
+    - items: array;
+end
+
+// Response entity with success message
+Entity UpdatedOrderResponse(UpdatedOrder)
+  attributes:
+    - success: boolean = true;
+    - orderId: string = UpdatedOrder["orderId"];
+    - message: string = "Order updated successfully";
+    - newStatus: string = UpdatedOrder["status"];
+end
+
+// Request entity for adding items
+Entity AddItemRequest
+  attributes:
+    - productId: string;
+    - name: string;
+    - price: number;
+    - quantity: integer;
+end
+
+// Payload sent to external service
+Entity ItemPayload(AddItemRequest)
+  attributes:
+    - productId: string = AddItemRequest["productId"];
+    - name: string = AddItemRequest["name"];
+    - price: number = AddItemRequest["price"];
+    - quantity: integer = AddItemRequest["quantity"];
+end
+
+// ============================================
 // UI Components
 // ============================================
 
@@ -175,13 +354,6 @@ Component<Table> AllOrdersTable
     - "itemCount": integer
 end
 
-// PageView for full query with filtering (path + query params)
-Component<PageView> UserOrdersPage
-  endpoint: GetUserOrders
-  fields: ["requestedUserId", "user.name", "user.email", "appliedFilters.status", "summary.totalOrders", "summary.totalSpent"]
-  label: "User Orders with Filters"
-end
-
 // Object views for specific user details (parameterized endpoint, path params only)
 Component<ObjectView> UserInfoCard
   endpoint: GetUserOrders
@@ -193,4 +365,37 @@ Component<ObjectView> OrderSummaryCard
   endpoint: GetUserOrders
   fields: ["summary.totalOrders", "summary.totalSpent", "summary.averageOrderValue"]
   label: "Order Summary"
+end
+
+Component<ObjectView> UserOrdersList
+  endpoint: GetUserOrders
+  fields: ["orders"]
+  label: "User Orders"
+end
+
+// ============================================
+// Action Forms for Mutations
+// ============================================
+
+// Form to create a new order
+Component<ActionForm> CreateOrderForm
+  endpoint: CreateOrder
+  fields: [userId, items]
+  submitLabel: "Create Order"
+end
+
+// Form to update order status
+Component<ActionForm> UpdateStatusForm
+  endpoint: UpdateOrderStatus
+  fields: [status]
+  pathKey: orderId
+  submitLabel: "Update Status"
+end
+
+// Form to add item to order
+Component<ActionForm> AddItemForm
+  endpoint: AddOrderItem
+  fields: [productId, name, price, quantity]
+  pathKey: orderId
+  submitLabel: "Add Item"
 end

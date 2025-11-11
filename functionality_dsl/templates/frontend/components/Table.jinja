@@ -1,10 +1,14 @@
 {# props.colNames: list of column keys, e.g. ["id","name","year"] #}
 {# props.columns: list of column info with types, e.g. [{"name": "id", "type": {"baseType": "integer"}}, ...] #}
-{# props.endpointPath: the bound APIEndpoint<REST> endpoint (must be parameter-free) #}
+{# props.endpointPath: the bound APIEndpoint<REST> endpoint #}
+{# props.pathParams: list of path parameter names #}
+{# props.queryParams: list of query parameter names #}
 
 <Table
   name="{{ common.name }}"
   url={{ "{" }}{{ props.get('endpointPath') | tojson }}{{ "}" }}
   colNames={{ "{" }}{{ props.get('colNames') | tojson }}{{ "}" }}
   columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}
+  pathParams={{ "{" }}{{ props.get('pathParams', []) | tojson }}{{ "}" }}
+  queryParams={{ "{" }}{{ props.get('queryParams', []) | tojson }}{{ "}" }}
 />
