@@ -63,7 +63,10 @@
       "Bash(python -m json.tool:*)",
       "Bash(bash:*)",
       "Bash(for file in examples/simple/demo_coffee.fdsl examples/medium/demo_user_login.fdsl examples/medium/demo_loud_chat.fdsl)",
-      "Bash(do echo \"=== Validating $file ===\" ./venv_WIN/Scripts/fdsl.exe validate \"$file\")"
+      "Bash(do echo \"=== Validating $file ===\" ./venv_WIN/Scripts/fdsl.exe validate \"$file\")",
+      "Bash(docker logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker network:*)"
     ],
     "deny": [],
     "ask": []

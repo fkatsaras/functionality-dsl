@@ -16,6 +16,7 @@ Component:
   | LiveViewComponent
   | ToggleComponent
   | ObjectViewComponent
+  | PageViewComponent
 ;
 
 // Column definition with type specification
@@ -50,6 +51,14 @@ TableComponent:
 
 ObjectViewComponent:
   'Component' '<' 'ObjectView' '>' name=ID
+  'endpoint:' endpoint=[entity.Endpoint]
+  'fields:' fields=StringList                // explicit list of attributes to display
+  ('label:' label=STRING)?
+  'end'
+;
+
+PageViewComponent:
+  'Component' '<' 'PageView' '>' name=ID
   'endpoint:' endpoint=[entity.Endpoint]
   'fields:' fields=StringList                // explicit list of attributes to display
   ('label:' label=STRING)?

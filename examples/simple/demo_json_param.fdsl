@@ -67,7 +67,7 @@ Source<REST> RealObjectById
   method: GET
   parameters:
     path:
-      - objectId: string
+      - objectId: string = RealObjectDetails.objectId;
   response:
     type: object
     schema: RealObject

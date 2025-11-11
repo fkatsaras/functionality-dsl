@@ -31,17 +31,7 @@ def build_entity_chain(entity, model, all_source_names, context="ctx"):
         # --- attributes ---
         attribute_configs = []
         for attr in getattr(chain_entity, "attributes", []) or []:
-            decorators = getattr(attr, "decorators", []) or []
-
-            # Check if attribute has decorators (@path, @query, @header)
-            if decorators:
-                # Decorated attributes are populated from params, not expressions
-                for decorator in decorators:
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "decorator": decorator,  # "path", "query", or "header"
-                    })
-            elif getattr(attr, "expr", None):
+            if getattr(attr, "expr", None):
                 # Regular computed attribute
                 expr_code = compile_expr_to_python(attr.expr)
                 attribute_configs.append({

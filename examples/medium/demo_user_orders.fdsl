@@ -1,0 +1,196 @@
+// ============================================
+// User Order History API
+// Real-world example: Fetch user orders with filters from multiple microservices
+// ============================================
+
+Server OrderAPI
+  host: "localhost"
+  port: 8000
+  cors: "http://localhost:3000"
+  loglevel: debug
+end
+
+// ============================================
+// APIEndpoint - What clients call
+// ============================================
+
+// List all orders (parameter-free for Table component)
+APIEndpoint<REST> ListAllOrders
+  path: "/api/orders"
+  method: GET
+  response:
+    type: object
+    schema: AllOrdersView
+end
+
+// Get specific user's orders with details (parameterized for ObjectView)
+APIEndpoint<REST> GetUserOrders
+  path: "/api/users/{userId}/orders"
+  method: GET
+  parameters:
+    path:
+      - userId: string
+    query:
+      - status: string?
+      - startDate: string<date>?
+      - endDate: string<date>?
+      - page: integer?
+  response:
+    type: object
+    schema: UserOrdersView
+end
+
+// ============================================
+// Sources - External microservices
+// ============================================
+
+// Fetch all orders (for the list view)
+Source<REST> AllOrdersSource
+  url: "http://dummy-order-service:8002/orders"
+  method: GET
+  response:
+    type: array
+    schema: OrderListWrapper
+end
+
+// Fetch user profile from User Service
+Source<REST> UserProfile
+  url: "http://dummy-user-service:8001/users/{userId}"
+  method: GET
+  parameters:
+    path:
+      - userId: string = GetUserOrders.userId;
+  response:
+    type: object
+    schema: UserData
+end
+
+// Fetch ALL orders from Order Service (no filtering - dumb source)
+Source<REST> OrderHistory
+  url: "http://dummy-order-service:8002/orders"
+  method: GET
+  response:
+    type: array
+    schema: OrderListWrapper
+end
+
+// ============================================
+// Entities
+// ============================================
+
+Entity UserData
+  attributes:
+    - id: string;
+    - email: string;
+    - name: string;
+end
+
+Entity Order
+  attributes:
+    - orderId: string;
+    - userId: string;
+    - status: string;
+    - total: number;
+    - createdAt: string;
+    - items: array;
+end
+
+Entity OrderListWrapper
+  attributes:
+    - orders: array<Order>;
+end
+
+// View for listing all orders (simple list for Table)
+Entity AllOrdersView(OrderListWrapper)
+  attributes:
+    - orders: array = map(OrderListWrapper["orders"], o -> {
+        "orderId": o["orderId"],
+        "userId": o["userId"],
+        "status": o["status"],
+        "total": o["total"],
+        "createdAt": o["createdAt"],
+        "itemCount": len(o["items"])
+      });
+end
+
+// Step 1: Filter orders based on query parameters
+Entity FilteredOrders(OrderListWrapper)
+  attributes:
+    - filtered: array = filter(
+        filter(
+          filter(
+            OrderListWrapper["orders"],
+            o -> o["userId"] == GetUserOrders.userId
+          ),
+          o -> (not GetUserOrders.status) or o["status"] == GetUserOrders.status
+        ),
+        o -> (not GetUserOrders.startDate) or o["createdAt"] >= GetUserOrders.startDate
+      );
+end
+
+// Step 2: Build final view with user data and filtered results
+Entity UserOrdersView(UserData, FilteredOrders)
+  attributes:
+    - requestedUserId: string = GetUserOrders.userId;
+    - appliedFilters: object = {
+        "status": GetUserOrders.status if GetUserOrders.status else "all",
+        "dateRange": {
+          "start": GetUserOrders.startDate,
+          "end": GetUserOrders.endDate
+        },
+        "page": GetUserOrders.page if GetUserOrders.page else 1
+      };
+    - user: object = {
+        "id": UserData["id"],
+        "email": UserData["email"],
+        "name": UserData["name"]
+      };
+    - orders: array = map(FilteredOrders["filtered"], o -> {
+        "orderId": o["orderId"],
+        "status": o["status"],
+        "total": o["total"],
+        "createdAt": o["createdAt"],
+        "itemCount": len(o["items"])
+      });
+    - summary: object = {
+        "totalOrders": len(FilteredOrders["filtered"]),
+        "totalSpent": sum(map(FilteredOrders["filtered"], o -> o["total"])),
+        "averageOrderValue": avg(map(FilteredOrders["filtered"], o -> o["total"]))
+      };
+end
+
+// ============================================
+// UI Components
+// ============================================
+
+// Table showing all orders (parameter-free endpoint)
+Component<Table> AllOrdersTable
+  endpoint: ListAllOrders
+  columns:
+    - "orderId": string
+    - "userId": string
+    - "status": string
+    - "total": number
+    - "createdAt": string
+    - "itemCount": integer
+end
+
+// PageView for full query with filtering (path + query params)
+Component<PageView> UserOrdersPage
+  endpoint: GetUserOrders
+  fields: ["requestedUserId", "user.name", "user.email", "appliedFilters.status", "summary.totalOrders", "summary.totalSpent"]
+  label: "User Orders with Filters"
+end
+
+// Object views for specific user details (parameterized endpoint, path params only)
+Component<ObjectView> UserInfoCard
+  endpoint: GetUserOrders
+  fields: ["requestedUserId", "user.name", "user.email"]
+  label: "User Profile"
+end
+
+Component<ObjectView> OrderSummaryCard
+  endpoint: GetUserOrders
+  fields: ["summary.totalOrders", "summary.totalSpent", "summary.averageOrderValue"]
+  label: "Order Summary"
+end

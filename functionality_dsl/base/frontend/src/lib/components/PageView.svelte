@@ -1,60 +1,74 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import RefreshButton from "$lib/components/util/RefreshButton.svelte";
-  import { buildUrlWithParams, allParamsFilled } from "$lib/utils/paramBuilder";
+  import { buildUrlWithParams, buildQueryString } from "$lib/utils/paramBuilder";
 
-  // Props (from backend-generated component)
+  // Props
   const {
-    name = "ObjectView",
+    name = "PageView",
     endpoint = "",
     pathParams = [],
+    queryParams = [],
     fields = [],
     label = "",
   } = $props<{
     name?: string;
     endpoint?: string;
     pathParams?: string[];
+    queryParams?: string[];
     fields?: string[];
     label?: string;
   }>();
 
   // State
-  let id = $state("");
-  let paramValues = $state<Record<string, string>>({});
+  let pathValues = $state<Record<string, string>>({});
+  let queryValues = $state<Record<string, string>>({});
   let data: Record<string, any> | null = $state(null);
   let loading = $state(false);
   let error: string | null = $state(null);
 
-  // Initialize param values when pathParams changes
+  // Initialize path param values
   $effect(() => {
-    // Only read pathParams, don't read paramValues to avoid infinite loop
     const initial: Record<string, string> = {};
     for (const param of pathParams) {
       initial[param] = "";
     }
-    // Only update if pathParams actually changed (first run or different params)
-    if (Object.keys(paramValues).length !== pathParams.length) {
-      paramValues = initial;
+    if (Object.keys(pathValues).length !== pathParams.length) {
+      pathValues = initial;
+    }
+  });
+
+  // Initialize query param values
+  $effect(() => {
+    const initial: Record<string, string> = {};
+    for (const param of queryParams) {
+      initial[param] = "";
+    }
+    if (Object.keys(queryValues).length !== queryParams.length) {
+      queryValues = initial;
     }
   });
 
   function buildUrl() {
     if (!endpoint) return "";
 
-    // If we have path params, use the reusable param builder
-    if (pathParams.length > 0) {
-      return buildUrlWithParams(endpoint, paramValues);
-    } else {
-      // Legacy behavior: append ID
-      if (!id.trim()) return "";
-      return `${endpoint}/${encodeURIComponent(id.trim())}`;
+    // Build URL with path params
+    let url = buildUrlWithParams(endpoint, pathValues);
+    if (!url && pathParams.length > 0) return "";
+
+    // Add query params using reusable utility
+    const queryString = buildQueryString(queryValues);
+    if (queryString) {
+      url += `?${queryString}`;
     }
+
+    return url;
   }
 
   async function fetchData() {
     const finalUrl = buildUrl();
     if (!finalUrl) {
-      error = pathParams.length > 0 ? "Please fill in all parameters." : "Please enter an ID.";
+      error = "Please fill in required path parameters.";
       return;
     }
 
@@ -73,7 +87,7 @@
     }
   }
 
-  // Helper function to access nested fields like "user.name" or "summary.totalOrders"
+  // Helper function to access nested fields
   function getNestedValue(obj: any, path: string): any {
     const keys = path.split('.');
     let current = obj;
@@ -98,7 +112,7 @@
         <h2 class="text-xl font-bold font-approachmono text-text/90">{label || name}</h2>
 
         <div class="flex items-center gap-2">
-          <RefreshButton on:click={fetchData} {loading} ariaLabel="Refresh object" />
+          <RefreshButton on:click={fetchData} {loading} ariaLabel="Refresh data" />
           {#if error}
             <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
           {/if}
@@ -106,44 +120,52 @@
       </div>
 
       <!-- Input Row -->
-      {#if pathParams.length > 0}
-        <div class="flex gap-2 px-4 pb-3">
-          {#each pathParams as param}
-            <input
-              id="param-{param}"
-              type="text"
-              bind:value={paramValues[param]}
-              class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder={param}
-              onkeydown={(e) => e.key === 'Enter' && fetchData()}
-            />
-          {/each}
+      <div class="flex flex-col gap-3 px-4 pb-3">
+        <!-- Path Parameters -->
+        {#if pathParams.length > 0}
+          <div class="flex gap-2 flex-wrap">
+            <span class="text-xs font-approachmono text-text/50 self-center">Path:</span>
+            {#each pathParams as param}
+              <input
+                id="path-{param}"
+                type="text"
+                bind:value={pathValues[param]}
+                class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
+                placeholder={param}
+                onkeydown={(e) => e.key === 'Enter' && fetchData()}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Query Parameters -->
+        {#if queryParams.length > 0}
+          <div class="flex gap-2 flex-wrap">
+            <span class="text-xs font-approachmono text-text/50 self-center">Query:</span>
+            {#each queryParams as param}
+              <input
+                id="query-{param}"
+                type="text"
+                bind:value={queryValues[param]}
+                class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
+                placeholder={param}
+                onkeydown={(e) => e.key === 'Enter' && fetchData()}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Get Button -->
+        <div class="flex gap-2">
           <button
             class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
             onclick={fetchData}
-            disabled={loading || pathParams.some(p => !paramValues[p])}
+            disabled={loading || pathParams.some(p => !pathValues[p])}
           >
             Get
           </button>
         </div>
-      {:else}
-        <div class="flex gap-2 px-4 pb-3">
-          <input
-            type="text"
-            bind:value={id}
-            placeholder="Enter ID..."
-            class="border thin-border rounded px-3 py-2 flex-1 font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-            onkeydown={(e) => e.key === 'Enter' && fetchData()}
-          />
-          <button
-            class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-            onclick={fetchData}
-            disabled={loading || !id.trim()}
-          >
-            View
-          </button>
-        </div>
-      {/if}
+      </div>
 
       <!-- Content -->
       <div class="px-4 pb-4">

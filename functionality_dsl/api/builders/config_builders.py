@@ -35,6 +35,30 @@ def build_rest_input_config(entity, source, all_source_names):
             "pyexpr": expr_code
         })
 
+    # Build parameter expressions (path and query)
+    path_param_exprs = {}
+    query_param_exprs = {}
+
+    params_block = getattr(source, "parameters", None)
+    if params_block:
+        # Path parameters
+        path_block = getattr(params_block, "path_params", None)
+        if path_block:
+            for param in getattr(path_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    path_param_exprs[param_name] = compile_expr_to_python(param_expr)
+
+        # Query parameters
+        query_block = getattr(params_block, "query_params", None)
+        if query_block:
+            for param in getattr(query_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    query_param_exprs[param_name] = compile_expr_to_python(param_expr)
+
     return {
         "entity": entity.name,      # Where to store in ctx
         "alias": source.name,        # How expressions reference it
@@ -43,6 +67,8 @@ def build_rest_input_config(entity, source, all_source_names):
         "method": (getattr(source, "method", "GET") or "GET").upper(),
         "attrs": attribute_configs,
         "path_params": extract_path_params(source.url),
+        "path_param_exprs": path_param_exprs,
+        "query_param_exprs": query_param_exprs,
     }
 
 

@@ -1,14 +1,16 @@
 {#
   props.fields: list of field names to display, e.g. ["id","name","price"]
-  props.endpoint: the base APIEndpoint<REST> URL (e.g. "/api/objects")
+  props.endpoint: the base APIEndpoint<REST> URL (e.g. "/api/users/{userId}/orders")
   props.pathParams: list of path parameter names extracted from URL
+  props.queryParams: list of query parameter names from the endpoint
   props.label: optional title
 #}
 
-<ObjectView
+<PageView
   name="{{ common.name }}"
   endpoint={{ "{" }}{{ props.get('endpoint') | tojson }}{{ "}" }}
   pathParams={{ "{" }}{{ props.get('pathParams', []) | tojson }}{{ "}" }}
+  queryParams={{ "{" }}{{ props.get('queryParams', []) | tojson }}{{ "}" }}
   fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
   label="{{ props.get('label', common.name) }}"
 />

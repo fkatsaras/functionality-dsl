@@ -238,13 +238,48 @@ end
 
 ### 5. **Components** (UI Generation)
 
+**IMPORTANT Component Design Principles:**
+
+1. **Table Component**: Must bind to **parameter-free** endpoints
+   - Tables display lists/collections without requiring user input
+   - Endpoint should not have path parameters
+
+2. **ObjectView Component**: For **path parameterized** endpoints
+   - Displays single object details
+   - Supports path parameters only (user provides values via input fields)
+   - Supports nested field access (e.g., `user.name`, `summary.total`)
+
+3. **PageView Component**: For endpoints with **path AND query parameters**
+   - Displays data with filtering/pagination support
+   - Supports both path parameters (required) and query parameters (optional)
+   - Ideal for filtered lists, search results, paginated data
+   - Supports nested field access
+
+**Examples:**
+
 ```fdsl
-Component<Table> ProductTable
-  endpoint: ProductList
+// Table - binds to parameter-free endpoint
+Component<Table> AllOrdersTable
+  endpoint: ListAllOrders  // No path params
   columns:
-    - "id": string
-    - "name": string
-    - "price": number
+    - "orderId": string
+    - "userId": string
+    - "status": string
+    - "total": number
+end
+
+// ObjectView - binds to parameterized endpoint (path params only)
+Component<ObjectView> UserProfile
+  endpoint: GetUserOrders  // Has {userId} path param
+  fields: ["user.name", "user.email", "summary.totalOrders"]
+  label: "User Details"
+end
+
+// PageView - binds to endpoint with path AND query params
+Component<PageView> UserOrdersFiltered
+  endpoint: GetUserOrders  // Has {userId} path + status, page query params
+  fields: ["user.name", "appliedFilters.status", "summary.totalOrders", "summary.totalSpent"]
+  label: "User Orders with Filters"
 end
 
 Component<ActionForm> AddToCartForm
@@ -252,6 +287,14 @@ Component<ActionForm> AddToCartForm
   fields: [productId, quantity]
   submitLabel: "Add to Cart"
 end
+```
+
+**Reusable Parameter Handling:**
+
+Path/query parameter handling is implemented in a reusable module (`lib/utils/paramBuilder.ts`) that can be imported by any component:
+
+```typescript
+import { buildUrlWithParams, buildQueryString, extractPathParams, allParamsFilled } from "$lib/utils/paramBuilder";
 ```
 
 ---
@@ -424,102 +467,221 @@ get(get(x, "data", {}), "color", "")  // Nested safe access
 
 ---
 
-## Path Parameters
+## Parameter Handling
 
-Path parameters can be defined using the `parameters:` block or inline in URLs. The framework automatically passes parameters through the dependency chain.
+Parameters flow **explicitly** from APIEndpoints to Sources using expressions. This makes data flow transparent, flexible, and self-documenting.
 
-### Parameters Block Syntax
+### Basic Syntax
 
+**APIEndpoint** defines incoming parameters:
 ```fdsl
-// External source with explicit path parameters
-Source<REST> ProductById
-  url: "http://api.example.com/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string
-  response:
-    type: object
-    schema: Product
-end
-
-// Internal endpoint with path and query parameters
-APIEndpoint<REST> SearchProducts
-  path: "/api/products/{category}"
-  method: GET
-  parameters:
-    path:
-      - category: string
-    query:
-      - minPrice: number?
-      - maxPrice: number?
-      - inStock: boolean?
-  response:
-    type: object
-    schema: ProductList
-end
-```
-
-### Accessing Parameters in Entities (@path, @query, @header)
-
-Use attribute decorators to access parameters from the **incoming HTTP request** in your response entities:
-
-```fdsl
-// Schema entity for external API response
-Entity ProductRaw
-  attributes:
-    - id: string;
-    - name: string;
-    - price: number;
-end
-
-// Response entity with path parameter from HTTP request
-Entity ProductDetail(ProductRaw)
-  attributes:
-    - productId: string @path;           // From APIEndpoint HTTP request
-    - id: string = ProductRaw["id"];
-    - name: string = ProductRaw["name"];
-    - price: number = ProductRaw["price"];
-end
-
-Source<REST> ProductById
-  url: "http://api.example.com/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string               // Receives from APIEndpoint via name matching
-  response:
-    type: object
-    schema: ProductRaw
-end
-
 APIEndpoint<REST> GetProduct
   path: "/api/products/{productId}"
   method: GET
   parameters:
     path:
-      - productId: string               // Defines incoming HTTP parameter
+      - productId: string
+    query:
+      - format: string?
   response:
     type: object
-    schema: ProductDetail              // Can access productId via @path
+    schema: ProductDetail
 end
 ```
 
-**Key Rules:**
+**Source** maps parameters using **expressions**:
+```fdsl
+Source<REST> ProductById
+  url: "http://api.example.com/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string = GetProduct.productId;
+    query:
+      - fmt: string = GetProduct.format;
+  response:
+    type: object
+    schema: Product
+end
+```
 
-1. **@decorators reference APIEndpoint parameters** - They capture values from the incoming HTTP request, not from external APIs
-2. **Sources receive parameters via name matching** - If Source URL has `{productId}` and APIEndpoint defines `productId`, it flows automatically
-3. **Parameter names must match** - For automatic flow from APIEndpoint → Source
+**Note the semicolon (`;`)** at the end of parameter definitions with expressions.
 
-**Available decorators:**
-- `@path` - Populates from APIEndpoint path parameters
-- `@query` - Populates from APIEndpoint query parameters
-- `@header` - Populates from incoming HTTP request headers
+### Key Features
 
-**Validation:**
-- Decorated attributes must match the **APIEndpoint's** `parameters:` block
-- Decorated attributes cannot have expressions (no `=` assignment)
-- Flow: HTTP Request → @decorated attributes → Transformation entities
+#### 1. **Explicit Parameter Mapping**
+No magic name matching - you see exactly where values come from:
+```fdsl
+Source<REST> OrderHistory
+  parameters:
+    query:
+      - user_id: string = GetUserOrders.userId;  // Explicit mapping
+```
+
+#### 2. **Parameter Transformation**
+Use any valid expression including ternary operators, functions, etc:
+```fdsl
+Source<REST> OrderService
+  parameters:
+    query:
+      - status: string = GetOrders.status if GetOrders.status else "all";
+      - page: integer = GetOrders.page if GetOrders.page else 1;
+      - limit: integer = min(GetOrders.limit, 100);  // Cap at 100
+```
+
+#### 3. **Parameter Renaming**
+Source parameter names don't need to match endpoint parameter names:
+```fdsl
+APIEndpoint<REST> GetUserOrders
+  parameters:
+    path:
+      - userId: string  // camelCase in API
+
+Source<REST> OrderHistory
+  parameters:
+    query:
+      - user_id: string = GetUserOrders.userId;  // snake_case for external API
+```
+
+#### 4. **Accessing Parameters in Entities**
+Entities can reference endpoint parameters in expressions:
+```fdsl
+Entity UserOrdersView(UserData, OrderListWrapper)
+  attributes:
+    - requestedUserId: string = GetUserOrders.userId;
+    - appliedFilters: object = {
+        "status": GetUserOrders.status if GetUserOrders.status else "all",
+        "page": GetUserOrders.page if GetUserOrders.page else 1
+      };
+    - orders: array = map(OrderListWrapper["orders"], o -> {
+        "orderId": o["orderId"],
+        "matchesUserId": o["userId"] == GetUserOrders.userId
+      });
+end
+```
+
+### Complete Example
+
+```fdsl
+// Define the API endpoint
+APIEndpoint<REST> GetUserOrders
+  path: "/api/users/{userId}/orders"
+  method: GET
+  parameters:
+    path:
+      - userId: string
+    query:
+      - status: string?
+      - startDate: string<date>?
+      - endDate: string<date>?
+      - page: integer?
+  response:
+    type: object
+    schema: UserOrdersView
+end
+
+// Fetch user data
+Source<REST> UserProfile
+  url: "http://user-service:8001/users/{userId}"
+  method: GET
+  parameters:
+    path:
+      - userId: string = GetUserOrders.userId;
+  response:
+    type: object
+    schema: UserData
+end
+
+// Fetch orders with filtering
+Source<REST> OrderHistory
+  url: "http://order-service:8002/orders"
+  method: GET
+  parameters:
+    query:
+      - user_id: string = GetUserOrders.userId;
+      - status: string = GetUserOrders.status if GetUserOrders.status else "all";
+      - created_after: string? = GetUserOrders.startDate;
+      - created_before: string? = GetUserOrders.endDate;
+      - page: integer = GetUserOrders.page if GetUserOrders.page else 1;
+  response:
+    type: array
+    schema: OrderListWrapper
+end
+
+// Transform and combine data
+Entity UserOrdersView(UserData, OrderListWrapper)
+  attributes:
+    - requestedUserId: string = GetUserOrders.userId;
+    - user: object = {
+        "id": UserData["id"],
+        "email": UserData["email"],
+        "name": UserData["name"]
+      };
+    - orders: array = map(OrderListWrapper["orders"], o -> {
+        "orderId": o["orderId"],
+        "status": o["status"],
+        "total": o["total"]
+      });
+    - summary: object = {
+        "totalOrders": len(OrderListWrapper["orders"]),
+        "totalSpent": sum(map(OrderListWrapper["orders"], o -> o["total"]))
+      };
+end
+```
+
+### Validation Rules
+
+The FDSL validator enforces:
+
+1. **Source parameter expressions can ONLY reference:**
+   - APIEndpoint parameters (path/query/header): `GetProduct.productId`
+   - APIEndpoint request body entities: `OrderRequest.productId`
+
+2. **Source parameter expressions CANNOT reference:**
+   - Other Sources (would create execution order issues)
+   - Response entities (not yet fetched)
+
+3. **URL path parameters must have definitions:**
+   ```fdsl
+   // ❌ ERROR: {productId} in URL but no parameter definition
+   Source<REST> Bad
+     url: "http://api.com/products/{productId}"
+
+   // ✅ CORRECT: URL parameter has definition with expression
+   Source<REST> Good
+     url: "http://api.com/products/{productId}"
+     parameters:
+       path:
+         - productId: string = GetProduct.productId;
+   ```
+
+### Runtime Behavior
+
+1. **HTTP Request** arrives at APIEndpoint
+2. **Endpoint parameter object** created in context:
+   ```python
+   GetUserOrders = {
+       "userId": "user-001",
+       "status": "pending",
+       "page": 1
+   }
+   ```
+3. **Source parameter expressions** evaluated:
+   ```python
+   user_id = GetUserOrders["userId"]  # "user-001"
+   status = GetUserOrders["status"] if GetUserOrders["status"] else "all"  # "pending"
+   ```
+4. **HTTP request** made to external source with evaluated parameters
+5. **Response** processed and stored in context
+6. **Entity transformations** executed with access to both sources and endpoint parameters
+
+### Benefits
+
+- **🔍 Transparent**: See exactly how data flows
+- **💪 Flexible**: Use any expression, not just direct mapping
+- **📝 Self-documenting**: Code clearly shows parameter transformation
+- **✅ Type-safe**: Validated at parse time
+- **🚫 No magic**: No implicit name matching
 
 ---
 
@@ -917,6 +1079,82 @@ fdsl generate my-api.fdsl --out generated/
 - Generator: `functionality_dsl/api/generators/`
 - Built-ins: `functionality_dsl/lib/builtins/`
 - Templates: `functionality_dsl/templates/backend/`
+
+---
+
+## Testing Workflow
+
+### Network Architecture
+
+The testing environment uses a single shared Docker network: `thesis_fdsl_net`
+
+- **Network creation**: Created automatically when you run `docker compose -p thesis up` on the generated app
+- **Network name**: Always `thesis_fdsl_net` (created by docker-compose with project name prefix)
+- **Shared by**: Both dummy services and generated application containers
+
+### Dummy Services (External APIs for Testing)
+
+When creating dummy/mock external services for testing:
+
+1. **Container naming**: Always prefix container names and images with `dummy-` so the cleanup script can identify and remove them
+   ```yaml
+   services:
+     dummy-user-service:
+       container_name: dummy-user-service
+       image: dummy-user-service
+   ```
+
+2. **Network**: Always use `thesis_fdsl_net` as an external network (it must already exist)
+   ```yaml
+   services:
+     dummy-user-service:
+       networks:
+         - thesis_fdsl_net
+
+   networks:
+     thesis_fdsl_net:
+       external: true
+   ```
+
+### Generated Application Code
+
+When running the generated application:
+
+**Always use the project name `thesis`:**
+```bash
+docker compose -p thesis up
+```
+
+**Generated app docker-compose.yml should define the network (not external):**
+```yaml
+networks:
+  thesis_fdsl_net:
+    driver: bridge
+```
+
+This ensures:
+- The network `thesis_fdsl_net` is created when the app starts
+- Consistent naming across all generated services
+- Proper cleanup by the cleanup script
+- All services on the same network can communicate
+
+### Startup Order
+
+1. **First**: Start generated app with `docker compose -p thesis up` (creates network)
+2. **Second**: Start dummy services (joins existing network)
+
+### Cleanup
+
+To clean up all testing containers, images, and generated code:
+```bash
+bash scripts/cleanup.sh
+```
+
+This script removes:
+- All containers with `thesis_` prefix (generated apps)
+- All containers/images with `dummy-` prefix (mock services)
+- The `generated/` folder
+- Networks if they exist
 
 ---
 

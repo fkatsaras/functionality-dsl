@@ -40,13 +40,8 @@ AttrValue:
   STRING | FLOAT | INT | Bool
 ;
 
-// Attribute decorators for marking parameter sources
-AttrDecorator:
-  'path' | 'query' | 'header'
-;
-
 Attribute:
-    name=ID ':' type=TypeSpec ('@' decorators+=AttrDecorator)* ('=' expr=Expr)? ';'
+    name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'
 ;
 
 Entity:
@@ -131,8 +126,9 @@ SourceWS:
 // ---------- API (presentation) ----------
 
 // Parameter definition for path/query params
+// Can now include expressions for explicit mapping: - userId: string = GetUserOrders.userId
 ParamDef:
-  '-' name=ID ':' type=TypeSpec
+  '-' name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'?
 ;
 
 PathParamsBlock:

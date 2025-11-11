@@ -27,17 +27,22 @@
     }>();
 
     let data = $state<any[]>([]);
-    let loading = $state(!!url);
+    let loading = $state(false);
     let error = $state<string | null>(null);
     let entityKeys = $state<string[]>([]);
 
     async function load() {
-        if (!url) return;
+        const finalUrl = url || "";
+        if (!finalUrl) {
+            error = "No URL provided";
+            return;
+        }
+
         loading = true;
         error = null;
 
         try {
-          const response = await fetch(url);
+          const response = await fetch(finalUrl);
           if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
           const json = await response.json();
@@ -74,7 +79,14 @@
                 throw new Error("Expected entity object or array.");
               }
             } else {
-              throw new Error("Expected single entity key.");
+              // Multiple keys - find the first array field
+              const arrayKey = keys.find(k => Array.isArray(json[k]));
+              if (arrayKey) {
+                data = json[arrayKey];
+                console.log("Found array field in multi-key response:", arrayKey);
+              } else {
+                throw new Error("Expected single entity key or an object with an array field.");
+              }
             }
           }
 
@@ -179,7 +191,9 @@
         }
     }
 
-    onMount(load);
+    onMount(() => {
+        load();
+    });
 </script>
 
 
@@ -194,7 +208,7 @@
         <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
 
         <div class="flex items-center gap-2">
-          <RefreshButton on:click={load} {loading} ariaLabel="Refresh table" />
+          <RefreshButton onclick={load} {loading} ariaLabel="Refresh table" />
           {#if error}
             <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">
               {error}

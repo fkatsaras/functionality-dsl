@@ -404,12 +404,11 @@ def _validate_computed_attrs(model, metamodel=None):
 
         for a in getattr(ent, "attributes", []) or []:
             expr = getattr(a, "expr", None)
-            decorators = getattr(a, "decorators", []) or []
 
-            # Decorated attributes (@path, @query, @header) don't need expressions
-            if expr is None and not decorators:
+            # Attributes without expressions are schema-only
+            if expr is None:
                 has_schema_only_attrs = True
-            elif expr is not None:
+            else:
                 has_computed_attrs = True
 
         # If entity is referenced in request/response and has no expressions, it's schema-only (OK)
@@ -419,11 +418,6 @@ def _validate_computed_attrs(model, metamodel=None):
         # If entity is NOT in schema_entities or has mixed attrs, validate all have expressions
         for a in getattr(ent, "attributes", []) or []:
             expr = getattr(a, "expr", None)
-            decorators = getattr(a, "decorators", []) or []
-
-            # Skip validation for decorated attributes
-            if decorators:
-                continue
 
             if expr is None:
                 raise TextXSemanticError(
@@ -605,217 +599,110 @@ def _validate_entity_validations(model, metamodel=None):
 # ------------------------------------------------------------------------------
 # Decorator attribute validations
 
-def _validate_decorator_attributes(model, metamodel=None):
+def _validate_parameter_expressions(model, metamodel=None):
     """
-    Validate that @path, @query, @header decorated attributes match defined parameters
-    in Sources and APIEndpoints.
-    """
-    # Helper to get parameters from an endpoint/source
-    def get_params(obj):
-        """Extract path and query parameters from endpoint/source."""
-        params_block = getattr(obj, "parameters", None)
-        if not params_block:
-            return {}, {}
+    Validate parameter expressions in Sources.
 
-        path_params = {}
-        query_params = {}
-
-        path_block = getattr(params_block, "path_params", None)
-        if path_block:
-            for param in getattr(path_block, "params", []) or []:
-                param_name = getattr(param, "name", None)
-                if param_name:
-                    path_params[param_name] = param
-
-        query_block = getattr(params_block, "query_params", None)
-        if query_block:
-            for param in getattr(query_block, "params", []) or []:
-                param_name = getattr(param, "name", None)
-                if param_name:
-                    query_params[param_name] = param
-
-        return path_params, query_params
-
-    # Build a map of entity -> (source/endpoint, path_params, query_params)
-    entity_params_map = {}
-
-    # Check REST sources
-    for source in get_children_of_type("SourceREST", model):
-        response = getattr(source, "response", None)
-        if response:
-            schema = getattr(response, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    path_params, query_params = get_params(source)
-                    entity_params_map[entity.name] = (source, path_params, query_params)
-
-    # Check APIEndpoints
-    for endpoint in get_children_of_type("APIEndpointREST", model):
-        # Check response schema
-        response = getattr(endpoint, "response", None)
-        if response:
-            schema = getattr(response, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    path_params, query_params = get_params(endpoint)
-                    entity_params_map[entity.name] = (endpoint, path_params, query_params)
-
-        # Check request schema
-        request = getattr(endpoint, "request", None)
-        if request:
-            schema = getattr(request, "schema", None)
-            if schema:
-                entity = getattr(schema, "entity", None)
-                if entity:
-                    path_params, query_params = get_params(endpoint)
-                    entity_params_map[entity.name] = (endpoint, path_params, query_params)
-
-    # Now validate entities with decorated attributes
-    for entity in get_children_of_type("Entity", model):
-        attributes = getattr(entity, "attributes", []) or []
-
-        for attr in attributes:
-            decorators = getattr(attr, "decorators", []) or []
-
-            # Skip if no decorators
-            if not decorators:
-                continue
-
-            # Check if this entity has associated parameters
-            if entity.name not in entity_params_map:
-                # Entity doesn't have associated endpoint/source with parameters
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}' has decorator(s) {decorators}, "
-                    f"but the entity is not used in a Source/APIEndpoint response/request schema.",
-                    **get_location(attr)
-                )
-
-            source_or_endpoint, path_params, query_params = entity_params_map[entity.name]
-
-            # Validate each decorator
-            for decorator in decorators:
-                if decorator == "path":
-                    if attr.name not in path_params:
-                        available = list(path_params.keys()) if path_params else []
-                        raise TextXSemanticError(
-                            f"Entity '{entity.name}' attribute '{attr.name}' has @path decorator, "
-                            f"but '{attr.name}' is not defined in path parameters of '{source_or_endpoint.name}'. "
-                            f"Available path parameters: {available}",
-                            **get_location(attr)
-                        )
-
-                elif decorator == "query":
-                    if attr.name not in query_params:
-                        available = list(query_params.keys()) if query_params else []
-                        raise TextXSemanticError(
-                            f"Entity '{entity.name}' attribute '{attr.name}' has @query decorator, "
-                            f"but '{attr.name}' is not defined in query parameters of '{source_or_endpoint.name}'. "
-                            f"Available query parameters: {available}",
-                            **get_location(attr)
-                        )
-
-                elif decorator == "header":
-                    # Headers don't have explicit parameter definitions, so we just allow them
-                    pass
-
-
-def _validate_parameter_flow(model, metamodel=None):
-    """
-    Validate that parameters flow correctly from APIEndpoint to Source.
-    When a Source has path parameters in its URL, those parameters must be:
-    1. Declared in the Source's parameters block
-    2. Available from the APIEndpoint that uses the Source's response entity
+    Rules:
+    1. Source parameter expressions can only reference:
+       - APIEndpoint parameters (path/query/header)
+       - APIEndpoint request body entities
+    2. URL path parameters must have corresponding parameter definitions
+    3. Parameter expressions must reference valid endpoints
     """
     from functionality_dsl.api.extractors.model_extractor import find_source_for_entity
     from functionality_dsl.api.utils import extract_path_params
 
-    # Helper to get parameters from an endpoint/source
-    def get_params(obj):
-        """Extract path and query parameters from endpoint/source."""
-        params_block = getattr(obj, "parameters", None)
-        if not params_block:
-            return {}, {}
+    # Build a map of all APIEndpoints for validation
+    endpoints_map = {}
+    for endpoint in get_children_of_type("APIEndpointREST", model):
+        endpoints_map[endpoint.name] = endpoint
+    for endpoint in get_children_of_type("APIEndpointWS", model):
+        endpoints_map[endpoint.name] = endpoint
 
-        path_params = {}
-        query_params = {}
+    # Get all entity names for validation
+    entity_names = {e.name for e in get_children_of_type("Entity", model)}
+
+    # Validate each Source
+    for source in get_children_of_type("SourceREST", model):
+        # Extract path params from URL
+        source_url = getattr(source, "url", "")
+        url_params = extract_path_params(source_url)
+
+        params_block = getattr(source, "parameters", None)
+        if not params_block:
+            # If there are URL params but no parameters block, that's an error
+            if url_params:
+                raise TextXSemanticError(
+                    f"Source '{source.name}' has path parameters {url_params} in URL, "
+                    f"but no 'parameters:' block defined. Add parameter definitions with expressions.",
+                    **get_location(source)
+                )
+            continue
+
+        # Collect all parameter expressions
+        param_exprs = []
 
         path_block = getattr(params_block, "path_params", None)
         if path_block:
             for param in getattr(path_block, "params", []) or []:
                 param_name = getattr(param, "name", None)
-                if param_name:
-                    path_params[param_name] = param
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    param_exprs.append((param, param_name, param_expr, "path"))
 
         query_block = getattr(params_block, "query_params", None)
         if query_block:
             for param in getattr(query_block, "params", []) or []:
                 param_name = getattr(param, "name", None)
-                if param_name:
-                    query_params[param_name] = param
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    param_exprs.append((param, param_name, param_expr, "query"))
 
-        return path_params, query_params
+        # Validate each parameter expression
+        for param_obj, param_name, expr, param_type in param_exprs:
+            # Collect all references in the expression
+            refs = _collect_refs(expr, set())
 
-    # Check each APIEndpoint
-    for endpoint in get_children_of_type("APIEndpointREST", model):
-        endpoint_path_params, endpoint_query_params = get_params(endpoint)
+            for alias, attr, node in refs:
+                if alias is None:
+                    continue
 
-        # Get response entity
-        response = getattr(endpoint, "response", None)
-        if not response:
-            continue
+                # Check if it's an endpoint reference
+                if alias in endpoints_map:
+                    # Valid - referencing an endpoint parameter
+                    continue
 
-        schema = getattr(response, "schema", None)
-        if not schema:
-            continue
+                # Check if it's an entity reference (request body)
+                if alias in entity_names:
+                    # This could be valid if it's a request body entity
+                    # We'll allow it for now - runtime will validate
+                    continue
 
-        entity = getattr(schema, "entity", None)
-        if not entity:
-            continue
+                # Check if it's a source reference
+                # Sources should NOT be referenced in parameter expressions
+                source_names = {s.name for s in get_children_of_type("SourceREST", model)}
+                source_names.update({s.name for s in get_children_of_type("SourceWS", model)})
 
-        # Find the Source that provides this entity (or its ancestors)
-        current_entity = entity
-        visited = set()
+                if alias in source_names:
+                    raise TextXSemanticError(
+                        f"Source '{source.name}' parameter '{param_name}' references Source '{alias}'. "
+                        f"Parameter expressions can only reference APIEndpoint parameters or request body entities, "
+                        f"not other Sources (Sources are fetched AFTER parameters are evaluated).",
+                        **get_location(param_obj)
+                    )
 
-        while current_entity and current_entity.name not in visited:
-            visited.add(current_entity.name)
-            source, source_type = find_source_for_entity(current_entity, model)
-
-            if source and source_type == "REST":
-                # Extract path params from Source URL
-                source_url = getattr(source, "url", "")
-                url_params = extract_path_params(source_url)
-
-                # Get declared params from Source
-                source_path_params, _ = get_params(source)
-
-                # Validate: each URL param must be declared in Source parameters
-                for param_name in url_params:
-                    if param_name not in source_path_params:
-                        raise TextXSemanticError(
-                            f"Source '{source.name}' has path parameter '{param_name}' in URL, "
-                            f"but it's not declared in the parameters block. "
-                            f"Add: parameters: path: - {param_name}: <type>",
-                            **get_location(source)
-                        )
-
-                    # Validate: each Source param must be available from APIEndpoint
-                    if param_name not in endpoint_path_params:
-                        available = list(endpoint_path_params.keys()) if endpoint_path_params else []
-                        raise TextXSemanticError(
-                            f"Source '{source.name}' requires path parameter '{param_name}', "
-                            f"but APIEndpoint '{endpoint.name}' doesn't provide it. "
-                            f"Available endpoint parameters: {available}. "
-                            f"Add: parameters: path: - {param_name}: <type> to '{endpoint.name}'",
-                            **get_location(endpoint)
-                        )
-
-                break  # Found the source, no need to check ancestors
-
-            # Move to parent entities
-            parents = getattr(current_entity, "parents", []) or []
-            current_entity = parents[0] if parents else None
+        # Validate: each URL path param must have a parameter definition
+        if path_block:
+            defined_path_params = {getattr(p, "name", None) for p in getattr(path_block, "params", []) or []}
+            for url_param in url_params:
+                if url_param not in defined_path_params:
+                    raise TextXSemanticError(
+                        f"Source '{source.name}' has path parameter '{{{url_param}}}' in URL, "
+                        f"but no corresponding parameter definition. "
+                        f"Add: parameters: path: - {url_param}: <type> = <expression>;",
+                        **get_location(source)
+                    )
 
 
 # ------------------------------------------------------------------------------
@@ -1665,8 +1552,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
-    mm.register_model_processor(_validate_decorator_attributes)
-    mm.register_model_processor(_validate_parameter_flow)
+    mm.register_model_processor(_validate_parameter_expressions)
 
     return mm
 

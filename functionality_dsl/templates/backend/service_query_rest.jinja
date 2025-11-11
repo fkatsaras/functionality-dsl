@@ -32,7 +32,9 @@ _EXTERNAL_REST_SOURCES = [
         {%- for attr in source.attrs %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
         {%- endfor %}
-        ]
+        ],
+        "path_param_exprs": {{ source.path_param_exprs | tojson }},
+        "query_param_exprs": {{ source.query_param_exprs | tojson }},
     },
 {%- endfor %}
 ]
@@ -49,11 +51,7 @@ _COMPUTATION_CHAIN = [
         "name": "{{ step.name }}",
         "attrs": [
         {%- for attr in step.attrs %}
-            {%- if attr.decorator is defined %}
-            {"name": "{{ attr.name }}", "decorator": "{{ attr.decorator }}"},
-            {%- else %}
             {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
-            {%- endif %}
         {%- endfor %}
         ],
     },
@@ -73,8 +71,47 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
     for source_config in _EXTERNAL_REST_SOURCES:
         entity_name = source_config["entity"]
         source_alias = source_config["alias"]
-        url = interpolate_url(source_config["url"], context)
+        base_url = source_config["url"]
         method = source_config["method"]
+
+        # Evaluate path parameter expressions
+        path_params = {}
+        for param_name, param_expr in source_config.get("path_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                path_params[param_name] = str(param_value)
+                logger.debug(f"[PARAM] - {source_alias}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate path parameter {param_name}")
+
+        # Evaluate query parameter expressions
+        query_params = {}
+        for param_name, param_expr in source_config.get("query_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                if param_value is not None:  # Skip None values
+                    query_params[param_name] = param_value
+                logger.debug(f"[QUERY] - {source_alias}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate query parameter {param_name}")
+
+        # Build URL with path parameters
+        url = base_url
+        for param_name, param_value in path_params.items():
+            url = url.replace("{" + param_name + "}", param_value)
+
+        # Add query parameters
+        if query_params:
+            from urllib.parse import urlencode
+            query_string = urlencode(query_params)
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{query_string}"
 
         logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
 
@@ -181,53 +218,26 @@ def compute_entity_chain(context: Dict[str, Any]) -> None:
 
 
 def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
-    """Shape entity data by evaluating attribute expressions or populating from params."""
+    """Shape entity data by evaluating attribute expressions."""
     shaped_data: Dict[str, Any] = {}
 
     for attr_config in config.get("attrs", []):
         attr_name = attr_config["name"]
+        attr_expr = attr_config["expr"]
 
-        # Check if this is a decorated attribute (@path, @query, @header)
-        if "decorator" in attr_config:
-            decorator = attr_config["decorator"]
-
-            if decorator == "path":
-                # Get from path params in context (seeded by seed_context_with_path_params)
-                param_value = context.get("__path_params__", {}).get(attr_name)
-                if param_value is None:
-                    logger.warning(f"[SHAPE] - @path attribute {entity_name}.{attr_name} not found in path params")
-                shaped_data[attr_name] = param_value
-                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @path: {param_value}")
-
-            elif decorator == "query":
-                # Get from query params in context
-                param_value = context.get("__query_params__", {}).get(attr_name)
-                shaped_data[attr_name] = param_value
-                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @query: {param_value}")
-
-            elif decorator == "header":
-                # Get from headers in context
-                param_value = context.get("__headers__", {}).get(attr_name)
-                shaped_data[attr_name] = param_value
-                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} populated from @header: {param_value}")
-
-        else:
-            # Regular computed attribute with expression
-            attr_expr = attr_config["expr"]
-
-            try:
-                compiled_expr = compile_safe(attr_expr)
-                eval_globals = {**safe_globals, **context}
-                shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
-                logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
-            except HTTPException:
-                raise
-            except Exception as eval_error:
-                logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to compute {entity_name}.{attr_name}"
-                )
+        try:
+            compiled_expr = compile_safe(attr_expr)
+            eval_globals = {**safe_globals, **context}
+            shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
+            logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
+        except HTTPException:
+            raise
+        except Exception as eval_error:
+            logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to compute {entity_name}.{attr_name}"
+            )
 
     # Default to raw payload if no attributes specified
     if not shaped_data and config.get("alias"):
@@ -244,29 +254,18 @@ async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any
     """
     context: Dict[str, Any] = {}
 
-    # Store params in context for @path/@query/@header decorated attributes
+    # Create endpoint parameter object for expressions (e.g., GetUserOrders.userId)
+    endpoint_params = {}
     if path_params:
-        context["__path_params__"] = path_params
-        logger.debug(f"[CONTEXT] - Stored path parameters: {list(path_params.keys())}")
-
+        endpoint_params.update(path_params)
     if query_params:
-        context["__query_params__"] = query_params
-        logger.debug(f"[CONTEXT] - Stored query parameters: {list(query_params.keys())}")
-
+        endpoint_params.update(query_params)
     if headers:
-        context["__headers__"] = headers
-        logger.debug(f"[CONTEXT] - Stored headers: {list(headers.keys())}")
+        endpoint_params.update(headers)
 
-    # Seed context with path parameters (for interpolating external source URLs)
-    if path_params:
-        context = seed_context_with_path_params(
-            context=context,
-            endpoint_name="{{ endpoint.name }}",
-            endpoint_params=path_params,
-            external_sources=_EXTERNAL_REST_SOURCES,
-            logger=logger,
-        )
-        logger.debug(f"[CONTEXT] - Seeded path parameters for URL interpolation")
+    # Add endpoint parameter object to context
+    context["{{ endpoint.name }}"] = endpoint_params
+    logger.debug(f"[CONTEXT] - Created endpoint parameter object {{ endpoint.name }} with keys: {list(endpoint_params.keys())}")
 
     # Execute the query pipeline
     await fetch_external_sources(context)

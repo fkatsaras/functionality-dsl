@@ -152,6 +152,9 @@ end
 Source<REST> UserUpdateExternal
   url: "http://dummydb:9000/db/users/{id}"
   method: PATCH
+  parameters:
+    path:
+      - id: integer = UserUpdate.id;
   request:
     type: object
     schema: UserUpdateRequest
@@ -163,6 +166,9 @@ end
 Source<REST> UserDeleteExternal
   url: "http://dummydb:9000/db/users/{id}"
   method: DELETE
+  parameters:
+    path:
+      - id: integer = UserDelete.id;
   response:
     type: object
     schema: StandardMessageResponse

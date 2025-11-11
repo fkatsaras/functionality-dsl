@@ -65,6 +65,13 @@ class _BaseComponent:
             base = f"/api/{self.endpoint.name.lower()}"
         return base + (suffix or "")
 
+    def _extract_path_params(self) -> list:
+        """Extract path parameter names from endpoint path."""
+        import re
+        path = self._endpoint_path("")
+        # Find all {paramName} patterns
+        return re.findall(r'\{(\w+)\}', path)
+
     def to_props(self):
         return {}
 
@@ -510,21 +517,80 @@ class ObjectViewComponent(_BaseComponent):
     def to_props(self):
         """
         Simplified props for the new ObjectView.svelte.
-        The frontend no longer does placeholder substitution —
-        it just appends the user-provided ID to the endpoint path.
+        Now includes pathParams to support endpoints with path parameters.
         """
         # Use the endpoint path if declared, else default to /api/{endpoint_name}
         path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
 
-        # Strip any {param} placeholders; backend handles those now
-        import re
-        path = re.sub(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}", "", path).rstrip("/")
+        return {
+            "endpoint": path,
+            "pathParams": self._extract_path_params(),
+            "fields": self.fields,
+            "label": self.label or self.endpoint.name,
+        }
 
-        # Escape for Jinja -> Svelte literal
-        path = path.replace("{", "{{").replace("}", "}}")
+
+@register_component
+class PageViewComponent(_BaseComponent):
+    """
+    PageView component for endpoints with path AND query parameters.
+    Displays data with filtering/pagination support.
+
+    Example DSL:
+      Component<PageView> UserOrdersPage
+        endpoint: GetUserOrders
+        fields: ["user.name", "summary.totalOrders"]
+        label: "User Orders"
+      end
+
+    Props sent to Svelte:
+      endpoint: "/api/users/{userId}/orders"
+      pathParams: ["userId"]
+      queryParams: ["status", "startDate", "endDate", "page"]
+      fields: ["user.name", "summary.totalOrders"]
+      label: "User Orders"
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, fields=None, label=None):
+        super().__init__(parent, name, endpoint)
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST>.")
+
+        # unwrap StringList (from DSL grammar)
+        if hasattr(fields, "items"):
+            field_items = fields.items
+        else:
+            field_items = fields or []
+
+        self.fields = [self._attr_name(f) for f in field_items]
+        self.label = _strip_quotes(label) or ""
+
+    def _extract_query_params(self) -> list:
+        """Extract query parameter names from endpoint definition."""
+        params = []
+        if hasattr(self.endpoint, "parameters") and self.endpoint.parameters:
+            param_block = self.endpoint.parameters
+            # Grammar uses query_params (with underscore), not query
+            if hasattr(param_block, "query_params") and param_block.query_params:
+                query_block = param_block.query_params
+                # The query_params block has a params list
+                if hasattr(query_block, "params") and query_block.params:
+                    for param in query_block.params:
+                        # param is a ParamDef object with name attribute
+                        param_name = getattr(param, "name", None)
+                        if param_name:
+                            params.append(param_name)
+        return params
+
+    def to_props(self):
+        """
+        Props for PageView.svelte with both path and query parameters.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
 
         return {
             "endpoint": path,
+            "pathParams": self._extract_path_params(),
+            "queryParams": self._extract_query_params(),
             "fields": self.fields,
             "label": self.label or self.endpoint.name,
         }
