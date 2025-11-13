@@ -15,11 +15,7 @@ security = HTTPBearer()
 from app.services import {{ endpoint.name | lower }}_service
 
 
-{% if target %}
-logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ target.method.lower() }}")
-{% else %}
-logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.internal")
-{% endif %}
+logger = logging.getLogger("fdsl.router.{{ endpoint.name }}.{{ endpoint.method.lower() }}")
 
 router = APIRouter(
     prefix="{{ route_prefix }}",
@@ -28,8 +24,8 @@ router = APIRouter(
 
 
 {% set pparams = endpoint.path_params or [] %}
-@router.{% if target %}{{ target.method.lower() }}{% else %}post{% endif %}("", response_model=Dict[str, Any])
-async def mutate_{{ endpoint.name | lower }}{% if target %}_{{ target.method.lower() }}{% endif %}(
+@router.{{ endpoint.method.lower() }}("", response_model=Dict[str, Any])
+async def mutate_{{ endpoint.name | lower }}_{{ endpoint.method.lower() }}(
     request: Request{% for p in pparams %}, {{ p }}: str{% endfor %}
     {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}, credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
 ):

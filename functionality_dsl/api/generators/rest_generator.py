@@ -155,6 +155,31 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
     # Build target config (new design: reverse lookup for target Source)
     target = None
     target_obj, target_type = find_target_for_entity(terminal_entity, model)
+
+    # Build response chain if response entity exists
+    response_chain = []
+    response_source_entity = None
+    if response_entity and target_obj:
+        # For mutations, the response comes from the external target
+        # Get the entity from the target Source's response block
+        response_block = getattr(target_obj, "response", None)
+        if response_block:
+            response_schema = getattr(response_block, "schema", None)
+            if response_schema:
+                response_source_entity = getattr(response_schema, "entity", None)
+
+                # Build the chain from source entity to response entity if they differ
+                # (i.e., there are transformations to apply)
+                if response_source_entity and response_source_entity.name != response_entity.name:
+                    response_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+                elif not response_source_entity:
+                    # No source entity, response_entity is directly from target
+                    response_source_entity = response_entity
+                else:
+                    # Same entity, no transformation needed
+                    response_source_entity = response_entity
+
+    # Build target dict for template
     if target_obj and target_type == "REST":
         from ..utils import normalize_headers
         target = {
@@ -172,6 +197,7 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
     template_context = {
         "endpoint": {
             "name": endpoint.name,
+            "method": method,  # ADD: HTTP method for router decorator
             "summary": getattr(endpoint, "summary", None),
             "path_params": path_params,
             "auth": endpoint_auth,
@@ -180,6 +206,8 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
         "entity": entity,
         "request_entity": request_entity,  # NEW: Pass request entity for seeding from request body
         "response_entity": response_entity,  # NEW: Pass response entity
+        "response_source_entity": response_source_entity,  # NEW: Entity from Source response
+        "response_chain": response_chain,  # NEW: Response transformation chain
         "terminal": terminal_entity,
         "target": target,
         "rest_inputs": rest_inputs,

@@ -11,7 +11,9 @@ from fastapi import HTTPException
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.utils import resolve_headers, interpolate_url, seed_context_with_path_params
-from app.domain.models import {{ entity.name }}
+{% if request_entity %}
+from app.domain.models import {{ request_entity.name }}
+{% endif %}
 
 
 logger = logging.getLogger("fdsl.service.{{ endpoint.name }}")
@@ -72,11 +74,12 @@ _EXTERNAL_TARGET = {
 #                          SERVICE FUNCTIONS
 # ============================================================================
 
+{% if request_entity %}
 def validate_request_body(request_body: Dict[str, Any]) -> Dict[str, Any]:
     """Validate request body against Pydantic schema."""
     try:
-        validated_payload = {{ entity.name }}(**request_body)
-        logger.debug(f"[VALIDATION] - Pydantic schema validation passed for {{ entity.name }}")
+        validated_payload = {{ request_entity.name }}(**request_body)
+        logger.debug(f"[VALIDATION] - Pydantic schema validation passed for {{ request_entity.name }}")
         return validated_payload.model_dump()
     except Exception as validation_error:
         logger.error(f"[VALIDATION] - Pydantic schema validation failed: {validation_error}")
@@ -84,6 +87,7 @@ def validate_request_body(request_body: Dict[str, Any]) -> Dict[str, Any]:
             status_code=422,
             detail={"error": "Invalid request data", "details": str(validation_error)}
         )
+{% endif %}
 
 
 def seed_initial_context(request_body: Dict[str, Any], path_params: Dict[str, str]) -> Dict[str, Any]:
@@ -289,12 +293,7 @@ async def forward_to_target(payload: Dict[str, Any], context: Dict[str, Any]) ->
 
         logger.info(f"[SUCCESS] - Forwarded to {target_name} successfully")
 
-        return {
-            "forwarded_to": target_url,
-            "method": target_method,
-            "payload": payload,
-            "response": target_data
-        }
+        return target_data
 
     except HTTPException:
         raise
@@ -307,14 +306,36 @@ async def forward_to_target(payload: Dict[str, Any], context: Dict[str, Any]) ->
 {% endif %}
 
 
+{% if response_chain %}
+_RESPONSE_CHAIN = [
+{%- for step in response_chain %}
+    {
+        "name": "{{ step.name }}",
+        "attrs": [
+        {%- for attr in step.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ],
+    },
+
+{%- endfor %}
+]
+{% endif %}
+
+
 async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, str]) -> Dict[str, Any]:
     """
     Main service function to execute the complete mutation flow.
 
     Returns the final payload or forwarding result.
     """
+    {% if request_entity %}
     # Validate request body
     validated_body = validate_request_body(request_body)
+    {% else %}
+    # No request entity, skip validation
+    validated_body = request_body
+    {% endif %}
 
     # Initialize context
     context = seed_initial_context(validated_body, path_params)
@@ -332,7 +353,40 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
 
     {% if target %}
     # Forward to external target
-    return await forward_to_target(final_payload, context)
+    target_response = await forward_to_target(final_payload, context)
+
+    {% if response_source_entity %}
+    {% if response_chain %}
+    # Process response through transformation chain
+    logger.info("[RESPONSE] - Processing response through transformation chain")
+
+    # Seed response data from external source
+    context["{{ response_source_entity.name }}"] = target_response
+    logger.debug(f"[CONTEXT] - Seeded response entity: {{ response_source_entity.name }}")
+
+    # Transform response through chain
+    for step_index, transform_step in enumerate(_RESPONSE_CHAIN, 1):
+        entity_name = transform_step["name"]
+        logger.debug(f"[RESPONSE] - Step {step_index}/{len(_RESPONSE_CHAIN)}: {entity_name}")
+
+        shaped_data = _shape_entity_data(transform_step, context, entity_name)
+        context[entity_name] = shaped_data
+        logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
+
+    # Return the final transformed response entity
+    response_entity_name = "{{ response_entity.name }}"
+    final_response = context.get(response_entity_name, target_response)
+    logger.info(f"[SUCCESS] - Response processed through {response_entity_name}")
+    return final_response
+    {% else %}
+    # No transformation needed, return response directly
+    logger.info(f"[SUCCESS] - Response entity matches source, no transformation needed")
+    return target_response
+    {% endif %}
+    {% else %}
+    # No response entity defined, return raw response
+    return target_response
+    {% endif %}
     {% else %}
     # Return final payload (no external target)
     logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (internal)")

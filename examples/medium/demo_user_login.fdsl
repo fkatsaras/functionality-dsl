@@ -9,17 +9,19 @@ end
 // SCHEMAS (Pure Data Structures)
 // ============================================================
 
-// Common reusable schemas
-Entity StandardMessageResponse
+// Raw response schemas from dummy service (reusable patterns)
+
+Entity SuccessMessageResponse
   attributes:
-    - id: integer;
+    - ok: boolean;
     - message: string;
+    - user: object?;
 end
 
-Entity SuccessResponse
+Entity LoginRawResponse
   attributes:
-    - success: boolean;
-    - message: string;
+    - ok: boolean;
+    - token: string;
 end
 
 Entity UsersListSchema
@@ -51,13 +53,6 @@ Entity UserUpdateRequest
   attributes:
     - email: string<email>;
     - password: string(6..);
-end
-
-// Response schemas
-Entity LoginResponse
-  attributes:
-    - username: string;
-    - token: string;
 end
 
 // ============================================================
@@ -104,6 +99,24 @@ Entity ResetPasswordPayload(ResetPasswordRequest, UsersListSchema)
     - newPassword: string = ResetPasswordRequest.newPassword;
 end
 
+// Response transformations - Convert raw responses to clean API responses
+Entity RegisterResponse(SuccessMessageResponse)
+  attributes:
+    - id: integer = SuccessMessageResponse.user["id"];
+    - message: string = SuccessMessageResponse.message;
+end
+
+Entity LoginResponse(LoginRawResponse)
+  attributes:
+    - token: string = LoginRawResponse.token;
+end
+
+Entity TransformedResponse(SuccessMessageResponse)
+  attributes:
+    - success: boolean = SuccessMessageResponse.ok;
+    - message: string = SuccessMessageResponse.message;
+end
+
 // ============================================================
 // EXTERNAL SOURCES (Backend Services)
 // ============================================================
@@ -124,7 +137,7 @@ Source<REST> UserRegisterExternal
     schema: NewUserPayload
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: SuccessMessageResponse
 end
 
 Source<REST> UserLoginExternal
@@ -135,7 +148,7 @@ Source<REST> UserLoginExternal
     schema: LoginValidated
   response:
     type: object
-    schema: LoginResponse
+    schema: LoginRawResponse
 end
 
 Source<REST> ResetPasswordExternal
@@ -146,7 +159,7 @@ Source<REST> ResetPasswordExternal
     schema: ResetPasswordRequest
   response:
     type: object
-    schema: SuccessResponse
+    schema: SuccessMessageResponse
 end
 
 Source<REST> UserUpdateExternal
@@ -160,7 +173,7 @@ Source<REST> UserUpdateExternal
     schema: UserUpdateRequest
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: SuccessMessageResponse
 end
 
 Source<REST> UserDeleteExternal
@@ -171,7 +184,7 @@ Source<REST> UserDeleteExternal
       - id: integer = UserDelete.id;
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: SuccessMessageResponse
 end
 
 // ============================================================
@@ -196,7 +209,7 @@ APIEndpoint<REST> UserRegister
     schema: UserRegisterRequest
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: RegisterResponse
 end
 
 // --- LOGIN ---
@@ -220,7 +233,7 @@ APIEndpoint<REST> ResetPassword
     schema: ResetPasswordRequest
   response:
     type: object
-    schema: SuccessResponse
+    schema: TransformedResponse
 end
 
 // --- UPDATE USER ---
@@ -235,7 +248,7 @@ APIEndpoint<REST> UserUpdate
     schema: UserUpdateRequest
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: TransformedResponse
 end
 
 // --- DELETE USER ---
@@ -247,7 +260,7 @@ APIEndpoint<REST> UserDelete
       - id: integer
   response:
     type: object
-    schema: StandardMessageResponse
+    schema: TransformedResponse
 end
 
 // ============================================================
