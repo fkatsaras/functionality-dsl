@@ -68,7 +68,15 @@ async def mutate_{{ endpoint.name | lower }}_{{ endpoint.method.lower() }}(
             {% endfor %}
         }
 
+        {% if response_variants and response_variants|length > 0 %}
+        # Service returns (data, status_code) tuple for all mutation responses
+        from fastapi.responses import JSONResponse
+        result_data, status_code = await {{ endpoint.name | lower }}_service.execute_mutation(request_body, path_params)
+        return JSONResponse(status_code=status_code, content=result_data)
+        {% else %}
+        # No response variants defined (shouldn't happen)
         return await {{ endpoint.name | lower }}_service.execute_mutation(request_body, path_params)
+        {% endif %}
 
     except HTTPException:
         raise

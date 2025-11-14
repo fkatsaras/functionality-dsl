@@ -68,7 +68,8 @@
       "Bash(docker exec:*)",
       "Bash(docker network:*)",
       "Bash(python:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(../../venv_WIN/Scripts/fdsl.exe generate:*)"
     ],
     "deny": [],
     "ask": []

@@ -297,28 +297,32 @@ def _validate_computed_attrs(model, metamodel=None):
     # REST endpoints
     for obj in get_model_internal_rest_endpoints(model):
         request = getattr(obj, "request", None)
-        response = getattr(obj, "response", None)
+        responses = getattr(obj, "responses", None)
 
         if request:
             schema = getattr(request, "schema", None)
             collect_schema_entities(schema, schema_entities)
 
-        if response:
-            schema = getattr(response, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+        if responses:
+            variants = getattr(responses, "variants", []) or []
+            for variant in variants:
+                schema = getattr(variant, "schema", None)
+                collect_schema_entities(schema, schema_entities)
 
     # REST Sources
     for obj in get_children_of_type("SourceREST", model):
         request = getattr(obj, "request", None)
-        response = getattr(obj, "response", None)
+        responses = getattr(obj, "responses", None)
 
         if request:
             schema = getattr(request, "schema", None)
             collect_schema_entities(schema, schema_entities)
 
-        if response:
-            schema = getattr(response, "schema", None)
-            collect_schema_entities(schema, schema_entities)
+        if responses:
+            variants = getattr(responses, "variants", []) or []
+            for variant in variants:
+                schema = getattr(variant, "schema", None)
+                collect_schema_entities(schema, schema_entities)
 
     # WebSocket endpoints
     for obj in get_model_internal_ws_endpoints(model):
@@ -476,125 +480,6 @@ def _validate_computed_attrs(model, metamodel=None):
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
                 )
-
-
-# ------------------------------------------------------------------------------
-# Entity validations semantic checks
-
-def _validate_entity_validations(model, metamodel=None):
-    """
-    Semantic validation for entity validation rules.
-    Ensures validations are well-formed and reference valid attributes.
-    """
-    for ent in get_children_of_type("Entity", model):
-        validations = getattr(ent, "validations", []) or []
-
-        if not validations:
-            continue  # No validations to check
-
-        # 1. Entity with validations must have at least one attribute
-        attrs = getattr(ent, "attributes", []) or []
-        if len(attrs) == 0:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' defines validations but has no attributes. "
-                f"Validations require attributes to validate.",
-                **get_location(ent)
-            )
-
-        # 2. Entity with validations cannot source WebSocket endpoints
-        ws_entity = _find_websocket_source_in_hierarchy(ent)
-        if ws_entity is not None:
-            if ws_entity.name == ent.name:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' defines validations but sources a WebSocket endpoint. "
-                    f"Validations are only supported for REST-based request/response flows, "
-                    f"not streaming WebSocket connections.",
-                    **get_location(ent)
-                )
-            else:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' defines validations but inherits from '{ws_entity.name}', "
-                    f"which sources a WebSocket endpoint. "
-                    f"Validations are only supported for REST-based request/response flows, "
-                    f"not streaming WebSocket connections.",
-                    **get_location(ent)
-                )
-
-        # Build attribute map for this entity (including inherited)
-        all_attrs = _get_all_entity_attributes(ent)
-        attr_names = {a.name for a in all_attrs}
-
-        # 3. Validate each validation expression
-        for idx, val in enumerate(validations):
-            expr = getattr(val, "expr", None)
-            if expr is None:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' validation #{idx+1} is missing an expression.",
-                    **get_location(val)
-                )
-
-            loop_vars = _loop_var_names(expr)
-
-            # ------------------------------------------------------
-            # Allowed aliases: parents + self + other entities
-            # ------------------------------------------------------
-            parent_list = list(getattr(ent, "parents", []) or [])
-            parent_names = [p.name for p in parent_list]
-            allowed_aliases = set(parent_names)
-            allowed_aliases.add(ent.name)  # allow self reference
-
-            # ------------------------------------------------------
-            # Validate all references in the validation expression
-            # ------------------------------------------------------
-            for alias, attr, node in _collect_refs(expr, loop_vars):
-                if alias is None or alias in loop_vars:
-                    continue
-
-                # Allow self-reference (same entity)
-                if alias == ent.name:
-                    if attr and attr not in attr_names and attr != "__jsonpath__":
-                        raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on entity '{ent.name}'.",
-                            **get_location(node),
-                        )
-                    continue
-
-                # Parent reference (validate attribute existence)
-                if alias in parent_names:
-                    parent_ent = next(p for p in parent_list if p.name == alias)
-                    parent_attr_names = {a.name for a in _get_all_entity_attributes(parent_ent)}
-                    if attr and attr != "__jsonpath__" and attr not in parent_attr_names:
-                        raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on parent entity '{alias}'.",
-                            **get_location(node),
-                        )
-                    continue
-
-                # Allow references to other entities/sources (validated at generation)
-                pass
-
-            # Validate function calls
-            for fname, argc, node in _collect_calls(expr):
-                _validate_func(fname, argc, node)
-
-                # Special check for require()
-                if fname == "require":
-                    args = getattr(node, "args", []) or []
-                    if len(args) < 1:
-                        raise TextXSemanticError(
-                            f"Entity '{ent.name}' validation: require() needs at least a condition.",
-                            **get_location(node)
-                        )
-
-            # Compile validation expression
-            try:
-                val._py = compile_expr_to_python(expr)
-            except Exception as ex:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",
-                    **get_location(val)
-                )
-
 
 # ------------------------------------------------------------------------------
 # Decorator attribute validations
@@ -916,11 +801,12 @@ def external_ws_endpoint_obj_processor(ep):
 def internal_rest_endpoint_obj_processor(iep):
     """
     APIEndpointREST validation:
-    - Must have request or response (at least one)
+    - Must have request or responses (at least one)
     - Default method = GET
     - Method must be valid HTTP method
     - Validate request/response schemas
     - Validate parameters match path
+    - Validate response status codes and conditions
     """
     # Validate method
     method = getattr(iep, "method", None)
@@ -935,13 +821,13 @@ def internal_rest_endpoint_obj_processor(iep):
             **get_location(iep)
         )
 
-    # Must have at least request or response
+    # Must have at least request or responses
     request = getattr(iep, "request", None)
-    response = getattr(iep, "response", None)
+    responses = getattr(iep, "responses", None)
 
-    if request is None and response is None:
+    if request is None and responses is None:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> '{iep.name}' must define 'request:' or 'response:' (or both).",
+            f"APIEndpoint<REST> '{iep.name}' must define 'request:' or 'responses:' (or both).",
             **get_location(iep)
         )
 
@@ -980,9 +866,49 @@ def internal_rest_endpoint_obj_processor(iep):
                     **get_location(iep)
                 )
 
-    # Validate type/schema compatibility
+    # Validate type/schema compatibility for request
     _validate_type_schema_compatibility(request, "request", f"APIEndpoint<REST> '{iep.name}'")
-    _validate_type_schema_compatibility(response, "response", f"APIEndpoint<REST> '{iep.name}'")
+
+    # Validate responses block
+    if responses:
+        variants = getattr(responses, "variants", []) or []
+
+        if len(variants) == 0:
+            raise TextXSemanticError(
+                f"APIEndpoint<REST> '{iep.name}' has 'responses:' block but no response variants defined.",
+                **get_location(iep)
+            )
+
+        seen_status_codes = set()
+
+        for idx, variant in enumerate(variants):
+            status_code = getattr(variant, "status_code", None)
+            condition = getattr(variant, "condition", None)
+
+            # Validate status code
+            if status_code is None:
+                raise TextXSemanticError(
+                    f"APIEndpoint<REST> '{iep.name}' response variant #{idx+1} is missing status code.",
+                    **get_location(variant)
+                )
+
+            # Status code must be valid HTTP status code (200-599)
+            if not isinstance(status_code, int) or status_code < 200 or status_code > 599:
+                raise TextXSemanticError(
+                    f"APIEndpoint<REST> '{iep.name}' response variant #{idx+1} has invalid status code {status_code}. Must be 200-599.",
+                    **get_location(variant)
+                )
+
+            # Check for duplicate status codes
+            if status_code in seen_status_codes:
+                raise TextXSemanticError(
+                    f"APIEndpoint<REST> '{iep.name}' has duplicate status code {status_code}. Each response must have a unique status code.",
+                    **get_location(variant)
+                )
+            seen_status_codes.add(status_code)
+
+            # Validate type/schema compatibility for this variant
+            _validate_type_schema_compatibility(variant, f"response[{status_code}]", f"APIEndpoint<REST> '{iep.name}'")
 
 
 def internal_ws_endpoint_obj_processor(iep):
@@ -1315,11 +1241,19 @@ def _validate_table_component(comp):
             **get_location(comp)
         )
 
-    # Check if endpoint has response schema
-    response = getattr(comp.endpoint, "response", None)
-    if response is None:
+    # Check if endpoint has responses schema
+    responses = getattr(comp.endpoint, "responses", None)
+    if responses is None:
         raise TextXSemanticError(
-            f"Table '{comp.name}': endpoint has no response schema defined.",
+            f"Table '{comp.name}': endpoint has no responses schema defined.",
+            **get_location(comp.endpoint)
+        )
+
+    # Check that responses block has at least one variant
+    variants = getattr(responses, "variants", []) or []
+    if len(variants) == 0:
+        raise TextXSemanticError(
+            f"Table '{comp.name}': endpoint responses block is empty.",
             **get_location(comp.endpoint)
         )
 
@@ -1375,7 +1309,6 @@ def model_processor(model, metamodel=None):
     verify_components(model)
     _populate_aggregates(model)
     _backlink_external_targets(model)
-    _validate_entity_validations(model, metamodel)
 
 
 # ------------------------------------------------------------------------------
@@ -1397,15 +1330,19 @@ def _component_entity_attr_scope(obj, attr, attr_ref):
 
     iep = comp.endpoint
 
-    # NEW DESIGN: Extract entity from request/response/subscribe/publish blocks
+    # NEW DESIGN: Extract entity from request/responses/subscribe/publish blocks
     entity = None
 
-    # Try response schema (for REST GET or WS publish)
-    response_block = getattr(iep, "response", None)
-    if response_block:
-        schema = getattr(response_block, "schema", None)
-        if schema:
-            entity = getattr(schema, "entity", None)
+    # Try responses schema (for REST GET or mutations) - use first variant
+    responses_block = getattr(iep, "responses", None)
+    if responses_block:
+        variants = getattr(responses_block, "variants", []) or []
+        if variants:
+            # Use the first variant's schema (typically the success response)
+            first_variant = variants[0]
+            schema = getattr(first_variant, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
 
     # Try request schema (for REST POST/PUT/PATCH)
     if not entity:
@@ -1499,7 +1436,7 @@ def _expand_imports(model_path: str, visited=None) -> str:
 
     def replace_import(match):
         imp_uri = match.group(1)
-        # Convert "products" → "products.fdsl", "shop.products" → "shop/products.fdsl"
+        # Convert "products" -> "products.fdsl", "shop.products" -> "shop/products.fdsl"
         rel_path = imp_uri.replace(".", os.sep) + ".fdsl"
         import_path = (base_dir / rel_path).resolve()
 

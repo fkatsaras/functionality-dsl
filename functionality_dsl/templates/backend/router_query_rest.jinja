@@ -24,9 +24,10 @@ router = APIRouter(
 
 
 {% set pparams = endpoint.path_params or [] %}
-{% if response_type == 'array' %}
+{% set first_response_type = response_variants[0].response_type if response_variants and response_variants|length > 0 else 'object' %}
+{% if first_response_type == 'array' %}
 @router.get("", response_model=List[Any])
-{% elif response_type in ('string', 'integer', 'number', 'boolean') %}
+{% elif first_response_type in ('string', 'integer', 'number', 'boolean') %}
 @router.get("", response_model=Any)
 {% else %}
 @router.get("", response_model=Dict[str, Any])
@@ -79,7 +80,15 @@ async def query_{{ endpoint.name | lower }}(
         query_params = dict(request.query_params)
         headers = dict(request.headers)
 
+        {% if response_variants and response_variants|length > 1 %}
+        # Multiple response variants - service returns (data, status_code)
+        from fastapi.responses import JSONResponse
+        result_data, status_code = await {{ endpoint.name | lower }}_service.execute_query(path_params, query_params, headers)
+        return JSONResponse(status_code=status_code, content=result_data)
+        {% else %}
+        # Single response variant
         return await {{ endpoint.name | lower }}_service.execute_query(path_params, query_params, headers)
+        {% endif %}
 
     except HTTPException:
         raise

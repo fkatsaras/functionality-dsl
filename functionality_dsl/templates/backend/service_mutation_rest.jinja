@@ -42,7 +42,7 @@ _EXTERNAL_REST_SOURCES = [
 
 _INTERNAL_DEPENDENCIES = [
 {%- for dep in computed_parents | default([], true) %}
-    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
+    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}"},
 {%- endfor %}
 ]
 
@@ -230,7 +230,8 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
 
         try:
             compiled_expr = compile_safe(attr_expr)
-            eval_globals = {**safe_globals, **context}
+            # Make previously computed attributes available as bare variables
+            eval_globals = {**safe_globals, **context, **shaped_data}
             shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
             logger.debug(f"[TRANSFORM] - {entity_name}.{attr_name} computed")
         except HTTPException:
@@ -306,29 +307,56 @@ async def forward_to_target(payload: Dict[str, Any], context: Dict[str, Any]) ->
 {% endif %}
 
 
-{% if response_chain %}
-_RESPONSE_CHAIN = [
-{%- for step in response_chain %}
+{% if response_variants and response_variants|length > 0 %}
+_RESPONSE_VARIANTS = [
+{%- for variant in response_variants %}
     {
-        "name": "{{ step.name }}",
-        "attrs": [
-        {%- for attr in step.attrs %}
-            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        "status_code": {{ variant.status_code }},
+        "entity_name": "{{ variant.entity.name }}",
+        "condition": {{ variant.condition | tojson if variant.condition else 'None' }},
+        "response_type": "{{ variant.response_type }}",
+        "entity_chain": [
+        {%- for step in variant.entity_chain %}
+            {
+                "name": "{{ step.name }}",
+                "attrs": [
+                {%- for attr in step.attrs %}
+                    {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+                {%- endfor %}
+                ],
+            },
         {%- endfor %}
-        ],
+        ]
     },
-
 {%- endfor %}
 ]
 {% endif %}
 
 
+{% if response_variants and response_variants|length > 0 %}
+# Separate response variants by phase
+_PRE_FORWARD_VARIANTS = [v for v in _RESPONSE_VARIANTS if v["entity_name"] in {{ '{' }}{% for v in pre_forward_variants %}"{{ v.entity.name }}"{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}]
+_POST_FORWARD_VARIANTS = [v for v in _RESPONSE_VARIANTS if v["entity_name"] not in {{ '{' }}{% for v in pre_forward_variants %}"{{ v.entity.name }}"{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}]
+
+from typing import Tuple
+
+async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, str]) -> Tuple[Any, int]:
+    """
+    Two-phase mutation execution: pre-forward validation, then post-forward success.
+
+    Phase 1 (Pre-forward): Evaluate error/validation responses without calling target
+    Phase 2 (Post-forward): Call target, then evaluate success responses
+
+    Returns tuple of (response_data, status_code).
+    """
+{% else %}
 async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, str]) -> Dict[str, Any]:
     """
-    Main service function to execute the complete mutation flow.
+    Main service function to execute the complete mutation flow (single response).
 
     Returns the final payload or forwarding result.
     """
+{% endif %}
     {% if request_entity %}
     # Validate request body
     validated_body = validate_request_body(request_body)
@@ -340,55 +368,168 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
     # Initialize context
     context = seed_initial_context(validated_body, path_params)
 
-    # Execute the mutation pipeline
+    # Fetch validation sources and transform request
     await fetch_external_sources(context)
     await fetch_internal_dependencies(context)
     transform_entity_chain(context)
 
-    # Extract final payload
-    terminal_entity_name = "{{ terminal.name }}"
-    final_payload = context.get(terminal_entity_name, {})
+    {% if pre_forward_variants and pre_forward_variants|length > 0 %}
+    # ============================================================================
+    # PHASE 1: PRE-FORWARD - Evaluate validation/error responses
+    # ============================================================================
+    logger.info(f"[PHASE 1] - Evaluating {len(_PRE_FORWARD_VARIANTS)} pre-forward variant(s)")
 
-    logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
+    for variant_index, variant_config in enumerate(_PRE_FORWARD_VARIANTS, 1):
+        status_code = variant_config["status_code"]
+        entity_name = variant_config["entity_name"]
+        condition_expr = variant_config["condition"]
+        response_type = variant_config["response_type"]
+        entity_chain = variant_config["entity_chain"]
+
+        logger.debug(f"[PRE-FORWARD] - Variant {variant_index}: status={status_code}, entity={entity_name}")
+
+        # Compute this variant's entity chain
+        for step in entity_chain:
+            step_name = step["name"]
+            shaped_data = _shape_entity_data(step, context, step_name)
+            context[step_name] = shaped_data
+
+        # Check condition
+        if condition_expr:
+            try:
+                compiled_condition = compile_safe(condition_expr)
+                eval_globals = {**safe_globals, **context}
+                condition_result = eval(compiled_condition, eval_globals, {})
+                logger.debug(f"[CONDITION] - Pre-forward variant {variant_index} evaluated to: {condition_result}")
+
+                if condition_result:
+                    # Return immediately - skip target call
+                    logger.info(f"[PRE-FORWARD] - Matched variant {variant_index} (status={status_code}) - SKIPPING target call")
+                    final_attributes = context.get(entity_name, {})
+
+                    if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+                        if final_attributes:
+                            attribute_values = list(final_attributes.values())
+                            if attribute_values:
+                                return attribute_values[0], status_code
+                        return ([] if response_type == "array" else None), status_code
+                    else:
+                        return final_attributes, status_code
+            except Exception as e:
+                logger.error(f"[PRE-FORWARD] - Error evaluating condition: {e}")
+                raise HTTPException(status_code=500, detail="Failed to evaluate response condition")
+
+    logger.info(f"[PHASE 1] - No pre-forward variant matched, proceeding to forward")
+    {% endif %}
 
     {% if target %}
-    # Forward to external target
+    # ============================================================================
+    # FORWARD TO TARGET
+    # ============================================================================
+    {% if terminal_entity_config %}
+    # Compute terminal entity (excluded from main chain to avoid premature failures)
+    terminal_entity_name = "{{ terminal_entity_name }}"
+    logger.debug(f"[FORWARD] - Computing terminal entity: {terminal_entity_name}")
+    terminal_data = _shape_entity_data({{ terminal_entity_config }}, context, terminal_entity_name)
+    context[terminal_entity_name] = terminal_data
+    final_payload = terminal_data
+    {% elif terminal_entity_name %}
+    # Terminal entity already computed in main chain
+    terminal_entity_name = "{{ terminal_entity_name }}"
+    final_payload = context.get(terminal_entity_name, {})
+    {% else %}
+    final_payload = {}
+    {% endif %}
+    logger.info(f"[FORWARD] - Sending payload to target")
+
     target_response = await forward_to_target(final_payload, context)
 
-    {% if response_source_entity %}
-    {% if response_chain %}
-    # Process response through transformation chain
-    logger.info("[RESPONSE] - Processing response through transformation chain")
+    # Seed target response in context
+    {% if target_response_entity_name %}
+    context["{{ target_response_entity_name }}"] = target_response
+    logger.debug(f"[CONTEXT] - Seeded target response as {{ target_response_entity_name }}")
+    {% endif %}
+    {% endif %}
 
-    # Seed response data from external source
-    context["{{ response_source_entity.name }}"] = target_response
-    logger.debug(f"[CONTEXT] - Seeded response entity: {{ response_source_entity.name }}")
+    {% if post_forward_variants and post_forward_variants|length > 0 %}
+    # ============================================================================
+    # PHASE 2: POST-FORWARD - Evaluate success/transformation responses
+    # ============================================================================
+    logger.info(f"[PHASE 2] - Evaluating {len(_POST_FORWARD_VARIANTS)} post-forward variant(s)")
 
-    # Transform response through chain
-    for step_index, transform_step in enumerate(_RESPONSE_CHAIN, 1):
-        entity_name = transform_step["name"]
-        logger.debug(f"[RESPONSE] - Step {step_index}/{len(_RESPONSE_CHAIN)}: {entity_name}")
+    for variant_index, variant_config in enumerate(_POST_FORWARD_VARIANTS, 1):
+        status_code = variant_config["status_code"]
+        entity_name = variant_config["entity_name"]
+        condition_expr = variant_config["condition"]
+        response_type = variant_config["response_type"]
+        entity_chain = variant_config["entity_chain"]
 
-        shaped_data = _shape_entity_data(transform_step, context, entity_name)
-        context[entity_name] = shaped_data
-        logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
+        logger.debug(f"[POST-FORWARD] - Variant {variant_index}: status={status_code}, entity={entity_name}")
 
-    # Return the final transformed response entity
-    response_entity_name = "{{ response_entity.name }}"
-    final_response = context.get(response_entity_name, target_response)
-    logger.info(f"[SUCCESS] - Response processed through {response_entity_name}")
-    return final_response
+        # Compute this variant's entity chain (may depend on target response)
+        for step in entity_chain:
+            step_name = step["name"]
+            shaped_data = _shape_entity_data(step, context, step_name)
+            context[step_name] = shaped_data
+
+        # Check condition (if present)
+        should_return = False
+
+        if condition_expr:
+            try:
+                compiled_condition = compile_safe(condition_expr)
+                eval_globals = {**safe_globals, **context}
+                condition_result = eval(compiled_condition, eval_globals, {})
+                logger.debug(f"[CONDITION] - Post-forward variant {variant_index} evaluated to: {condition_result}")
+
+                if condition_result:
+                    should_return = True
+            except Exception as e:
+                logger.error(f"[POST-FORWARD] - Error evaluating condition: {e}")
+                raise HTTPException(status_code=500, detail="Failed to evaluate response condition")
+        else:
+            # No condition means default/fallback response
+            logger.debug(f"[CONDITION] - Variant {variant_index} is default (no condition)")
+            should_return = True
+
+        if should_return:
+            logger.info(f"[POST-FORWARD] - Matched variant {variant_index} (status={status_code}, entity={entity_name})")
+            final_attributes = context.get(entity_name, {})
+
+            # Unwrap response based on type
+            if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+                # Unwrap the single attribute
+                if final_attributes:
+                    attribute_values = list(final_attributes.values())
+                    if attribute_values:
+                        logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
+                        return attribute_values[0], status_code
+                # Empty response
+                return ([] if response_type == "array" else None), status_code
+            else:
+                # Return full entity attributes
+                return final_attributes, status_code
+
+    # No post-forward variant matched
+    logger.error(f"[PHASE 2] - No post-forward response matched!")
+    raise HTTPException(status_code=500, detail="No response condition matched")
+
     {% else %}
-    # No transformation needed, return response directly
-    logger.info(f"[SUCCESS] - Response entity matches source, no transformation needed")
+    # Single response (no variants) - return directly
+    {% if target %}
+    {% if response_entity %}
+    # Return target response (already seeded in context above)
+    logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (forwarded to target)")
+    return target_response
+    {% else %}
+    # No response entity, return raw target response
     return target_response
     {% endif %}
     {% else %}
-    # No response entity defined, return raw response
-    return target_response
-    {% endif %}
-    {% else %}
-    # Return final payload (no external target)
+    # No external target, return final payload
+    terminal_entity_name = "{{ terminal.name }}"
+    final_payload = context.get(terminal_entity_name, {})
     logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (internal)")
     return final_payload
+    {% endif %}
     {% endif %}

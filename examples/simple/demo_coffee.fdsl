@@ -41,9 +41,10 @@ end
 APIEndpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
   method: GET
-  response:
-    type: object
-    schema: CoffeeList
+  responses:
+    200:
+      type: object
+      schema: CoffeeList
 end
 
 // ----------- Components (UI bindings) -----------

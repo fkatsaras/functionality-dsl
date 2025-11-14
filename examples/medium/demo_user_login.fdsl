@@ -69,6 +69,14 @@ Entity NewUserPayload(UserRegisterRequest)
       };
 end
 
+// Validation entity with boolean flags for registration
+Entity RegistrationValidated(NewUserPayload, UsersListSchema)
+  attributes:
+    - usernameExists: boolean = any(UsersListSchema.users, u -> u["username"] == NewUserPayload.user["username"]);
+    - emailExists: boolean = any(UsersListSchema.users, u -> u["email"] == NewUserPayload.user["email"]);
+    - isValid: boolean = not usernameExists and not emailExists;
+end
+
 // Transform login request
 Entity LoginPayload(LoginRequest)
   attributes:
@@ -79,9 +87,11 @@ end
 // Find matching user for login validation
 Entity LoginCandidates(LoginPayload, UsersListSchema)
   attributes:
-    - match: object = find(UsersListSchema.users, u ->
+    - match: object? = find(UsersListSchema.users, u ->
         (u["username"] == LoginPayload.username and u["password"] == LoginPayload.password)
       );
+    - userExists: boolean = any(UsersListSchema.users, u -> u["username"] == LoginPayload.username);
+    - isValidLogin: boolean = match != null;
 end
 
 // Validated login data
@@ -94,12 +104,50 @@ end
 // Reset password transformation
 Entity ResetPasswordPayload(ResetPasswordRequest, UsersListSchema)
   attributes:
-    - user: object = find(UsersListSchema.users, u -> u["email"] == ResetPasswordRequest.email);
+    - user: object? = find(UsersListSchema.users, u -> u["email"] == ResetPasswordRequest.email);
     - email: string = ResetPasswordRequest.email;
     - newPassword: string = ResetPasswordRequest.newPassword;
+    - userFound: boolean = user != null;
 end
 
-// Response transformations - Convert raw responses to clean API responses
+// ============================================================
+// ERROR ENTITIES (Build error responses)
+// ============================================================
+
+// Registration conflict error
+Entity RegistrationConflictError(RegistrationValidated, NewUserPayload)
+  attributes:
+    - error: string = "Conflict";
+    - message: string = "Username already taken" if RegistrationValidated.usernameExists else "Email already registered";
+    - conflictField: string = "username" if RegistrationValidated.usernameExists else "email";
+end
+
+// Login authentication error
+Entity LoginAuthError(LoginPayload)
+  attributes:
+    - error: string = "Unauthorized";
+    - message: string = "Invalid password for user: " + LoginPayload.username;
+end
+
+// Login user not found error
+Entity LoginNotFoundError(LoginPayload)
+  attributes:
+    - error: string = "NotFound";
+    - message: string = "User not found: " + LoginPayload.username;
+    - resource: string = "user";
+end
+
+// Reset password not found error
+Entity ResetPasswordNotFoundError(ResetPasswordRequest)
+  attributes:
+    - error: string = "NotFound";
+    - message: string = "No user found with email: " + ResetPasswordRequest.email;
+    - resource: string = "user";
+end
+
+// ============================================================
+// RESPONSE ENTITIES (Success responses)
+// ============================================================
 Entity RegisterResponse(SuccessMessageResponse)
   attributes:
     - id: integer = SuccessMessageResponse.user["id"];
@@ -124,9 +172,10 @@ end
 Source<REST> UsersDB
   url: "http://dummydb:9000/db/users"
   method: GET
-  response:
-    type: object
-    schema: UsersListSchema
+  responses:
+    200:
+      type: object
+      schema: UsersListSchema
 end
 
 Source<REST> UserRegisterExternal
@@ -135,9 +184,10 @@ Source<REST> UserRegisterExternal
   request:
     type: object
     schema: NewUserPayload
-  response:
-    type: object
-    schema: SuccessMessageResponse
+  responses:
+    200:
+      type: object
+      schema: SuccessMessageResponse
 end
 
 Source<REST> UserLoginExternal
@@ -146,9 +196,10 @@ Source<REST> UserLoginExternal
   request:
     type: object
     schema: LoginValidated
-  response:
-    type: object
-    schema: LoginRawResponse
+  responses:
+    200:
+      type: object
+      schema: LoginRawResponse
 end
 
 Source<REST> ResetPasswordExternal
@@ -157,9 +208,10 @@ Source<REST> ResetPasswordExternal
   request:
     type: object
     schema: ResetPasswordRequest
-  response:
-    type: object
-    schema: SuccessMessageResponse
+  responses:
+    200:
+      type: object
+      schema: SuccessMessageResponse
 end
 
 Source<REST> UserUpdateExternal
@@ -171,9 +223,10 @@ Source<REST> UserUpdateExternal
   request:
     type: object
     schema: UserUpdateRequest
-  response:
-    type: object
-    schema: SuccessMessageResponse
+  responses:
+    200:
+      type: object
+      schema: SuccessMessageResponse
 end
 
 Source<REST> UserDeleteExternal
@@ -182,9 +235,10 @@ Source<REST> UserDeleteExternal
   parameters:
     path:
       - id: integer = UserDelete.id;
-  response:
-    type: object
-    schema: SuccessMessageResponse
+  responses:
+    200:
+      type: object
+      schema: SuccessMessageResponse
 end
 
 // ============================================================
@@ -195,45 +249,68 @@ end
 APIEndpoint<REST> UserList
   path: "/api/users"
   method: GET
-  response:
-    type: object
-    schema: UsersListSchema
+  responses:
+    200:
+      type: object
+      schema: UsersListSchema
 end
 
-// --- REGISTER ---
+// --- REGISTER (with conflict detection) ---
 APIEndpoint<REST> UserRegister
   path: "/api/users/register"
   method: POST
   request:
     type: object
     schema: UserRegisterRequest
-  response:
-    type: object
-    schema: RegisterResponse
+  responses:
+    201:
+      type: object
+      schema: RegisterResponse
+      when: RegistrationValidated.isValid == true
+    409:
+      type: object
+      schema: RegistrationConflictError
+      when: RegistrationValidated.isValid == false
 end
 
-// --- LOGIN ---
+// --- LOGIN (with auth/not found errors) ---
 APIEndpoint<REST> UserLogin
   path: "/api/users/login"
   method: POST
   request:
     type: object
     schema: LoginRequest
-  response:
-    type: object
-    schema: LoginResponse
+  responses:
+    200:
+      type: object
+      schema: LoginResponse
+      when: LoginCandidates.isValidLogin == true
+    401:
+      type: object
+      schema: LoginAuthError
+      when: LoginCandidates.userExists == true and LoginCandidates.isValidLogin == false
+    404:
+      type: object
+      schema: LoginNotFoundError
+      when: LoginCandidates.userExists == false
 end
 
-// --- RESET PASSWORD ---
+// --- RESET PASSWORD (with not found handling) ---
 APIEndpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   method: PUT
   request:
     type: object
     schema: ResetPasswordRequest
-  response:
-    type: object
-    schema: TransformedResponse
+  responses:
+    200:
+      type: object
+      schema: TransformedResponse
+      when: ResetPasswordPayload.userFound == true
+    404:
+      type: object
+      schema: ResetPasswordNotFoundError
+      when: ResetPasswordPayload.userFound == false
 end
 
 // --- UPDATE USER ---
@@ -246,9 +323,10 @@ APIEndpoint<REST> UserUpdate
   request:
     type: object
     schema: UserUpdateRequest
-  response:
-    type: object
-    schema: TransformedResponse
+  responses:
+    200:
+      type: object
+      schema: TransformedResponse
 end
 
 // --- DELETE USER ---
@@ -258,9 +336,10 @@ APIEndpoint<REST> UserDelete
   parameters:
     path:
       - id: integer
-  response:
-    type: object
-    schema: TransformedResponse
+  responses:
+    200:
+      type: object
+      schema: TransformedResponse
 end
 
 // ============================================================

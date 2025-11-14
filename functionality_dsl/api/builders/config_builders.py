@@ -81,14 +81,20 @@ def build_computed_parent_config(parent_entity, all_endpoints):
 
     for endpoint in all_endpoints:
         # Check if endpoint's response schema matches the parent entity
-        response_schema = get_response_schema(endpoint)
-        if response_schema and response_schema["type"] == "entity":
-            if response_schema["entity"].name == parent_entity.name:
-                path = get_route_path(endpoint)
-                return {
-                    "name": parent_entity.name,
-                    "endpoint": path,
-                }
+        response_schemas = get_response_schema(endpoint)  # Now returns a list of variants
+
+        if not response_schemas:
+            continue
+
+        # Check if ANY variant has an entity that matches the parent
+        for response_schema in response_schemas:
+            if response_schema and response_schema["type"] == "entity":
+                if response_schema["entity"].name == parent_entity.name:
+                    path = get_route_path(endpoint)
+                    return {
+                        "name": parent_entity.name,
+                        "endpoint": path,
+                    }
     return None
 
 

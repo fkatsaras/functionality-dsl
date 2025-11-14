@@ -89,7 +89,7 @@ SourceREST:
     'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
-    (response=ResponseBlock)?
+    (responses=ResponsesBlock)?
     ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
     ('auth:' auth=AuthBlock)?
   )
@@ -173,11 +173,26 @@ RequestBlock:
       'schema:' schema=SchemaRef
 ;
 
+// Single response block (for Sources - no status code, no condition)
 ResponseBlock:
   'response:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
       'schema:' schema=SchemaRef
+;
+
+// Single response variant with status code and optional when condition (for APIEndpoints)
+ResponseVariant:
+  status_code=INT ':'
+    (content_type=ContentType ':')?
+      'type:' type=AttrType
+      'schema:' schema=SchemaRef
+      ('when:' condition=Expr)?
+;
+
+// Multiple responses block
+ResponsesBlock:
+  'responses:' variants+=ResponseVariant+
 ;
 
 APIEndpointREST:
@@ -187,7 +202,7 @@ APIEndpointREST:
     'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
-    (response=ResponseBlock)?
+    (responses=ResponsesBlock)?
     ('summary:' summary=STRING)?
     ('auth:' auth=AuthBlock)?
   )

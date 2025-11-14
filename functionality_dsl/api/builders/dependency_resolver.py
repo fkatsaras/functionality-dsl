@@ -35,6 +35,13 @@ def resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_nam
 
         # External REST source
         if source and source_type == "REST":
+            # CRITICAL FIX: Skip sources that are mutation targets (have request: block)
+            # These entities come from the target response, not fetched separately
+            source_has_request = getattr(source, "request", None) is not None
+            if source_has_request:
+                print(f"[DEPENDENCY] Skipping mutation target source for {ancestor.name} ({source.url})")
+                continue
+
             rest_key = (ancestor.name, source.url)
             if rest_key not in seen_rest_keys:
                 seen_rest_keys.add(rest_key)
@@ -88,6 +95,12 @@ def resolve_universal_dependencies(entity, model, all_source_names):
     for related_entity in all_related:
         external_sources = collect_all_external_sources(related_entity, model)
         for dep_entity, dep_source in external_sources:
+            # CRITICAL FIX: Skip mutation target sources (same logic as resolve_dependencies_for_entity)
+            source_has_request = getattr(dep_source, "request", None) is not None
+            if source_has_request:
+                print(f"[UNIVERSAL] Skipping mutation target source for {dep_entity.name} ({dep_source.url})")
+                continue
+
             rest_key = (dep_entity.name, dep_source.url)
             if rest_key not in seen_keys:
                 seen_keys.add(rest_key)

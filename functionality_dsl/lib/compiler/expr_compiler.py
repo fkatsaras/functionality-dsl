@@ -45,6 +45,12 @@ def compile_expr_to_python(expr) -> str:
                 return ast.Constant(value=int(node))
             return ast.Constant(value=node)
         if isinstance(node, str):
+            # Check if this is a boolean keyword (from Bool rule in grammar)
+            if node in ('true', 'false'):
+                return ast.Constant(value=(node == 'true'))
+            # Check for null/none keywords
+            if node.lower() in ('null', 'none'):
+                return ast.Constant(value=None)
             return ast.Constant(value=node)
 
         # ---------------- Literals ----------------

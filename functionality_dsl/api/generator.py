@@ -73,20 +73,20 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         # Extract request/response schemas from new structure
         request_schema = get_request_schema(endpoint)
-        response_schema = get_response_schema(endpoint)
+        response_schemas = get_response_schema(endpoint)  # Now returns a list of variants
 
         print(f"\n--- Processing REST: {endpoint.name} ({method}) ---")
 
         if method == "GET":
-            # For GET requests, only response schema is used
+            # For GET requests, only response schemas are used
             generate_query_router(
-                endpoint, request_schema, response_schema, model, all_rest_endpoints,
+                endpoint, request_schema, response_schemas, model, all_rest_endpoints,
                 all_source_names, templates_dir, out_dir, server_config
             )
         else:
-            # For mutations (POST/PUT/PATCH/DELETE), both request and response are used
+            # For mutations (POST/PUT/PATCH/DELETE), both request and responses are used
             generate_mutation_router(
-                endpoint, request_schema, response_schema, model, all_rest_endpoints,
+                endpoint, request_schema, response_schemas, model, all_rest_endpoints,
                 all_source_names, templates_dir, out_dir, server_config
             )
 

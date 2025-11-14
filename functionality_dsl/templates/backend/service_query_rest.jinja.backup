@@ -1,10 +1,10 @@
 # ========================================================================
-# AUTO-GENERATED QUERY SERVICE (Multiple Responses Support)
+# AUTO-GENERATED QUERY SERVICE
 # ========================================================================
 
 import json
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from fastapi import HTTPException
 
@@ -41,7 +41,7 @@ _EXTERNAL_REST_SOURCES = [
 
 _INTERNAL_DEPENDENCIES = [
 {%- for dep in computed_parents | default([], true) %}
-    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}"},
+    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
 {%- endfor %}
 ]
 
@@ -58,32 +58,6 @@ _COMPUTATION_CHAIN = [
 
 {%- endfor %}
 ]
-
-{% if response_variants and response_variants|length > 0 %}
-# Response variants with conditions
-_RESPONSE_VARIANTS = [
-{%- for variant in response_variants %}
-    {
-        "status_code": {{ variant.status_code }},
-        "entity_name": "{{ variant.entity.name }}",
-        "condition": {{ variant.condition | tojson if variant.condition else "None" }},
-        "response_type": "{{ variant.response_type }}",
-        "entity_chain": [
-        {%- for step in variant.entity_chain %}
-            {
-                "name": "{{ step.name }}",
-                "attrs": [
-                {%- for attr in step.attrs %}
-                    {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
-                {%- endfor %}
-                ],
-            },
-        {%- endfor %}
-        ],
-    },
-{%- endfor %}
-]
-{% endif %}
 
 
 # ============================================================================
@@ -253,8 +227,7 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
 
         try:
             compiled_expr = compile_safe(attr_expr)
-            # Make previously computed attributes available as bare variables
-            eval_globals = {**safe_globals, **context, **shaped_data}
+            eval_globals = {**safe_globals, **context}
             shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
             logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
         except HTTPException:
@@ -273,97 +246,9 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
     return shaped_data
 
 
-{% if response_variants and response_variants|length > 0 %}
-async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any] = None, headers: Dict[str, str] = None) -> Tuple[Any, int]:
-    """
-    Main service function to execute the complete query flow with multiple response variants.
-
-    Returns tuple of (response_data, status_code).
-    """
-    context: Dict[str, Any] = {}
-
-    # Create endpoint parameter object for expressions (e.g., GetUserOrders.userId)
-    endpoint_params = {}
-    if path_params:
-        endpoint_params.update(path_params)
-    if query_params:
-        endpoint_params.update(query_params)
-    if headers:
-        endpoint_params.update(headers)
-
-    # Add endpoint parameter object to context
-    context["{{ endpoint.name }}"] = endpoint_params
-    logger.debug(f"[CONTEXT] - Created endpoint parameter object {{ endpoint.name }} with keys: {list(endpoint_params.keys())}")
-
-    # Execute the common query pipeline (sources + dependencies + base chain)
-    await fetch_external_sources(context)
-    await fetch_internal_dependencies(context)
-    compute_entity_chain(context)
-
-    # Evaluate response variants in order (first match wins)
-    logger.info(f"[RESPONSE] - Evaluating {len(_RESPONSE_VARIANTS)} response variant(s)")
-
-    for variant_index, variant_config in enumerate(_RESPONSE_VARIANTS, 1):
-        status_code = variant_config["status_code"]
-        entity_name = variant_config["entity_name"]
-        condition_expr = variant_config["condition"]
-        response_type = variant_config["response_type"]
-        entity_chain = variant_config["entity_chain"]
-
-        logger.debug(f"[RESPONSE] - Variant {variant_index}: status={status_code}, entity={entity_name}")
-
-        # Compute this variant's entity chain
-        for step in entity_chain:
-            step_name = step["name"]
-            shaped_data = _shape_entity_data(step, context, step_name)
-            context[step_name] = shaped_data
-
-        # Check condition (if present)
-        should_return = False
-
-        if condition_expr:
-            try:
-                compiled_condition = compile_safe(condition_expr)
-                eval_globals = {**safe_globals, **context}
-                condition_result = eval(compiled_condition, eval_globals, {})
-                logger.debug(f"[CONDITION] - Variant {variant_index} condition evaluated to: {condition_result}")
-
-                if condition_result:
-                    should_return = True
-            except Exception as e:
-                logger.error(f"[CONDITION] - Error evaluating condition for variant {variant_index}: {e}")
-                raise HTTPException(status_code=500, detail="Failed to evaluate response condition")
-        else:
-            # No condition means default/fallback response
-            logger.debug(f"[CONDITION] - Variant {variant_index} is default (no condition)")
-            should_return = True
-
-        if should_return:
-            logger.info(f"[RESPONSE] - Selected variant {variant_index} (status={status_code}, entity={entity_name})")
-            final_attributes = context.get(entity_name, {})
-
-            # Unwrap response based on type
-            if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
-                # Unwrap the single attribute
-                if final_attributes:
-                    attribute_values = list(final_attributes.values())
-                    if attribute_values:
-                        logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
-                        return attribute_values[0], status_code
-                # Empty response
-                return ([] if response_type == "array" else None), status_code
-            else:
-                # Return full entity attributes
-                return final_attributes, status_code
-
-    # No condition matched
-    logger.error(f"[RESPONSE] - No response condition matched!")
-    raise HTTPException(status_code=500, detail="No response condition matched")
-
-{% else %}
 async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any] = None, headers: Dict[str, str] = None) -> Dict[str, Any]:
     """
-    Main service function to execute the complete query flow (single response).
+    Main service function to execute the complete query flow.
 
     Returns the final computed entity.
     """
@@ -394,5 +279,19 @@ async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any
     logger.info(f"[SUCCESS] - Query {final_entity_name} completed successfully")
     logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
 
+    # Unwrap response based on type
+    {% if response_type in ('string', 'number', 'integer', 'boolean', 'array') %}
+    # Response type is {{ response_type }} - unwrap the single attribute
+    if final_attributes:
+        # Get the first (and should be only) attribute value
+        attribute_values = list(final_attributes.values())
+        if attribute_values:
+            unwrapped = attribute_values[0]
+            logger.debug(f"[UNWRAP] - Unwrapped {{ response_type }} response")
+            return unwrapped
+    logger.warning(f"[UNWRAP] - No attributes found for {{ response_type }} response, returning empty")
+    return [] if "{{ response_type }}" == "array" else None
+    {% else %}
+    # Response type is object - return full entity attributes
     return final_attributes
-{% endif %}
+    {% endif %}

@@ -37,45 +37,70 @@ def get_request_schema(endpoint):
     return None
 
 
-def get_response_schema(endpoint):
+def get_response_schema(endpoint_or_source):
     """
-    Extract response schema from endpoint.
-    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str}
+    Extract response schemas from endpoint or source (multiple variants with status codes and conditions).
+    Works for both APIEndpoints and Sources.
+
+    Returns list of dicts, each with: {
+        status_code: int,
+        condition: Expression|None,
+        type: 'entity'|'inline',
+        entity: Entity|None,
+        inline_spec: dict|None,
+        response_type: str,
+        content_type: str
+    }
+    Returns None if no responses defined.
     """
-    response = getattr(endpoint, "response", None)
-    if not response:
+    responses = getattr(endpoint_or_source, "responses", None)
+    if not responses:
         return None
 
-    schema = getattr(response, "schema", None)
-    if not schema:
+    variants = getattr(responses, "variants", []) or []
+    if not variants:
         return None
 
-    # Extract the response type (string, number, integer, boolean, array, object)
-    response_type = getattr(response, "type", "object")  # Default to object if not specified
+    result = []
 
-    # Check if it's an entity reference
-    entity = getattr(schema, "entity", None)
-    if entity:
-        return {
-            "type": "entity",
-            "entity": entity,
-            "inline_spec": None,
-            "content_type": getattr(response, "content_type", "application/json"),
-            "response_type": response_type
-        }
+    for variant in variants:
+        status_code = getattr(variant, "status_code", None)
+        condition = getattr(variant, "condition", None)
+        schema = getattr(variant, "schema", None)
+        response_type = getattr(variant, "type", "object")
+        content_type = getattr(variant, "content_type", "application/json")
 
-    # Check if it's an inline type
-    inline_type = getattr(schema, "inline_type", None)
-    if inline_type:
-        return {
-            "type": "inline",
-            "entity": None,
-            "inline_spec": parse_inline_type(inline_type),
-            "content_type": getattr(response, "content_type", "application/json"),
-            "response_type": response_type
-        }
+        if not schema:
+            continue
 
-    return None
+        # Check if it's an entity reference
+        entity = getattr(schema, "entity", None)
+        if entity:
+            result.append({
+                "status_code": status_code,
+                "condition": condition,
+                "type": "entity",
+                "entity": entity,
+                "inline_spec": None,
+                "content_type": content_type,
+                "response_type": response_type
+            })
+            continue
+
+        # Check if it's an inline type
+        inline_type = getattr(schema, "inline_type", None)
+        if inline_type:
+            result.append({
+                "status_code": status_code,
+                "condition": condition,
+                "type": "inline",
+                "entity": None,
+                "inline_spec": parse_inline_type(inline_type),
+                "content_type": content_type,
+                "response_type": response_type
+            })
+
+    return result if result else None
 
 
 def get_subscribe_schema(endpoint_or_source):

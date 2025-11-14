@@ -197,7 +197,8 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
 
         compiled = compile_safe(attr_expr)
         try:
-            eval_globals = {**safe_globals, **context}
+            # Make previously computed attributes available as bare variables
+            eval_globals = {**safe_globals, **context, **shaped}
             shaped[attr_name] = eval(compiled, eval_globals, {})
             logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
         except HTTPException:

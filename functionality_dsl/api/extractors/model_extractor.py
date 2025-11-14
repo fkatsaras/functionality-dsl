@@ -41,20 +41,22 @@ def find_source_for_entity(entity, model):
 
     # Check REST sources
     for source in get_children_of_type("SourceREST", model):
-        response_schema = get_response_schema(source)
-        if response_schema:
-            # Direct entity reference
-            if response_schema["type"] == "entity":
-                if response_schema["entity"].name == entity.name:
-                    return (source, "REST")
-            # Inline type with entity reference (array<Entity>)
-            elif response_schema["type"] == "inline":
-                inline_spec = response_schema["inline_spec"]
-                if inline_spec and inline_spec.get("is_array"):
-                    item_type = inline_spec.get("item_type")
-                    if item_type and item_type["type"] == "entity":
-                        if item_type["entity"].name == entity.name:
-                            return (source, "REST")
+        response_schemas = get_response_schema(source)
+        if response_schemas:
+            # Check all response variants (typically sources have just one)
+            for response_schema in response_schemas:
+                # Direct entity reference
+                if response_schema["type"] == "entity":
+                    if response_schema["entity"].name == entity.name:
+                        return (source, "REST")
+                # Inline type with entity reference (array<Entity>)
+                elif response_schema["type"] == "inline":
+                    inline_spec = response_schema["inline_spec"]
+                    if inline_spec and inline_spec.get("is_array"):
+                        item_type = inline_spec.get("item_type")
+                        if item_type and item_type["type"] == "entity":
+                            if item_type["entity"].name == entity.name:
+                                return (source, "REST")
 
     # Check WS sources (subscribe schema = entity coming FROM external source into our system)
     for source in get_children_of_type("SourceWS", model):
