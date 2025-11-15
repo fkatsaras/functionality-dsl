@@ -4,6 +4,23 @@
 
 FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications. The main focus is the backend API. UI is just for visualization purposes.
 
+## Quick Architecture Summary
+
+**Core Concept:** FDSL is a declarative data transformation pipeline. You define entities that transform data as it flows from external sources to your API clients (or vice versa for mutations).
+
+**Key Components:**
+- **Sources** - External REST/WebSocket APIs you integrate with
+- **Endpoints** - Your internal API that clients call
+- **Entities** - Data transformation layers (schema → computed attributes)
+- **Parameters** - Explicit mapping from Endpoints to Sources using expressions
+
+**Data Flow Patterns:**
+- **REST Query**: `External API → Source Entity → Transform Entities → Endpoint Entity → Client`
+- **REST Mutation**: `Client → Request Entity → Validation → Transform Entities → Source → External API`
+- **WebSocket**: Separate publish/subscribe chains with transformation layers
+
+**Execution Model:** The generator uses topological sort to compute entities in dependency order, evaluating expressions with restricted `eval()` in a controlled context.
+
 ---
 
 ## Core Concepts
@@ -657,8 +674,11 @@ The FDSL validator enforces:
 
 ### Runtime Behavior
 
+**Complete Request/Response Cycle:**
+
 1. **HTTP Request** arrives at Endpoint
-2. **Endpoint parameter object** created in context:
+2. **Pydantic validates** request body (if POST/PUT/PATCH) against request entity schema
+3. **Endpoint parameter object** created in context:
    ```python
    GetUserOrders = {
        "userId": "user-001",
@@ -666,14 +686,23 @@ The FDSL validator enforces:
        "page": 1
    }
    ```
-3. **Source parameter expressions** evaluated:
+4. **Source parameter expressions** evaluated:
    ```python
    user_id = GetUserOrders["userId"]  # "user-001"
    status = GetUserOrders["status"] if GetUserOrders["status"] else "all"  # "pending"
    ```
-4. **HTTP request** made to external source with evaluated parameters
-5. **Response** processed and stored in context
-6. **Entity transformations** executed with access to both sources and endpoint parameters
+5. **HTTP request** made to external source with evaluated parameters
+6. **Response** wrapped in schema entity and stored in context
+7. **Entity transformations** computed in topological order:
+   ```python
+   context = {
+       "SourceEntity": source_response,
+       "GetUserOrders": endpoint_params,
+       "dsl_funcs": DSL_FUNCTION_REGISTRY
+   }
+   computed_attr = eval(compiled_expression, {"__builtins__": {}}, context)
+   ```
+8. **Final response entity** returned to client (auto-serialized by Pydantic)
 
 ### Benefits
 
@@ -832,25 +861,26 @@ end
 **Flow visualization:**
 ```
 Client sends "hello"
-  ↓ (publish)
+  ↓ (publish - inbound to server)
 OutgoingWrapper {value: "hello"}
   ↓ (transform)
 OutgoingProcessed {text: "HELLO"}
-  ↓ (forward to external)
+  ↓ (forward to external via Source.publish)
 External Echo Service
-  ↓ (echo back)
+  ↓ (echo back to Source.subscribe)
 EchoWrapper {text: "HELLO"}
   ↓ (transform)
 EchoProcessed {text: "hello"}
-  ↓ (subscribe)
+  ↓ (subscribe - outbound to client)
 Client receives {text: "hello"}
 ```
 
-**Key points:**
+**WebSocket Runtime Model:**
+- **Publish chain** (Client → External): Endpoint.publish entity → transformations → Source.publish entity (terminal)
+- **Subscribe chain** (External → Client): Source.subscribe entity → transformations → Endpoint.subscribe entity (terminal)
 - Wrapper entities (single attribute, no expression) auto-wrap primitive values from clients
-- The framework automatically forwards terminal entities to external targets
-- Inbound chain: Endpoint.publish → ... → Source.publish (terminal entity)
-- Outbound chain: Source.subscribe → ... → Endpoint.subscribe (terminal entity)
+- Framework maintains persistent connections to external WS sources via `channel:` field
+- Uses bus-based pub/sub for message distribution between chains
 
 ---
 
@@ -1017,21 +1047,48 @@ fdsl generate my-api.fdsl --out generated/
 
 ## Key Implementation Details
 
-### 1. **Entity Types**
-- **Pure Schema Entities**: No expressions, just type declarations. Used for request/response schemas.
-- **Transformation Entities**: Have computed attributes with expressions. Transform data.
-- **Wrapper Entities**: Wrap primitive or array responses from sources.
+### 1. **Entity Types** (Critical Concept)
 
-### 2. **Source → Entity Mapping**
+**Pure Schema Entities** (no expressions):
+- Used as **direct responses** from Sources (REST/WebSocket)
+- Used as **request bodies** for Endpoints (POST/PUT/PATCH)
+- Only type declarations: `- name: string;` (note the semicolon!)
+- Cannot have expressions or reference other entities
+- Example: `Entity ProductSchema { attributes: - id: string; - name: string; }`
+
+**Wrapper Entities** (single attribute, no expression):
+- Required for `type: array` or `type: <primitive>` responses
+- Must have EXACTLY ONE attribute
+- Auto-wrap values from sources/clients
+- Example: `Entity ItemsWrapper { attributes: - items: array<Product>; }`
+
+**Transformation Entities** (with expressions):
+- Inherit from parent entities: `Entity Computed(Parent1, Parent2)`
+- Compute new attributes: `- total: number = sum(items);`
+- Can access endpoint parameters: `GetEndpoint.paramName`
+- All attributes must have expressions (no mixing with schema-only)
+- Example: `Entity ProductView(ProductRaw) { attributes: - count: integer = len(ProductRaw.items); }`
+
+**Key Rule:** Entities that are direct Source responses MUST be pure schema (no expressions). Create a child entity for transformations.
+
+### 2. **Naming Convention Changes** (Updated 2025-11)
+- **Old:** `APIEndpoint<REST>`, `APIEndpoint<WS>`
+- **New:** `Endpoint<REST>`, `Endpoint<WS>`
+- **Old keywords:** `schema:`, `message:`
+- **New keyword:** `entity:` (unified for all request/response/subscribe/publish blocks)
+- Component validators updated: Look for `EndpointREST`/`EndpointWS` class names (not `APIEndpointREST`)
+
+### 3. **Source → Entity Mapping**
 - Sources specify which entity they provide via `response: entity: EntityName`
-- Wrapper entities handle array/primitive responses
-- Path parameters flow automatically by name matching
+- For `type: array`, entity must be a wrapper with single array attribute
+- For `type: object`, entity can have multiple attributes
+- Path parameters flow explicitly via expressions: `- id: string = GetEndpoint.id;`
 
-### 3. **Expression Compilation**
+### 4. **Expression Compilation**
 - FDSL expressions compile to Python code
-- Evaluated safely at runtime using restricted `eval()`
-- All entity references available in flat namespace
-- Lambdas require special scoping
+- Evaluated safely at runtime using restricted `eval()` with `{"__builtins__": {}}`
+- Context contains: entity references, endpoint params, `dsl_funcs` registry
+- Lambdas get special scoping: `(lambda x: x["field"])`
 
 ### 4. **Entity Computation Order**
 - Generator uses topological sort for dependency resolution
@@ -1070,15 +1127,73 @@ fdsl generate my-api.fdsl --out generated/
 5. **Test sources directly** - Use curl to verify external services work
 6. **Use safe access** - Use `get()` function for optional/nested fields
 
+## Common Validation Errors (Fixed in Nov 2025)
+
+**Error: "Entity 'X' attribute 'Y' references Source 'Z'. Entities directly sourced from external Sources should be pure schema entities"**
+- **Cause:** Schema entity has expressions like `- hourly: object = SourceName["field"];`
+- **Fix:** Remove the expression, make it pure: `- hourly: object;`
+- **Pattern:** Source response entities must be schema-only. Create a child entity for transformations.
+
+**Error: "Chart component requires Endpoint<REST>, got EndpointREST"**
+- **Cause:** `component_types.py` checking for old `APIEndpointREST` class name
+- **Fix:** Update validators to check for `EndpointREST` and `EndpointWS`
+- **Files:** `functionality_dsl/lib/component_types.py:222, 282, 315`
+
+**Error: "Expected ID" at Chart xLabel/yLabel**
+- **Cause:** Chart labels need TypedLabel syntax, not plain strings
+- **Wrong:** `xLabel: "Time"`
+- **Correct:** `xLabel: string "Time"` or `xLabel: string<datetime> "Time"`
+- **Pattern:** `typename (<format>)? STRING`
+
+**Error: Component type not found (e.g., LineChart)**
+- **Cause:** Using wrong component name
+- **Fix:** Use `Chart` (for REST) or `LiveChart` (for WebSocket), not `LineChart`
+- **Grammar:** See `component.tx` for valid component types
+
 ---
 
-## Resources
+## Key Files & Architecture
 
-- Grammar: `functionality_dsl/grammar/entity.tx`, `functionality_dsl/grammar/component.tx`
-- Compiler: `functionality_dsl/lib/compiler/expr_compiler.py`
-- Generator: `functionality_dsl/api/generators/`
-- Built-ins: `functionality_dsl/lib/builtins/`
-- Templates: `functionality_dsl/templates/backend/`
+### Grammar & Language
+- **`functionality_dsl/grammar/`** - TextX grammar definitions
+  - `entity.tx` - Entities, Sources, Endpoints (renamed from APIEndpoint)
+  - `component.tx` - UI components (Table, Chart, LiveChart, etc.)
+  - `expression.tx` - Expression language grammar
+  - `model.tx` - Top-level model structure
+- **`functionality_dsl/language.py`** - Metamodel setup, object processors, validators
+
+### Expression System
+- **`functionality_dsl/lib/compiler/expr_compiler.py`** - Compiles FDSL expressions to Python
+- **`functionality_dsl/lib/builtins/`** - Built-in function registry
+  - `core_funcs.py` - len, get, str, range, zip, etc.
+  - `math_funcs.py` - avg, sum, min, max, mean, median, stddev, floor, ceil, clamp, toNumber, toInt, toBool
+  - `string_funcs.py` - upper, lower, trim, split, join, replace, etc.
+  - `time_funcs.py` - now, today, formatDate, parseDate, addDays, daysBetween, etc.
+  - `json_funcs.py` - toJson, fromJson, pick, omit, merge, keys, values, entries, hasKey, getPath
+  - `collection_funcs.py` - map, filter, find, all, any, enumerate
+  - `validation_funcs.py` - Validator decorators
+  - `registry.py` - Combines all function groups into DSL_FUNCTION_REGISTRY
+
+### Code Generation
+- **`functionality_dsl/api/generators/`** - Code generators
+  - `rest_generator.py` - Generates FastAPI routers for REST endpoints
+  - `websocket_generator.py` - Generates WebSocket routers
+  - `entity_generator.py` - Generates Pydantic models from entities
+  - `service_generator.py` - Generates business logic services
+- **`functionality_dsl/templates/backend/`** - Jinja2 templates for code generation
+
+### Component Validation
+- **`functionality_dsl/lib/component_types.py`** - Component type validators
+  - Validates Chart requires `EndpointREST` (not `APIEndpointREST` - updated in recent session)
+  - Validates LiveChart requires `EndpointWS`
+  - Handles TypedLabel parsing for chart axes
+
+### Examples & Demos
+- **`examples/`** - Reorganized demo structure (flat, descriptive folders)
+  - Each demo has: `main.fdsl`, `README.md`, optional `run.sh` + `dummy-service/`
+  - No more simple/medium/advanced distinction
+  - Examples: `rest-basics/`, `user-management/`, `iot-sensors/`, `websocket-chat/`, etc.
+  - See `examples/README.md` for complete catalog with learning path
 
 ---
 
