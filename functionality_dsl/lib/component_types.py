@@ -16,7 +16,7 @@ class _BaseComponent:
     def __init__(self, parent=None, name=None, endpoint=None):
         self.parent = parent
         self.name = name
-        self.endpoint = endpoint  # InternalEndpoint node (APIEndpoint<REST>/APIEndpoint<WS>)
+        self.endpoint = endpoint  # InternalEndpoint node (Endpoint<REST>/Endpoint<WS>)
 
     @property
     def kind(self):
@@ -220,7 +220,7 @@ class ChartComponent(_BaseComponent):
 
         # Validate: Chart only works with REST endpoints
         if endpoint.__class__.__name__ != "APIEndpointREST":
-            raise ValueError(f"Component '{name}': Chart component requires APIEndpoint<REST>, got {endpoint.__class__.__name__}")
+            raise ValueError(f"Component '{name}': Chart component requires Endpoint<REST>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):
         """Parse TypedLabel node into dict with type, format, and text."""
@@ -280,7 +280,7 @@ class LiveChartComponent(_BaseComponent):
 
         # Validate: LiveChart only works with WebSocket endpoints
         if endpoint.__class__.__name__ != "APIEndpointWS":
-            raise ValueError(f"Component '{name}': LiveChart component requires APIEndpoint<WS>, got {endpoint.__class__.__name__}")
+            raise ValueError(f"Component '{name}': LiveChart component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):
         """Parse TypedLabel node into dict with type, format, and text."""
@@ -307,7 +307,7 @@ class LiveChartComponent(_BaseComponent):
 @register_component
 class ActionFormComponent(_BaseComponent):
     """
-    Now binds to an APIEndpoint<REST> endpoint via 'endpoint:' (grammar already changed).
+    Now binds to an Endpoint<REST> endpoint via 'endpoint:' (grammar already changed).
     """
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, pathKey=None, submitLabel=None, method=None):
         super().__init__(parent, name, None)
@@ -322,7 +322,7 @@ class ActionFormComponent(_BaseComponent):
         self.method = (method or method_from_action).upper()
 
         if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
 
     def to_props(self):
         """
@@ -356,7 +356,7 @@ class ActionFormComponent(_BaseComponent):
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>
-      endpoint: <APIEndpoint<WS> or APIEndpoint<REST> exposing computed entity>
+      endpoint: <Endpoint<WS> or Endpoint<REST> exposing computed entity>
       value:  data.<attr>           # required
       min/max/label/unit: optional
     """
@@ -395,7 +395,7 @@ class GaugeComponent(_BaseComponent):
 class InputComponent(_BaseComponent):
     """
     <Component<Input> ...>
-      endpoint: <APIEndpoint<WS> (sink)>
+      endpoint: <Endpoint<WS> (sink)>
       label: optional label
       placeholder: optional placeholder text
       initial: optional initial value
@@ -408,7 +408,7 @@ class InputComponent(_BaseComponent):
         self.submitLabel = _strip_quotes(submitLabel)
 
         if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<WS> endpoint.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS> endpoint.")
 
     def to_props(self):
         return {
@@ -458,7 +458,7 @@ class LiveViewComponent(_BaseComponent):
 class ToggleComponent(_BaseComponent):
     """
     <Component<Toggle> ...>
-      endpoint: <APIEndpoint<REST>>
+      endpoint: <Endpoint<REST>>
       label/onLabel/offLabel/field/initial
     """
     def __init__(
@@ -480,7 +480,7 @@ class ToggleComponent(_BaseComponent):
 
         if endpoint is None:
             raise ValueError(
-                f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST> endpoint."
+                f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint."
             )
 
     def to_props(self):
@@ -496,14 +496,14 @@ class ToggleComponent(_BaseComponent):
 class ObjectViewComponent(_BaseComponent):
     """
     <Component<ObjectView> ...>
-      endpoint: <APIEndpoint<REST>>
+      endpoint: <Endpoint<REST>>
       fields: ["id", "name", ...]
       label: optional string label
     """
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, label=None):
         super().__init__(parent, name, endpoint)
         if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST>.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST>.")
 
         # unwrap StringList (from DSL grammar)
         if hasattr(fields, "items"):
@@ -553,7 +553,7 @@ class PageViewComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, label=None):
         super().__init__(parent, name, endpoint)
         if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' APIEndpoint<REST>.")
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST>.")
 
         # unwrap StringList (from DSL grammar)
         if hasattr(fields, "items"):

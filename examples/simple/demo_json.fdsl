@@ -30,7 +30,7 @@ Source<REST> RealObjects
   method: GET
   response:
     type: array
-    schema: RealObjectsWrapper
+    entity: RealObjectsWrapper
 end
 
 Entity RealObjectsRows(RealObjectsWrapper)
@@ -47,12 +47,12 @@ Entity RealObjectsRows(RealObjectsWrapper)
       );
 end
 // --- Internal endpoint -----------------------------------------
-APIEndpoint<REST> RealObjectsList
+Endpoint<REST> RealObjectsList
   path: "/api/objects"
   method: GET
   response:
     type: object
-    schema: RealObjectsRows
+    entity: RealObjectsRows
 end
 
 // --- Components ------------------------------------------------

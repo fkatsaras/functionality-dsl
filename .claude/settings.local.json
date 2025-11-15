@@ -68,7 +68,9 @@
       "Bash(docker exec:*)",
       "Bash(docker network:*)",
       "Bash(python:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npx --version)",
+      "Bash(npx @vscode/vsce package:*)"
     ],
     "deny": [],
     "ask": []

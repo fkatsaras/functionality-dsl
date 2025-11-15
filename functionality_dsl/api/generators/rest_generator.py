@@ -15,7 +15,7 @@ from ..extractors import find_source_for_entity, find_target_for_entity
 
 
 def generate_query_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
-    """Generate a query (GET) router for an APIEndpoint<REST>."""
+    """Generate a query (GET) router for an Endpoint<REST>."""
     route_path = get_route_path(endpoint)
     path_params = extract_path_params(route_path)
 
@@ -100,7 +100,7 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
 
 
 def generate_mutation_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
-    """Generate a mutation (POST/PUT/DELETE) router for an APIEndpoint<REST>."""
+    """Generate a mutation (POST/PUT/DELETE) router for an Endpoint<REST>."""
     route_path = get_route_path(endpoint)
     method = getattr(endpoint, "method", "POST").upper()
     path_params = extract_path_params(route_path)

@@ -20,7 +20,7 @@ Source<WS> EchoBearer
   channel: "ws://host.docker.internal:8765"
   subscribe:
     type: object
-    message: EchoRaw
+    entity: EchoRaw
   auth:
     type: bearer
     token: "secret123"
@@ -35,19 +35,19 @@ end
 
 // --- Internal WebSocket endpoints ----------------------------
 // Public endpoint - no client auth required
-APIEndpoint<WS> PublicEcho
+Endpoint<WS> PublicEcho
   channel: "/api/ws/echo/public"
   subscribe:
     type: object
-    message: EchoProcessed
+    entity: EchoProcessed
 end
 
 // Protected endpoint - clients must authenticate with bearer token
-APIEndpoint<WS> ProtectedEcho
+Endpoint<WS> ProtectedEcho
   channel: "/api/ws/echo/protected"
   subscribe:
     type: object
-    message: EchoProcessed
+    entity: EchoProcessed
   auth:
     type: bearer
     token: "required"

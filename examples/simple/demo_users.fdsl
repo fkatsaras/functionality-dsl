@@ -14,12 +14,12 @@ end
 
 
 // --- Internal endpoints ----------------------------------------
-APIEndpoint<REST> CreateUserEndpoint
+Endpoint<REST> CreateUserEndpoint
   path: "/api/users"
   method: POST
   request:
     type: object
-    schema: User
+    entity: User
 end
 
 // --- Base entity ; consumes direct call ------------------------------
@@ -57,5 +57,5 @@ Source<REST> UserCreate
   method: POST
   request:
     type: object
-    schema: UserNormalized3
+    entity: UserNormalized3
 end

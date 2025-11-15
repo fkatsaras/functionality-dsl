@@ -15,16 +15,16 @@ end
 // ============================================
 
 // List all orders (parameter-free for Table component)
-APIEndpoint<REST> ListAllOrders
+Endpoint<REST> ListAllOrders
   path: "/api/orders"
   method: GET
   response:
     type: object
-    schema: AllOrdersView
+    entity: AllOrdersView
 end
 
 // Get specific user's orders with details (parameterized for ObjectView)
-APIEndpoint<REST> GetUserOrders
+Endpoint<REST> GetUserOrders
   path: "/api/users/{userId}/orders"
   method: GET
   parameters:
@@ -37,23 +37,23 @@ APIEndpoint<REST> GetUserOrders
       - page: integer?
   response:
     type: object
-    schema: UserOrdersView
+    entity: UserOrdersView
 end
 
 // Create new order
-APIEndpoint<REST> CreateOrder
+Endpoint<REST> CreateOrder
   path: "/api/orders"
   method: POST
   request:
     type: object
-    schema: CreateOrderRequest
+    entity: CreateOrderRequest
   response:
     type: object
-    schema: CreatedOrderResponse
+    entity: CreatedOrderResponse
 end
 
 // Update order status
-APIEndpoint<REST> UpdateOrderStatus
+Endpoint<REST> UpdateOrderStatus
   path: "/api/orders/{orderId}/status"
   method: PATCH
   parameters:
@@ -61,14 +61,14 @@ APIEndpoint<REST> UpdateOrderStatus
       - orderId: string
   request:
     type: object
-    schema: UpdateStatusRequest
+    entity: UpdateStatusRequest
   response:
     type: object
-    schema: UpdatedOrderResponse
+    entity: UpdatedOrderResponse
 end
 
 // Add item to existing order
-APIEndpoint<REST> AddOrderItem
+Endpoint<REST> AddOrderItem
   path: "/api/orders/{orderId}/items"
   method: POST
   parameters:
@@ -76,10 +76,10 @@ APIEndpoint<REST> AddOrderItem
       - orderId: string
   request:
     type: object
-    schema: AddItemRequest
+    entity: AddItemRequest
   response:
     type: object
-    schema: UpdatedOrderResponse
+    entity: UpdatedOrderResponse
 end
 
 // ============================================
@@ -92,7 +92,7 @@ Source<REST> AllOrdersSource
   method: GET
   response:
     type: array
-    schema: OrderListWrapper
+    entity: OrderListWrapper
 end
 
 // Fetch user profile from User Service
@@ -104,7 +104,7 @@ Source<REST> UserProfile
       - userId: string = GetUserOrders.userId;
   response:
     type: object
-    schema: UserData
+    entity: UserData
 end
 
 // Fetch ALL orders from Order Service (no filtering - dumb source)
@@ -113,7 +113,7 @@ Source<REST> OrderHistory
   method: GET
   response:
     type: array
-    schema: OrderListWrapper
+    entity: OrderListWrapper
 end
 
 // Create order in external service
@@ -122,10 +122,10 @@ Source<REST> CreateOrderTarget
   method: POST
   request:
     type: object
-    schema: CreateOrderPayload
+    entity: CreateOrderPayload
   response:
     type: object
-    schema: CreatedOrder
+    entity: CreatedOrder
 end
 
 // Update order status in external service
@@ -137,10 +137,10 @@ Source<REST> UpdateStatusTarget
       - orderId: string = UpdateOrderStatus.orderId;
   request:
     type: object
-    schema: StatusPayload
+    entity: StatusPayload
   response:
     type: object
-    schema: UpdatedOrder
+    entity: UpdatedOrder
 end
 
 // Add item to order in external service
@@ -152,10 +152,10 @@ Source<REST> AddItemTarget
       - orderId: string = AddOrderItem.orderId;
   request:
     type: object
-    schema: ItemPayload
+    entity: ItemPayload
   response:
     type: object
-    schema: UpdatedOrder
+    entity: UpdatedOrder
 end
 
 // ============================================

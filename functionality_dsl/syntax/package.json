@@ -2,10 +2,13 @@
   "name": "functionality-dsl-highlighter",
   "displayName": "Functionality DSL Highlighter",
   "publisher": "fotiskatsaras",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "engines": { "vscode": "^1.70.0" },
   "license": "MIT",
   "repository": {"type": "git","url": "https://github.com/fkatsaras/functionality-dsl"},
+  "description": "Syntax highlighting for Functionality DSL - declarative REST/WebSocket API specification language",
+  "categories": ["Programming Languages"],
+  "keywords": ["fdsl", "dsl", "api", "rest", "websocket", "code-generation"],
   "contributes": {
     "languages": [
       {

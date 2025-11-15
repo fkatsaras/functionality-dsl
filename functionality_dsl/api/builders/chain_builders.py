@@ -73,7 +73,7 @@ def _get_ws_source_parents(entity, model):
 
 def _find_ws_terminal_entity(entity_out, model):
     """
-    Starting from an APIEndpoint<WS>.publish entity, walk forward to find
+    Starting from an Endpoint<WS>.publish entity, walk forward to find
     the Source<WS>.subscribe entity that eventually consumes it.
     Returns the consuming entity if found, otherwise returns entity_out.
     """
@@ -99,7 +99,7 @@ def _find_ws_terminal_entity(entity_out, model):
 
 def _find_inbound_terminal_entity(entity_in, model):
     """
-    Starting from an APIEndpoint<WS>.publish entity, walk forward to find
+    Starting from an Endpoint<WS>.publish entity, walk forward to find
     the terminal entity that gets sent to external Source<WS>.publish.
     Returns the terminal entity if found, otherwise returns entity_in.
     """
@@ -125,7 +125,7 @@ def _find_inbound_terminal_entity(entity_in, model):
 def build_inbound_chain(entity_in, model, all_source_names):
     """
     Build the inbound computation chain for WebSocket messages.
-    Handles Source<WS>, APIEndpoint<WS>, and pure computed entities.
+    Handles Source<WS>, Endpoint<WS>, and pure computed entities.
 
     Walks from entity_in to the terminal entity that gets sent to external targets.
     Returns: (compiled_chain, ws_inputs, terminal_entity)
@@ -155,7 +155,7 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     "attrs": config["attrs"],
                 })
 
-        # Note: Internal WebSocket endpoints (APIEndpoint<WS>) don't appear in find_source_for_entity
+        # Note: Internal WebSocket endpoints (Endpoint<WS>) don't appear in find_source_for_entity
         # They would need separate handling if needed
         elif source is None:
             attributes = getattr(entity, "attributes", []) or []

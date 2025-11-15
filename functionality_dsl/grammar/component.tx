@@ -72,7 +72,7 @@ TypedLabel:
 
 ChartComponent:
   'Component' '<' 'Chart' '>' name=ID
-  'endpoint:' endpoint=[APIEndpointREST]
+  'endpoint:' endpoint=[EndpointREST]
   (
     ('values:' values=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
@@ -87,7 +87,7 @@ ChartComponent:
 
 LiveChartComponent:
   'Component' '<' 'LiveChart' '>' name=ID
-  'endpoint:' endpoint=[APIEndpointWS]
+  'endpoint:' endpoint=[EndpointWS]
   (
     ('values:' values=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
@@ -106,11 +106,11 @@ GaugeComponent:
   'end'
 ;
 
-// ActionForm should *not* hit External anymore; point to APIEndpoint<REST>
+// ActionForm should *not* hit External anymore; point to Endpoint<REST>
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'endpoint:' endpoint=[APIEndpointREST]
+    'endpoint:' endpoint=[EndpointREST]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
@@ -120,7 +120,7 @@ ActionFormComponent:
 
 InputComponent:
   'Component' '<' 'Input' '>' name=ID
-  'endpoint' ':' endpoint=[APIEndpointWS]
+  'endpoint' ':' endpoint=[EndpointWS]
   ( ('label:' label=STRING)
   | ('placeholder:' placeholder=STRING)
   | ('initial:' initial=STRING)
@@ -131,7 +131,7 @@ InputComponent:
 
 LiveViewComponent:
   'Component' '<' 'LiveView' '>' name=ID
-  'endpoint' ':' endpoint=[APIEndpointWS]
+  'endpoint' ':' endpoint=[EndpointWS]
   'fields:' fields=StringList
   ( ('label:' label=STRING)
   )*
@@ -140,7 +140,7 @@ LiveViewComponent:
 
 ToggleComponent:
   'Component' '<' 'Toggle' '>' name=ID
-  'endpoint' ':' endpoint=[APIEndpointREST]
+  'endpoint' ':' endpoint=[EndpointREST]
   ( ('label:' label=STRING)
   | ('onLabel:' onLabel=STRING)
   | ('offLabel:' offLabel=STRING)

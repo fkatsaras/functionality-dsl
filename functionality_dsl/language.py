@@ -613,11 +613,11 @@ def _validate_parameter_expressions(model, metamodel=None):
     from functionality_dsl.api.extractors.model_extractor import find_source_for_entity
     from functionality_dsl.api.utils import extract_path_params
 
-    # Build a map of all APIEndpoints for validation
+    # Build a map of all Endpoints for validation
     endpoints_map = {}
-    for endpoint in get_children_of_type("APIEndpointREST", model):
+    for endpoint in get_children_of_type("EndpointREST", model):
         endpoints_map[endpoint.name] = endpoint
-    for endpoint in get_children_of_type("APIEndpointWS", model):
+    for endpoint in get_children_of_type("EndpointWS", model):
         endpoints_map[endpoint.name] = endpoint
 
     # Get all entity names for validation
@@ -747,7 +747,7 @@ def get_model_external_ws_endpoints(model):
 
 
 def get_model_internal_endpoints(model):
-    return get_children_of_type("APIEndpointREST", model) + get_children_of_type("APIEndpointWS", model)
+    return get_children_of_type("EndpointREST", model) + get_children_of_type("EndpointWS", model)
 
 
 def get_model_internal_rest_endpoints(model):
@@ -851,7 +851,7 @@ def external_rest_endpoint_obj_processor(ep):
     SourceREST validation:
     - Default method to GET if omitted
     - Must have absolute url (http/https)
-    - Mutation methods (POST/PUT/PATCH) should have request schema
+    - Mutation methods (POST/PUT/PATCH) should have request entity
     """
     if not getattr(ep, "method", None):
         ep.method = "GET"
@@ -915,11 +915,11 @@ def external_ws_endpoint_obj_processor(ep):
 
 def internal_rest_endpoint_obj_processor(iep):
     """
-    APIEndpointREST validation:
+    EndpointREST validation:
     - Must have request or response (at least one)
     - Default method = GET
     - Method must be valid HTTP method
-    - Validate request/response schemas
+    - Validate request/response entities
     - Validate parameters match path
     """
     # Validate method
@@ -931,7 +931,7 @@ def internal_rest_endpoint_obj_processor(iep):
 
     if iep.method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> method must be one of GET/POST/PUT/PATCH/DELETE, got {iep.method}.",
+            f"Endpoint<REST> method must be one of GET/POST/PUT/PATCH/DELETE, got {iep.method}.",
             **get_location(iep)
         )
 
@@ -941,14 +941,14 @@ def internal_rest_endpoint_obj_processor(iep):
 
     if request is None and response is None:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> '{iep.name}' must define 'request:' or 'response:' (or both).",
+            f"Endpoint<REST> '{iep.name}' must define 'request:' or 'response:' (or both).",
             **get_location(iep)
         )
 
     # Request only makes sense for POST/PUT/PATCH
     if request is not None and iep.method in {"GET", "DELETE"}:
         raise TextXSemanticError(
-            f"APIEndpoint<REST> '{iep.name}' has 'request:' but method is {iep.method}. Only POST/PUT/PATCH can have request bodies.",
+            f"Endpoint<REST> '{iep.name}' has 'request:' but method is {iep.method}. Only POST/PUT/PATCH can have request bodies.",
             **get_location(iep)
         )
 
@@ -968,7 +968,7 @@ def internal_rest_endpoint_obj_processor(iep):
             missing = url_params - declared_params
             if missing:
                 raise TextXSemanticError(
-                    f"APIEndpoint<REST> '{iep.name}' has path parameters {missing} in URL but not declared in parameters block.",
+                    f"Endpoint<REST> '{iep.name}' has path parameters {missing} in URL but not declared in parameters block.",
                     **get_location(iep)
                 )
 
@@ -976,18 +976,18 @@ def internal_rest_endpoint_obj_processor(iep):
             extra = declared_params - url_params
             if extra:
                 raise TextXSemanticError(
-                    f"APIEndpoint<REST> '{iep.name}' declares path parameters {extra} but they are not in the URL path.",
+                    f"Endpoint<REST> '{iep.name}' declares path parameters {extra} but they are not in the URL path.",
                     **get_location(iep)
                 )
 
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(request, "request", f"APIEndpoint<REST> '{iep.name}'")
-    _validate_type_schema_compatibility(response, "response", f"APIEndpoint<REST> '{iep.name}'")
+    # Validate type/entity compatibility
+    _validate_type_schema_compatibility(request, "request", f"Endpoint<REST> '{iep.name}'")
+    _validate_type_schema_compatibility(response, "response", f"Endpoint<REST> '{iep.name}'")
 
 
 def internal_ws_endpoint_obj_processor(iep):
     """
-    APIEndpointWS validation:
+    EndpointWS validation:
     - Require subscribe and/or publish blocks
     """
     subscribe_block = getattr(iep, "subscribe", None)
@@ -995,13 +995,13 @@ def internal_ws_endpoint_obj_processor(iep):
 
     if subscribe_block is None and publish_block is None:
         raise TextXSemanticError(
-            f"APIEndpoint<WS> '{iep.name}' must define 'subscribe:' or 'publish:' (or both).",
+            f"Endpoint<WS> '{iep.name}' must define 'subscribe:' or 'publish:' (or both).",
             **get_location(iep)
         )
 
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"APIEndpoint<WS> '{iep.name}'")
-    _validate_type_schema_compatibility(publish_block, "publish", f"APIEndpoint<WS> '{iep.name}'")
+    # Validate type/entity compatibility
+    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Endpoint<WS> '{iep.name}'")
+    _validate_type_schema_compatibility(publish_block, "publish", f"Endpoint<WS> '{iep.name}'")
 
 
 def entity_obj_processor(ent):
@@ -1052,8 +1052,8 @@ def verify_unique_names(model):
     ensure_unique(get_model_servers(model), "Server")
     ensure_unique(get_model_external_rest_endpoints(model), "Source<REST>")
     ensure_unique(get_model_external_ws_endpoints(model), "Source<WS>")
-    ensure_unique(get_model_internal_rest_endpoints(model), "APIEndpoint<REST>")
-    ensure_unique(get_model_internal_ws_endpoints(model), "APIEndpoint<WS>")
+    ensure_unique(get_model_internal_rest_endpoints(model), "Endpoint<REST>")
+    ensure_unique(get_model_internal_ws_endpoints(model), "Endpoint<WS>")
     ensure_unique(get_model_entities(model), "Entity")
     ensure_unique(get_model_components(model), "Component")
 
@@ -1071,7 +1071,7 @@ def verify_endpoints(model):
         # Must have at least one block
         if subscribe_block is None and publish_block is None:
             raise TextXSemanticError(
-                f"APIEndpoint<WS> '{iwep.name}' must define 'subscribe:' or 'publish:' (or both).",
+                f"Endpoint<WS> '{iwep.name}' must define 'subscribe:' or 'publish:' (or both).",
                 **get_location(iwep),
             )
 
@@ -1100,20 +1100,20 @@ def verify_endpoints(model):
 def verify_path_params(model):
     """
     Validate path parameters with relaxed constraints:
-    
-    1. Internal endpoints (APIEndpoint<REST>):
+
+    1. Internal endpoints (Endpoint<REST>):
        - Path params always available in endpoint context
        - No validation needed (generator seeds them automatically)
-    
+
     2. External sources (Source<REST>):
        - GET sources: Allow context-based interpolation (flexible)
        - Mutation sources (POST/PUT/PATCH/DELETE): Validate params exist in entity
-    
+
     This allows patterns like:
-        APIEndpoint path="/users/{id}" -> seeds context["Endpoint"]["id"]
+        Endpoint path="/users/{id}" -> seeds context["Endpoint"]["id"]
         Source url="https://api.example.com/users/{id}" -> interpolates from context
     """
-    
+
     # --- Skip validation for internal REST endpoints ---
     # Path params are ALWAYS seeded into context by the generator:
     #   context["EndpointName"]["paramName"] = normalize_path_value(paramValue)
@@ -1543,8 +1543,8 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
         {
             "SourceREST": external_rest_endpoint_obj_processor,
             "SourceWS": external_ws_endpoint_obj_processor,
-            "APIEndpointREST": internal_rest_endpoint_obj_processor,
-            "APIEndpointWS": internal_ws_endpoint_obj_processor,
+            "EndpointREST": internal_rest_endpoint_obj_processor,
+            "EndpointWS": internal_ws_endpoint_obj_processor,
             "Entity": entity_obj_processor,
         }
     )

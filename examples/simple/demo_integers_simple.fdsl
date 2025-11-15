@@ -12,7 +12,7 @@ Source<REST> RandomA
   method: GET
   response:
     type: array
-    schema: IntARaw
+    entity: IntARaw
 end
 
 Source<REST> RandomB
@@ -20,7 +20,7 @@ Source<REST> RandomB
   method: GET
   response:
     type: array
-    schema: IntBRaw
+    entity: IntBRaw
 end
 
 // --- Raw entities ----------------------------------------------
@@ -54,12 +54,12 @@ Entity CompareInts(Ints)
 end
 
 // --- Internal endpoint -----------------------------------------
-APIEndpoint<REST> CompareIntsList
+Endpoint<REST> CompareIntsList
   path: "/api/compare"
   method: GET
   response:
     type: object
-    schema: CompareInts
+    entity: CompareInts
 end
 
 // --- Component -------------------------------------------------

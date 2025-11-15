@@ -50,7 +50,7 @@ end
 //         Source4 → E7
 // ========================================================================
 
-APIEndpoint<REST> DeepChain
+Endpoint<REST> DeepChain
   path: "/api/deep"
   method: GET
   entity: E3
@@ -109,7 +109,7 @@ end
 // Ensures linear ordering E9,E10,E11.
 // ========================================================================
 
-APIEndpoint<REST> CircularLike
+Endpoint<REST> CircularLike
   path: "/api/circular"
   method: GET
   entity: E11
@@ -137,7 +137,7 @@ end
 // Shared Source2 used in multiple entities.
 // ========================================================================
 
-APIEndpoint<REST> SharedMutation
+Endpoint<REST> SharedMutation
   path: "/api/mutate"
   method: POST
   entity: M3
@@ -179,7 +179,7 @@ end
 //// Inbound WS message → processed → outbound uppercase message
 //// ========================================================================
 //
-//APIEndpoint<WS> DuplexTest
+//Endpoint<WS> DuplexTest
 //  path: "/ws/duplex"
 //  entity_in: WSIn
 //  entity_out: WSOut
@@ -201,7 +201,7 @@ end
 //// Client sends JSON on WebSocket → processed → forwarded to REST
 //// ========================================================================
 //
-//APIEndpoint<WS> BridgeTest
+//Endpoint<WS> BridgeTest
 //  path: "/ws/bridge"
 //  entity_out: BridgeAck
 //end

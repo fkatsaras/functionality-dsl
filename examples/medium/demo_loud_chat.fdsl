@@ -11,10 +11,10 @@ Source<WS> EchoWS
   channel: "ws://host.docker.internal:8765"
   subscribe:
     type: object
-    message: EchoWrapper
+    entity: EchoWrapper
   publish:
     type: object
-    message: OutgoingProcessed
+    entity: OutgoingProcessed
   // auth:
   //   type: bearer
   //   token: "secret123"
@@ -45,14 +45,14 @@ Entity EchoProcessed(EchoWrapper)
 end
 
 // Internal duplex - handles INBOUND display
-APIEndpoint<WS> ChatDup
+Endpoint<WS> ChatDup
   channel: "/api/chat"
   publish:
     type: string
-    message: OutgoingWrapper
+    entity: OutgoingWrapper
   subscribe:
     type: object
-    message: EchoProcessed
+    entity: EchoProcessed
 end
 
 // ------------------ UI ------------------

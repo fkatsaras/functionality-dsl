@@ -24,7 +24,7 @@ end
 // Test: GET /api/users/123
 // Expected: userId is normalized to int(123)
 
-APIEndpoint<REST> GetUserById
+Endpoint<REST> GetUserById
   path: "/api/users/{userId}"
   method: GET
   entity: UserById
@@ -46,7 +46,7 @@ end
 // Test: GET /api/organizations/acme/users/123
 // Expected: Both params normalized and accessible
 
-APIEndpoint<REST> GetOrgUser
+Endpoint<REST> GetOrgUser
   path: "/api/organizations/{orgId}/users/{userId}"
   method: GET
   entity: OrgUser
@@ -69,7 +69,7 @@ end
 // Test: PATCH /api/users/123/update
 // Expected: Path param validated before forwarding
 
-APIEndpoint<REST> UpdateUser
+Endpoint<REST> UpdateUser
   path: "/api/users/{userId}/update"
   method: PATCH
   entity: UserUpdatePayload
@@ -99,7 +99,7 @@ end
 // Test: POST /api/orders/ORD-123/items
 // Expected: orderId extracted, normalized, and passed through chain
 
-APIEndpoint<REST> CreateOrderItem
+Endpoint<REST> CreateOrderItem
   path: "/api/orders/{orderId}/items"
   method: POST
   entity: OrderItemRequest
@@ -146,7 +146,7 @@ end
 // Test: DELETE /api/products/456
 // Expected: productId auto-converted to int
 
-APIEndpoint<REST> DeleteProduct
+Endpoint<REST> DeleteProduct
   path: "/api/products/{productId}"
   method: DELETE
   entity: ProductDeletePayload
@@ -173,7 +173,7 @@ end
 // Test: PUT /api/categories/electronics/products/789
 // Expected: Both path params accessible alongside body fields
 
-APIEndpoint<REST> UpdateCategoryProduct
+Endpoint<REST> UpdateCategoryProduct
   path: "/api/categories/{categoryId}/products/{productId}"
   method: PUT
   entity: CategoryProductUpdate
@@ -204,7 +204,7 @@ end
 // Test: GET /api/calculations/5/square
 // Expected: Computed attribute uses path param in expression
 
-APIEndpoint<REST> SquareCalculation
+Endpoint<REST> SquareCalculation
   path: "/api/calculations/{number}/square"
   method: GET
   entity: SquareResult
@@ -226,7 +226,7 @@ end
 // Test: POST /api/conflict/999 with body {"userId": 111}
 // Expected: Path param (999) overwrites body field (111)
 
-APIEndpoint<REST> ConflictTest
+Endpoint<REST> ConflictTest
   path: "/api/conflict/{userId}"
   method: POST
   entity: ConflictPayload
@@ -251,7 +251,7 @@ end
 // Test: GET /api/slugs/my-awesome-post
 // Expected: slug remains string (no numeric coercion)
 
-APIEndpoint<REST> GetBySlug
+Endpoint<REST> GetBySlug
   path: "/api/slugs/{slug}"
   method: GET
   entity: SlugData

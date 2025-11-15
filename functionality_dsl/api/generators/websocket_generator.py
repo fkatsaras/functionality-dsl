@@ -13,7 +13,7 @@ from ..builders import (
 
 
 def generate_websocket_router(endpoint, model, all_source_names, templates_dir, output_dir):
-    """Generate a WebSocket (duplex) router for an APIEndpoint<WS>."""
+    """Generate a WebSocket (duplex) router for an Endpoint<WS>."""
     # Extract entities from subscribe/publish blocks
     # IMPORTANT: From client perspective:
     #   subscribe: clients subscribe (receive from server) = outbound from server perspective

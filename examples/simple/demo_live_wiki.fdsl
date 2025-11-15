@@ -10,7 +10,7 @@ Source<WS> WikiMonEN
   channel: "wss://wikimon.hatnote.com/en/"
   publish:
     type: object
-    message: WikiEdit
+    entity: WikiEdit
 end
 
 // --- Raw entity ------------------------------------------------
@@ -33,18 +33,18 @@ Entity EditGauge(WikiEdit)
 end
 
 // --- Internal endpoints -----------------------------------------
-APIEndpoint<WS> EditGaugeStream
+Endpoint<WS> EditGaugeStream
   channel: "/api/wiki/edits"
   publish:
     type: object
-    message: EditGauge
+    entity: EditGauge
 end
 
-APIEndpoint<WS> WikiEditsStream
+Endpoint<WS> WikiEditsStream
   channel: "/api/wiki/edits/feed"
   publish:
     type: object
-    message: WikiEdit
+    entity: WikiEdit
 end
 
 // --- Components -------------------------------------------------

@@ -59,7 +59,7 @@ Source<REST> RealObjects
   method: GET
   response:
     type: array
-    schema: RealObjectsWrapper
+    entity: RealObjectsWrapper
 end
 
 Source<REST> RealObjectById
@@ -70,19 +70,19 @@ Source<REST> RealObjectById
       - objectId: string = RealObjectDetails.objectId;
   response:
     type: object
-    schema: RealObject
+    entity: RealObject
 end
 
 // --- Internal endpoints -----------------------------------------
-APIEndpoint<REST> RealObjectsList
+Endpoint<REST> RealObjectsList
   path: "/api/objects"
   method: GET
   response:
     type: object
-    schema: RealObjectsRows
+    entity: RealObjectsRows
 end
 
-APIEndpoint<REST> RealObjectDetails
+Endpoint<REST> RealObjectDetails
   path: "/api/objects/{objectId}"
   method: GET
   parameters:
@@ -90,7 +90,7 @@ APIEndpoint<REST> RealObjectDetails
       - objectId: string
   response:
     type: object
-    schema: RealObjectDetail
+    entity: RealObjectDetail
 end
 
 // --- Components -------------------------------------------------

@@ -11,7 +11,7 @@ Source<REST> MeteoThess
   method: GET
   response:
     type: object
-    schema: ThessHourly
+    entity: ThessHourly
 end
 
 Source<REST> MeteoLondon
@@ -19,7 +19,7 @@ Source<REST> MeteoLondon
   method: GET
   response:
     type: object
-    schema: LondonHourly
+    entity: LondonHourly
 end
 
 // --- Raw entities ----------------------------------------------
@@ -68,20 +68,20 @@ Entity WeatherStats(WeatherCompare)
 end
 
 // --- Internal endpoints ----------------------------------------
-APIEndpoint<REST> WeatherCompareAPI
+Endpoint<REST> WeatherCompareAPI
   path: "/api/weather/compare"
   method: GET
   response:
     type: object
-    schema: WeatherCompare
+    entity: WeatherCompare
 end
 
-APIEndpoint<REST> WeatherStatsAPI
+Endpoint<REST> WeatherStatsAPI
   path: "/api/weather/stats"
   method: GET
   response:
     type: object
-    schema: WeatherStats
+    entity: WeatherStats
 end
 
 // --- Components ------------------------------------------------

@@ -55,16 +55,16 @@ Entity:
 
 // Entity sources / targets -------------------
 Source:
-    APIEndpointREST
-  | APIEndpointWS
+    EndpointREST
+  | EndpointWS
   | SourceREST
   | SourceWS
 ;
 
 // Unified Endpoint type for component references
 Endpoint:
-    APIEndpointREST
-  | APIEndpointWS
+    EndpointREST
+  | EndpointWS
 ;
 
 ApiKeyLoc: 'header' | 'query';
@@ -101,14 +101,14 @@ SubscribeBlock:
   'subscribe:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'message:' message=SchemaRef
+      'entity:' message=SchemaRef
 ;
 
 PublishBlock:
   'publish:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'message:' message=SchemaRef
+      'entity:' message=SchemaRef
 ;
 
 SourceWS:
@@ -170,18 +170,18 @@ RequestBlock:
   'request:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'schema:' schema=SchemaRef
+      'entity:' schema=SchemaRef
 ;
 
 ResponseBlock:
   'response:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
-      'schema:' schema=SchemaRef
+      'entity:' schema=SchemaRef
 ;
 
-APIEndpointREST:
-  'APIEndpoint<' kind='REST' '>' name=ID
+EndpointREST:
+  'Endpoint<' kind='REST' '>' name=ID
   (
     'path:' path=STRING
     'method:' method=HttpVerb
@@ -194,8 +194,8 @@ APIEndpointREST:
   'end'
 ;
 
-APIEndpointWS:
-  'APIEndpoint<' kind='WS' '>' name=ID
+EndpointWS:
+  'Endpoint<' kind='WS' '>' name=ID
   (
     'channel:' path=STRING
     (publish=PublishBlock)?

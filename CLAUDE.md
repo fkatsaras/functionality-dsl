@@ -29,7 +29,7 @@ Source<REST> ProductDB
   method: GET
   response:
     type: array
-    schema: ProductList
+    entity: ProductList
 end
 
 // Source with path parameters
@@ -38,7 +38,7 @@ Source<REST> ProductDetails
   method: GET
   response:
     type: object
-    schema: Product
+    entity: Product
 end
 
 // Source accepting request body
@@ -47,7 +47,7 @@ Source<REST> CreateProduct
   method: POST
   request:
     type: object
-    schema: NewProduct
+    entity: NewProduct
 end
 ```
 
@@ -57,51 +57,51 @@ Source<WS> StockFeed
   channel: "ws://inventory:9002/ws/stock"
   publish:
     type: object
-    message: StockUpdate
+    entity: StockUpdate
 end
 ```
 
-### 3. **APIEndpoints** (Your Internal API)
+### 3. **Endpoints** (Your Internal API)
 
 **REST Endpoints:**
 ```fdsl
 // GET endpoint (query)
-APIEndpoint<REST> ProductList
+Endpoint<REST> ProductList
   path: "/api/products"
   method: GET
   response:
     type: object
-    schema: ProductCatalog
+    entity: ProductCatalog
 end
 
 // GET with path parameter
-APIEndpoint<REST> ProductDetails
+Endpoint<REST> ProductDetails
   path: "/api/products/{productId}"
   method: GET
   response:
     type: object
-    schema: Product
+    entity: Product
 end
 
 // POST endpoint (mutation)
-APIEndpoint<REST> CreateProduct
+Endpoint<REST> CreateProduct
   path: "/api/products"
   method: POST
   request:
     type: object
-    schema: NewProduct
+    entity: NewProduct
   response:
     type: object
-    schema: Product
+    entity: Product
 end
 
 // Protected endpoint (with auth)
-APIEndpoint<REST> GetCart
+Endpoint<REST> GetCart
   path: "/api/cart"
   method: GET
   response:
     type: object
-    schema: CartData
+    entity: CartData
   auth:
     type: bearer
     token: "required"
@@ -111,22 +111,22 @@ end
 **WebSocket Endpoints:**
 ```fdsl
 // Publish-only (server → clients)
-APIEndpoint<WS> StockUpdates
+Endpoint<WS> StockUpdates
   path: "/api/ws/stock"
   publish:
     type: object
-    message: StockData
+    entity: StockData
 end
 
 // Duplex (bidirectional)
-APIEndpoint<WS> ChatRoom
+Endpoint<WS> ChatRoom
   path: "/api/ws/chat"
   subscribe:
     type: object
-    message: ChatMessage
+    entity: ChatMessage
   publish:
     type: object
-    message: ChatMessage
+    entity: ChatMessage
   auth:
     type: bearer
     token: "required"
@@ -166,7 +166,7 @@ Source<REST> ProductsAPI
   method: GET
   response:
     type: array
-    schema: ProductListWrapper  // Source provides the wrapper directly
+    entity: ProductListWrapper  // Source provides the wrapper directly
 end
 ```
 
@@ -176,8 +176,8 @@ All `request:`, `response:`, `subscribe:`, and `publish:` blocks **MUST** includ
 
 1. **Required fields:**
    - `type:` must be present
-   - For `request:`/`response:` blocks: use `schema:` field
-   - For `subscribe:`/`publish:` blocks: use `message:` field
+   - For `request:`/`response:` blocks: use `entity:` field
+   - For `subscribe:`/`publish:` blocks: use `entity:` field
 2. **For primitive/array types** (`string`, `number`, `integer`, `boolean`, `array`):
    - The entity **MUST have EXACTLY ONE attribute**
    - This is a wrapper entity that wraps the primitive/array value
@@ -195,7 +195,7 @@ end
 
 response:
   type: array
-  schema: ItemsWrapper
+  entity: ItemsWrapper
 
 // ✗ INCORRECT: Array type with multi-attribute entity
 Entity BadWrapper
@@ -206,7 +206,7 @@ end
 
 response:
   type: array
-  schema: BadWrapper
+  entity: BadWrapper
 ```
 
 **Transformation Entities** (with computed attributes):
@@ -469,13 +469,13 @@ get(get(x, "data", {}), "color", "")  // Nested safe access
 
 ## Parameter Handling
 
-Parameters flow **explicitly** from APIEndpoints to Sources using expressions. This makes data flow transparent, flexible, and self-documenting.
+Parameters flow **explicitly** from Endpoints to Sources using expressions. This makes data flow transparent, flexible, and self-documenting.
 
 ### Basic Syntax
 
-**APIEndpoint** defines incoming parameters:
+**Endpoint** defines incoming parameters:
 ```fdsl
-APIEndpoint<REST> GetProduct
+Endpoint<REST> GetProduct
   path: "/api/products/{productId}"
   method: GET
   parameters:
@@ -485,7 +485,7 @@ APIEndpoint<REST> GetProduct
       - format: string?
   response:
     type: object
-    schema: ProductDetail
+    entity: ProductDetail
 end
 ```
 
@@ -501,7 +501,7 @@ Source<REST> ProductById
       - fmt: string = GetProduct.format;
   response:
     type: object
-    schema: Product
+    entity: Product
 end
 ```
 
@@ -532,7 +532,7 @@ Source<REST> OrderService
 #### 3. **Parameter Renaming**
 Source parameter names don't need to match endpoint parameter names:
 ```fdsl
-APIEndpoint<REST> GetUserOrders
+Endpoint<REST> GetUserOrders
   parameters:
     path:
       - userId: string  // camelCase in API
@@ -564,7 +564,7 @@ end
 
 ```fdsl
 // Define the API endpoint
-APIEndpoint<REST> GetUserOrders
+Endpoint<REST> GetUserOrders
   path: "/api/users/{userId}/orders"
   method: GET
   parameters:
@@ -577,7 +577,7 @@ APIEndpoint<REST> GetUserOrders
       - page: integer?
   response:
     type: object
-    schema: UserOrdersView
+    entity: UserOrdersView
 end
 
 // Fetch user data
@@ -589,7 +589,7 @@ Source<REST> UserProfile
       - userId: string = GetUserOrders.userId;
   response:
     type: object
-    schema: UserData
+    entity: UserData
 end
 
 // Fetch orders with filtering
@@ -605,7 +605,7 @@ Source<REST> OrderHistory
       - page: integer = GetUserOrders.page if GetUserOrders.page else 1;
   response:
     type: array
-    schema: OrderListWrapper
+    entity: OrderListWrapper
 end
 
 // Transform and combine data
@@ -634,8 +634,8 @@ end
 The FDSL validator enforces:
 
 1. **Source parameter expressions can ONLY reference:**
-   - APIEndpoint parameters (path/query/header): `GetProduct.productId`
-   - APIEndpoint request body entities: `OrderRequest.productId`
+   - Endpoint parameters (path/query/header): `GetProduct.productId`
+   - Endpoint request body entities: `OrderRequest.productId`
 
 2. **Source parameter expressions CANNOT reference:**
    - Other Sources (would create execution order issues)
@@ -657,7 +657,7 @@ The FDSL validator enforces:
 
 ### Runtime Behavior
 
-1. **HTTP Request** arrives at APIEndpoint
+1. **HTTP Request** arrives at Endpoint
 2. **Endpoint parameter object** created in context:
    ```python
    GetUserOrders = {
@@ -710,7 +710,7 @@ Source<REST> ProductsAPI
   method: GET
   response:
     type: array
-    schema: ProductListWrapper
+    entity: ProductListWrapper
 end
 
 // 4. Transform if needed
@@ -720,12 +720,12 @@ Entity ProductView(ProductListWrapper)
 end
 
 // 5. Expose via endpoint
-APIEndpoint<REST> ProductList
+Endpoint<REST> ProductList
   path: "/api/products"
   method: GET
   response:
     type: object
-    schema: ProductView
+    entity: ProductView
 end
 ```
 
@@ -743,37 +743,37 @@ Source<REST> UserCount
   method: GET
   response:
     type: integer
-    schema: CountWrapper
+    entity: CountWrapper
 end
 ```
 
 ### Query Flow (GET - External → Internal)
 
 ```
-External Source → Pure Schema Entity → Transformation Entity → APIEndpoint → Response
+External Source → Pure Schema Entity → Transformation Entity → Endpoint → Response
 ```
 
 Example:
 ```fdsl
-Source → ProductListWrapper → ProductView → APIEndpoint
+Source → ProductListWrapper → ProductView → Endpoint
 ```
 
 ### Mutation Flow (POST/PUT/DELETE - Internal → External)
 
 ```
-APIEndpoint → Request Entity → Transformation Entity → External Target
+Endpoint → Request Entity → Transformation Entity → External Target
 ```
 
 Example:
 ```fdsl
-APIEndpoint → NewProduct → ValidatedProduct → Source
+Endpoint → NewProduct → ValidatedProduct → Source
 ```
 
 ### WebSocket Duplex Flow (Bidirectional with External Echo/Transform Service)
 
-**Important**: WebSocket `subscribe`/`publish` semantics differ between APIEndpoint and Source:
+**Important**: WebSocket `subscribe`/`publish` semantics differ between Endpoint and Source:
 
-**For APIEndpoint<WS>:**
+**For Endpoint<WS>:**
 - `subscribe:` = Data clients **receive** (displayed in UI) = OUTBOUND from server
 - `publish:` = Data clients **send** (from UI to server) = INBOUND to server
 
@@ -789,10 +789,10 @@ Source<WS> EchoWS
   channel: "ws://external-service:8765"
   subscribe:
     type: object
-    message: EchoWrapper      // What we receive FROM external
+    entity: EchoWrapper      // What we receive FROM external
   publish:
     type: object
-    message: OutgoingProcessed // What we send TO external
+    entity: OutgoingProcessed // What we send TO external
 end
 
 // CLIENT → SERVER → EXTERNAL flow
@@ -818,14 +818,14 @@ Entity EchoProcessed(EchoWrapper)
 end
 
 // Internal WebSocket endpoint
-APIEndpoint<WS> ChatDup
+Endpoint<WS> ChatDup
   channel: "/api/chat"
   publish:
     type: string
-    message: OutgoingWrapper      // Clients send this (inbound to server)
+    entity: OutgoingWrapper      // Clients send this (inbound to server)
   subscribe:
     type: object
-    message: EchoProcessed        // Clients receive this (outbound from server)
+    entity: EchoProcessed        // Clients receive this (outbound from server)
 end
 ```
 
@@ -849,8 +849,8 @@ Client receives {text: "hello"}
 **Key points:**
 - Wrapper entities (single attribute, no expression) auto-wrap primitive values from clients
 - The framework automatically forwards terminal entities to external targets
-- Inbound chain: APIEndpoint.publish → ... → Source.publish (terminal entity)
-- Outbound chain: Source.subscribe → ... → APIEndpoint.subscribe (terminal entity)
+- Inbound chain: Endpoint.publish → ... → Source.publish (terminal entity)
+- Outbound chain: Source.subscribe → ... → Endpoint.subscribe (terminal entity)
 
 ---
 
@@ -858,11 +858,11 @@ Client receives {text: "hello"}
 
 ### Bearer Token (most common)
 ```fdsl
-APIEndpoint<REST> GetProfile
+Endpoint<REST> GetProfile
   path: "/api/profile"
   method: GET
   response:
-    schema: UserProfile
+    entity: UserProfile
   auth:
     type: bearer
     token: "required"
@@ -909,7 +909,7 @@ my-api-project/
     ├── main.py
     ├── app/
     │   ├── api/
-    │   │   └── routers/   # One file per APIEndpoint
+    │   │   └── routers/   # One file per Endpoint
     │   ├── services/      # Business logic
     │   └── domain/
     │       └── models.py  # Pydantic models
@@ -939,7 +939,7 @@ Source<REST> RealObjects
   url: "https://api.restful-api.dev/objects"
   method: GET
   response:
-    schema: RealObjectsWrapper
+    entity: RealObjectsWrapper
 end
 
 Entity RealObjectsView(RealObjectsWrapper)
@@ -1023,7 +1023,7 @@ fdsl generate my-api.fdsl --out generated/
 - **Wrapper Entities**: Wrap primitive or array responses from sources.
 
 ### 2. **Source → Entity Mapping**
-- Sources specify which entity they provide via `response: schema: EntityName`
+- Sources specify which entity they provide via `response: entity: EntityName`
 - Wrapper entities handle array/primitive responses
 - Path parameters flow automatically by name matching
 

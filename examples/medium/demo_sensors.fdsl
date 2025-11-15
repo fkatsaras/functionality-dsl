@@ -18,7 +18,7 @@ Source<REST> DevicesAPI
   method: GET
   response:
     type: object
-    schema: DeviceList
+    entity: DeviceList
 end
 
 // --- Individual live sensor WebSocket feeds ---
@@ -26,28 +26,28 @@ Source<WS> Sensor1Feed
   channel: "ws://dummyiot:9601"
   publish:
     type: object
-    message: Sensor1Raw
+    entity: Sensor1Raw
 end
 
 Source<WS> Sensor2Feed
   channel: "ws://dummyiot:9602"
   publish:
     type: object
-    message: Sensor2Raw
+    entity: Sensor2Raw
 end
 
 Source<WS> Sensor3Feed
   channel: "ws://dummyiot:9603"
   publish:
     type: object
-    message: Sensor3Raw
+    entity: Sensor3Raw
 end
 
 Source<WS> Sensor4Feed
   channel: "ws://dummyiot:9604"
   publish:
     type: object
-    message: Sensor4Raw
+    entity: Sensor4Raw
 end
 
 
@@ -122,16 +122,16 @@ Source<REST> ACToggleExternal
   method: POST
   request:
     type: object
-    schema: ToggleCommand
+    entity: ToggleCommand
 end
 
 // REST endpoint that toggles dummy AC
-APIEndpoint<REST> ACToggle
+Endpoint<REST> ACToggle
   path: "/api/device/toggle/ac"
   method: POST
   request:
     type: object
-    schema: ToggleCommand
+    entity: ToggleCommand
 end
 
 Entity ToggleCommand
@@ -143,11 +143,11 @@ end
 // =============================================================
 //                     INTERNAL STREAMS
 // =============================================================
-APIEndpoint<WS> TelemetryStream
+Endpoint<WS> TelemetryStream
   channel: "/api/telemetry/live"
   publish:
     type: object
-    message: TelemetryComputed
+    entity: TelemetryComputed
 end
 
 

@@ -21,7 +21,7 @@ end
 // TEST 1 : Simple Single-Level Query (GET)
 // ========================================================================
 
-APIEndpoint<REST> SingleLevel
+Endpoint<REST> SingleLevel
   path: "/api/single"
   method: GET
   entity: E1
@@ -38,7 +38,7 @@ end
 // TEST 2 : Two-Level Computation Chain (GET)
 // ========================================================================
 
-APIEndpoint<REST> ChainQuery
+Endpoint<REST> ChainQuery
   path: "/api/chain"
   method: GET
   entity: E2
@@ -66,7 +66,7 @@ end
 // TEST 3 : Mutation Flow with Chained Validation (POST)
 // ========================================================================
 
-APIEndpoint<REST> ChainMutation
+Endpoint<REST> ChainMutation
   path: "/api/chain"
   method: POST
   entity: M3Request
@@ -105,7 +105,7 @@ Source<WS> StreamSource
   entity_out: WSRaw
 end
 
-APIEndpoint<WS> StreamChain
+Endpoint<WS> StreamChain
   path: "/ws/chain"
   entity_in: WSProcessed
 end

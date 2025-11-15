@@ -7,7 +7,7 @@ Source<REST> CartByUserExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
   method: GET
   response:
-    schema: CartRaw
+    entity: CartRaw
 end
 
 // --- Add item to cart ---
@@ -15,7 +15,7 @@ Source<REST> CartAddItemExternal
   url: "http://dummyorders:9100/db/carts"
   method: POST
   request:
-    schema: CartAddPayload
+    entity: CartAddPayload
 end
 
 // --- Remove single product from cart ---
@@ -23,7 +23,7 @@ Source<REST> CartRemoveItemExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}/product/{productId}"
   method: DELETE
   request:
-    schema: CartRemovePayload
+    entity: CartRemovePayload
 end
 
 // --- Clear entire cart for a user ---
@@ -31,7 +31,7 @@ Source<REST> CartClearExternal
   url: "http://dummyorders:9100/db/carts/user/{userId}"
   method: DELETE
   request:
-    schema: CartClearPayload
+    entity: CartClearPayload
 end
 
 
@@ -86,34 +86,34 @@ end
 // ============================================================
 
 // --- Get user's cart ---
-APIEndpoint<REST> CartByUser
+Endpoint<REST> CartByUser
   path: "/api/carts/user/{userId}"
   method: GET
   response:
-    schema: CartView
+    entity: CartView
 end
 
 // --- Add item to cart ---
-APIEndpoint<REST> CartAdd
+Endpoint<REST> CartAdd
   path: "/api/carts/add"
   method: POST
   request:
-    schema: CartAddPayload
+    entity: CartAddPayload
 end
 
 // --- Remove item ---
-APIEndpoint<REST> CartRemove
+Endpoint<REST> CartRemove
   path: "/api/carts/remove/{userId}/{productId}"
   method: DELETE
   response:
-    schema: CartRemovePayload
+    entity: CartRemovePayload
 end
 
 // --- Clear cart ---
-APIEndpoint<REST> CartClear
+Endpoint<REST> CartClear
   path: "/api/carts/clear/{userId}"
   method: DELETE
   response:
-    schema: CartClearPayload
+    entity: CartClearPayload
 end
 

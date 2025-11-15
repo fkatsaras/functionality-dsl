@@ -4,13 +4,16 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
+    { "include": "#block-declarations" },
     { "include": "#component-kind" },
+    { "include": "#source-kind" },
     { "include": "#validators" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#http-verbs" },
     { "include": "#literals" },
     { "include": "#operators" },
+    { "include": "#builtin-functions" },
     { "include": "#identifiers" },
     { "include": "#angles" },
     { "include": "#props-keys" }
@@ -30,7 +33,10 @@
           "name": "string.quoted.double.fdsl",
           "begin": "\"",
           "end": "\"",
-          "patterns": [{ "name": "constant.character.escape.fdsl", "match": "\\\\." }]
+          "patterns": [
+            { "name": "constant.character.escape.fdsl", "match": "\\\\." },
+            { "name": "constant.other.placeholder.fdsl", "match": "\\{[^}]+\\}" }
+          ]
         }
       ]
     },
@@ -40,11 +46,27 @@
         { "name": "constant.numeric.int.fdsl",   "match": "\\b\\d+\\b" }
       ]
     },
+    "block-declarations": {
+      "patterns": [
+        {
+          "name": "storage.type.class.fdsl",
+          "match": "\\b(Server|Entity|Source|Endpoint|Component)\\b"
+        }
+      ]
+    },
     "component-kind": {
       "patterns": [
         {
           "name": "support.class.componentkind.fdsl",
-          "match": "\\b(Table|LineChart|Gauge|ActionForm|Input|LiveView)\\b"
+          "match": "(?<=Component<)(Table|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView)(?=>)"
+        }
+      ]
+    },
+    "source-kind": {
+      "patterns": [
+        {
+          "name": "support.type.sourcekind.fdsl",
+          "match": "(?<=(Source|Endpoint)<)(REST|WS)(?=>)"
         }
       ]
     },
@@ -63,12 +85,20 @@
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.fdsl",
-          "match": "\\b(Server|Entity|Source|SourceREST|SourceWS|APIEndpoint|APIEndpointREST|APIEndpointWS|Component|import|inputs|attributes|props|source|entity|strict|host|port|base|cors|env|url|verb|headers|protocol|subprotocols|subscribe|where|end|fields|value|min|max|label|unit|pathKey|submitLabel)\\b"
+          "name": "keyword.control.block.fdsl",
+          "match": "\\b(end)\\b"
+        },
+        {
+          "name": "keyword.control.import.fdsl",
+          "match": "\\b(import)\\b"
+        },
+        {
+          "name": "variable.parameter.property.fdsl",
+          "match": "\\b(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel)\\b"
         },
         {
           "name": "keyword.control.conditional.fdsl",
-          "match": "\\b(if|then|else|for|in)\\b"
+          "match": "\\b(if|then|else)\\b"
         },
         {
           "name": "keyword.operator.logical.fdsl",
@@ -79,8 +109,12 @@
     "types": {
       "patterns": [
         {
-          "name": "storage.type.fdsl",
-          "match": "\\b(string|int|float|number|bool|datetime|uuid|dict|list)\\b"
+          "name": "storage.type.primitive.fdsl",
+          "match": "\\b(string|integer|number|boolean|array|object)\\b"
+        },
+        {
+          "name": "support.type.format.fdsl",
+          "match": "\\b(email|uri|uuid_str|date|time|datetime|hostname|ipv4|ipv6|byte|binary|password|regex|float|double|int32|int64)\\b"
         }
       ]
     },
@@ -89,17 +123,18 @@
         { "name": "constant.language.httpverb.fdsl", "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b" }
       ]
     },
-    "source-kind": {
-      "patterns": [
-        {
-          "name": "constant.language.sourcekind.fdsl",
-          "match": "(?<=<)(REST|WS)(?=>)"
-        }
-      ]
-    },
     "literals": {
       "patterns": [
-        { "name": "constant.language.boolean.fdsl", "match": "\\b(true|false|null)\\b" }
+        { "name": "constant.language.boolean.fdsl", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.null.fdsl", "match": "\\bnull\\b" }
+      ]
+    },
+    "builtin-functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.fdsl",
+          "match": "\\b(trim|upper|lower|len|contains|startswith|endswith|sum|round|abs|min|max|avg|map|filter|find|all|any|get|error|str|split|join|replace|concat|range|enumerate)\\b"
+        }
       ]
     },
     "operators": {
@@ -108,9 +143,11 @@
         { "name": "keyword.operator.arithmetic.fdsl", "match": "(\\+|\\-|\\*|/|%)" },
         { "name": "keyword.operator.pipeline.fdsl", "match": "\\|>" },
         { "name": "keyword.operator.range.fdsl", "match": "\\.\\." },
-        { "name": "keyword.operator.path-param.fdsl", "match": "\\$" },
+        { "name": "keyword.operator.arrow.fdsl", "match": "->" },
+        { "name": "keyword.operator.assignment.fdsl", "match": "=" },
         { "name": "punctuation.separator.keyvalue.fdsl", "match": ":" },
         { "name": "punctuation.separator.comma.fdsl", "match": "," },
+        { "name": "punctuation.terminator.statement.fdsl", "match": ";" },
         { "name": "punctuation.separator.dash.fdsl", "match": "^\\s*-" }
       ]
     },
@@ -136,7 +173,7 @@
     "identifiers": {
       "patterns": [
         {
-          "name": "entity.name.type.fdsl",
+          "name": "entity.name.type.class.fdsl",
           "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
         },
         {

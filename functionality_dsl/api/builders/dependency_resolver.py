@@ -11,7 +11,7 @@ def resolve_dependencies_for_entity(entity, model, all_endpoints, all_source_nam
     """
     Resolve all dependencies for an entity:
     - REST inputs (external Source<REST> dependencies)
-    - Computed parents (internal APIEndpoint<REST> dependencies)
+    - Computed parents (internal Endpoint<REST> dependencies)
     - Inline chain (purely computed ancestors)
 
     Returns: (rest_inputs, computed_parents, inline_chain)

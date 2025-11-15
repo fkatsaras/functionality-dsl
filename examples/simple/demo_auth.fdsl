@@ -32,7 +32,7 @@ Source<REST> BearerTest
   method: GET
   response:
     type: object
-    schema: BearerRaw
+    entity: BearerRaw
   auth:
     type: bearer
     token: "test123"
@@ -43,7 +43,7 @@ Source<REST> BasicTest
   method: GET
   response:
     type: object
-    schema: BasicRaw
+    entity: BasicRaw
   auth:
     type: basic
     username: "user"
@@ -55,7 +55,7 @@ Source<REST> ApiKeyQuery
   method: GET
   response:
     type: object
-    schema: ApiKeyRaw
+    entity: ApiKeyRaw
   auth:
     type: api_key
     key: "apikey"
@@ -87,33 +87,33 @@ end
 
 // --- Internal endpoints --------------------------------------
 // Public endpoint - no client auth required
-APIEndpoint<REST> BearerEndpoint
+Endpoint<REST> BearerEndpoint
   path: "/api/test/bearer"
   method: GET
   response:
     type: object
-    schema: BearerEntity
+    entity: BearerEntity
 end
 
 // Protected with bearer token - clients must authenticate
-APIEndpoint<REST> BasicEndpoint
+Endpoint<REST> BasicEndpoint
   path: "/api/test/basic"
   method: GET
   response:
     type: object
-    schema: BasicEntity
+    entity: BasicEntity
   auth:
     type: bearer
     token: "required"
 end
 
 // Protected with API key in header - clients must provide key
-APIEndpoint<REST> ApiKeyEndpoint
+Endpoint<REST> ApiKeyEndpoint
   path: "/api/test/apikey"
   method: GET
   response:
     type: object
-    schema: ApiKeyEntity
+    entity: ApiKeyEntity
   auth:
     type: api_key
     key: "X-API-Key"

@@ -20,7 +20,7 @@ Source<REST> CoffeeHot
   method: GET
   response:
     type: array
-    schema: CoffeeRawList
+    entity: CoffeeRawList
 end
 
 // Transformation entity - process the raw data
@@ -38,12 +38,12 @@ Entity CoffeeList(CoffeeRawList)
 end
 // ----------- Internal endpoints (what the UI calls) -----------
 // REST: expose computed coffee list
-APIEndpoint<REST> CoffeeStats
+Endpoint<REST> CoffeeStats
   path: "/api/coffee/stats"
   method: GET
   response:
     type: object
-    schema: CoffeeList
+    entity: CoffeeList
 end
 
 // ----------- Components (UI bindings) -----------

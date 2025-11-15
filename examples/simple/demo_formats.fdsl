@@ -13,16 +13,16 @@ Source<REST> UserDataExternal
   method: POST
   request:
     type: object
-    schema: UserFormattedData
+    entity: UserFormattedData
 end
 
 // API Endpoint for user registration
-APIEndpoint<REST> UserRegistration
+Endpoint<REST> UserRegistration
   path: "/api/users/register"
   method: POST
   request:
     type: object
-    schema: UserRegistrationRequest
+    entity: UserRegistrationRequest
 end
 
 // Entity demonstrating various format specifications

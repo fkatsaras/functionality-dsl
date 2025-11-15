@@ -126,7 +126,7 @@ Source<REST> UsersDB
   method: GET
   response:
     type: object
-    schema: UsersListSchema
+    entity: UsersListSchema
 end
 
 Source<REST> UserRegisterExternal
@@ -134,10 +134,10 @@ Source<REST> UserRegisterExternal
   method: POST
   request:
     type: object
-    schema: NewUserPayload
+    entity: NewUserPayload
   response:
     type: object
-    schema: SuccessMessageResponse
+    entity: SuccessMessageResponse
 end
 
 Source<REST> UserLoginExternal
@@ -145,10 +145,10 @@ Source<REST> UserLoginExternal
   method: POST
   request:
     type: object
-    schema: LoginValidated
+    entity: LoginValidated
   response:
     type: object
-    schema: LoginRawResponse
+    entity: LoginRawResponse
 end
 
 Source<REST> ResetPasswordExternal
@@ -156,10 +156,10 @@ Source<REST> ResetPasswordExternal
   method: PUT
   request:
     type: object
-    schema: ResetPasswordRequest
+    entity: ResetPasswordRequest
   response:
     type: object
-    schema: SuccessMessageResponse
+    entity: SuccessMessageResponse
 end
 
 Source<REST> UserUpdateExternal
@@ -170,10 +170,10 @@ Source<REST> UserUpdateExternal
       - id: integer = UserUpdate.id;
   request:
     type: object
-    schema: UserUpdateRequest
+    entity: UserUpdateRequest
   response:
     type: object
-    schema: SuccessMessageResponse
+    entity: SuccessMessageResponse
 end
 
 Source<REST> UserDeleteExternal
@@ -184,7 +184,7 @@ Source<REST> UserDeleteExternal
       - id: integer = UserDelete.id;
   response:
     type: object
-    schema: SuccessMessageResponse
+    entity: SuccessMessageResponse
 end
 
 // ============================================================
@@ -192,52 +192,52 @@ end
 // ============================================================
 
 // --- USER LIST (GET) ---
-APIEndpoint<REST> UserList
+Endpoint<REST> UserList
   path: "/api/users"
   method: GET
   response:
     type: object
-    schema: UsersListSchema
+    entity: UsersListSchema
 end
 
 // --- REGISTER ---
-APIEndpoint<REST> UserRegister
+Endpoint<REST> UserRegister
   path: "/api/users/register"
   method: POST
   request:
     type: object
-    schema: UserRegisterRequest
+    entity: UserRegisterRequest
   response:
     type: object
-    schema: RegisterResponse
+    entity: RegisterResponse
 end
 
 // --- LOGIN ---
-APIEndpoint<REST> UserLogin
+Endpoint<REST> UserLogin
   path: "/api/users/login"
   method: POST
   request:
     type: object
-    schema: LoginRequest
+    entity: LoginRequest
   response:
     type: object
-    schema: LoginResponse
+    entity: LoginResponse
 end
 
 // --- RESET PASSWORD ---
-APIEndpoint<REST> ResetPassword
+Endpoint<REST> ResetPassword
   path: "/api/users/reset-password"
   method: PUT
   request:
     type: object
-    schema: ResetPasswordRequest
+    entity: ResetPasswordRequest
   response:
     type: object
-    schema: TransformedResponse
+    entity: TransformedResponse
 end
 
 // --- UPDATE USER ---
-APIEndpoint<REST> UserUpdate
+Endpoint<REST> UserUpdate
   path: "/api/users/{id}/update"
   method: PATCH
   parameters:
@@ -245,14 +245,14 @@ APIEndpoint<REST> UserUpdate
       - id: integer
   request:
     type: object
-    schema: UserUpdateRequest
+    entity: UserUpdateRequest
   response:
     type: object
-    schema: TransformedResponse
+    entity: TransformedResponse
 end
 
 // --- DELETE USER ---
-APIEndpoint<REST> UserDelete
+Endpoint<REST> UserDelete
   path: "/api/users/{id}/delete"
   method: DELETE
   parameters:
@@ -260,7 +260,7 @@ APIEndpoint<REST> UserDelete
       - id: integer
   response:
     type: object
-    schema: TransformedResponse
+    entity: TransformedResponse
 end
 
 // ============================================================
