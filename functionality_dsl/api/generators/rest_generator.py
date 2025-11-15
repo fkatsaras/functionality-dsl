@@ -14,26 +14,103 @@ from ..graph import find_terminal_entity
 from ..extractors import find_source_for_entity, find_target_for_entity
 
 
-def extract_entity_refs_from_compiled_expr(compiled_expr, model):
+def entity_depends_on_target_response(entity, target_response_entity_name, model):
     """
-    Extract entity references from a compiled Python expression string.
-    Looks for patterns like "EntityName.get(...)" which indicate entity access.
+    Check if an entity (or any of its ancestors) depends on the target response.
+    Returns True if the entity references the target response entity.
+    """
+    if not target_response_entity_name:
+        return False
+
+    visited = set()
+
+    def check_entity(ent):
+        if ent.name in visited:
+            return False
+        visited.add(ent.name)
+
+        # Check if this entity directly references the target response
+        if hasattr(ent, 'attributes'):
+            for attr in ent.attributes:
+                if hasattr(attr, 'expr') and attr.expr:
+                    refs = extract_entity_refs_from_expr(attr.expr, model)
+                    for ref in refs:
+                        if ref.name == target_response_entity_name:
+                            return True
+                        # Recursively check parent entities
+                        if check_entity(ref):
+                            return True
+
+        # Check parent entities
+        if hasattr(ent, 'parents') and ent.parents:
+            for parent in ent.parents:
+                parent_entity = parent.entity if hasattr(parent, 'entity') else parent
+                if parent_entity.name == target_response_entity_name:
+                    return True
+                if check_entity(parent_entity):
+                    return True
+
+        return False
+
+    return check_entity(entity)
+
+
+def extract_entity_refs_from_expr(expr_node, model):
+    """
+    Extract entity references from an expression AST node (metamodel approach).
+    Walks the AST to find all entity references.
     Returns a set of Entity objects referenced in the expression.
     """
-    import re
-    entities = set()
+    entity_refs = set()
+    visited = set()
 
-    # Find all patterns like "EntityName.get(" or "EntityName.attribute"
-    # Entity names start with uppercase letter
-    entity_refs = re.findall(r'\b([A-Z][a-zA-Z0-9_]*)\.(?:get|__getitem__|items|keys|values)\(', compiled_expr)
+    # Get all entity names in the model for lookup
+    entity_name_map = {e.name: e for e in model.entities}
 
-    for entity_name in set(entity_refs):
-        for model_entity in model.entities:
-            if model_entity.name == entity_name:
-                entities.add(model_entity)
-                break
+    def walk(node):
+        if node is None:
+            return
 
-    return entities
+        # Prevent infinite recursion
+        node_id = id(node)
+        if node_id in visited:
+            return
+        visited.add(node_id)
+
+        # Check if this node has a class name (it's an AST node)
+        if hasattr(node, '__class__'):
+            class_name = node.__class__.__name__
+
+            # MemberAccess: EntityName.attr or EntityName.get(...)
+            # Only check MemberAccess to avoid false positives
+            if class_name == 'MemberAccess':
+                # Walk to the leftmost identifier
+                obj = node
+                while hasattr(obj, 'object') and obj.object is not None:
+                    obj = obj.object
+
+                # Check if it's an identifier that matches an entity name
+                if hasattr(obj, 'name') and isinstance(obj.name, str):
+                    if obj.name in entity_name_map:
+                        entity_refs.add(entity_name_map[obj.name])
+
+            # Recursively walk all attributes
+            for attr_name in dir(node):
+                if attr_name.startswith('_'):
+                    continue
+                try:
+                    attr_val = getattr(node, attr_name, None)
+                    if attr_val is not None and attr_val != node:
+                        if isinstance(attr_val, list):
+                            for item in attr_val:
+                                walk(item)
+                        elif hasattr(attr_val, '__class__') and not isinstance(attr_val, (str, int, float, bool)):
+                            walk(attr_val)
+                except (AttributeError, TypeError):
+                    pass
+
+    walk(expr_node)
+    return entity_refs
 
 
 def generate_query_router(endpoint, request_schema, response_schemas, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
@@ -253,11 +330,9 @@ def generate_mutation_router(endpoint, request_schema, response_schemas, model, 
 
             # Extract entity references from condition expression
             if resp.get("condition"):
-                # Compile the condition to Python to extract entity references
+                # Extract entity references from condition AST (metamodel approach)
                 try:
-                    from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
-                    compiled_cond = compile_expr_to_python(resp["condition"])
-                    cond_refs = extract_entity_refs_from_compiled_expr(compiled_cond, model)
+                    cond_refs = extract_entity_refs_from_expr(resp["condition"], model)
                     condition_entities.update(cond_refs)
                 except Exception as e:
                     print(f"[WARNING] Failed to extract entities from condition {resp['status_code']}: {e}")
@@ -311,75 +386,79 @@ def generate_mutation_router(endpoint, request_schema, response_schemas, model, 
                     if "pyexpr" in attr:
                         attr["expr"] = attr.pop("pyexpr")
 
-    # SIMPLE: Extract entities from compiled condition expressions
-    import re
-    from textx import get_children_of_type
+    # Pre-target transformation chain (request entities only for now)
+    # Response entities will be added later based on target dependency analysis
+    pre_target_chain = compiled_chain if compiled_chain else []
+    post_target_chain = []
+
+    # Find target FIRST so we know what entity it provides
     from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+    from ..builders.response_classifier import find_target_for_mutation, find_target_response_entity_name
 
-    # Compile conditions and extract entity names
-    condition_entities = set()
-    for resp in response_schemas:
-        if resp.get("condition"):
-            try:
-                compiled_cond = compile_expr_to_python(resp["condition"])
-                # Find EntityName.get( or EntityName. patterns
-                matches = re.findall(r'([A-Z][A-Za-z0-9_]*)\s*(?:\.get\(|\.|\[)', compiled_cond)
-                condition_entities.update(matches)
-            except:
-                pass
+    response_entity_list = [resp["entity"] for resp in response_schemas] if response_schemas else []
 
-    # Add condition entities to transformation chain
-    # IMPORTANT: Include ALL dependencies even if one is the terminal entity,
-    # because condition entities need to evaluate BEFORE forwarding
-    existing_entity_names = {step["name"] for step in compiled_chain}
-    terminal_needed_for_conditions = False
+    target = None
+    target_obj, target_type = find_target_for_mutation(request_entity, response_entity_list, model, endpoint_method=method)
 
-    for entity_name in condition_entities:
-        if entity_name not in existing_entity_names:
-            entities = get_children_of_type("Entity", model)
-            condition_entity = next((e for e in entities if e.name == entity_name), None)
-            if condition_entity:
-                entity_chain = build_entity_chain(condition_entity, model, all_source_names, context="ctx")
-                for step in entity_chain:
-                    if step["name"] not in existing_entity_names:
-                        compiled_chain.append(step)
-                        existing_entity_names.add(step["name"])
-                        print(f"[CONDITION ENTITY] Added {step['name']} (referenced in conditions)")
-                        # Check if we added the terminal entity
-                        if terminal_entity and step["name"] == terminal_entity.name:
-                            terminal_needed_for_conditions = True
+    if target_obj:
+        print(f"[TARGET] Found target: {target_obj.name} ({getattr(target_obj, 'method', 'GET')} {target_obj.url})")
 
-    # If terminal was added to chain for conditions, clear the separate terminal config
-    if terminal_needed_for_conditions:
-        print(f"[CONDITION ENTITY] Terminal entity {terminal_entity.name} needed for conditions - will compute in main chain")
-        terminal_entity_config = None
-        terminal_entity_name = None
+    # Find target response entity name (critical for two-chain separation)
+    target_response_entity_name = find_target_response_entity_name(target_obj, model) if target_obj else None
+    if target_response_entity_name:
+        print(f"[TARGET] Target provides entity: {target_response_entity_name}")
 
-    # Build response chains and classify variants (pre-forward vs post-forward)
-    from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
-    from ..builders.response_classifier import classify_response_variant, find_target_for_mutation, find_target_response_entity_name
-
+    # Build response variants and classify using dependency analysis
     response_variants = []
-    response_entity_list = []
 
     if response_schemas:
         for resp in response_schemas:
             variant_entity = resp["entity"]
-            response_entity_list.append(variant_entity)
 
             # Build entity chain for this response variant
             variant_chain = build_entity_chain(variant_entity, model, all_source_names, context="ctx")
 
-            # Classify: pre-forward or post-forward?
-            phase = classify_response_variant(variant_entity, model)
+            # TWO-CHAIN APPROACH: Check if entity depends on target response
+            depends_on_target = entity_depends_on_target_response(variant_entity, target_response_entity_name, model)
+            phase = "post-target" if depends_on_target else "pre-target"
 
             # Compile the condition if present
             compiled_condition = None
+            condition_entities = []
             if resp["condition"]:
                 try:
                     compiled_condition = compile_expr_to_python(resp["condition"])
+                    # Extract entities referenced in the condition
+                    condition_entities = list(extract_entity_refs_from_expr(resp["condition"], model))
                 except Exception as e:
                     raise ValueError(f"Failed to compile condition for response {resp['status_code']}: {e}")
+
+            # Add entities referenced in conditions to pre-target chain
+            # (They must be available before evaluating conditions)
+            for cond_entity in condition_entities:
+                # Check if this entity depends on target response
+                cond_depends_on_target = entity_depends_on_target_response(cond_entity, target_response_entity_name, model)
+                if not cond_depends_on_target:
+                    # Can be computed pre-target, add its chain
+                    cond_chain = build_entity_chain(cond_entity, model, all_source_names, context="ctx")
+                    for step in cond_chain:
+                        if step["name"] not in [s["name"] for s in pre_target_chain]:
+                            pre_target_chain.append(step)
+                            print(f"[PRE-TARGET] Added {step['name']} (from condition) to pre-target chain")
+
+            # Add variant entities to appropriate chain
+            if phase == "pre-target":
+                # Add to pre-target chain (validation entities)
+                for step in variant_chain:
+                    if step["name"] not in [s["name"] for s in pre_target_chain]:
+                        pre_target_chain.append(step)
+                        print(f"[PRE-TARGET] Added {step['name']} to pre-target chain")
+            else:
+                # Add to post-target chain (success entities)
+                for step in variant_chain:
+                    if step["name"] not in [s["name"] for s in post_target_chain]:
+                        post_target_chain.append(step)
+                        print(f"[POST-TARGET] Added {step['name']} to post-target chain")
 
             response_variants.append({
                 "status_code": resp["status_code"],
@@ -388,21 +467,9 @@ def generate_mutation_router(endpoint, request_schema, response_schemas, model, 
                 "entity_chain": variant_chain,
                 "response_type": resp.get("response_type", "object"),
                 "content_type": resp.get("content_type", "application/json"),
-                "phase": phase,  # 'pre-forward' or 'post-forward'
+                "phase": phase,
             })
             print(f"[RESPONSE] {variant_entity.name} ({resp['status_code']}): {phase}")
-
-    # Find target using metamodel approach (no heuristics)
-    target = None
-    target_obj, target_type = find_target_for_mutation(request_entity, response_entity_list, model, endpoint_method=method)
-
-    if target_obj:
-        print(f"[TARGET] Found target: {target_obj.name} ({getattr(target_obj, 'method', 'GET')} {target_obj.url})")
-
-    # Find target response entity name
-    target_response_entity_name = find_target_response_entity_name(target_obj, model) if target_obj else None
-    if target_response_entity_name:
-        print(f"[TARGET] Target provides entity: {target_response_entity_name}")
 
     # Legacy fields for backward compatibility with templates (if needed)
     response_chain = []
@@ -441,38 +508,40 @@ def generate_mutation_router(endpoint, request_schema, response_schemas, model, 
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
-    # Separate response variants by phase
-    pre_forward_variants = [v for v in response_variants if v["phase"] == "pre-forward"]
-    post_forward_variants = [v for v in response_variants if v["phase"] == "post-forward"]
+    # Separate response variants by phase (using new pre/post-target terminology)
+    pre_target_variants = [v for v in response_variants if v["phase"] == "pre-target"]
+    post_target_variants = [v for v in response_variants if v["phase"] == "post-target"]
 
     # Prepare template context
     template_context = {
         "endpoint": {
             "name": endpoint.name,
-            "method": method,  # ADD: HTTP method for router decorator
+            "method": method,
             "summary": getattr(endpoint, "summary", None),
             "path_params": path_params,
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },
         "entity": entity,
-        "request_entity": request_entity,  # NEW: Pass request entity for seeding from request body
-        "response_entity": response_entity,  # NEW: Pass response entity
-        "response_source_entity": response_source_entity,  # NEW: Entity from Source response
-        "response_chain": response_chain,  # NEW: Response transformation chain
+        "request_entity": request_entity,
+        "response_entity": response_entity,
+        "response_source_entity": response_source_entity,
+        "response_chain": response_chain,
         "terminal": terminal_entity,
         "terminal_entity_name": terminal_entity.name if terminal_entity else None,
-        "terminal_entity_config": terminal_entity_config,  # Config for computing terminal before forward
+        "terminal_entity_config": terminal_entity_config,
         "target": target,
-        "target_response_entity_name": target_response_entity_name,  # NEW: Entity name from target
+        "target_response_entity_name": target_response_entity_name,
         "rest_inputs": rest_inputs,
         "computed_parents": computed_parents,
         "route_prefix": route_path,
         "compiled_chain": compiled_chain,
+        "pre_target_chain": pre_target_chain,  # TWO-CHAIN: Entities computed before target call
+        "post_target_chain": post_target_chain,  # TWO-CHAIN: Entities computed after target call
         "server": server_config["server"],
-        "response_variants": response_variants,  # NEW: All response variants
-        "pre_forward_variants": pre_forward_variants,  # NEW: Pre-forward phase variants
-        "post_forward_variants": post_forward_variants,  # NEW: Post-forward phase variants
+        "response_variants": response_variants,
+        "pre_target_variants": pre_target_variants,  # TWO-CHAIN: Validation/error responses
+        "post_target_variants": post_target_variants,  # TWO-CHAIN: Success responses
     }
 
     # Setup Jinja2 environment
