@@ -70,7 +70,8 @@
       "Bash(python:*)",
       "Bash(git checkout:*)",
       "Bash(npx --version)",
-      "Bash(npx @vscode/vsce package:*)"
+      "Bash(npx @vscode/vsce package:*)",
+      "Bash(/tmp/math_funcs_backup.py)"
     ],
     "deny": [],
     "ask": []

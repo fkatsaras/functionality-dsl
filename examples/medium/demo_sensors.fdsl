@@ -190,10 +190,10 @@ Component<Gauge> AverageHumidity
   unit: "%"
 end
 
-Component<LineChart> HeatIndexTrend
+Component<LiveChart> HeatIndexTrend
   endpoint: TelemetryStream
-  rows: data.avg_heat
+  values: avg_heat
   seriesLabels: ["Avg Heat Index"]
-  xLabel: "Time"
-  yLabel: "Heat Index"
+  xLabel: Time
+  yLabel: Heat Index
 end

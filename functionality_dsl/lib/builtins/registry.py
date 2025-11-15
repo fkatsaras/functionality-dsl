@@ -2,6 +2,7 @@ from .core_funcs import DSL_FUNCTIONS as CORE_FUNCS
 from .math_funcs import DSL_FUNCTIONS as MATH_FUNCS
 from .string_funcs import DSL_FUNCTIONS as STRING_FUNCS
 from .time_funcs import DSL_FUNCTIONS as TIME_FUNCS
+from .json_funcs import DSL_FUNCTIONS as JSON_FUNCS
 from .collection_funcs import DSL_COLLECTION_FUNCS as COLLECTION_FUNCS
 from .validation_funcs import DSL_VALIDATION_FUNCS as VALIDATION_FUNCS
 
@@ -11,6 +12,7 @@ for group in [
     MATH_FUNCS,
     STRING_FUNCS,
     TIME_FUNCS,
+    JSON_FUNCS,
     COLLECTION_FUNCS,
     VALIDATION_FUNCS,
 ]:
