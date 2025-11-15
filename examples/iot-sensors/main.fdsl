@@ -194,6 +194,6 @@ Component<LiveChart> HeatIndexTrend
   endpoint: TelemetryStream
   values: avg_heat
   seriesLabels: ["Avg Heat Index"]
-  xLabel: Time
-  yLabel: Heat Index
+  xLabel: string "Time"
+  yLabel: string "Heat Index"
 end

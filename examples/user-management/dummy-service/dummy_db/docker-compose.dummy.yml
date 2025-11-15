@@ -5,12 +5,11 @@ networks:
     external: true
 
 services:
-  dummyorders:
+  dummydb:
     build: .
-    container_name: dummyorders
+    container_name: dummydb
     ports:
-      - "9100:9100"
+      - "9000:9000"
     restart: unless-stopped
     networks:
       - thesis_fdsl_net
-

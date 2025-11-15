@@ -25,12 +25,12 @@ end
 // --- Raw entities ----------------------------------------------
 Entity ThessHourly
   attributes:
-    - hourly: object = MeteoThess["hourly"];
+    - hourly: object;
 end
 
 Entity LondonHourly
   attributes:
-    - hourly: object = MeteoLondon["hourly"];
+    - hourly: object;
 end
 
 // --- Row-shaped entity ---------------------------------
@@ -100,10 +100,10 @@ Component<Table> WeatherTable
     - "ln_is_comfy": boolean
 end
 
-Component<LineChart> TempComparison
+Component<Chart> TempComparison
   endpoint: WeatherStatsAPI
-  rows: data.rows
+  values: rows
   seriesLabels: ["Thessaloniki", "London"]
-  xLabel: "Time"
-  yLabel: "Temperature (°C)"
+  xLabel: string "Time"
+  yLabel: string "Temperature (°C)"
 end

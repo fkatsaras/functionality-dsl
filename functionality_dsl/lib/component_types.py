@@ -219,7 +219,7 @@ class ChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}': 'values:' is required.")
 
         # Validate: Chart only works with REST endpoints
-        if endpoint.__class__.__name__ != "APIEndpointREST":
+        if endpoint.__class__.__name__ != "EndpointREST":
             raise ValueError(f"Component '{name}': Chart component requires Endpoint<REST>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):
@@ -279,7 +279,7 @@ class LiveChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}': 'values:' is required.")
 
         # Validate: LiveChart only works with WebSocket endpoints
-        if endpoint.__class__.__name__ != "APIEndpointWS":
+        if endpoint.__class__.__name__ != "EndpointWS":
             raise ValueError(f"Component '{name}': LiveChart component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):
@@ -312,7 +312,7 @@ class ActionFormComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, endpoint=None, fields=None, pathKey=None, submitLabel=None, method=None):
         super().__init__(parent, name, None)
 
-        self.endpoint = endpoint                  # the APIEndpointREST node
+        self.endpoint = endpoint                  # the EndpointREST node
         self.fields = fields or []
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
