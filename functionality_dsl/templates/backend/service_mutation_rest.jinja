@@ -77,15 +77,38 @@ _EXTERNAL_TARGET = {
 {% if request_entity %}
 def validate_request_body(request_body: Dict[str, Any]) -> Dict[str, Any]:
     """Validate request body against Pydantic schema."""
+    from pydantic import ValidationError
+
     try:
         validated_payload = {{ request_entity.name }}(**request_body)
-        logger.debug(f"[VALIDATION] - Pydantic schema validation passed for {{ request_entity.name }}")
+        logger.debug(f"[VALIDATION] - Schema validation passed for {{ request_entity.name }}")
         return validated_payload.model_dump()
-    except Exception as validation_error:
-        logger.error(f"[VALIDATION] - Pydantic schema validation failed: {validation_error}")
+    except ValidationError as validation_error:
+        # Extract field-level errors from Pydantic
+        errors = []
+        for error in validation_error.errors():
+            field = ".".join(str(loc) for loc in error["loc"])
+            message = error["msg"]
+            error_type = error["type"]
+            errors.append({
+                "field": field,
+                "message": message,
+                "type": error_type
+            })
+
+        logger.error(f"[VALIDATION] - Schema validation failed for {{ request_entity.name }}: {len(errors)} error(s)")
         raise HTTPException(
-            status_code=422,
-            detail={"error": "Invalid request data", "details": str(validation_error)}
+            status_code=400,
+            detail={
+                "error": "Invalid request data",
+                "fields": errors
+            }
+        )
+    except Exception as unexpected_error:
+        logger.error(f"[VALIDATION] - Unexpected validation error: {unexpected_error}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal validation error"}
         )
 {% endif %}
 
@@ -344,6 +367,22 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
     await fetch_external_sources(context)
     await fetch_internal_dependencies(context)
     transform_entity_chain(context)
+
+    # Check error conditions
+    {% if errors %}
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+        # Skip this error check if evaluation fails
+    {% endfor %}
+    {% endif %}
 
     # Extract final payload
     terminal_entity_name = "{{ terminal.name }}"

@@ -180,6 +180,16 @@ ResponseBlock:
       'entity:' schema=SchemaRef
 ;
 
+// Error handling block for REST endpoints
+ErrorMapping:
+  '-' status_code=INT ':' 'condition' ':' condition=Expr message=STRING
+;
+
+ErrorsBlock:
+  'errors:'
+    mappings+=ErrorMapping
+;
+
 EndpointREST:
   'Endpoint<' kind='REST' '>' name=ID
   (
@@ -190,6 +200,7 @@ EndpointREST:
     (response=ResponseBlock)?
     ('summary:' summary=STRING)?
     ('auth:' auth=AuthBlock)?
+    (errors=ErrorsBlock)?
   )
   'end'
 ;

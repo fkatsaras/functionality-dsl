@@ -272,6 +272,22 @@ async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any
     await fetch_internal_dependencies(context)
     compute_entity_chain(context)
 
+    # Check error conditions
+    {% if errors %}
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+        # Skip this error check if evaluation fails
+    {% endfor %}
+    {% endif %}
+
     # Extract and return final entity
     final_entity_name = "{{ entity.name }}"
     final_attributes = context.get(final_entity_name, {})

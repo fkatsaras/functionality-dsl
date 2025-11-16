@@ -14,6 +14,66 @@ from ..graph import find_terminal_entity
 from ..extractors import find_source_for_entity, find_target_for_entity
 
 
+def _extract_entity_refs_from_expr(expr, model):
+    """
+    Extract entity references from an expression AST.
+    Returns a set of Entity objects referenced in the expression.
+    """
+    entities = set()
+
+    def visit(node):
+        if node is None:
+            return
+
+        # Check if this is a MemberAccess node (e.g., LoginMatch.user)
+        if hasattr(node, '__class__'):
+            class_name = node.__class__.__name__
+
+            # MemberAccess: obj.attr
+            if class_name == 'MemberAccess':
+                # Check if the object part is an ID that matches an entity
+                if hasattr(node, 'obj') and hasattr(node.obj, 'name'):
+                    entity_name = node.obj.name
+                    # Find the entity in the model
+                    for entity in model.entities:
+                        if entity.name == entity_name:
+                            entities.add(entity)
+                            break
+                # Recursively visit the object and attribute
+                visit(node.obj)
+                visit(node.attr)
+
+            # DictAccess: obj["key"]
+            elif class_name == 'DictAccess':
+                if hasattr(node, 'obj'):
+                    visit(node.obj)
+                if hasattr(node, 'key'):
+                    visit(node.key)
+
+            # FunctionCall: func(args)
+            elif class_name == 'FunctionCall':
+                # Visit function arguments (might contain entity references)
+                if hasattr(node, 'args'):
+                    for arg in node.args:
+                        visit(arg)
+
+            # Binary operations, unary operations, etc.
+            else:
+                # Generic traversal: visit all attributes
+                for attr_name in dir(node):
+                    if attr_name.startswith('_'):
+                        continue
+                    attr_value = getattr(node, attr_name, None)
+                    if isinstance(attr_value, list):
+                        for item in attr_value:
+                            visit(item)
+                    else:
+                        visit(attr_value)
+
+    visit(expr)
+    return entities
+
+
 def generate_query_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
     """Generate a query (GET) router for an Endpoint<REST>."""
     route_path = get_route_path(endpoint)
@@ -51,6 +111,18 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
     # Get response type for unwrapping logic
     response_type = response_schema.get("response_type", "object")
 
+    # Extract error handling configuration
+    errors_config = []
+    if hasattr(endpoint, "errors") and endpoint.errors:
+        from ...lib.compiler.expr_compiler import compile_expr_to_python
+        for error_mapping in endpoint.errors.mappings:
+            compiled_condition = compile_expr_to_python(error_mapping.condition)
+            errors_config.append({
+                "status_code": error_mapping.status_code,
+                "condition": compiled_condition,
+                "message": error_mapping.message,
+            })
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -67,6 +139,7 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
         "compiled_chain": compiled_chain,
         "server": server_config["server"],
         "response_type": response_type,
+        "errors": errors_config,
     }
 
     # Setup Jinja2 environment
@@ -133,24 +206,74 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
     # Find the terminal entity (has external target)
     terminal_entity = find_terminal_entity(entity, model) or entity
 
-    # Resolve dependencies
+    # For mutations: resolve dependencies from response entity (if exists) or request entity
+    # This avoids circular dependencies when response entity inherits from request entity
+    resolve_entity = response_entity if response_entity else entity
     rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
-        entity, model, all_endpoints, all_source_names
+        resolve_entity, model, all_endpoints, all_source_names
     )
 
+    # Check response entity + error condition entities for parent sources
+    # For error conditions: only add sources if the entity's direct PARENT is a source entity
+    entities_to_check = []
+    if response_entity:
+        entities_to_check.append(response_entity)
+
+    # Also check entities referenced in error conditions
+    if hasattr(endpoint, "errors") and endpoint.errors:
+        for error_mapping in endpoint.errors.mappings:
+            condition_entities = _extract_entity_refs_from_expr(error_mapping.condition, model)
+            entities_to_check.extend(condition_entities)
+
+    # For each entity, check if its direct parents are source entities
+    # Skip parents that are the request entity itself (avoid circular dependencies)
+    print(f"[DEBUG] Checking {len(entities_to_check)} entities for parent sources")
+    for check_entity in entities_to_check:
+        print(f"[DEBUG] Checking entity: {check_entity.name}")
+        for parent in getattr(check_entity, "parents", []):
+            print(f"[DEBUG]   Parent: {parent.name}")
+            # Skip if parent is the request entity (circular dependency)
+            if request_entity and parent.name == request_entity.name:
+                print(f"[DEBUG]   Skipping request entity parent: {parent.name}")
+                continue
+
+            # Check if parent is directly provided by a source
+            parent_source, parent_source_type = find_source_for_entity(parent, model)
+            print(f"[DEBUG]   Source for {parent.name}: {parent_source.name if parent_source else 'None'}")
+            if parent_source and parent_source_type == "REST":
+                config = build_rest_input_config(parent, parent_source, all_source_names)
+                if not any(ri["entity"] == config["entity"] and ri["url"] == config["url"] for ri in rest_inputs):
+                    rest_inputs.append(config)
+                    print(f"[DEBUG]   Added source: {parent_source.name}")
+
     # Universal resolver for deep dependencies
-    universal_inputs = resolve_universal_dependencies(entity, model, all_source_names)
+    # Skip for internal mutations (no terminal entity) to avoid recursion issues
+    if terminal_entity and terminal_entity.name != resolve_entity.name:
+        seen_keys = {(ri["entity"], ri["url"]) for ri in rest_inputs}
+        universal_inputs = resolve_universal_dependencies(terminal_entity, model, all_source_names)
+        for uni_input in universal_inputs:
+            key = (uni_input["entity"], uni_input["url"])
+            if key not in seen_keys:
+                rest_inputs.append(uni_input)
+                seen_keys.add(key)
 
-    # Merge inputs (deduplicate)
-    seen_keys = {(ri["entity"], ri["url"]) for ri in rest_inputs}
-    for uni_input in universal_inputs:
-        key = (uni_input["entity"], uni_input["url"])
-        if key not in seen_keys:
-            rest_inputs.append(uni_input)
-            seen_keys.add(key)
-
-    # Build computation chain (entity -> terminal)
-    compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
+    # Build computation chain for the response entity if it exists
+    # Otherwise use the terminal entity (request flow)
+    try:
+        if response_entity:
+            compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+        else:
+            compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
+    except RecursionError as e:
+        import traceback
+        print(f"\n[RECURSION ERROR] Failed to build entity chain for {endpoint.name}")
+        print(f"Response entity: {response_entity.name if response_entity else 'None'}")
+        print(f"Terminal entity: {terminal_entity.name if terminal_entity else 'None'}")
+        print(f"\nStack trace (last 10 frames):")
+        tb_lines = traceback.format_tb(e.__traceback__)
+        for line in tb_lines[-10:]:
+            print(line)
+        raise
 
     # Build target config (new design: reverse lookup for target Source)
     target = None
@@ -193,6 +316,18 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
+    # Extract error handling configuration
+    errors_config = []
+    if hasattr(endpoint, "errors") and endpoint.errors:
+        from ...lib.compiler.expr_compiler import compile_expr_to_python
+        for error_mapping in endpoint.errors.mappings:
+            compiled_condition = compile_expr_to_python(error_mapping.condition)
+            errors_config.append({
+                "status_code": error_mapping.status_code,
+                "condition": compiled_condition,
+                "message": error_mapping.message,
+            })
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -215,6 +350,7 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
         "route_prefix": route_path,
         "compiled_chain": compiled_chain,
         "server": server_config["server"],
+        "errors": errors_config,
     }
 
     # Setup Jinja2 environment

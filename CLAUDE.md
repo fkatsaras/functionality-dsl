@@ -407,6 +407,144 @@ end
 
 ---
 
+## Request Validation
+
+FDSL automatically validates request bodies against entity schemas using Pydantic. When validation fails, the API returns **HTTP 400 (Bad Request)** with detailed field-level errors.
+
+### Automatic Validation
+
+When you define a request entity with type constraints:
+
+```fdsl
+Entity RegisterRequest
+  attributes:
+    - username: string(3..50);
+    - password: string(6..);
+    - email: string<email>;
+    - age: integer(18..)?;
+end
+
+Endpoint<REST> Register
+  path: "/api/auth/register"
+  method: POST
+  request:
+    type: object
+    entity: RegisterRequest
+  response:
+    type: object
+    entity: UserResponse
+end
+```
+
+**Invalid requests are automatically rejected** with HTTP 400 and detailed error messages:
+
+**Example invalid request:**
+```json
+{
+  "username": "ab",
+  "password": "123",
+  "email": "not-an-email",
+  "age": 15
+}
+```
+
+**Generated error response (HTTP 400):**
+```json
+{
+  "error": "Invalid request data",
+  "fields": [
+    {
+      "field": "username",
+      "message": "String should have at least 3 characters",
+      "type": "string_too_short"
+    },
+    {
+      "field": "password",
+      "message": "String should have at least 6 characters",
+      "type": "string_too_short"
+    },
+    {
+      "field": "email",
+      "message": "value is not a valid email address",
+      "type": "value_error"
+    },
+    {
+      "field": "age",
+      "message": "Input should be greater than or equal to 18",
+      "type": "greater_than_equal"
+    }
+  ]
+}
+```
+
+### Validation Features
+
+**All entity constraints are validated automatically:**
+
+- ✅ **Type checking**: `string`, `integer`, `number`, `boolean`, `array`, `object`
+- ✅ **Format validation**: `email`, `uri`, `uuid_str`, `date`, `time`, etc.
+- ✅ **Range constraints**: String length `(3..50)`, numeric ranges `(18..120)`
+- ✅ **Required vs optional**: Fields without `?` are required
+- ✅ **Nested entities**: Validates nested object structures
+- ✅ **Array validation**: Item count and nested item schemas
+
+### Generated Behavior
+
+1. **Validation happens in the service layer** before any business logic
+2. **Field-level errors** include field name, message, and error type
+3. **HTTP 400** status code for all validation failures
+4. **Detailed logging** of validation errors for debugging
+5. **OpenAPI schema** generated automatically from entity definition
+
+### Best Practices
+
+1. **Use specific types and formats**: `string<email>` instead of `string`
+2. **Add range constraints**: Prevent unreasonable values at the API boundary
+3. **Mark optional fields**: Use `?` for truly optional data
+4. **Leverage nested entities**: Validate complex structures type-safely
+5. **Let FDSL handle it**: No need to write custom validation code
+
+### Example: Complete Validation Flow
+
+```fdsl
+Entity CreateProductRequest
+  attributes:
+    - name: string(3..100);
+    - description: string?(..500);
+    - price: number<double>(0.01..);
+    - category: string;
+    - tags: array(..10)?;
+    - metadata: object<ProductMetadata>?;
+end
+
+Entity ProductMetadata
+  attributes:
+    - manufacturer: string;
+    - countryOfOrigin: string(2);  // ISO country code
+end
+
+Endpoint<REST> CreateProduct
+  path: "/api/products"
+  method: POST
+  request:
+    type: object
+    entity: CreateProductRequest
+  response:
+    type: object
+    entity: ProductResponse
+end
+```
+
+This automatically validates:
+- Product name is 3-100 characters
+- Description (if provided) is max 500 characters  
+- Price is positive and at least 0.01
+- Category is present (required)
+- Tags array (if provided) has max 10 items
+- Metadata object (if provided) has required manufacturer and 2-char country code
+
+---
+
 ## Expression Language Features
 
 ### Built-in Functions
@@ -881,6 +1019,129 @@ Client receives {text: "hello"}
 - Wrapper entities (single attribute, no expression) auto-wrap primitive values from clients
 - Framework maintains persistent connections to external WS sources via `channel:` field
 - Uses bus-based pub/sub for message distribution between chains
+
+---
+
+## Error Handling
+
+Define custom error responses for your REST endpoints using condition-based error mappings. This allows you to return appropriate HTTP status codes based on runtime data.
+
+### Syntax
+
+```fdsl
+Endpoint<REST> GetUser
+  path: "/api/user/{id}"
+  method: GET
+  response:
+    type: object
+    entity: UserData
+  errors:
+    - 404: condition: not UserData["id"] "User not found"
+    - 403: condition: UserData["role"] != "admin" "Access denied"
+    - 400: condition: len(GetUser.id) < 3 "Invalid user ID format"
+end
+```
+
+### Common HTTP Status Codes
+
+- **400** - Bad Request (validation errors, invalid input)
+- **401** - Unauthorized (missing or invalid authentication)
+- **403** - Forbidden (insufficient permissions)
+- **404** - Not Found (resource doesn't exist)
+- **409** - Conflict (duplicate resource, constraint violation)
+- **422** - Unprocessable Entity (semantic validation errors)
+- **500** - Internal Server Error (unexpected server errors)
+- **502** - Bad Gateway (external service error)
+- **503** - Service Unavailable (temporary outage)
+
+### Condition Expressions
+
+Error conditions are FDSL expressions that have access to:
+- **Endpoint parameters**: `GetUser.id`, `GetUser.status` (path/query/header params)
+- **Entity data**: `UserData["field"]`, `ProductList.items`
+- **Source responses**: Any entity in the computation context
+- **Built-in functions**: `len()`, `get()`, comparison operators, etc.
+
+### Examples
+
+**Check for missing data:**
+```fdsl
+errors:
+  - 404: condition: not ProductData["id"] "Product not found"
+  - 404: condition: len(OrderList.items) == 0 "No orders found"
+end
+```
+
+**Validate parameters:**
+```fdsl
+errors:
+  - 400: condition: len(GetProduct.productId) < 5 "Product ID must be at least 5 characters"
+  - 400: condition: GetProduct.quantity > 100 "Quantity cannot exceed 100"
+end
+```
+
+**Check permissions:**
+```fdsl
+errors:
+  - 403: condition: UserData["role"] != "admin" "Admin access required"
+  - 403: condition: not UserData["active"] "Account is disabled"
+end
+```
+
+**Validate external source responses:**
+```fdsl
+errors:
+  - 502: condition: ExternalAPI["status"] == "error" "External service error"
+  - 503: condition: not ExternalAPI["available"] "Service temporarily unavailable"
+end
+```
+
+**Complex conditions:**
+```fdsl
+errors:
+  - 409: condition: find(UserList.items, u -> u["email"] == NewUser.email) "Email already exists"
+  - 422: condition: ProductData["price"] < 0 or ProductData["stock"] < 0 "Invalid product data"
+end
+```
+
+### Generated Behavior
+
+When you define error conditions:
+1. **Compile-time validation**: Conditions are validated during code generation
+2. **Runtime evaluation**: Conditions are checked after data fetching and entity computation
+3. **HTTPException raised**: First matching condition raises appropriate status code
+4. **OpenAPI documentation**: Errors appear in generated API docs
+5. **Type-safe**: Conditions use the same expression compiler as entity attributes
+
+### Best Practices
+
+1. **Order matters**: Error conditions are checked in the order defined (first match wins)
+2. **Place specific checks first**: Check specific conditions before general ones
+3. **Use safe access**: Use `get()` for optional fields: `get(UserData, "email", "")`
+4. **Keep conditions simple**: Complex validation should be in entity transformations
+5. **Document error messages**: Use clear, actionable error messages for API users
+
+### Complete Example
+
+```fdsl
+Endpoint<REST> CreateOrder
+  path: "/api/orders"
+  method: POST
+  request:
+    type: object
+    entity: OrderRequest
+  response:
+    type: object
+    entity: OrderConfirmation
+  errors:
+    - 400: condition: len(OrderRequest.items) == 0 "Order must contain at least one item"
+    - 400: condition: OrderRequest.quantity < 1 "Quantity must be positive"
+    - 403: condition: not UserAuth["verified"] "Email verification required"
+    - 404: condition: not ProductData["id"] "Product not found"
+    - 409: condition: ProductData["stock"] < OrderRequest.quantity "Insufficient stock"
+    - 422: condition: OrderRequest.total != sum(map(OrderRequest.items, i -> i["price"] * i["qty"])) "Order total mismatch"
+end
+```
 
 ---
 

@@ -74,7 +74,11 @@
       "Bash(/tmp/math_funcs_backup.py)",
       "Bash(chmod:*)",
       "Bash(for demo in rest-basics rest-mutations rest-auth json-parsing json-with-params iot-sensors weather-comparison websocket-chat user-management user-orders)",
-      "Bash(do echo \"=== Validating $demo ===\")"
+      "Bash(do echo \"=== Validating $demo ===\")",
+      "Bash(xargs:*)",
+      "Bash(timeout 10 ./venv_WIN/Scripts/python.exe:*)",
+      "Bash(timeout 15 ./venv_WIN/Scripts/fdsl.exe generate:*)",
+      "Bash(../../venv_WIN/Scripts/fdsl.exe generate:*)"
     ],
     "deny": [],
     "ask": []
