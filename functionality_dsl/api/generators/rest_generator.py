@@ -19,37 +19,87 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
     route_path = get_route_path(endpoint)
     path_params = extract_path_params(route_path)
 
-    # Extract response entity (for GET, we only care about response)
+    # Extract response entities (now supports multiple responses)
     if not response_schema:
         raise ValueError(f"Query endpoint {endpoint.name} must have a response schema")
 
-    # Get the entity from response schema (inline types not supported for root response yet)
-    if response_schema["type"] != "entity":
-        raise ValueError(f"Query endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
+    # response_schema is now a list of response objects
+    if not isinstance(response_schema, list):
+        raise ValueError(f"Query endpoint {endpoint.name} response_schema must be a list")
 
-    entity = response_schema["entity"]
+    # Process each response
+    response_configs = []
+    all_entities = set()  # Track all entities we need to compute
 
-    # Resolve dependencies (external sources + computed parents)
-    rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
-        entity, model, all_endpoints, all_source_names
-    )
+    for resp in response_schema:
+        # Get the entity from response schema (inline types not supported for root response yet)
+        if resp["type"] != "entity":
+            raise ValueError(f"Query endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
 
-    # Check if entity is provided by a Source<REST> (new design: reverse lookup)
-    entity_source, source_type = find_source_for_entity(entity, model)
-    if entity_source and source_type == "REST":
-        config = build_rest_input_config(entity, entity_source, all_source_names)
-        rest_inputs.append(config)
+        entity = resp["entity"]
+        status_code = resp["status_code"]
+        response_type = resp.get("response_type", "object")
 
-    #  Build unified computation chain (ancestors + final entity)
-    # This replaces separate inline_chain + computed_attrs + validations
-    compiled_chain = build_entity_chain(entity, model, all_source_names, context="ctx")
+        response_configs.append({
+            "entity": entity,
+            "status_code": status_code,
+            "response_type": response_type,
+            "content_type": resp.get("content_type", "application/json")
+        })
+        all_entities.add(entity)
+
+    # Resolve universal dependencies (sources that all response entities depend on)
+    # We need to resolve dependencies for ALL response entities to get complete picture
+    all_rest_inputs = []
+    all_computed_parents = set()
+
+    for entity in all_entities:
+        rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
+            entity, model, all_endpoints, all_source_names
+        )
+        all_rest_inputs.extend(rest_inputs)
+        all_computed_parents.update(computed_parents)
+
+        # Check if entity is provided by a Source<REST> (new design: reverse lookup)
+        entity_source, source_type = find_source_for_entity(entity, model)
+        if entity_source and source_type == "REST":
+            config = build_rest_input_config(entity, entity_source, all_source_names)
+            all_rest_inputs.append(config)
+
+    # Deduplicate REST inputs by alias (source name)
+    seen_sources = set()
+    unique_rest_inputs = []
+    for inp in all_rest_inputs:
+        if inp["alias"] not in seen_sources:
+            unique_rest_inputs.append(inp)
+            seen_sources.add(inp["alias"])
+
+    # Build computation chains for each response entity
+    response_chains = []
+    for resp_config in response_configs:
+        entity = resp_config["entity"]
+        compiled_chain = build_entity_chain(entity, model, all_source_names, context="ctx")
+
+        # Get the condition from the entity (if any)
+        condition_expr = getattr(entity, "condition", None)
+        compiled_condition = None
+        if condition_expr:
+            # Compile the condition expression (similar to how we compile attributes)
+            from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+            compiled_condition = compile_expr_to_python(condition_expr)
+
+        response_chains.append({
+            "entity": entity,
+            "status_code": resp_config["status_code"],
+            "response_type": resp_config["response_type"],
+            "content_type": resp_config["content_type"],
+            "compiled_chain": compiled_chain,
+            "compiled_condition": compiled_condition
+        })
 
     # Build auth for the endpoint
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
-
-    # Get response type for unwrapping logic
-    response_type = response_schema.get("response_type", "object")
 
     # Prepare template context
     template_context = {
@@ -60,13 +110,11 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },
-        "entity": entity,
-        "rest_inputs": rest_inputs,
-        "computed_parents": computed_parents,
+        "rest_inputs": unique_rest_inputs,
+        "computed_parents": list(all_computed_parents),
         "route_prefix": route_path,
-        "compiled_chain": compiled_chain,
+        "response_chains": response_chains,  # Now a list of responses with their chains
         "server": server_config["server"],
-        "response_type": response_type,
     }
 
     # Setup Jinja2 environment

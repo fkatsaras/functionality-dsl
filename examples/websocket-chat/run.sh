@@ -17,3 +17,4 @@ else
     echo "Error: Python 3 is required but not found."
     exit 1
 fi
+

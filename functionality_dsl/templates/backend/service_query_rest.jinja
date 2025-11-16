@@ -45,17 +45,27 @@ _INTERNAL_DEPENDENCIES = [
 {%- endfor %}
 ]
 
-_COMPUTATION_CHAIN = [
-{%- for step in compiled_chain %}
+# Response configurations with computation chains and conditions
+_RESPONSE_CHAINS = [
+{%- for response in response_chains %}
     {
-        "name": "{{ step.name }}",
-        "attrs": [
-        {%- for attr in step.attrs %}
-            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        "status_code": {{ response.status_code }},
+        "entity_name": "{{ response.entity.name }}",
+        "response_type": "{{ response.response_type }}",
+        "condition": {{ response.compiled_condition | tojson if response.compiled_condition else "None" }},
+        "chain": [
+        {%- for step in response.compiled_chain %}
+            {
+                "name": "{{ step.name }}",
+                "attrs": [
+                {%- for attr in step.attrs %}
+                    {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+                {%- endfor %}
+                ],
+            },
         {%- endfor %}
         ],
     },
-
 {%- endfor %}
 ]
 
@@ -204,17 +214,23 @@ async def fetch_internal_dependencies(context: Dict[str, Any]) -> None:
             )
 
 
-def compute_entity_chain(context: Dict[str, Any]) -> None:
-    """Execute computation chain to transform data."""
-    logger.info(f"[COMPUTE] - Executing chain with {len(_COMPUTATION_CHAIN)} step(s)")
+def compute_all_response_entities(context: Dict[str, Any]) -> None:
+    """Execute computation chains for all possible response entities."""
+    logger.info(f"[COMPUTE] - Computing {len(_RESPONSE_CHAINS)} possible response(s)")
 
-    for step_index, compute_step in enumerate(_COMPUTATION_CHAIN, 1):
-        entity_name = compute_step["name"]
-        logger.debug(f"[COMPUTE] - Step {step_index}/{len(_COMPUTATION_CHAIN)}: {entity_name}")
+    for response_config in _RESPONSE_CHAINS:
+        chain = response_config["chain"]
+        entity_name = response_config["entity_name"]
 
-        shaped_data = _shape_entity_data(compute_step, context, entity_name)
-        context[entity_name] = shaped_data
-        logger.debug(f"[CONTEXT] - Stored computation result: {entity_name}")
+        logger.debug(f"[COMPUTE] - Processing response entity: {entity_name} (status: {response_config['status_code']})")
+
+        for step_index, compute_step in enumerate(chain, 1):
+            step_entity_name = compute_step["name"]
+            logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
+
+            shaped_data = _shape_entity_data(compute_step, context, step_entity_name)
+            context[step_entity_name] = shaped_data
+            logger.debug(f"[CONTEXT] - Stored computation result: {step_entity_name}")
 
 
 def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
@@ -246,11 +262,11 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
     return shaped_data
 
 
-async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any] = None, headers: Dict[str, str] = None) -> Dict[str, Any]:
+async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any] = None, headers: Dict[str, str] = None) -> tuple[Dict[str, Any], int]:
     """
     Main service function to execute the complete query flow.
 
-    Returns the final computed entity.
+    Returns tuple of (response_data, status_code).
     """
     context: Dict[str, Any] = {}
 
@@ -270,28 +286,106 @@ async def execute_query(path_params: Dict[str, str], query_params: Dict[str, Any
     # Execute the query pipeline
     await fetch_external_sources(context)
     await fetch_internal_dependencies(context)
-    compute_entity_chain(context)
 
-    # Extract and return final entity
-    final_entity_name = "{{ entity.name }}"
-    final_attributes = context.get(final_entity_name, {})
+    # Evaluate conditions and select appropriate response (lazy evaluation)
+    # Strategy: Evaluate conditional responses first, then fall back to default
+    logger.info(f"[RESPONSE_SELECTION] - Evaluating {len(_RESPONSE_CHAINS)} response condition(s)")
 
-    logger.info(f"[SUCCESS] - Query {final_entity_name} completed successfully")
-    logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
+    # Separate conditional responses from default
+    conditional_responses = []
+    default_response = None
 
-    # Unwrap response based on type
-    {% if response_type in ('string', 'number', 'integer', 'boolean', 'array') %}
-    # Response type is {{ response_type }} - unwrap the single attribute
-    if final_attributes:
-        # Get the first (and should be only) attribute value
-        attribute_values = list(final_attributes.values())
-        if attribute_values:
-            unwrapped = attribute_values[0]
-            logger.debug(f"[UNWRAP] - Unwrapped {{ response_type }} response")
-            return unwrapped
-    logger.warning(f"[UNWRAP] - No attributes found for {{ response_type }} response, returning empty")
-    return [] if "{{ response_type }}" == "array" else None
-    {% else %}
-    # Response type is object - return full entity attributes
-    return final_attributes
-    {% endif %}
+    for response_config in _RESPONSE_CHAINS:
+        if response_config["condition"]:
+            conditional_responses.append(response_config)
+        else:
+            default_response = response_config
+
+    # First, try conditional responses
+    for response_config in conditional_responses:
+        entity_name = response_config["entity_name"]
+        status_code = response_config["status_code"]
+        condition = response_config["condition"]
+        response_type = response_config["response_type"]
+        chain = response_config["chain"]
+
+        # Evaluate condition
+        try:
+            compiled_condition = compile_safe(condition)
+            eval_globals = {**safe_globals, **context}
+            condition_met = eval(compiled_condition, eval_globals, {})
+            logger.debug(f"[CONDITION] - {entity_name} (status {status_code}): condition = {condition_met}")
+        except Exception as e:
+            logger.error(f"[CONDITION] - Error evaluating condition for {entity_name}: {e}", exc_info=True)
+            condition_met = False
+
+        if condition_met:
+            # Condition matched - compute and return this response
+            logger.info(f"[RESPONSE_SELECTION] - Selected conditional response: {entity_name} (status {status_code})")
+            logger.debug(f"[COMPUTE] - Computing response entity: {entity_name} ({len(chain)} step(s))")
+
+            for step_index, compute_step in enumerate(chain, 1):
+                step_entity_name = compute_step["name"]
+                logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
+
+                shaped_data = _shape_entity_data(compute_step, context, step_entity_name)
+                context[step_entity_name] = shaped_data
+                logger.debug(f"[CONTEXT] - Stored computation result: {step_entity_name}")
+
+            # Get the computed entity
+            final_attributes = context.get(entity_name, {})
+            logger.info(f"[SUCCESS] - Returning {entity_name} with status {status_code}")
+            logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
+
+            # Unwrap response based on type
+            if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+                if final_attributes:
+                    attribute_values = list(final_attributes.values())
+                    if attribute_values:
+                        unwrapped = attribute_values[0]
+                        logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
+                        return unwrapped, status_code
+                logger.warning(f"[UNWRAP] - No attributes found for {response_type} response, returning empty")
+                return ([] if response_type == "array" else None), status_code
+            else:
+                return final_attributes, status_code
+
+    # No conditional matched - use default response (guaranteed to exist by validator)
+    if default_response:
+        entity_name = default_response["entity_name"]
+        status_code = default_response["status_code"]
+        response_type = default_response["response_type"]
+        chain = default_response["chain"]
+
+        logger.info(f"[RESPONSE_SELECTION] - Using default response: {entity_name} (status {status_code})")
+        logger.debug(f"[COMPUTE] - Computing response entity: {entity_name} ({len(chain)} step(s))")
+
+        for step_index, compute_step in enumerate(chain, 1):
+            step_entity_name = compute_step["name"]
+            logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
+
+            shaped_data = _shape_entity_data(compute_step, context, step_entity_name)
+            context[step_entity_name] = shaped_data
+            logger.debug(f"[CONTEXT] - Stored computation result: {step_entity_name}")
+
+        # Get the computed entity
+        final_attributes = context.get(entity_name, {})
+        logger.info(f"[SUCCESS] - Returning {entity_name} with status {status_code}")
+        logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
+
+        # Unwrap response based on type
+        if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+            if final_attributes:
+                attribute_values = list(final_attributes.values())
+                if attribute_values:
+                    unwrapped = attribute_values[0]
+                    logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
+                    return unwrapped, status_code
+            logger.warning(f"[UNWRAP] - No attributes found for {response_type} response, returning empty")
+            return ([] if response_type == "array" else None), status_code
+        else:
+            return final_attributes, status_code
+
+    # This should never happen due to validation
+    logger.error(f"[RESPONSE_SELECTION] - CRITICAL: No default response found!")
+    raise HTTPException(status_code=500, detail="Internal error: no default response")

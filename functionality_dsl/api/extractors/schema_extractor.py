@@ -37,12 +37,60 @@ def get_request_schema(endpoint):
     return None
 
 
-def get_response_schema(endpoint):
+def get_response_schema(endpoint_or_source):
     """
-    Extract response schema from endpoint.
-    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str}
+    Extract response schema(s) from endpoint or source.
+
+    For Endpoints (multi-response design), returns list of dicts:
+    [{status_code: int, type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str, content_type: str}]
+
+    For Sources (single response:  block), returns single dict:
+    {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str, content_type: str}
+
+    Returns None if no responses defined.
     """
-    response = getattr(endpoint, "response", None)
+    # Check for new multi-response design (responses block) - used by Endpoints
+    responses = getattr(endpoint_or_source, "responses", None)
+    if responses:
+        result = []
+        for response_entry in responses.responses:
+            status_code = getattr(response_entry, "status_code", 200)
+            response_type = getattr(response_entry, "type", "object")
+            content_type = getattr(response_entry, "content_type", "application/json")
+
+            # Get entity from schema field
+            schema = getattr(response_entry, "schema", None)
+            if not schema:
+                continue
+
+            entity = getattr(schema, "entity", None)
+            if entity:
+                result.append({
+                    "status_code": status_code,
+                    "type": "entity",
+                    "entity": entity,
+                    "inline_spec": None,
+                    "content_type": content_type,
+                    "response_type": response_type
+                })
+                continue
+
+            # Check for inline type (future support)
+            inline_type = getattr(schema, "inline_type", None)
+            if inline_type:
+                result.append({
+                    "status_code": status_code,
+                    "type": "inline",
+                    "entity": None,
+                    "inline_spec": parse_inline_type(inline_type),
+                    "content_type": content_type,
+                    "response_type": response_type
+                })
+
+        return result if result else None
+
+    # Check for old single response: block - used by Sources
+    response = getattr(endpoint_or_source, "response", None)
     if not response:
         return None
 

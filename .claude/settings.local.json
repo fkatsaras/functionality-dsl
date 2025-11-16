@@ -74,7 +74,8 @@
       "Bash(/tmp/math_funcs_backup.py)",
       "Bash(chmod:*)",
       "Bash(for demo in rest-basics rest-mutations rest-auth json-parsing json-with-params iot-sensors weather-comparison websocket-chat user-management user-orders)",
-      "Bash(do echo \"=== Validating $demo ===\")"
+      "Bash(do echo \"=== Validating $demo ===\")",
+      "Bash(del \"c:\\ffile\\functionality-dsl\\examples\\user-management\\entities.fdsl\")"
     ],
     "deny": [],
     "ask": []

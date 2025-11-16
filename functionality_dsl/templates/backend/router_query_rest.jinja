@@ -5,7 +5,7 @@
 import logging
 from typing import Any, Dict, Optional, List
 
-from fastapi import APIRouter, HTTPException, Request, Query, Header
+from fastapi import APIRouter, HTTPException, Request, Query, Header, Response
 {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -24,15 +24,10 @@ router = APIRouter(
 
 
 {% set pparams = endpoint.path_params or [] %}
-{% if response_type == 'array' %}
-@router.get("", response_model=List[Any])
-{% elif response_type in ('string', 'integer', 'number', 'boolean') %}
-@router.get("", response_model=Any)
-{% else %}
-@router.get("", response_model=Dict[str, Any])
-{% endif %}
+@router.get("")
 async def query_{{ endpoint.name | lower }}(
     request: Request,
+    response: Response,
     {% for p in pparams %}{{ p }}: str, {% endfor %}
     {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -45,9 +40,9 @@ async def query_{{ endpoint.name | lower }}(
     {% endif %}
 ):
     """
-    Query endpoint for {{ entity.name }}.
+    Query endpoint for {{ endpoint.name }}.
     Aggregates data from external sources and internal dependencies,
-    then computes the final entity attributes.
+    evaluates response conditions, and returns the appropriate response.
     """
     # Authentication
     {% if endpoint.auth %}
@@ -79,10 +74,16 @@ async def query_{{ endpoint.name | lower }}(
         query_params = dict(request.query_params)
         headers = dict(request.headers)
 
-        return await {{ endpoint.name | lower }}_service.execute_query(path_params, query_params, headers)
+        # Service returns (data, status_code) tuple
+        result, status_code = await {{ endpoint.name | lower }}_service.execute_query(path_params, query_params, headers)
+
+        # Set the HTTP status code
+        response.status_code = status_code
+
+        return result
 
     except HTTPException:
         raise
     except Exception as unexpected_error:
-        logger.exception(f"[ERROR] - Unexpected error in query {{ entity.name }}: {unexpected_error}")
+        logger.exception(f"[ERROR] - Unexpected error in query {{ endpoint.name }}: {unexpected_error}")
         raise HTTPException(status_code=500, detail="Internal server error")

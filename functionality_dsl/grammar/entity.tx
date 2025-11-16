@@ -50,6 +50,7 @@ Entity:
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
+  ('condition:' condition=Expr)?
   'end'
 ;
 
@@ -173,11 +174,25 @@ RequestBlock:
       'entity:' schema=SchemaRef
 ;
 
+// Single response block (for Sources)
 ResponseBlock:
   'response:'
     (content_type=ContentType ':')?
       'type:' type=AttrType
       'entity:' schema=SchemaRef
+;
+
+// Response entry with status code and full response block (for Endpoints)
+ResponseEntry:
+  status_code=INT ':'
+    (content_type=ContentType ':')?
+      'type:' type=AttrType
+      'entity:' schema=SchemaRef
+;
+
+// Multiple responses block (for Endpoints)
+ResponsesBlock:
+  'responses:' '-' responses+=ResponseEntry ('-' responses+=ResponseEntry)*
 ;
 
 EndpointREST:
@@ -187,7 +202,7 @@ EndpointREST:
     'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
-    (response=ResponseBlock)?
+    (responses=ResponsesBlock)?
     ('summary:' summary=STRING)?
     ('auth:' auth=AuthBlock)?
   )

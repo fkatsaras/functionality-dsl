@@ -1,0 +1,54 @@
+// Simple test for multiple responses feature
+
+Server TestServer
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// External mock data
+Source<REST> UsersData
+  url: "https://jsonplaceholder.typicode.com/users"
+  method: GET
+  response:
+    type: array
+    entity: UsersWrapper
+end
+
+// Schema entities
+Entity UsersWrapper
+  attributes:
+    - users: array;
+end
+
+// Success response (default - no condition)
+Entity UserFound(UsersWrapper)
+  attributes:
+    - id: integer = find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId))["id"];
+    - name: string = find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId))["name"];
+    - email: string = find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId))["email"];
+end
+
+// Error response - user not found
+Entity UserNotFound(UsersWrapper)
+  attributes:
+    - error: string = "User not found";
+    - userId: integer = GetUser.userId;
+  condition: not find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId))
+end
+
+// Endpoint with multiple responses
+Endpoint<REST> GetUser
+  path: "/api/users/{userId}"
+  method: GET
+  parameters:
+    path:
+      - userId: integer
+  responses:
+    - 200:
+        type: object
+        entity: UserFound
+    - 404:
+        type: object
+        entity: UserNotFound
+end
