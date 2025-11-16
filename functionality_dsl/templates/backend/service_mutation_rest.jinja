@@ -375,6 +375,7 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
     context["{{ response_source_entity.name }}"] = target_response
     logger.debug(f"[CONTEXT] - Seeded response entity: {{ response_source_entity.name }}")
     {% endif %}
+    {% endif %}
 
     {% if response_chains %}
     # Evaluate conditions and select appropriate response (lazy evaluation)
@@ -477,15 +478,22 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
         # Return object response as-is
         return final_attributes, status_code
 
-    # Fallback: no responses defined, return raw target response with 200
+    # Fallback: no responses defined
+    {% if target %}
     logger.warning("[RESPONSE_SELECTION] - No response chains defined, returning raw target response")
     return target_response, 200
     {% else %}
-    # No response chains, return raw target response with 200
-    return target_response, 200
+    logger.warning("[RESPONSE_SELECTION] - No response chains defined and no target, returning empty dict")
+    return {}, 200
     {% endif %}
     {% else %}
-    # Return final payload (no external target) with 200
-    logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (internal)")
+    # No response chains defined
+    {% if target %}
+    # Return raw target response with 200
+    return target_response, 200
+    {% else %}
+    # No target, return final payload (internal mutation) with 200
+    logger.info(f"[SUCCESS] - Mutation completed (internal)")
     return final_payload, 200
+    {% endif %}
     {% endif %}

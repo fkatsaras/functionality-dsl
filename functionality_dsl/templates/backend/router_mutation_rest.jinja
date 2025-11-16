@@ -30,7 +30,7 @@ async def mutate_{{ endpoint.name | lower }}_{{ endpoint.method.lower() }}(
     {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}, credentials: HTTPAuthorizationCredentials = Depends(security){% endif %}
 ):
     """
-    Mutation endpoint for {{ entity.name }}.
+    Mutation endpoint for {{ endpoint.name }}.
     {% if target %}
     Transforms input data through computation chain and forwards to {{ target.name }}.
     {% else %}
@@ -77,5 +77,5 @@ async def mutate_{{ endpoint.name | lower }}_{{ endpoint.method.lower() }}(
     except HTTPException:
         raise
     except Exception as unexpected_error:
-        logger.exception(f"[ERROR] - Unexpected error in mutation {{ entity.name }}")
+        logger.exception(f"[ERROR] - Unexpected error in mutation {{ endpoint.name }}")
         raise HTTPException(status_code=500, detail="Internal server error")

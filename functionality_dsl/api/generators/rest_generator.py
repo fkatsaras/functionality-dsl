@@ -249,6 +249,39 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
 
         # Build computation chain (entity -> terminal)
         compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
+    elif response_configs and not terminal_entity:
+        # No terminal entity (e.g., DELETE validation-only)
+        # Need to resolve dependencies for all response entities
+        all_rest_inputs = []
+        all_computed_parents = []
+
+        for resp_config in response_configs:
+            resp_entity = resp_config["entity"]
+            try:
+                resp_rest_inputs, resp_computed_parents, _ = resolve_dependencies_for_entity(
+                    resp_entity, model, all_endpoints, all_source_names
+                )
+                all_rest_inputs.extend(resp_rest_inputs)
+                all_computed_parents.extend(resp_computed_parents)
+            except Exception as e:
+                print(f"[ERROR] Failed resolving dependencies for {resp_entity.name}: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+
+        # Deduplicate REST inputs by alias
+        seen_sources = set()
+        for inp in all_rest_inputs:
+            if inp["alias"] not in seen_sources:
+                rest_inputs.append(inp)
+                seen_sources.add(inp["alias"])
+
+        # Deduplicate computed parents by entity name
+        seen_computed = set()
+        for comp in all_computed_parents:
+            if comp["entity"] not in seen_computed:
+                computed_parents.append(comp)
+                seen_computed.add(comp["entity"])
 
     # Build target config (new design: reverse lookup for target Source)
     target = None
@@ -262,42 +295,65 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
     response_chains = []
     response_source_entity = None
 
-    if response_configs and target_obj:
-        # For mutations, the response comes from the external target
-        # Get the entity from the target Source's response block
-        response_block = getattr(target_obj, "response", None)
-        if response_block:
-            response_schema_obj = getattr(response_block, "schema", None)
-            if response_schema_obj:
-                response_source_entity = getattr(response_schema_obj, "entity", None)
+    if response_configs:
+        if target_obj:
+            # For mutations with external target, the response comes from the target
+            # Get the entity from the target Source's response block
+            response_block = getattr(target_obj, "response", None)
+            if response_block:
+                response_schema_obj = getattr(response_block, "schema", None)
+                if response_schema_obj:
+                    response_source_entity = getattr(response_schema_obj, "entity", None)
 
-        # Build a chain for each response entity
-        for resp_config in response_configs:
-            response_entity = resp_config["entity"]
-            compiled_chain = []
+            # Build a chain for each response entity
+            for resp_config in response_configs:
+                response_entity = resp_config["entity"]
+                compiled_chain = []
 
-            # Build the chain from source entity to response entity if they differ
-            if response_source_entity and response_source_entity.name != response_entity.name:
+                # Build the chain from source entity to response entity if they differ
+                if response_source_entity and response_source_entity.name != response_entity.name:
+                    compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+                elif not response_source_entity:
+                    # No source entity, response_entity is directly from target
+                    response_source_entity = response_entity
+
+                # Get the condition from the response config
+                condition_expr = resp_config.get("condition")
+                compiled_condition = None
+                if condition_expr:
+                    from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+                    compiled_condition = compile_expr_to_python(condition_expr)
+
+                response_chains.append({
+                    "entity": response_entity,
+                    "status_code": resp_config["status_code"],
+                    "response_type": resp_config["response_type"],
+                    "content_type": resp_config["content_type"],
+                    "compiled_chain": compiled_chain,
+                    "compiled_condition": compiled_condition
+                })
+        else:
+            # No target - validation-only endpoint (e.g., DELETE)
+            # Response entities compute directly from sources without target response
+            for resp_config in response_configs:
+                response_entity = resp_config["entity"]
                 compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
-            elif not response_source_entity:
-                # No source entity, response_entity is directly from target
-                response_source_entity = response_entity
 
-            # Get the condition from the response config
-            condition_expr = resp_config.get("condition")
-            compiled_condition = None
-            if condition_expr:
-                from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
-                compiled_condition = compile_expr_to_python(condition_expr)
+                # Get the condition from the response config
+                condition_expr = resp_config.get("condition")
+                compiled_condition = None
+                if condition_expr:
+                    from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+                    compiled_condition = compile_expr_to_python(condition_expr)
 
-            response_chains.append({
-                "entity": response_entity,
-                "status_code": resp_config["status_code"],
-                "response_type": resp_config["response_type"],
-                "content_type": resp_config["content_type"],
-                "compiled_chain": compiled_chain,
-                "compiled_condition": compiled_condition
-            })
+                response_chains.append({
+                    "entity": response_entity,
+                    "status_code": resp_config["status_code"],
+                    "response_type": resp_config["response_type"],
+                    "content_type": resp_config["content_type"],
+                    "compiled_chain": compiled_chain,
+                    "compiled_condition": compiled_condition
+                })
 
     # Build target dict for template
     if target_obj and target_type == "REST":
