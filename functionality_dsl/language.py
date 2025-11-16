@@ -986,37 +986,50 @@ def internal_rest_endpoint_obj_processor(iep):
     # Validate each response in responses block
     if responses:
         # Validate that exactly ONE response has no condition (the default)
-        entities_with_conditions = []
+        responses_with_conditions = []
         default_responses = []
 
         for idx, response_entry in enumerate(responses.responses):
-            # Each ResponseEntry has: status_code, type, schema, optional content_type
+            # Each ResponseEntry has: status_code, type, schema, optional content_type, optional condition
             _validate_type_schema_compatibility(response_entry, f"responses[{idx}]", f"Endpoint<REST> '{iep.name}'")
 
-            # Get the entity referenced by this response
+            # Check if this response has a condition
+            response_condition = getattr(response_entry, "condition", None)
+
+            # Get entity name for error messages
             schema = getattr(response_entry, "schema", None)
+            entity_name = "unknown"
             if schema:
                 entity = getattr(schema, "entity", None)
                 if entity:
-                    # Check if this entity has a condition
+                    entity_name = entity.name
+                    # Validate that entity does NOT have a condition (condition should be on response, not entity)
                     entity_condition = getattr(entity, "condition", None)
                     if entity_condition:
-                        entities_with_conditions.append((response_entry.status_code, entity.name))
-                    else:
-                        default_responses.append((response_entry.status_code, entity.name))
+                        raise TextXSemanticError(
+                            f"Endpoint<REST> '{iep.name}': Entity '{entity_name}' has a 'condition:' defined. "
+                            f"Conditions should now be defined on the response block, not the entity. "
+                            f"Move the condition to the response block like: '- {response_entry.status_code}: ... entity: {entity_name} condition: <expr>'",
+                            **get_location(entity)
+                        )
+
+            if response_condition:
+                responses_with_conditions.append((response_entry.status_code, entity_name))
+            else:
+                default_responses.append((response_entry.status_code, entity_name))
 
         # Semantic rule: Exactly ONE response must be the default (no condition)
         if len(default_responses) == 0:
             raise TextXSemanticError(
-                f"Endpoint<REST> '{iep.name}': At least one response entity must have NO 'condition:' (the default/fallback response). "
-                f"Currently all {len(entities_with_conditions)} response(s) have conditions.",
+                f"Endpoint<REST> '{iep.name}': At least one response must have NO 'condition:' (the default/fallback response). "
+                f"Currently all {len(responses_with_conditions)} response(s) have conditions.",
                 **get_location(iep)
             )
 
         if len(default_responses) > 1:
             default_list = ", ".join(f"{status} ({name})" for status, name in default_responses)
             raise TextXSemanticError(
-                f"Endpoint<REST> '{iep.name}': Only ONE response entity can be the default (no condition). "
+                f"Endpoint<REST> '{iep.name}': Only ONE response can be the default (no condition). "
                 f"Found {len(default_responses)} default responses: {default_list}",
                 **get_location(iep)
             )

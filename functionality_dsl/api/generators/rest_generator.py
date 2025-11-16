@@ -44,7 +44,8 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
             "entity": entity,
             "status_code": status_code,
             "response_type": response_type,
-            "content_type": resp.get("content_type", "application/json")
+            "content_type": resp.get("content_type", "application/json"),
+            "condition": resp.get("condition")  # Condition from response entry, not entity
         })
         all_entities.add(entity)
 
@@ -80,8 +81,8 @@ def generate_query_router(endpoint, request_schema, response_schema, model, all_
         entity = resp_config["entity"]
         compiled_chain = build_entity_chain(entity, model, all_source_names, context="ctx")
 
-        # Get the condition from the entity (if any)
-        condition_expr = getattr(entity, "condition", None)
+        # Get the condition from the response config (not from entity anymore)
+        condition_expr = resp_config.get("condition")
         compiled_condition = None
         if condition_expr:
             # Compile the condition expression (similar to how we compile attributes)
@@ -166,66 +167,137 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
             raise ValueError(f"Mutation endpoint {endpoint.name} request must be an entity reference (inline types not yet supported)")
         request_entity = request_schema["entity"]
 
-    # Extract response entity (optional)
-    response_entity = None
+    # Extract response entities (optional, now supports multiple responses)
+    response_configs = []
+    all_response_entities = set()
     if response_schema:
-        if response_schema["type"] != "entity":
-            raise ValueError(f"Mutation endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
-        response_entity = response_schema["entity"]
+        # response_schema is now a list of response objects
+        if not isinstance(response_schema, list):
+            raise ValueError(f"Mutation endpoint {endpoint.name} response_schema must be a list")
 
-    # Use request entity as the primary entity for dependency resolution
-    entity = request_entity or response_entity
-    if not entity:
-        raise ValueError(f"Mutation endpoint {endpoint.name} must have at least request or response schema")
+        # Process each response
+        for resp in response_schema:
+            # Get the entity from response schema (inline types not supported for root response yet)
+            if resp["type"] != "entity":
+                raise ValueError(f"Mutation endpoint {endpoint.name} response must be an entity reference (inline types not yet supported)")
 
-    # Find the terminal entity (has external target)
-    terminal_entity = find_terminal_entity(entity, model) or entity
+            entity = resp["entity"]
+            status_code = resp["status_code"]
+            response_type = resp.get("response_type", "object")
 
-    # Resolve dependencies
-    rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
-        entity, model, all_endpoints, all_source_names
-    )
+            response_configs.append({
+                "entity": entity,
+                "status_code": status_code,
+                "response_type": response_type,
+                "content_type": resp.get("content_type", "application/json"),
+                "condition": resp.get("condition")  # Condition from response entry
+            })
+            all_response_entities.add(entity)
 
-    # Universal resolver for deep dependencies
-    universal_inputs = resolve_universal_dependencies(entity, model, all_source_names)
+    # For mutations, we need to find the entity that will be sent to the target
+    # This could be from request (POST/PUT/PATCH) or from response dependencies (DELETE)
+    entity = None
+    terminal_entity = None
 
-    # Merge inputs (deduplicate)
-    seen_keys = {(ri["entity"], ri["url"]) for ri in rest_inputs}
-    for uni_input in universal_inputs:
-        key = (uni_input["entity"], uni_input["url"])
-        if key not in seen_keys:
-            rest_inputs.append(uni_input)
-            seen_keys.add(key)
+    if request_entity:
+        # Normal case: request body exists
+        entity = request_entity
+        terminal_entity = find_terminal_entity(entity, model) or entity
+    elif response_configs:
+        # DELETE case: no request body, but response entities might have dependencies
+        # We need to find the terminal entity by looking at all entities in the model
+        # and checking which one is the target for this endpoint
+        from ..graph import get_all_ancestors
 
-    # Build computation chain (entity -> terminal)
-    compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
+        # Collect all entities referenced by response entities (including ancestors)
+        all_related_entities = set()
+        for resp_config in response_configs:
+            resp_entity = resp_config["entity"]
+            all_related_entities.add(resp_entity)
+            # Get all ancestor entities
+            ancestors = get_all_ancestors(resp_entity, model)
+            all_related_entities.update(ancestors)
+
+        # Find which one has a target
+        for candidate_entity in all_related_entities:
+            target_obj_check, target_type_check = find_target_for_entity(candidate_entity, model)
+            if target_obj_check and target_type_check == "REST":
+                entity = candidate_entity  # This will be used for dependency resolution
+                terminal_entity = candidate_entity
+                break
+
+    # Resolve dependencies (if we have an entity - either from request or response)
+    rest_inputs = []
+    computed_parents = []
+    compiled_chain = []
+
+    if entity and terminal_entity:
+        rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
+            entity, model, all_endpoints, all_source_names
+        )
+
+        # Universal resolver for deep dependencies
+        universal_inputs = resolve_universal_dependencies(entity, model, all_source_names)
+
+        # Merge inputs (deduplicate)
+        seen_keys = {(ri["entity"], ri["url"]) for ri in rest_inputs}
+        for uni_input in universal_inputs:
+            key = (uni_input["entity"], uni_input["url"])
+            if key not in seen_keys:
+                rest_inputs.append(uni_input)
+                seen_keys.add(key)
+
+        # Build computation chain (entity -> terminal)
+        compiled_chain = build_entity_chain(terminal_entity, model, all_source_names, context="ctx")
 
     # Build target config (new design: reverse lookup for target Source)
     target = None
-    target_obj, target_type = find_target_for_entity(terminal_entity, model)
+    target_obj = None
+    target_type = None
 
-    # Build response chain if response entity exists
-    response_chain = []
+    if terminal_entity:
+        target_obj, target_type = find_target_for_entity(terminal_entity, model)
+
+    # Build response chains for all response entities
+    response_chains = []
     response_source_entity = None
-    if response_entity and target_obj:
+
+    if response_configs and target_obj:
         # For mutations, the response comes from the external target
         # Get the entity from the target Source's response block
         response_block = getattr(target_obj, "response", None)
         if response_block:
-            response_schema = getattr(response_block, "schema", None)
-            if response_schema:
-                response_source_entity = getattr(response_schema, "entity", None)
+            response_schema_obj = getattr(response_block, "schema", None)
+            if response_schema_obj:
+                response_source_entity = getattr(response_schema_obj, "entity", None)
 
-                # Build the chain from source entity to response entity if they differ
-                # (i.e., there are transformations to apply)
-                if response_source_entity and response_source_entity.name != response_entity.name:
-                    response_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
-                elif not response_source_entity:
-                    # No source entity, response_entity is directly from target
-                    response_source_entity = response_entity
-                else:
-                    # Same entity, no transformation needed
-                    response_source_entity = response_entity
+        # Build a chain for each response entity
+        for resp_config in response_configs:
+            response_entity = resp_config["entity"]
+            compiled_chain = []
+
+            # Build the chain from source entity to response entity if they differ
+            if response_source_entity and response_source_entity.name != response_entity.name:
+                compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+            elif not response_source_entity:
+                # No source entity, response_entity is directly from target
+                response_source_entity = response_entity
+
+            # Get the condition from the response config
+            condition_expr = resp_config.get("condition")
+            compiled_condition = None
+            if condition_expr:
+                from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+                compiled_condition = compile_expr_to_python(condition_expr)
+
+            response_chains.append({
+                "entity": response_entity,
+                "status_code": resp_config["status_code"],
+                "response_type": resp_config["response_type"],
+                "content_type": resp_config["content_type"],
+                "compiled_chain": compiled_chain,
+                "compiled_condition": compiled_condition
+            })
 
     # Build target dict for template
     if target_obj and target_type == "REST":
@@ -253,9 +325,8 @@ def generate_mutation_router(endpoint, request_schema, response_schema, model, a
         },
         "entity": entity,
         "request_entity": request_entity,  # NEW: Pass request entity for seeding from request body
-        "response_entity": response_entity,  # NEW: Pass response entity
+        "response_chains": response_chains,  # NEW: Multiple response chains with conditions
         "response_source_entity": response_source_entity,  # NEW: Entity from Source response
-        "response_chain": response_chain,  # NEW: Response transformation chain
         "terminal": terminal_entity,
         "target": target,
         "rest_inputs": rest_inputs,

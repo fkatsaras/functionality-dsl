@@ -306,28 +306,38 @@ async def forward_to_target(payload: Dict[str, Any], context: Dict[str, Any]) ->
 {% endif %}
 
 
-{% if response_chain %}
-_RESPONSE_CHAIN = [
-{%- for step in response_chain %}
+{% if response_chains %}
+_RESPONSE_CHAINS = [
+{%- for resp_config in response_chains %}
     {
-        "name": "{{ step.name }}",
-        "attrs": [
-        {%- for attr in step.attrs %}
-            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        "entity_name": "{{ resp_config.entity.name }}",
+        "status_code": {{ resp_config.status_code }},
+        "response_type": "{{ resp_config.response_type }}",
+        "content_type": "{{ resp_config.content_type }}",
+        "condition": {{ resp_config.compiled_condition | tojson if resp_config.compiled_condition else 'None' }},
+        "chain": [
+        {%- for step in resp_config.compiled_chain %}
+            {
+                "name": "{{ step.name }}",
+                "attrs": [
+                {%- for attr in step.attrs %}
+                    {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+                {%- endfor %}
+                ],
+            },
         {%- endfor %}
         ],
     },
-
 {%- endfor %}
 ]
 {% endif %}
 
 
-async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, str]) -> Dict[str, Any]:
+async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, str]) -> tuple[Dict[str, Any], int]:
     """
     Main service function to execute the complete mutation flow.
 
-    Returns the final payload or forwarding result.
+    Returns tuple of (response_data, status_code).
     """
     {% if request_entity %}
     # Validate request body
@@ -346,49 +356,136 @@ async def execute_mutation(request_body: Dict[str, Any], path_params: Dict[str, 
     transform_entity_chain(context)
 
     # Extract final payload
+    {% if terminal %}
     terminal_entity_name = "{{ terminal.name }}"
     final_payload = context.get(terminal_entity_name, {})
-
     logger.info(f"[PAYLOAD] - Final payload from {terminal_entity_name}: {list(final_payload.keys())}")
+    {% else %}
+    # No terminal entity (e.g., DELETE with no request body)
+    final_payload = {}
+    logger.info("[PAYLOAD] - No request body, using empty payload")
+    {% endif %}
 
     {% if target %}
     # Forward to external target
     target_response = await forward_to_target(final_payload, context)
 
     {% if response_source_entity %}
-    {% if response_chain %}
-    # Process response through transformation chain
-    logger.info("[RESPONSE] - Processing response through transformation chain")
-
     # Seed response data from external source
     context["{{ response_source_entity.name }}"] = target_response
     logger.debug(f"[CONTEXT] - Seeded response entity: {{ response_source_entity.name }}")
+    {% endif %}
 
-    # Transform response through chain
-    for step_index, transform_step in enumerate(_RESPONSE_CHAIN, 1):
-        entity_name = transform_step["name"]
-        logger.debug(f"[RESPONSE] - Step {step_index}/{len(_RESPONSE_CHAIN)}: {entity_name}")
+    {% if response_chains %}
+    # Evaluate conditions and select appropriate response (lazy evaluation)
+    logger.info(f"[RESPONSE_SELECTION] - Evaluating {len(_RESPONSE_CHAINS)} response condition(s)")
 
-        shaped_data = _shape_entity_data(transform_step, context, entity_name)
-        context[entity_name] = shaped_data
-        logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys())}")
+    # Separate conditional responses from default
+    conditional_responses = []
+    default_response = None
 
-    # Return the final transformed response entity
-    response_entity_name = "{{ response_entity.name }}"
-    final_response = context.get(response_entity_name, target_response)
-    logger.info(f"[SUCCESS] - Response processed through {response_entity_name}")
-    return final_response
+    for response_config in _RESPONSE_CHAINS:
+        if response_config["condition"]:
+            conditional_responses.append(response_config)
+        else:
+            default_response = response_config
+
+    # First, try conditional responses
+    for response_config in conditional_responses:
+        entity_name = response_config["entity_name"]
+        status_code = response_config["status_code"]
+        condition = response_config["condition"]
+        response_type = response_config["response_type"]
+        chain = response_config["chain"]
+
+        # Evaluate condition
+        try:
+            compiled_condition = compile_safe(condition)
+            eval_globals = {**safe_globals, **context}
+            condition_met = eval(compiled_condition, eval_globals, {})
+            logger.debug(f"[CONDITION] - {entity_name} (status {status_code}): condition = {condition_met}")
+        except Exception as e:
+            logger.error(f"[CONDITION] - Error evaluating condition for {entity_name}: {e}", exc_info=True)
+            condition_met = False
+
+        if condition_met:
+            # Condition matched - compute and return this response
+            logger.info(f"[RESPONSE_SELECTION] - Selected conditional response: {entity_name} (status {status_code})")
+            logger.debug(f"[COMPUTE] - Computing response entity: {entity_name} ({len(chain)} step(s))")
+
+            for step_index, compute_step in enumerate(chain, 1):
+                step_entity_name = compute_step["name"]
+                logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
+
+                shaped_data = _shape_entity_data(compute_step, context, step_entity_name)
+                context[step_entity_name] = shaped_data
+                logger.debug(f"[CONTEXT] - Stored computation result: {step_entity_name}")
+
+            # Get the computed entity
+            final_attributes = context.get(entity_name, {})
+            logger.info(f"[SUCCESS] - Returning {entity_name} with status {status_code}")
+            logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
+
+            # Unwrap response based on type
+            if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+                if final_attributes:
+                    attribute_values = list(final_attributes.values())
+                    if attribute_values:
+                        unwrapped = attribute_values[0]
+                        logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
+                        return unwrapped, status_code
+                logger.warning(f"[UNWRAP] - No attributes found for {response_type} response, returning empty")
+                return ([] if response_type == "array" else None), status_code
+
+            # Return object response as-is
+            return final_attributes, status_code
+
+    # No condition matched, use default response
+    if default_response:
+        entity_name = default_response["entity_name"]
+        status_code = default_response["status_code"]
+        response_type = default_response["response_type"]
+        chain = default_response["chain"]
+
+        logger.info(f"[RESPONSE_SELECTION] - Using default response: {entity_name} (status {status_code})")
+        logger.debug(f"[COMPUTE] - Computing response entity: {entity_name} ({len(chain)} step(s))")
+
+        for step_index, compute_step in enumerate(chain, 1):
+            step_entity_name = compute_step["name"]
+            logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
+
+            shaped_data = _shape_entity_data(compute_step, context, step_entity_name)
+            context[step_entity_name] = shaped_data
+            logger.debug(f"[CONTEXT] - Stored computation result: {step_entity_name}")
+
+        # Get the computed entity
+        final_attributes = context.get(entity_name, {})
+        logger.info(f"[SUCCESS] - Returning {entity_name} with status {status_code}")
+        logger.debug(f"[RESULT] - Attributes: {list(final_attributes.keys())}")
+
+        # Unwrap response based on type
+        if response_type in ('string', 'number', 'integer', 'boolean', 'array'):
+            if final_attributes:
+                attribute_values = list(final_attributes.values())
+                if attribute_values:
+                    unwrapped = attribute_values[0]
+                    logger.debug(f"[UNWRAP] - Unwrapped {response_type} response")
+                    return unwrapped, status_code
+            logger.warning(f"[UNWRAP] - No attributes found for {response_type} response, returning empty")
+            return ([] if response_type == "array" else None), status_code
+
+        # Return object response as-is
+        return final_attributes, status_code
+
+    # Fallback: no responses defined, return raw target response with 200
+    logger.warning("[RESPONSE_SELECTION] - No response chains defined, returning raw target response")
+    return target_response, 200
     {% else %}
-    # No transformation needed, return response directly
-    logger.info(f"[SUCCESS] - Response entity matches source, no transformation needed")
-    return target_response
+    # No response chains, return raw target response with 200
+    return target_response, 200
     {% endif %}
     {% else %}
-    # No response entity defined, return raw response
-    return target_response
-    {% endif %}
-    {% else %}
-    # Return final payload (no external target)
+    # Return final payload (no external target) with 200
     logger.info(f"[SUCCESS] - Mutation {{ entity.name }} completed (internal)")
-    return final_payload
+    return final_payload, 200
     {% endif %}

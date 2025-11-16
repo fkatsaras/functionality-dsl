@@ -11,3 +11,4 @@ if command -v docker-compose &> /dev/null; then
 else
     docker compose -f docker-compose.dummy.yml up
 fi
+

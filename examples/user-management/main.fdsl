@@ -6,7 +6,7 @@ Server AuthServer
 end
 
 // ============================================================
-// SOURCES (Minimal DB Interface)
+// SHARED ENTITIES
 // ============================================================
 
 Entity UsersWrapper
@@ -21,7 +21,10 @@ Entity WriteResponse
     - users: array?;
 end
 
-// Read all users
+// ============================================================
+// SOURCES
+// ============================================================
+
 Source<REST> UsersDB
   url: "http://dummydb:9000/db/users"
   method: GET
@@ -30,7 +33,6 @@ Source<REST> UsersDB
     entity: UsersWrapper
 end
 
-// Write single user (register)
 Source<REST> WriteUser
   url: "http://dummydb:9000/db/users"
   method: POST
@@ -42,7 +44,6 @@ Source<REST> WriteUser
     entity: WriteResponse
 end
 
-// Update entire users array (for update/delete operations)
 Source<REST> UpdateUsers
   url: "http://dummydb:9000/db/users"
   method: PUT
@@ -62,8 +63,8 @@ Endpoint<REST> ListUsers
   path: "/api/users"
   method: GET
   responses:
-    - 200:
-      type: object
+    - 200: 
+      type: object 
       entity: UsersWrapper
 end
 
@@ -86,7 +87,6 @@ Entity RegisterRequest
     - email: string<email>;
 end
 
-// Check if user already exists
 Entity RegisterValidation(RegisterRequest, UsersWrapper)
   attributes:
     - usernameExists: boolean = any(UsersWrapper.users, u -> u["username"] == trim(RegisterRequest.username));
@@ -94,7 +94,6 @@ Entity RegisterValidation(RegisterRequest, UsersWrapper)
     - isValid: boolean = not usernameExists and not emailExists;
 end
 
-// Transform to clean data for DB
 Entity NewUserData(RegisterValidation, RegisterRequest)
   attributes:
     - username: string = trim(RegisterRequest.username);
@@ -102,21 +101,16 @@ Entity NewUserData(RegisterValidation, RegisterRequest)
     - email: string = trim(lower(RegisterRequest.email));
 end
 
-// Success response
-Entity RegisterResponse(WriteResponse)
+Entity RegisterSuccess(WriteResponse)
   attributes:
     - id: integer = WriteResponse.user["id"];
     - username: string = WriteResponse.user["username"];
     - message: string = "User registered successfully";
 end
 
-// Error response for duplicate user
 Entity RegisterError(RegisterValidation)
   attributes:
-    - error: string = RegisterValidation.usernameExists
-        if "Username already exists"
-        else "Email already registered";
-  condition: not RegisterValidation.isValid
+    - error: string = RegisterValidation.usernameExists if "Username already exists" else "Email already registered";
 end
 
 Endpoint<REST> Register
@@ -126,12 +120,13 @@ Endpoint<REST> Register
     type: object
     entity: RegisterRequest
   responses:
-    - 200:
-        type: object
-        entity: RegisterResponse
-    - 409:
-        type: object
-        entity: RegisterError
+    - 409: 
+      type: object 
+      entity: RegisterError 
+      condition: not RegisterValidation.isValid;
+    - 200: 
+      type: object 
+      entity: RegisterSuccess
 end
 
 Component<ActionForm> RegisterForm
@@ -141,7 +136,7 @@ Component<ActionForm> RegisterForm
 end
 
 // ============================================================
-// FLOW 3: Login (credential validation in FDSL)
+// FLOW 3: Login
 // ============================================================
 
 Entity LoginRequest
@@ -150,28 +145,21 @@ Entity LoginRequest
     - password: string;
 end
 
-// Find matching user
 Entity LoginValidation(LoginRequest, UsersWrapper)
   attributes:
-    - matchedUser: object? = find(
-        UsersWrapper.users,
-        u -> u["username"] == trim(LoginRequest.username) and u["password"] == LoginRequest.password
-      );
+    - matchedUser: object? = find(UsersWrapper.users, u -> u["username"] == trim(LoginRequest.username) and u["password"] == LoginRequest.password);
     - isValid: boolean = matchedUser != null;
 end
 
-// Generate token (simple concatenation)
-Entity LoginResponse(LoginValidation)
+Entity LoginSuccess(LoginValidation)
   attributes:
     - token: string = LoginValidation.matchedUser["username"] + "-token-" + toString(LoginValidation.matchedUser["id"]);
     - userId: integer = LoginValidation.matchedUser["id"];
 end
 
-// Error response for invalid credentials
 Entity LoginError(LoginValidation)
   attributes:
     - error: string = "Invalid username or password";
-  condition: not LoginValidation.isValid
 end
 
 Endpoint<REST> Login
@@ -181,12 +169,13 @@ Endpoint<REST> Login
     type: object
     entity: LoginRequest
   responses:
-    - 200:
-        type: object
-        entity: LoginResponse
-    - 401:
-        type: object
-        entity: LoginError
+    - 401: 
+    type: object 
+    entity: LoginError 
+    condition: not LoginValidation.isValid;
+    - 200: 
+    type: object 
+    entity: LoginSuccess
 end
 
 Component<ActionForm> LoginForm
@@ -196,7 +185,7 @@ Component<ActionForm> LoginForm
 end
 
 // ============================================================
-// FLOW 4: Reset Password (find user by email, replace array)
+// FLOW 4: Reset Password
 // ============================================================
 
 Entity ResetPasswordRequest
@@ -205,38 +194,30 @@ Entity ResetPasswordRequest
     - newPassword: string(6..);
 end
 
-// Find user by email and update their password
-Entity ResetPasswordData(ResetPasswordRequest, UsersWrapper)
+Entity ResetPasswordValidation(ResetPasswordRequest, UsersWrapper)
   attributes:
     - targetUser: object? = find(UsersWrapper.users, u -> u["email"] == trim(lower(ResetPasswordRequest.email)));
     - userExists: boolean = targetUser != null;
 end
 
-// Update the users array with new password
-Entity UpdatedUsersWrapper(ResetPasswordData, UsersWrapper)
+Entity UpdatedUsersWrapper(ResetPasswordValidation, UsersWrapper)
   attributes:
     - users: array = map(UsersWrapper.users, u ->
         u["email"] == trim(lower(ResetPasswordRequest.email))
-          if {
-              "id": u["id"],
-              "username": u["username"],
-              "email": u["email"],
-              "password": ResetPasswordRequest.newPassword
-            }
+          if {"id": u["id"], "username": u["username"], "email": u["email"], "password": ResetPasswordRequest.newPassword}
           else u
       );
 end
 
-Entity ResetPasswordResponse(WriteResponse)
+Entity ResetPasswordSuccess(WriteResponse)
   attributes:
     - success: boolean = true;
     - message: string = "Password reset successfully";
 end
 
-Entity ResetPasswordError(ResetPasswordData)
+Entity ResetPasswordError(ResetPasswordValidation)
   attributes:
     - error: string = "Email not found";
-  condition: not ResetPasswordData.userExists
 end
 
 Endpoint<REST> ResetPassword
@@ -246,12 +227,13 @@ Endpoint<REST> ResetPassword
     type: object
     entity: ResetPasswordRequest
   responses:
-    - 200:
-        type: object
-        entity: ResetPasswordResponse
-    - 404:
-        type: object
-        entity: ResetPasswordError
+    - 404: 
+      type: object 
+      entity: ResetPasswordError 
+      condition: not ResetPasswordValidation.userExists;
+    - 200: 
+      type: object 
+      entity: ResetPasswordSuccess
 end
 
 Component<ActionForm> ResetPasswordForm
@@ -261,7 +243,7 @@ Component<ActionForm> ResetPasswordForm
 end
 
 // ============================================================
-// FLOW 5: Update User (by ID)
+// FLOW 5: Update User
 // ============================================================
 
 Entity UpdateUserRequest
@@ -270,38 +252,30 @@ Entity UpdateUserRequest
     - password: string(6..)?;
 end
 
-// Find and update user
-Entity UpdateUserData(UpdateUserRequest, UsersWrapper)
+Entity UpdateUserValidation(UpdateUserRequest, UsersWrapper)
   attributes:
     - targetUser: object? = find(UsersWrapper.users, u -> u["id"] == UserUpdate.id);
     - userExists: boolean = targetUser != null;
 end
 
-// Update users array
-Entity UpdatedUsersForUpdate(UpdateUserData, UsersWrapper)
+Entity UpdatedUsersForUpdate(UpdateUserValidation, UsersWrapper)
   attributes:
     - users: array = map(UsersWrapper.users, u ->
         u["id"] == UserUpdate.id
-          if {
-              "id": u["id"],
-              "username": u["username"],
-              "email": UpdateUserRequest.email if UpdateUserRequest.email else u["email"],
-              "password": UpdateUserRequest.password if UpdateUserRequest.password else u["password"]
-            }
+          if {"id": u["id"], "username": u["username"], "email": UpdateUserRequest.email if UpdateUserRequest.email else u["email"], "password": UpdateUserRequest.password if UpdateUserRequest.password else u["password"]}
           else u
       );
 end
 
-Entity UpdateUserResponse(WriteResponse)
+Entity UpdateUserSuccess(WriteResponse)
   attributes:
     - success: boolean = true;
     - message: string = "User updated successfully";
 end
 
-Entity UpdateUserError(UpdateUserData)
+Entity UpdateUserError(UpdateUserValidation)
   attributes:
     - error: string = "User not found";
-  condition: not UpdateUserData.userExists
 end
 
 Endpoint<REST> UserUpdate
@@ -314,12 +288,13 @@ Endpoint<REST> UserUpdate
     type: object
     entity: UpdateUserRequest
   responses:
-    - 200:
-        type: object
-        entity: UpdateUserResponse
-    - 404:
-        type: object
-        entity: UpdateUserError
+    - 404: 
+      type: object 
+      entity: UpdateUserError 
+      condition: not UpdateUserValidation.userExists;
+    - 200: 
+      type: object 
+      entity: UpdateUserSuccess
 end
 
 Component<ActionForm> UpdateUserForm
@@ -329,31 +304,26 @@ Component<ActionForm> UpdateUserForm
 end
 
 // ============================================================
-// FLOW 6: Delete User (filter from array)
+// FLOW 6: Delete User (Simplified - just validation, no actual deletion)
 // ============================================================
 
-Entity DeleteUserData(UsersWrapper)
+Entity DeleteUserValidation(UsersWrapper)
   attributes:
     - targetUser: object? = find(UsersWrapper.users, u -> u["id"] == UserDelete.id);
     - userExists: boolean = targetUser != null;
 end
 
-// Filter out deleted user
-Entity UpdatedUsersForDelete(DeleteUserData, UsersWrapper)
-  attributes:
-    - users: array = filter(UsersWrapper.users, u -> u["id"] != UserDelete.id);
-end
-
-Entity DeleteUserResponse(WriteResponse)
+Entity DeleteUserSuccess(DeleteUserValidation)
   attributes:
     - success: boolean = true;
-    - message: string = "User deleted successfully";
+    - message: string = "User would be deleted (demonstration only)";
+    - userId: integer = UserDelete.id;
 end
 
-Entity DeleteUserError(DeleteUserData)
+Entity DeleteUserError(DeleteUserValidation)
   attributes:
     - error: string = "User not found";
-  condition: not DeleteUserData.userExists
+    - userId: integer = UserDelete.id;
 end
 
 Endpoint<REST> UserDelete
@@ -363,12 +333,13 @@ Endpoint<REST> UserDelete
     path:
       - id: integer
   responses:
-    - 200:
-        type: object
-        entity: DeleteUserResponse
     - 404:
-        type: object
-        entity: DeleteUserError
+      type: object
+      entity: DeleteUserError
+      condition: not DeleteUserValidation.userExists;
+    - 200:
+      type: object
+      entity: DeleteUserSuccess
 end
 
 Component<ActionForm> DeleteUserForm

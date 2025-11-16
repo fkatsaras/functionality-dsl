@@ -42,7 +42,7 @@ def get_response_schema(endpoint_or_source):
     Extract response schema(s) from endpoint or source.
 
     For Endpoints (multi-response design), returns list of dicts:
-    [{status_code: int, type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str, content_type: str}]
+    [{status_code: int, type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str, content_type: str, condition: Expr|None}]
 
     For Sources (single response:  block), returns single dict:
     {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, response_type: str, content_type: str}
@@ -57,6 +57,7 @@ def get_response_schema(endpoint_or_source):
             status_code = getattr(response_entry, "status_code", 200)
             response_type = getattr(response_entry, "type", "object")
             content_type = getattr(response_entry, "content_type", "application/json")
+            condition = getattr(response_entry, "condition", None)  # Extract condition from response entry
 
             # Get entity from schema field
             schema = getattr(response_entry, "schema", None)
@@ -71,7 +72,8 @@ def get_response_schema(endpoint_or_source):
                     "entity": entity,
                     "inline_spec": None,
                     "content_type": content_type,
-                    "response_type": response_type
+                    "response_type": response_type,
+                    "condition": condition  # Include condition in extracted schema
                 })
                 continue
 
@@ -84,7 +86,8 @@ def get_response_schema(endpoint_or_source):
                     "entity": None,
                     "inline_spec": parse_inline_type(inline_type),
                     "content_type": content_type,
-                    "response_type": response_type
+                    "response_type": response_type,
+                    "condition": condition  # Include condition in extracted schema
                 })
 
         return result if result else None

@@ -68,7 +68,11 @@ async def mutate_{{ endpoint.name | lower }}_{{ endpoint.method.lower() }}(
             {% endfor %}
         }
 
-        return await {{ endpoint.name | lower }}_service.execute_mutation(request_body, path_params)
+        response_data, status_code = await {{ endpoint.name | lower }}_service.execute_mutation(request_body, path_params)
+
+        # Return with appropriate status code
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=response_data, status_code=status_code)
 
     except HTTPException:
         raise

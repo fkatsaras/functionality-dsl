@@ -34,7 +34,6 @@ Entity UserNotFound(UsersWrapper)
   attributes:
     - error: string = "User not found";
     - userId: integer = GetUser.userId;
-  condition: not find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId))
 end
 
 // Endpoint with multiple responses
@@ -45,10 +44,6 @@ Endpoint<REST> GetUser
     path:
       - userId: integer
   responses:
-    - 200:
-        type: object
-        entity: UserFound
-    - 404:
-        type: object
-        entity: UserNotFound
+    - 404: type: object entity: UserNotFound condition: not find(UsersWrapper.users, u -> u["id"] == toInt(GetUser.userId));
+    - 200: type: object entity: UserFound
 end

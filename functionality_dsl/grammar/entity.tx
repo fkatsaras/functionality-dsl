@@ -188,6 +188,7 @@ ResponseEntry:
     (content_type=ContentType ':')?
       'type:' type=AttrType
       'entity:' schema=SchemaRef
+      ('condition:' condition=Expr ';')?
 ;
 
 // Multiple responses block (for Endpoints)
