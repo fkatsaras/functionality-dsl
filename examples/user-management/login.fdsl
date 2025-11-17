@@ -39,7 +39,7 @@ Entity LoginMatch(LoginRequest, UsersListWrapper)
         UsersListWrapper.users,
         u -> u["username"] == LoginRequest.username and u["password"] == LoginRequest.password
       );
-    - token: string = get(LoginMatch.user, "username", "") + "-token-" + "12345";
+    - token: string = sha256(get(LoginMatch.user, "username", ""));
 end
 
 // Transform responses

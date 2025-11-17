@@ -38,6 +38,27 @@ def _replace(s: str, old: str, new: str):
         raise TypeError("_replace() received None")
     return str(s).replace(old, new)
 
+def _sha256(s: str) -> str:
+    """Hash a string using SHA-256. Returns hex digest."""
+    import hashlib
+    if s is None:
+        raise TypeError("_sha256() received None")
+    return hashlib.sha256(str(s).encode('utf-8')).hexdigest()
+
+def _sha1(s: str) -> str:
+    """Hash a string using SHA-1. Returns hex digest."""
+    import hashlib
+    if s is None:
+        raise TypeError("_sha1() received None")
+    return hashlib.sha1(str(s).encode('utf-8')).hexdigest()
+
+def _md5(s: str) -> str:
+    """Hash a string using MD5. Returns hex digest."""
+    import hashlib
+    if s is None:
+        raise TypeError("_md5() received None")
+    return hashlib.md5(str(s).encode('utf-8')).hexdigest()
+
 DSL_FUNCTIONS = {
     "str":   (_tostring, (1, 1)),
     "lower": (_lower, (1, 1)),
@@ -47,4 +68,7 @@ DSL_FUNCTIONS = {
     "join": (_join, (2, 2)),
     "trim": (_trim, (1, 1)),
     "replace": (_replace, (3, 3)),
+    "sha256": (_sha256, (1, 1)),
+    "sha1": (_sha1, (1, 1)),
+    "md5": (_md5, (1, 1)),
 }
