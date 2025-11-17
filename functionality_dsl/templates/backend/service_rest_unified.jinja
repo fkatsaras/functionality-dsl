@@ -57,6 +57,8 @@ _WRITE_TARGETS = [
         "url": "{{ target.url }}",
         "method": "{{ target.method }}",
         "headers": {{ target.headers }},
+        "path_param_exprs": {{ target.path_param_exprs | tojson }},
+        "query_param_exprs": {{ target.query_param_exprs | tojson }},
     },
 {%- endfor %}
 ]
@@ -313,9 +315,48 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
 
     for target_config in _WRITE_TARGETS:
         target_name = target_config["name"]
-        url = target_config["url"]
+        base_url = target_config["url"]
         method = target_config["method"]
         headers = resolve_headers(target_config.get("headers", []))
+
+        # Evaluate path parameter expressions
+        path_params = {}
+        for param_name, param_expr in target_config.get("path_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                path_params[param_name] = str(param_value)
+                logger.debug(f"[PARAM] - {target_name}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate path parameter {param_name}")
+
+        # Evaluate query parameter expressions
+        query_params = {}
+        for param_name, param_expr in target_config.get("query_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                if param_value is not None:  # Skip None values
+                    query_params[param_name] = param_value
+                logger.debug(f"[QUERY] - {target_name}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate query parameter {param_name}")
+
+        # Build URL with path parameters
+        url = base_url
+        for param_name, param_value in path_params.items():
+            url = url.replace("{" + param_name + "}", param_value)
+
+        # Add query parameters
+        if query_params:
+            from urllib.parse import urlencode
+            query_string = urlencode(query_params)
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{query_string}"
 
         {% if request_entity %}
         # Get the transformed entity from context (terminal entity)
@@ -417,16 +458,19 @@ async def execute_flow(
     {% endif %}
 
     {% elif flow.type == 'write' %}
-    # WRITE flow: Compute → Write → Return
+    # WRITE flow: Compute → Write → Transform Response → Return
     {% if compiled_chain %}
     compute_entity_chain(context)
     {% endif %}
     {% if flow.has_writes %}
     write_response = await write_to_targets(context, request_body or {})
-    # Store write response in context for error checking
+    # Store write response in context for error checking and response transformation
     {% if response_source_entity %}
     context["{{ response_source_entity.name }}"] = write_response
     {% endif %}
+    {% endif %}
+    {% if response_chain %}
+    compute_response_chain(context)
     {% endif %}
 
     {% elif flow.type == 'read_write' %}
@@ -447,12 +491,6 @@ async def execute_flow(
     {% endif %}
     {% if response_chain %}
     compute_response_chain(context)
-    {% endif %}
-
-    {% else %}
-    # COMPUTE flow: Pure computation (no external I/O)
-    {% if compiled_chain %}
-    compute_entity_chain(context)
     {% endif %}
     {% endif %}
 

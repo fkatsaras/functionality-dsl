@@ -1,0 +1,74 @@
+Server UserManagement
+  host: "localhost"
+  port: 8081
+  cors: "http://localhost:5173"
+  loglevel: debug
+end
+
+// READ: Get all users
+Source<REST> ReadUsers
+  url: "http://dummydb:9000/db/users"
+  method: GET
+  response:
+    type: object
+    entity: UsersListWrapper
+end
+
+Entity UserSchema
+  attributes:
+    - id: integer;
+    - username: string;
+    - password: string;
+    - email: string<email>;
+end
+
+Entity UsersListWrapper
+  attributes:
+    - users: array<UserSchema>;
+end
+
+// Update password: Find user by email and prepare update
+Entity PasswordUpdateData(UpdatePasswordRequest, UsersListWrapper)
+  attributes:
+    - user: object? = find(UsersListWrapper.users, u -> u["email"] == UpdatePasswordRequest.email);
+    - userId: integer = get(PasswordUpdateData.user, "id", 0);
+    - email: string<email> = UpdatePasswordRequest.email;
+    - password: string = UpdatePasswordRequest.newPassword;
+end
+
+
+Entity UpdateResponse(UserSchema)
+  attributes:
+    - success: boolean = true;
+    - message: string = "User updated successfully";
+end
+
+
+// UPDATE: Modify user by ID
+Source<REST> UpdateUser
+  url: "http://dummydb:9000/db/users/{userId}"
+  method: PATCH
+  parameters:
+    path:
+      - userId: integer = PasswordUpdateData.userId;
+  request:
+    type: object
+    entity: UpdateUserRequest
+  response:
+    type: object
+    entity: UserSchema
+end
+
+Endpoint<REST> UpdatePassword
+  path: "/api/users/password"
+  method: PUT
+  request:
+    type: object
+    entity: UpdatePasswordRequest
+  response:
+    type: object
+    entity: UpdateResponse
+  errors:
+    - 404: condition: not PasswordUpdateData.user "User with this email not found";
+    - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
+end

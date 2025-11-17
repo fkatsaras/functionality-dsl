@@ -28,7 +28,7 @@ from .generators import (
     generate_domain_models,
     scaffold_backend_from_model,
 )
-from .generators.rest_generator_v2 import generate_rest_endpoint
+from .generators.rest_generator import generate_rest_endpoint
 
 
 def render_domain_files(model, templates_dir: Path, out_dir: Path):

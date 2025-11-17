@@ -121,15 +121,20 @@ class DependencyGraph:
         for source in get_children_of_type("SourceREST", self.model):
             source_node = f"Source:{source.name}"
 
-            # Response: Source provides entity
+            # Response: Source provides entity (only for read operations like GET)
+            # POST/PUT/PATCH/DELETE return data but don't "provide" it for reading
             response_schema = get_response_schema(source)
             if response_schema and response_schema.get("type") == "entity":
                 entity = response_schema["entity"]
-                self.graph.add_edge(
-                    source_node,
-                    entity.name,
-                    type="provides"
-                )
+                method = getattr(source, "method", "GET").upper()
+
+                # Only add "provides" edge for safe read methods
+                if method in {"GET", "HEAD", "OPTIONS"}:
+                    self.graph.add_edge(
+                        source_node,
+                        entity.name,
+                        type="provides"
+                    )
 
             # Request: Source consumes entity (for mutations)
             request_schema = get_request_schema(source)
@@ -140,6 +145,41 @@ class DependencyGraph:
                     source_node,
                     type="consumed_by"
                 )
+
+            # Parameters: Source depends on entities referenced in parameter expressions
+            # Use compiled expression to extract entity references (simpler than parsing AST)
+            if hasattr(source, "parameters") and source.parameters:
+                from ..lib.compiler.expr_compiler import compile_expr_to_python
+                import re
+
+                # Path parameters
+                if hasattr(source.parameters, "path_params") and source.parameters.path_params:
+                    if hasattr(source.parameters.path_params, "params") and source.parameters.path_params.params:
+                        for param in source.parameters.path_params.params:
+                            if hasattr(param, "expr") and param.expr:
+                                # Compile to Python and extract entity names from patterns like "EntityName.get(" or "EntityName["
+                                compiled = compile_expr_to_python(param.expr)
+                                entity_refs = re.findall(r'([A-Z][a-zA-Z0-9_]*?)\.get\(', compiled)
+                                entity_refs += re.findall(r'([A-Z][a-zA-Z0-9_]*?)\[', compiled)
+                                for entity_name in set(entity_refs):
+                                    for ent in get_children_of_type("Entity", self.model):
+                                        if ent.name == entity_name:
+                                            self.graph.add_edge(ent.name, source_node, type="param_dependency")
+                                            break
+
+                # Query parameters
+                if hasattr(source.parameters, "query_params") and source.parameters.query_params:
+                    if hasattr(source.parameters.query_params, "params") and source.parameters.query_params.params:
+                        for param in source.parameters.query_params.params:
+                            if hasattr(param, "expr") and param.expr:
+                                compiled = compile_expr_to_python(param.expr)
+                                entity_refs = re.findall(r'([A-Z][a-zA-Z0-9_]*?)\.get\(', compiled)
+                                entity_refs += re.findall(r'([A-Z][a-zA-Z0-9_]*?)\[', compiled)
+                                for entity_name in set(entity_refs):
+                                    for ent in get_children_of_type("Entity", self.model):
+                                        if ent.name == entity_name:
+                                            self.graph.add_edge(ent.name, source_node, type="param_dependency")
+                                            break
 
         # WebSocket sources
         for source in get_children_of_type("SourceWS", self.model):
@@ -271,26 +311,50 @@ class DependencyGraph:
                         for arg in node.args:
                             visit(arg)
 
-                # BinaryOp, ComparisonOp
-                elif class_name in ('BinaryOp', 'ComparisonOp', 'LogicalOp'):
+                # BinaryOp, ComparisonOp, LogicalOp, AndExpr, OrExpr, CmpExpr, AddExpr, MulExpr
+                # All expression types with left/right or left/ops structure
+                elif class_name in ('BinaryOp', 'ComparisonOp', 'LogicalOp', 'AndExpr', 'OrExpr',
+                                   'CmpExpr', 'AddExpr', 'MulExpr', 'UnaryExpr'):
                     if hasattr(node, 'left'):
                         visit(node.left)
                     if hasattr(node, 'right'):
                         visit(node.right)
+                    # Many expression types use 'ops' list for additional operands
+                    if hasattr(node, 'ops') and node.ops:
+                        for op in node.ops:
+                            visit(op)
 
-                # UnaryOp
-                elif class_name == 'UnaryOp':
+                # UnaryOp and UnaryExpr
+                elif class_name in ('UnaryOp', 'UnaryExpr'):
                     if hasattr(node, 'operand'):
                         visit(node.operand)
+                    if hasattr(node, 'post'):  # UnaryExpr uses 'post' for PostfixExpr
+                        visit(node.post)
+                    if hasattr(node, 'lambda_'):  # UnaryExpr can have lambda
+                        visit(node.lambda_)
 
-                # TernaryOp
-                elif class_name == 'TernaryOp':
+                # PostfixExpr (member access, function calls)
+                elif class_name == 'PostfixExpr':
+                    if hasattr(node, 'base'):
+                        visit(node.base)
+                    if hasattr(node, 'tails') and node.tails:
+                        for tail in node.tails:
+                            visit(tail)
+
+                # TernaryOp and IfThenElse (ternary expressions)
+                elif class_name in ('TernaryOp', 'IfThenElse'):
                     if hasattr(node, 'condition'):
                         visit(node.condition)
+                    if hasattr(node, 'cond'):  # IfThenElse uses 'cond'
+                        visit(node.cond)
                     if hasattr(node, 'true_expr'):
                         visit(node.true_expr)
+                    if hasattr(node, 'orExpr'):  # IfThenElse uses 'orExpr' for true branch
+                        visit(node.orExpr)
                     if hasattr(node, 'false_expr'):
                         visit(node.false_expr)
+                    if hasattr(node, 'elseExpr'):  # IfThenElse uses 'elseExpr'
+                        visit(node.elseExpr)
 
                 # Lambda
                 elif class_name == 'Lambda':
@@ -381,8 +445,11 @@ class DependencyGraph:
 
         Returns:
             Dict with keys:
-            - "read_sources": Sources with GET method
-            - "write_sources": Sources with POST/PUT/PATCH/DELETE methods
+            - "read_sources": Sources that PROVIDE entities (data flows FROM source TO us)
+            - "write_sources": Empty list (use get_target_dependencies for writes)
+
+        NOTE: This function ONLY returns sources that provide data (reads).
+        For write targets, use get_target_dependencies().
         """
         if entity_name not in self.graph:
             return {"read_sources": [], "write_sources": []}
@@ -394,32 +461,31 @@ class DependencyGraph:
             ancestors = {entity_name}
 
         read_sources = []
-        write_sources = []
 
         # Find sources that provide any of the ancestor entities
         for node in ancestors:
-            # Look for source nodes that provide this entity
+            # Look for source nodes that provide this entity (edge: source → entity)
             for predecessor in self.graph.predecessors(node):
                 if self.graph.nodes[predecessor].get("type") == "source":
-                    source_obj = self.graph.nodes[predecessor]["obj"]
-                    method = getattr(source_obj, "method", "GET").upper()
-
-                    if method == "GET":
+                    # Check edge type - only "provides" edges indicate READ operations
+                    edge_data = self.graph.get_edge_data(predecessor, node)
+                    if edge_data and edge_data.get("type") == "provides":
+                        source_obj = self.graph.nodes[predecessor]["obj"]
                         if source_obj not in read_sources:
                             read_sources.append(source_obj)
-                    elif method in {"POST", "PUT", "PATCH", "DELETE"}:
-                        if source_obj not in write_sources:
-                            write_sources.append(source_obj)
 
         return {
             "read_sources": read_sources,
-            "write_sources": write_sources
+            "write_sources": []  # Deprecated - use get_target_dependencies instead
         }
 
     def get_target_dependencies(self, entity_name: str) -> List:
         """
         Get all sources (targets) that consume this entity.
         Used for mutations - where does this entity get sent to?
+
+        Considers both "consumed_by" edges (request body) and "param_dependency" edges
+        (entities used in path/query parameter expressions).
 
         Returns:
             List of source objects that consume this entity
@@ -429,14 +495,21 @@ class DependencyGraph:
 
         write_targets = []
 
-        # Find sources that consume this entity
+        # Find sources that consume this entity (request body or parameters)
         for successor in self.graph.successors(entity_name):
             if self.graph.nodes[successor].get("type") == "source":
-                source_obj = self.graph.nodes[successor]["obj"]
-                method = getattr(source_obj, "method", "POST").upper()
+                # Check edge type
+                edge_data = self.graph.get_edge_data(entity_name, successor)
+                edge_type = edge_data.get("type") if edge_data else None
 
-                if method in {"POST", "PUT", "PATCH", "DELETE"}:
-                    write_targets.append(source_obj)
+                # Include if consumed_by (request body) or param_dependency (path/query params)
+                if edge_type in {"consumed_by", "param_dependency"}:
+                    source_obj = self.graph.nodes[successor]["obj"]
+                    method = getattr(source_obj, "method", "POST").upper()
+
+                    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+                        if source_obj not in write_targets:
+                            write_targets.append(source_obj)
 
         return write_targets
 

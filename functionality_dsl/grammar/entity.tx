@@ -182,7 +182,7 @@ ResponseBlock:
 
 // Error handling block for REST endpoints
 ErrorMapping:
-  '-' status_code=INT ':' 'condition' ':' condition=Expr message=STRING
+  '-' status_code=INT ':' 'condition' ':' condition=Expr message=STRING ';'
 ;
 
 ErrorsBlock:
