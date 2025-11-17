@@ -121,20 +121,16 @@ class DependencyGraph:
         for source in get_children_of_type("SourceREST", self.model):
             source_node = f"Source:{source.name}"
 
-            # Response: Source provides entity (only for read operations like GET)
-            # POST/PUT/PATCH/DELETE return data but don't "provide" it for reading
+            # Response: Source provides entity as response
+            # All methods can return response entities (GET for reads, POST/DELETE for write results)
             response_schema = get_response_schema(source)
             if response_schema and response_schema.get("type") == "entity":
                 entity = response_schema["entity"]
-                method = getattr(source, "method", "GET").upper()
-
-                # Only add "provides" edge for safe read methods
-                if method in {"GET", "HEAD", "OPTIONS"}:
-                    self.graph.add_edge(
-                        source_node,
-                        entity.name,
-                        type="provides"
-                    )
+                self.graph.add_edge(
+                    source_node,
+                    entity.name,
+                    type="provides"
+                )
 
             # Request: Source consumes entity (for mutations)
             request_schema = get_request_schema(source)
@@ -147,39 +143,27 @@ class DependencyGraph:
                 )
 
             # Parameters: Source depends on entities referenced in parameter expressions
-            # Use compiled expression to extract entity references (simpler than parsing AST)
+            # Use AST traversal to extract entity references
             if hasattr(source, "parameters") and source.parameters:
-                from ..lib.compiler.expr_compiler import compile_expr_to_python
-                import re
-
                 # Path parameters
                 if hasattr(source.parameters, "path_params") and source.parameters.path_params:
                     if hasattr(source.parameters.path_params, "params") and source.parameters.path_params.params:
                         for param in source.parameters.path_params.params:
                             if hasattr(param, "expr") and param.expr:
-                                # Compile to Python and extract entity names from patterns like "EntityName.get(" or "EntityName["
-                                compiled = compile_expr_to_python(param.expr)
-                                entity_refs = re.findall(r'([A-Z][a-zA-Z0-9_]*?)\.get\(', compiled)
-                                entity_refs += re.findall(r'([A-Z][a-zA-Z0-9_]*?)\[', compiled)
-                                for entity_name in set(entity_refs):
-                                    for ent in get_children_of_type("Entity", self.model):
-                                        if ent.name == entity_name:
-                                            self.graph.add_edge(ent.name, source_node, type="param_dependency")
-                                            break
+                                # Extract entity references from expression AST
+                                entity_refs = self._extract_entity_refs_from_expr(param.expr)
+                                for entity in entity_refs:
+                                    self.graph.add_edge(entity.name, source_node, type="param_dependency")
 
                 # Query parameters
                 if hasattr(source.parameters, "query_params") and source.parameters.query_params:
                     if hasattr(source.parameters.query_params, "params") and source.parameters.query_params.params:
                         for param in source.parameters.query_params.params:
                             if hasattr(param, "expr") and param.expr:
-                                compiled = compile_expr_to_python(param.expr)
-                                entity_refs = re.findall(r'([A-Z][a-zA-Z0-9_]*?)\.get\(', compiled)
-                                entity_refs += re.findall(r'([A-Z][a-zA-Z0-9_]*?)\[', compiled)
-                                for entity_name in set(entity_refs):
-                                    for ent in get_children_of_type("Entity", self.model):
-                                        if ent.name == entity_name:
-                                            self.graph.add_edge(ent.name, source_node, type="param_dependency")
-                                            break
+                                # Extract entity references from expression AST
+                                entity_refs = self._extract_entity_refs_from_expr(param.expr)
+                                for entity in entity_refs:
+                                    self.graph.add_edge(entity.name, source_node, type="param_dependency")
 
         # WebSocket sources
         for source in get_children_of_type("SourceWS", self.model):

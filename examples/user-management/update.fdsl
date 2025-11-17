@@ -27,6 +27,20 @@ Entity UsersListWrapper
     - users: array<UserSchema>;
 end
 
+
+Entity UpdatePasswordRequest
+  attributes:
+    - email: string<email>;
+    - newPassword: string(6..);
+end
+
+Entity UpdateUserRequest
+  attributes:
+    - email: string<email>?;
+    - password: string(6..)?;
+end
+
+
 // Update password: Find user by email and prepare update
 Entity PasswordUpdateData(UpdatePasswordRequest, UsersListWrapper)
   attributes:
@@ -71,4 +85,18 @@ Endpoint<REST> UpdatePassword
   errors:
     - 404: condition: not PasswordUpdateData.user "User with this email not found";
     - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
+end
+
+Endpoint<REST> UpdateUserById
+  path: "/api/users/{userId}"
+  method: PATCH
+  parameters:
+    path:
+      - userId: integer
+  request:
+    type: object
+    entity: UpdateUserRequest
+  response:
+    type: object
+    entity: UpdateResponse
 end

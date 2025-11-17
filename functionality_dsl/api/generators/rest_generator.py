@@ -75,27 +75,36 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     # =========================================================================
     # STEP 3: Build Source Configurations (for READ flows)
     # =========================================================================
+    # IMPORTANT: Only build configs for sources in flow.read_sources!
+    # NEVER include write targets (POST/PUT/PATCH/DELETE) in rest_inputs.
+    # =========================================================================
     rest_inputs = []
     computed_parents = []
 
     if flow.flow_type in {EndpointFlowType.READ, EndpointFlowType.READ_WRITE}:
-        # Resolve dependencies for reading (external sources + computed parents)
-        rest_inputs, computed_parents, _ = resolve_dependencies_for_entity(
+        # Build configs ONLY for read sources identified by flow analyzer
+        read_source_names = {src.name for src in flow.read_sources}
+
+        for read_source in flow.read_sources:
+            # Find which entity this source provides
+            response_schema = get_response_schema(read_source)
+            if response_schema and response_schema.get("type") == "entity":
+                entity = response_schema["entity"]
+                config = build_rest_input_config(entity, read_source, all_source_names)
+                rest_inputs.append(config)
+
+        # Also get computed parents (internal dependencies)
+        # But ONLY from read sources, not write targets
+        _, computed_parents, _ = resolve_dependencies_for_entity(
             primary_entity, model, all_endpoints, all_source_names
         )
-
-        # Add direct sources from flow analysis (ensures all read sources are included)
-        for read_source in flow.read_sources:
-            # Check if already in rest_inputs
-            if not any(ri.get("name") == read_source.name for ri in rest_inputs):
-                # Find which entity this source provides
-                from ..extractors import find_source_for_entity
-                for entity in model.entities:
-                    src, src_type = find_source_for_entity(entity, model)
-                    if src and src.name == read_source.name and src_type == "REST":
-                        config = build_rest_input_config(entity, read_source, all_source_names)
-                        rest_inputs.append(config)
-                        break
+        # Filter computed parents to only include those from read sources
+        filtered_parents = []
+        for parent in computed_parents:
+            # Check if this parent's source is in read_sources
+            if any(src.name in parent.get("endpoint", "") for src in flow.read_sources):
+                filtered_parents.append(parent)
+        computed_parents = filtered_parents
 
     # =========================================================================
     # STEP 4: Build Target Configurations (for WRITE flows)

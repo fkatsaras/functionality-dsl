@@ -5,10 +5,23 @@ This module analyzes REST endpoints using a robust dependency graph built with N
 Properly handles cycles, self-references, and complex dependency chains.
 
 Flow Types:
-- COMPUTE_ONLY: No external I/O (e.g., JWT generation, in-memory validation)
-- READ: Fetches from one or more external sources
-- WRITE: Writes to one or more external targets
-- READ_WRITE: Both reads and writes
+- READ: Fetches from one or more external sources (typically GET)
+  * Endpoints that only read data from external APIs
+  * Example: GET /api/products fetches from external product database
+  * Flow: External Source → Source Entity → Transform Entities → Response Entity → Client
+
+- WRITE: Writes to one or more external targets (typically POST/PUT/PATCH/DELETE)
+  * Endpoints that send data to external APIs
+  * Example: POST /api/orders sends order to external order service
+  * Flow: Client → Request Entity → Transform Entities → External Target
+
+- READ_WRITE: Both reads and writes (complex mutations)
+  * Endpoints that fetch data first, transform it, then write to external targets
+  * Example: POST /api/cart/checkout reads cart, validates, writes order
+  * Flow: External Source → Read Entities → Transform → Write to External Target → Response
+
+Note: Pure compute-only endpoints (no external I/O) are NOT supported.
+      All endpoints must declare at least one external Source for reading or writing.
 """
 
 from enum import Enum
@@ -31,11 +44,24 @@ class EndpointFlow:
     Analyzed data flow for a REST endpoint.
 
     Attributes:
-        flow_type: The classified flow pattern
-        read_sources: List of Source objects for reading (GET)
-        write_targets: List of Source objects for writing (POST/PUT/PATCH/DELETE)
+        flow_type: The classified flow pattern (READ, WRITE, or READ_WRITE)
+
+        read_sources: List of Source objects to fetch data FROM
+            - READ flow: All sources needed for response
+            - WRITE flow: Sources needed for validation/transformation
+            - READ_WRITE flow: All sources needed before write operation
+
+        write_targets: List of Source objects to send data TO
+            - READ flow: Empty (no writes)
+            - WRITE flow: Targets to send request data
+            - READ_WRITE flow: Targets to send transformed data
+
         computed_entities: List of entities with computed attributes
+            - Entities with expressions that transform data
+            - Used to build computation chains
+
         http_method: The HTTP method (GET/POST/PUT/PATCH/DELETE)
+
         dependency_graph: The complete dependency graph (for debugging)
     """
 
@@ -110,33 +136,63 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         )
 
     # =========================================================================
-    # 2. RESOLVE READ DEPENDENCIES (response entity)
+    # 2. RESOLVE ALL SOURCES FOR RESPONSE ENTITY
     # =========================================================================
-    response_read_sources = []
+    # Get all sources that interact with the response entity, then classify by HTTP method:
+    # - GET/HEAD/OPTIONS → READ source
+    # - POST/PUT/PATCH/DELETE → WRITE target
+    #
+    # Example: DELETE /api/users/{id} returns DeleteResponse from DeleteUser source
+    #   → DeleteUser (DELETE method) is a WRITE target, not a READ source
+    # =========================================================================
+    response_sources = []
     if response_entity is not None:
         src_deps = dep_graph.get_source_dependencies(response_entity.name)
-        response_read_sources = src_deps["read_sources"]
+        response_sources = src_deps["read_sources"]  # All sources that provide this entity
 
-        # Track computed attributes
+        # Track computed attributes for transformation chain
         for attr in getattr(response_entity, "attributes", []):
             if hasattr(attr, "expr") and attr.expr:
                 computed_entities.append(response_entity)
                 break
 
+    # Classify response sources by HTTP method
+    response_read_sources = []
+    response_write_targets = []
+    for src in response_sources:
+        method = getattr(src, "method", "GET").upper()
+        if method in {"GET", "HEAD", "OPTIONS"}:
+            response_read_sources.append(src)
+        else:  # POST, PUT, PATCH, DELETE
+            response_write_targets.append(src)
+
     # =========================================================================
     # 3. RESOLVE WRITE TARGETS + READS FOR REQUEST ENTITY
     # =========================================================================
+    # For WRITE and READ_WRITE flows: Find external targets to send data to,
+    # and any reads required to validate/transform the request.
+    #
+    # Example: POST /api/orders with OrderRequest entity
+    #   - Write target: OrderService (consumes OrderRequest)
+    #   - Read sources: ProductDB (to validate product IDs in request)
+    # =========================================================================
     if request_entity is not None:
-        # WRITE targets
+        # WRITE targets: External services that consume this entity
         write_targets.extend(dep_graph.get_target_dependencies(request_entity.name))
 
-        # READs needed by request entity
+        # READs: External sources needed to validate/transform request data
         req_deps = dep_graph.get_source_dependencies(request_entity.name)
         for src in req_deps["read_sources"]:
-            if not any(s.name == src.name for s in read_sources):
-                read_sources.append(src)
+            method = getattr(src, "method", "GET").upper()
+            if method in {"GET", "HEAD", "OPTIONS"}:
+                if not any(s.name == src.name for s in read_sources):
+                    read_sources.append(src)
+            else:  # POST, PUT, PATCH, DELETE
+                if not any(t.name == src.name for t in write_targets):
+                    write_targets.append(src)
 
         # Also include read dependencies for descendants in mutation chains
+        # (entities that inherit from or transform the request entity)
         try:
             import networkx as nx
 
@@ -144,13 +200,24 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                 if dep_graph.graph.nodes[desc].get("type") == "entity":
                     desc_src = dep_graph.get_source_dependencies(desc)
                     for src in desc_src["read_sources"]:
-                        if not any(s.name == src.name for s in read_sources):
-                            read_sources.append(src)
+                        method = getattr(src, "method", "GET").upper()
+                        if method in {"GET", "HEAD", "OPTIONS"}:
+                            if not any(s.name == src.name for s in read_sources):
+                                read_sources.append(src)
+                        else:  # POST, PUT, PATCH, DELETE
+                            if not any(t.name == src.name for t in write_targets):
+                                write_targets.append(src)
         except Exception:
             pass
 
     # =========================================================================
     # 4. RESOLVE READS FROM WRITE TARGET PARAMETER EXPRESSIONS (AST-based)
+    # =========================================================================
+    # For WRITE/READ_WRITE flows: If write targets have parameter expressions
+    # that reference entities, we need to read those entities first.
+    #
+    # Example: Source CreateOrder with parameter productId = ProductData.id
+    #   → Must read ProductData before writing to CreateOrder
     # =========================================================================
     for tgt in write_targets:
         params = getattr(tgt, "parameters", None)
@@ -165,8 +232,13 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                     for ent in ents:
                         deps = dep_graph.get_source_dependencies(ent.name)
                         for src in deps["read_sources"]:
-                            if not any(s.name == src.name for s in read_sources):
-                                read_sources.append(src)
+                            method = getattr(src, "method", "GET").upper()
+                            if method in {"GET", "HEAD", "OPTIONS"}:
+                                if not any(s.name == src.name for s in read_sources):
+                                    read_sources.append(src)
+                            else:  # POST, PUT, PATCH, DELETE
+                                if not any(t.name == src.name for t in write_targets):
+                                    write_targets.append(src)
 
         # Query parameters
         if hasattr(params, "query_params") and params.query_params:
@@ -176,68 +248,87 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                     for ent in ents:
                         deps = dep_graph.get_source_dependencies(ent.name)
                         for src in deps["read_sources"]:
-                            if not any(s.name == src.name for s in read_sources):
-                                read_sources.append(src)
+                            method = getattr(src, "method", "GET").upper()
+                            if method in {"GET", "HEAD", "OPTIONS"}:
+                                if not any(s.name == src.name for s in read_sources):
+                                    read_sources.append(src)
+                            else:  # POST, PUT, PATCH, DELETE
+                                if not any(t.name == src.name for t in write_targets):
+                                    write_targets.append(src)
 
     # =========================================================================
     # 5. RESOLVE READS FROM ERROR CONDITION EXPRESSIONS (AST-based)
+    # =========================================================================
+    # If error conditions reference entities, we need to read those entities
+    # to evaluate the conditions.
+    #
+    # Example: errors: 404: condition: not ProductData["id"]
+    #   → Must read ProductData to check if product exists
     # =========================================================================
     if hasattr(endpoint, "errors") and endpoint.errors:
         for err in endpoint.errors.mappings:
             ents = _extract_entity_refs_from_expr(err.condition, model)
             for ent in ents:
                 deps = dep_graph.get_source_dependencies(ent.name)
+                # Classify sources by HTTP method
                 for src in deps["read_sources"]:
-                    if not any(s.name == src.name for s in read_sources):
-                        read_sources.append(src)
+                    method = getattr(src, "method", "GET").upper()
+                    if method in {"GET", "HEAD", "OPTIONS"}:
+                        if not any(s.name == src.name for s in read_sources):
+                            read_sources.append(src)
+                    else:  # POST, PUT, PATCH, DELETE
+                        if not any(t.name == src.name for t in write_targets):
+                            write_targets.append(src)
 
     # =========================================================================
-    # 6. Filter out writes from reads for mutation responses
+    # 6. MERGE RESPONSE SOURCES INTO READ/WRITE LISTS
     # =========================================================================
-    write_target_names = {t.name for t in write_targets}
+    # Add response sources to appropriate lists:
+    # - Response READ sources → read_sources
+    # - Response WRITE targets → write_targets
+    # =========================================================================
+    # Add response write targets
+    for tgt in response_write_targets:
+        if not any(t.name == tgt.name for t in write_targets):
+            write_targets.append(tgt)
 
-    if write_targets:
-        # If response entity is provided by a write target, don’t double-count reads
-        provided_by_write = False
-        if response_entity:
-            from .extractors import get_response_schema as get_src_response_schema
-
-            for tgt in write_targets:
-                tgt_resp = get_src_response_schema(tgt)
-                if tgt_resp and tgt_resp.get("type") == "entity":
-                    if tgt_resp["entity"].name == response_entity.name:
-                        provided_by_write = True
-                        break
-
-        if not provided_by_write:
-            for src in response_read_sources:
-                if (
-                    src.name not in write_target_names
-                    and not any(s.name == src.name for s in read_sources)
-                ):
-                    read_sources.append(src)
-    else:
-        # Pure read endpoint
-        for src in response_read_sources:
-            if not any(s.name == src.name for s in read_sources):
-                read_sources.append(src)
+    # Add response read sources (avoid duplicates with existing reads)
+    for src in response_read_sources:
+        if not any(s.name == src.name for s in read_sources):
+            read_sources.append(src)
 
     # Deduplicate
     read_sources = list({s.name: s for s in read_sources}.values())
     write_targets = list({t.name: t for t in write_targets}.values())
 
     # =========================================================================
-    # 7. FINAL CLASSIFICATION — NO COMPUTE ONLY
+    # 7. FINAL CLASSIFICATION
+    # =========================================================================
+    # Classify endpoint based on read/write sources:
+    #
+    # READ: Only fetches from external sources (typical GET)
+    #   Example: GET /api/products → fetches from ProductDB
+    #
+    # WRITE: Only writes to external targets (typical POST/PUT/PATCH/DELETE)
+    #   Example: POST /api/orders → sends to OrderService
+    #
+    # READ_WRITE: Both reads and writes (complex mutations)
+    #   Example: POST /api/cart/checkout → reads cart, writes order
+    #
+    # COMPUTE_ONLY (NOT SUPPORTED): No external I/O
+    #   All endpoints MUST interact with at least one external source.
     # =========================================================================
     has_reads = len(read_sources) > 0
     has_writes = len(write_targets) > 0
 
     if not has_reads and not has_writes:
         raise Exception(
-            f"Endpoint {endpoint.name}: compute-only endpoints are NOT supported. "
-            f"Declare at least one read or write source."
+            f"Endpoint {endpoint.name}: Compute-only endpoints are NOT supported. "
+            f"All endpoints must interact with at least one external Source (for reading or writing). "
+            f"If you need pure transformations, create a Source<REST> with the transformation logic."
         )
 
+    # Classify flow type
     if has_reads and has_writes:
         flow_type = EndpointFlowType.READ_WRITE
     elif has_writes:
@@ -285,6 +376,15 @@ def _extract_entity_refs_from_expr(expr, model, visited=None):
         if hasattr(node, '__class__'):
             class_name = node.__class__.__name__
 
+            # IfThenElse: root expression node
+            if class_name == 'IfThenElse':
+                if hasattr(node, 'orExpr'):
+                    visit(node.orExpr)
+                if hasattr(node, 'cond'):
+                    visit(node.cond)
+                if hasattr(node, 'elseExpr'):
+                    visit(node.elseExpr)
+
             # MemberAccess: obj.attr (e.g., UserData.email)
             if class_name == 'MemberAccess':
                 if hasattr(node, 'obj') and hasattr(node.obj, 'name'):
@@ -306,11 +406,70 @@ def _extract_entity_refs_from_expr(expr, model, visited=None):
                 if hasattr(node, 'key'):
                     visit(node.key)
 
-            # FunctionCall: func(args)
+            # Call: func(args) - new grammar
+            elif class_name == 'Call':
+                if hasattr(node, 'args'):
+                    for arg in node.args:
+                        visit(arg)
+
+            # FunctionCall: func(args) - legacy
             elif class_name == 'FunctionCall':
                 if hasattr(node, 'args'):
                     for arg in node.args:
                         visit(arg)
+
+            # AtomBase: literal | call | var | paren
+            elif class_name == 'AtomBase':
+                if hasattr(node, 'call'):
+                    visit(node.call)
+                if hasattr(node, 'var'):
+                    visit(node.var)
+                if hasattr(node, 'inner'):
+                    visit(node.inner)
+
+            # Var: simple identifier reference
+            elif class_name == 'Var':
+                if hasattr(node, 'name'):
+                    entity_name = node.name
+                    # Check if it's an entity
+                    for entity in get_children_of_type("Entity", model):
+                        if entity.name == entity_name:
+                            entities.add(entity)
+                            break
+
+            # PostfixExpr: base with member access/calls/indexing
+            elif class_name == 'PostfixExpr':
+                if hasattr(node, 'base'):
+                    visit(node.base)
+                if hasattr(node, 'tails'):
+                    for tail in node.tails:
+                        visit(tail)
+
+            # PostfixTail: member/param/index access
+            elif class_name == 'PostfixTail':
+                if hasattr(node, 'member'):
+                    visit(node.member)
+                if hasattr(node, 'param'):
+                    visit(node.param)
+                if hasattr(node, 'index'):
+                    visit(node.index)
+
+            # Expression wrappers: OrExpr, AndExpr, CmpExpr, AddExpr, MulExpr
+            elif class_name in ('OrExpr', 'AndExpr', 'CmpExpr', 'AddExpr', 'MulExpr'):
+                # These all have .left and .ops list
+                if hasattr(node, 'left'):
+                    visit(node.left)
+                if hasattr(node, 'ops') and node.ops:
+                    for op in node.ops:
+                        if hasattr(op, 'right'):
+                            visit(op.right)
+
+            # UnaryExpr: unary operators with post expression
+            elif class_name == 'UnaryExpr':
+                if hasattr(node, 'post'):
+                    visit(node.post)
+                if hasattr(node, 'lambda_'):
+                    visit(node.lambda_)
 
             # BinaryOp, ComparisonOp
             elif class_name in ('BinaryOp', 'ComparisonOp', 'LogicalOp'):
