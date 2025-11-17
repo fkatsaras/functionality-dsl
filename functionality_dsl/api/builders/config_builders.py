@@ -12,9 +12,17 @@ def build_rest_input_config(entity, source, all_source_names):
     Build a REST input configuration for template rendering.
     Returns a dict with entity name, source alias, URL, headers, and attribute mappings.
     """
-    # Check if this is a wrapper entity (exactly one attribute = wraps primitive/array)
+    # Check if this is a wrapper entity (exactly one attribute + primitive/array response type)
+    # A wrapper entity wraps a primitive/array response from the source
+    # An object response with 1 attribute is NOT a wrapper
+    from ..extractors import get_response_schema
+
     attributes = getattr(entity, "attributes", []) or []
-    is_wrapper = len(attributes) == 1
+    response_schema = get_response_schema(source)
+    response_type = response_schema.get("response_type", "object") if response_schema else "object"
+
+    # Wrapper only if: 1 attribute AND response is not an object
+    is_wrapper = (len(attributes) == 1) and (response_type in ['array', 'string', 'number', 'integer', 'boolean'])
 
     # Build attribute expressions
     attribute_configs = []
@@ -107,9 +115,17 @@ def build_ws_input_config(entity, ws_source, all_source_names):
     Build a WebSocket input configuration for template rendering.
     Similar to REST input config but for WebSocket sources.
     """
-    # Check if this is a wrapper entity (exactly one attribute = wraps primitive/array)
+    # Check if this is a wrapper entity (exactly one attribute + primitive/array message type)
+    # A wrapper entity wraps a primitive/array message from the source
+    # An object message with 1 attribute is NOT a wrapper
+    from ..extractors import get_subscribe_schema
+
     attributes = getattr(entity, "attributes", []) or []
-    is_wrapper = len(attributes) == 1
+    subscribe_schema = get_subscribe_schema(ws_source)
+    message_type = subscribe_schema.get("message_type", "object") if subscribe_schema else "object"
+
+    # Wrapper only if: 1 attribute AND message is not an object
+    is_wrapper = (len(attributes) == 1) and (message_type in ['array', 'string', 'number', 'integer', 'boolean'])
 
     # Build attribute expressions
     attribute_configs = []

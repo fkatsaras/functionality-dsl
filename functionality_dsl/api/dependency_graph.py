@@ -1,0 +1,533 @@
+"""
+Robust dependency graph management for FDSL using NetworkX.
+
+This module builds and analyzes the complete dependency graph of entities, sources,
+and endpoints. It uses NetworkX for proper cycle detection, topological sorting,
+and dependency resolution.
+
+Graph Node Types:
+- Entity nodes: Represent FDSL entities
+- Source nodes: Represent external REST/WebSocket sources
+- Endpoint nodes: Represent API endpoints
+
+Edge Types:
+- "parent": Entity inheritance (A inherits from B)
+- "source": Entity provided by source
+- "target": Entity consumed by source (for mutations)
+- "expression": Entity referenced in computed attribute expressions
+- "response": Endpoint returns entity
+- "request": Endpoint accepts entity
+"""
+
+import networkx as nx
+from typing import Dict, List, Set, Tuple, Optional
+from textx import get_children_of_type
+
+
+class DependencyGraph:
+    """
+    Manages the complete dependency graph for FDSL model.
+    Provides cycle detection, topological sorting, and dependency resolution.
+    """
+
+    def __init__(self, model):
+        self.model = model
+        self.graph = nx.DiGraph()  # Directed graph
+        self._build_graph()
+
+    def _build_graph(self):
+        """Build the complete dependency graph from the model."""
+        # Add all entities as nodes
+        for entity in get_children_of_type("Entity", self.model):
+            self.graph.add_node(
+                entity.name,
+                type="entity",
+                obj=entity
+            )
+
+        # Add all sources as nodes
+        for source in get_children_of_type("SourceREST", self.model):
+            self.graph.add_node(
+                f"Source:{source.name}",
+                type="source",
+                source_type="REST",
+                obj=source
+            )
+
+        for source in get_children_of_type("SourceWS", self.model):
+            self.graph.add_node(
+                f"Source:{source.name}",
+                type="source",
+                source_type="WS",
+                obj=source
+            )
+
+        # Add all endpoints as nodes
+        for endpoint in get_children_of_type("EndpointREST", self.model):
+            self.graph.add_node(
+                f"Endpoint:{endpoint.name}",
+                type="endpoint",
+                endpoint_type="REST",
+                obj=endpoint
+            )
+
+        for endpoint in get_children_of_type("EndpointWS", self.model):
+            self.graph.add_node(
+                f"Endpoint:{endpoint.name}",
+                type="endpoint",
+                endpoint_type="WS",
+                obj=endpoint
+            )
+
+        # Build edges
+        self._add_entity_edges()
+        self._add_source_edges()
+        self._add_endpoint_edges()
+
+    def _add_entity_edges(self):
+        """Add edges for entity relationships."""
+        for entity in get_children_of_type("Entity", self.model):
+            entity_name = entity.name
+
+            # Add parent edges (inheritance)
+            # Edge direction: parent -> child (parent is a dependency/ancestor)
+            for parent in getattr(entity, "parents", []) or []:
+                self.graph.add_edge(
+                    parent.name,
+                    entity_name,
+                    type="parent"
+                )
+
+            # Add expression edges (entities referenced in attribute expressions)
+            for attr in getattr(entity, "attributes", []) or []:
+                if hasattr(attr, "expr") and attr.expr:
+                    # Extract entity references from expression
+                    referenced_entities = self._extract_entity_refs_from_expr(attr.expr)
+                    for ref_entity in referenced_entities:
+                        # Only add edge if it's not a self-reference in the same attribute
+                        # Self-references are allowed in expressions (e.g., LoginMatch.user)
+                        if ref_entity.name != entity_name:
+                            self.graph.add_edge(
+                                entity_name,
+                                ref_entity.name,
+                                type="expression"
+                            )
+
+    def _add_source_edges(self):
+        """Add edges for source relationships."""
+        from .extractors import get_response_schema, get_request_schema
+
+        # REST sources
+        for source in get_children_of_type("SourceREST", self.model):
+            source_node = f"Source:{source.name}"
+
+            # Response: Source provides entity
+            response_schema = get_response_schema(source)
+            if response_schema and response_schema.get("type") == "entity":
+                entity = response_schema["entity"]
+                self.graph.add_edge(
+                    source_node,
+                    entity.name,
+                    type="provides"
+                )
+
+            # Request: Source consumes entity (for mutations)
+            request_schema = get_request_schema(source)
+            if request_schema and request_schema.get("type") == "entity":
+                entity = request_schema["entity"]
+                self.graph.add_edge(
+                    entity.name,
+                    source_node,
+                    type="consumed_by"
+                )
+
+        # WebSocket sources
+        for source in get_children_of_type("SourceWS", self.model):
+            from .extractors import get_subscribe_schema, get_publish_schema
+            source_node = f"Source:{source.name}"
+
+            # Subscribe: Source provides entity (FROM external)
+            subscribe_schema = get_subscribe_schema(source)
+            if subscribe_schema and subscribe_schema.get("type") == "entity":
+                entity = subscribe_schema["entity"]
+                self.graph.add_edge(
+                    source_node,
+                    entity.name,
+                    type="provides"
+                )
+
+            # Publish: Source consumes entity (TO external)
+            publish_schema = get_publish_schema(source)
+            if publish_schema and publish_schema.get("type") == "entity":
+                entity = publish_schema["entity"]
+                self.graph.add_edge(
+                    entity.name,
+                    source_node,
+                    type="consumed_by"
+                )
+
+    def _add_endpoint_edges(self):
+        """Add edges for endpoint relationships."""
+        from .extractors import get_response_schema, get_request_schema
+
+        # REST endpoints
+        for endpoint in get_children_of_type("EndpointREST", self.model):
+            endpoint_node = f"Endpoint:{endpoint.name}"
+
+            # Response: Endpoint returns entity
+            response_schema = get_response_schema(endpoint)
+            if response_schema and response_schema.get("type") == "entity":
+                entity = response_schema["entity"]
+                self.graph.add_edge(
+                    endpoint_node,
+                    entity.name,
+                    type="returns"
+                )
+
+            # Request: Endpoint accepts entity
+            request_schema = get_request_schema(endpoint)
+            if request_schema and request_schema.get("type") == "entity":
+                entity = request_schema["entity"]
+                self.graph.add_edge(
+                    entity.name,
+                    endpoint_node,
+                    type="accepted_by"
+                )
+
+        # WebSocket endpoints
+        for endpoint in get_children_of_type("EndpointWS", self.model):
+            from .extractors import get_subscribe_schema, get_publish_schema
+            endpoint_node = f"Endpoint:{endpoint.name}"
+
+            # Subscribe: Endpoint sends to clients (FROM client perspective)
+            subscribe_schema = get_subscribe_schema(endpoint)
+            if subscribe_schema and subscribe_schema.get("type") == "entity":
+                entity = subscribe_schema["entity"]
+                self.graph.add_edge(
+                    endpoint_node,
+                    entity.name,
+                    type="sends"
+                )
+
+            # Publish: Endpoint receives from clients
+            publish_schema = get_publish_schema(endpoint)
+            if publish_schema and publish_schema.get("type") == "entity":
+                entity = publish_schema["entity"]
+                self.graph.add_edge(
+                    entity.name,
+                    endpoint_node,
+                    type="received_by"
+                )
+
+    def _extract_entity_refs_from_expr(self, expr, visited=None) -> Set:
+        """
+        Extract entity references from an expression AST.
+        Returns a set of Entity objects referenced in the expression.
+
+        Uses visited set with node IDs to prevent infinite recursion.
+        """
+        if visited is None:
+            visited = set()
+
+        entities = set()
+
+        def visit(node):
+            if node is None:
+                return
+
+            # Cycle detection using object ID
+            node_id = id(node)
+            if node_id in visited:
+                return
+            visited.add(node_id)
+
+            if hasattr(node, '__class__'):
+                class_name = node.__class__.__name__
+
+                # MemberAccess: obj.attr (e.g., UserData.email)
+                if class_name == 'MemberAccess':
+                    if hasattr(node, 'obj') and hasattr(node.obj, 'name'):
+                        entity_name = node.obj.name
+                        # Find the entity in the model
+                        for entity in get_children_of_type("Entity", self.model):
+                            if entity.name == entity_name:
+                                entities.add(entity)
+                                break
+                    if hasattr(node, 'obj'):
+                        visit(node.obj)
+                    if hasattr(node, 'attr'):
+                        visit(node.attr)
+
+                # DictAccess: obj["key"]
+                elif class_name == 'DictAccess':
+                    if hasattr(node, 'obj'):
+                        visit(node.obj)
+                    if hasattr(node, 'key'):
+                        visit(node.key)
+
+                # FunctionCall: func(args)
+                elif class_name == 'FunctionCall':
+                    if hasattr(node, 'args'):
+                        for arg in node.args:
+                            visit(arg)
+
+                # BinaryOp, ComparisonOp
+                elif class_name in ('BinaryOp', 'ComparisonOp', 'LogicalOp'):
+                    if hasattr(node, 'left'):
+                        visit(node.left)
+                    if hasattr(node, 'right'):
+                        visit(node.right)
+
+                # UnaryOp
+                elif class_name == 'UnaryOp':
+                    if hasattr(node, 'operand'):
+                        visit(node.operand)
+
+                # TernaryOp
+                elif class_name == 'TernaryOp':
+                    if hasattr(node, 'condition'):
+                        visit(node.condition)
+                    if hasattr(node, 'true_expr'):
+                        visit(node.true_expr)
+                    if hasattr(node, 'false_expr'):
+                        visit(node.false_expr)
+
+                # Lambda
+                elif class_name == 'Lambda':
+                    if hasattr(node, 'body'):
+                        visit(node.body)
+
+                # ArrayLiteral, ObjectLiteral
+                elif class_name == 'ArrayLiteral':
+                    if hasattr(node, 'elements'):
+                        for elem in node.elements:
+                            visit(elem)
+
+                elif class_name == 'ObjectLiteral':
+                    if hasattr(node, 'pairs'):
+                        for pair in node.pairs:
+                            if hasattr(pair, 'value'):
+                                visit(pair.value)
+
+                # Don't do generic traversal - it causes infinite loops
+                # We've covered all the important expression node types above
+
+        visit(expr)
+        return entities
+
+
+    def detect_cycles(self) -> List[List[str]]:
+        """
+        Detect all cycles in the dependency graph.
+
+        Returns:
+            List of cycles, where each cycle is a list of node names forming a loop.
+            Empty list if no cycles exist.
+        """
+        try:
+            # Find all simple cycles
+            cycles = list(nx.simple_cycles(self.graph))
+            return cycles
+        except nx.NetworkXNoCycle:
+            return []
+
+    def get_entity_dependencies(self, entity_name: str, include_self: bool = False) -> List[str]:
+        """
+        Get all entities that the given entity depends on (transitive closure).
+
+        This includes:
+        - Parent entities (inheritance)
+        - Entities referenced in expressions
+        - Entities provided by sources that this entity depends on
+
+        Args:
+            entity_name: Name of the entity
+            include_self: Whether to include the entity itself in results
+
+        Returns:
+            List of entity names in dependency order (dependencies first)
+        """
+        if entity_name not in self.graph:
+            return []
+
+        # Get all ancestors (transitive dependencies)
+        try:
+            ancestors = nx.ancestors(self.graph, entity_name)
+        except nx.NetworkXError:
+            return []
+
+        # Filter to only entity nodes
+        entity_ancestors = [
+            node for node in ancestors
+            if self.graph.nodes[node].get("type") == "entity"
+        ]
+
+        # Sort topologically
+        subgraph = self.graph.subgraph(entity_ancestors | {entity_name})
+        try:
+            sorted_entities = list(nx.topological_sort(subgraph))
+        except nx.NetworkXError:
+            # If there's a cycle in the subgraph, return unsorted
+            sorted_entities = list(entity_ancestors)
+
+        if not include_self:
+            sorted_entities = [e for e in sorted_entities if e != entity_name]
+
+        return sorted_entities
+
+    def get_source_dependencies(self, entity_name: str) -> Dict[str, List]:
+        """
+        Get all sources that provide entities in the dependency chain.
+
+        Returns:
+            Dict with keys:
+            - "read_sources": Sources with GET method
+            - "write_sources": Sources with POST/PUT/PATCH/DELETE methods
+        """
+        if entity_name not in self.graph:
+            return {"read_sources": [], "write_sources": []}
+
+        # Get all ancestors (including indirect dependencies)
+        try:
+            ancestors = nx.ancestors(self.graph, entity_name) | {entity_name}
+        except nx.NetworkXError:
+            ancestors = {entity_name}
+
+        read_sources = []
+        write_sources = []
+
+        # Find sources that provide any of the ancestor entities
+        for node in ancestors:
+            # Look for source nodes that provide this entity
+            for predecessor in self.graph.predecessors(node):
+                if self.graph.nodes[predecessor].get("type") == "source":
+                    source_obj = self.graph.nodes[predecessor]["obj"]
+                    method = getattr(source_obj, "method", "GET").upper()
+
+                    if method == "GET":
+                        if source_obj not in read_sources:
+                            read_sources.append(source_obj)
+                    elif method in {"POST", "PUT", "PATCH", "DELETE"}:
+                        if source_obj not in write_sources:
+                            write_sources.append(source_obj)
+
+        return {
+            "read_sources": read_sources,
+            "write_sources": write_sources
+        }
+
+    def get_target_dependencies(self, entity_name: str) -> List:
+        """
+        Get all sources (targets) that consume this entity.
+        Used for mutations - where does this entity get sent to?
+
+        Returns:
+            List of source objects that consume this entity
+        """
+        if entity_name not in self.graph:
+            return []
+
+        write_targets = []
+
+        # Find sources that consume this entity
+        for successor in self.graph.successors(entity_name):
+            if self.graph.nodes[successor].get("type") == "source":
+                source_obj = self.graph.nodes[successor]["obj"]
+                method = getattr(source_obj, "method", "POST").upper()
+
+                if method in {"POST", "PUT", "PATCH", "DELETE"}:
+                    write_targets.append(source_obj)
+
+        return write_targets
+
+    def visualize_subgraph(self, entity_name: str) -> str:
+        """
+        Generate a text visualization of the dependency subgraph for an entity.
+        Useful for debugging.
+        """
+        if entity_name not in self.graph:
+            return f"Entity '{entity_name}' not found in graph"
+
+        # Get ancestors
+        try:
+            ancestors = nx.ancestors(self.graph, entity_name) | {entity_name}
+        except nx.NetworkXError:
+            ancestors = {entity_name}
+
+        # Build subgraph
+        subgraph = self.graph.subgraph(ancestors)
+
+        # Generate text representation
+        lines = [f"\n{'='*60}", f"Dependency Graph for: {entity_name}", f"{'='*60}"]
+
+        for node in subgraph.nodes():
+            node_type = self.graph.nodes[node].get("type", "unknown")
+            lines.append(f"\n[{node_type.upper()}] {node}")
+
+            # Show outgoing edges
+            for successor in subgraph.successors(node):
+                edge_data = subgraph.get_edge_data(node, successor)
+                edge_type = edge_data.get("type", "unknown")
+                lines.append(f"  --({edge_type})--> {successor}")
+
+        lines.append(f"{'='*60}\n")
+        return "\n".join(lines)
+
+    def has_cycles_in_entity_chain(self, entity_name: str) -> bool:
+        """
+        Check if there are cycles in the entity dependency chain.
+        (excluding allowed self-references in expressions)
+        """
+        if entity_name not in self.graph:
+            return False
+
+        # Get entity-only subgraph
+        entity_nodes = [
+            node for node in self.graph.nodes()
+            if self.graph.nodes[node].get("type") == "entity"
+        ]
+        entity_subgraph = self.graph.subgraph(entity_nodes)
+
+        # Check if entity is part of any cycle
+        try:
+            cycles = list(nx.simple_cycles(entity_subgraph))
+            for cycle in cycles:
+                if entity_name in cycle:
+                    return True
+            return False
+        except:
+            return False
+
+
+def build_dependency_graph(model) -> DependencyGraph:
+    """
+    Factory function to build a complete dependency graph from the model.
+
+    Args:
+        model: The parsed FDSL model
+
+    Returns:
+        DependencyGraph instance with complete dependency information
+
+    Raises:
+        Exception if circular dependencies are detected that cannot be resolved
+    """
+    graph = DependencyGraph(model)
+
+    # Check for problematic cycles
+    cycles = graph.detect_cycles()
+    if cycles:
+        # Filter out self-reference cycles (which are allowed)
+        problematic_cycles = [
+            cycle for cycle in cycles
+            if len(cycle) > 1  # Self-references have length 1
+        ]
+
+        if problematic_cycles:
+            print(f"\n[WARNING] Circular dependencies detected:")
+            for cycle in problematic_cycles:
+                print(f"  - {' -> '.join(cycle)} -> {cycle[0]}")
+            print("[WARNING] Some cycles are normal (e.g., entity references in expressions)")
+            print("[WARNING] Problematic cycles will cause recursion errors\n")
+
+    return graph

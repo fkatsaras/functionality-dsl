@@ -24,12 +24,11 @@ from .extractors import (
     get_response_schema,
 )
 from .generators import (
-    generate_query_router,
-    generate_mutation_router,
     generate_websocket_router,
     generate_domain_models,
     scaffold_backend_from_model,
 )
+from .generators.rest_generator_v2 import generate_rest_endpoint
 
 
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
@@ -66,29 +65,17 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     print("\n[PHASE 1] Generating domain models...")
     generate_domain_models(model, templates_dir, out_dir)
 
-    # Generate REST routers
-    print("\n[PHASE 2] Generating REST API routers...")
+    # Generate REST routers (using flow-based analysis)
+    print("\n[PHASE 2] Generating REST API routers (flow-based)...")
     for endpoint in all_rest_endpoints:
         method = getattr(endpoint, "method", "GET").upper()
-
-        # Extract request/response schemas from new structure
-        request_schema = get_request_schema(endpoint)
-        response_schema = get_response_schema(endpoint)
-
         print(f"\n--- Processing REST: {endpoint.name} ({method}) ---")
 
-        if method == "GET":
-            # For GET requests, only response schema is used
-            generate_query_router(
-                endpoint, request_schema, response_schema, model, all_rest_endpoints,
-                all_source_names, templates_dir, out_dir, server_config
-            )
-        else:
-            # For mutations (POST/PUT/PATCH/DELETE), both request and response are used
-            generate_mutation_router(
-                endpoint, request_schema, response_schema, model, all_rest_endpoints,
-                all_source_names, templates_dir, out_dir, server_config
-            )
+        # Use unified flow-based generator
+        generate_rest_endpoint(
+            endpoint, model, all_rest_endpoints,
+            all_source_names, templates_dir, out_dir, server_config
+        )
 
     # Generate WebSocket routers
     print("\n[PHASE 3] Generating WebSocket routers...")

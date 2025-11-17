@@ -78,7 +78,9 @@
       "Bash(xargs:*)",
       "Bash(timeout 10 ./venv_WIN/Scripts/python.exe:*)",
       "Bash(timeout 15 ./venv_WIN/Scripts/fdsl.exe generate:*)",
-      "Bash(../../venv_WIN/Scripts/fdsl.exe generate:*)"
+      "Bash(../../venv_WIN/Scripts/fdsl.exe generate:*)",
+      "Bash(./venv_WIN/Scripts/pip list:*)",
+      "Bash(./venv_WIN/Scripts/pip install:*)"
     ],
     "deny": [],
     "ask": []

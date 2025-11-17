@@ -179,6 +179,11 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
 
     # Has attributes - compute them
     shaped = {}
+
+    # Add partial entity to context so attributes can reference earlier attributes
+    # (e.g., LoginMatch.token can reference LoginMatch.user)
+    context[entity_name] = shaped
+
     for a in attrs:
         attr_name = a["name"]
         attr_expr = a["expr"]

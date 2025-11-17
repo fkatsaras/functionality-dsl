@@ -1,0 +1,507 @@
+# ========================================================================
+# AUTO-GENERATED REST SERVICE (Flow: {{ flow.type.upper() }})
+# ========================================================================
+
+import json
+import logging
+from typing import Any, Dict, Optional
+
+from fastapi import HTTPException
+
+from app.core.http import get_http_client
+from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
+from app.core.utils import resolve_headers, interpolate_url, seed_context_with_path_params
+
+
+logger = logging.getLogger("fdsl.service.{{ endpoint.name }}")
+
+
+# ============================================================================
+#                          CONFIGURATION
+# ============================================================================
+
+{% if flow.has_reads %}
+# External REST sources for reading
+_EXTERNAL_REST_SOURCES = [
+{%- for source in rest_inputs %}
+    {
+        "entity": "{{ source.entity }}",
+        "alias": "{{ source.alias }}",
+        "url": "{{ source.url }}",
+        "headers": {{ source.headers }},
+        "method": "{{ source.method }}",
+        "attrs": [
+        {%- for attr in source.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ],
+        "path_param_exprs": {{ source.path_param_exprs | tojson }},
+        "query_param_exprs": {{ source.query_param_exprs | tojson }},
+    },
+{%- endfor %}
+]
+
+_INTERNAL_DEPENDENCIES = [
+{%- for dep in computed_parents | default([], true) %}
+    {"name": "{{ dep.name }}", "endpoint": "{{ dep.endpoint }}/"},
+{%- endfor %}
+]
+{% endif %}
+
+{% if flow.has_writes %}
+# External targets for writing
+_WRITE_TARGETS = [
+{%- for target in write_targets %}
+    {
+        "name": "{{ target.name }}",
+        "url": "{{ target.url }}",
+        "method": "{{ target.method }}",
+        "headers": {{ target.headers }},
+    },
+{%- endfor %}
+]
+{% endif %}
+
+{% if compiled_chain %}
+# Computation chain for entity transformation
+_COMPUTATION_CHAIN = [
+{%- for step in compiled_chain %}
+    {
+        "name": "{{ step.name }}",
+        "attrs": [
+        {%- for attr in step.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ],
+    },
+{%- endfor %}
+]
+{% endif %}
+
+{% if response_chain %}
+# Response transformation chain (for mutations that return data)
+_RESPONSE_CHAIN = [
+{%- for step in response_chain %}
+    {
+        "name": "{{ step.name }}",
+        "attrs": [
+        {%- for attr in step.attrs %}
+            {"name": "{{ attr.name }}", "expr": {{ attr.pyexpr | tojson }}},
+        {%- endfor %}
+        ],
+    },
+{%- endfor %}
+]
+{% endif %}
+
+
+# ============================================================================
+#                          SERVICE FUNCTIONS
+# ============================================================================
+
+{% if flow.has_reads %}
+async def fetch_external_sources(context: Dict[str, Any]) -> None:
+    """Fetch data from external REST sources and populate context."""
+    http_client = get_http_client()
+
+    for source_config in _EXTERNAL_REST_SOURCES:
+        entity_name = source_config["entity"]
+        source_alias = source_config["alias"]
+        base_url = source_config["url"]
+        method = source_config["method"]
+
+        # Evaluate path parameter expressions
+        path_params = {}
+        for param_name, param_expr in source_config.get("path_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                path_params[param_name] = str(param_value)
+                logger.debug(f"[PARAM] - {source_alias}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate path parameter {param_name}")
+
+        # Evaluate query parameter expressions
+        query_params = {}
+        for param_name, param_expr in source_config.get("query_param_exprs", {}).items():
+            try:
+                compiled_expr = compile_safe(param_expr)
+                eval_globals = {**safe_globals, **context}
+                param_value = eval(compiled_expr, eval_globals, {})
+                if param_value is not None:  # Skip None values
+                    query_params[param_name] = param_value
+                logger.debug(f"[QUERY] - {source_alias}.{param_name} = {param_value}")
+            except Exception as e:
+                logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to evaluate query parameter {param_name}")
+
+        # Build URL with path parameters
+        url = base_url
+        for param_name, param_value in path_params.items():
+            url = url.replace("{" + param_name + "}", param_value)
+
+        # Add query parameters
+        if query_params:
+            from urllib.parse import urlencode
+            query_string = urlencode(query_params)
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{query_string}"
+
+        logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
+
+        try:
+            headers = resolve_headers(source_config.get("headers", []))
+
+            # Inject API key query params if necessary
+            for key, value in source_config.get("headers", []):
+                if key == "__queryparam__":
+                    separator = "&" if "?" in url else "?"
+                    url = f"{url}{separator}{value}"
+
+            response = await http_client.request(method, url, headers=headers)
+
+            if response.status_code >= 400:
+                logger.error(f"[FETCH] - Failed to fetch {entity_name}: HTTP {response.status_code}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"External source {entity_name} returned {response.status_code}"
+                )
+
+            raw_payload = response.json()
+            logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
+
+            # Store raw payload by alias
+            has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
+
+            if has_path_params:
+                if isinstance(raw_payload, dict):
+                    context[source_alias].update(raw_payload)
+                else:
+                    context[source_alias]["_response"] = raw_payload
+            else:
+                context[source_alias] = raw_payload
+
+            # Shape the data by evaluating attribute expressions
+            shaped_data = _shape_entity_data(source_config, context, entity_name)
+
+            # Store shaped entity in context
+            context[entity_name] = shaped_data
+            logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys()) if isinstance(shaped_data, dict) else type(shaped_data)}")
+
+        except HTTPException:
+            raise
+        except Exception as fetch_error:
+            logger.error(f"[FETCH] - Unexpected error fetching {entity_name}: {fetch_error}", exc_info=True)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch external source: {entity_name}"
+            )
+
+
+async def fetch_internal_dependencies(context: Dict[str, Any]) -> None:
+    """Fetch data from internal computed dependencies and populate context."""
+    http_client = get_http_client()
+
+    for dependency in _INTERNAL_DEPENDENCIES:
+        entity_name = dependency["name"]
+        endpoint_path = dependency["endpoint"]
+
+        logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
+
+        try:
+            response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
+
+            if response.status_code >= 400:
+                logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Internal dependency {entity_name} returned {response.status_code}"
+                )
+
+            payload = response.json()
+
+            # Unwrap single-key envelope if present
+            if isinstance(payload, dict) and entity_name in payload and len(payload) == 1:
+                context[entity_name] = payload[entity_name]
+            else:
+                context[entity_name] = payload
+
+            logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
+
+        except HTTPException:
+            raise
+        except Exception as dep_error:
+            logger.error(f"[DEPENDENCY] - Unexpected error fetching {entity_name}: {dep_error}", exc_info=True)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch internal dependency: {entity_name}"
+            )
+{% endif %}
+
+{% if compiled_chain %}
+def compute_entity_chain(context: Dict[str, Any]) -> None:
+    """Execute computation chain to transform data."""
+    logger.info(f"[COMPUTE] - Executing chain with {len(_COMPUTATION_CHAIN)} step(s)")
+
+    for step_index, compute_step in enumerate(_COMPUTATION_CHAIN, 1):
+        entity_name = compute_step["name"]
+        logger.debug(f"[COMPUTE] - Step {step_index}/{len(_COMPUTATION_CHAIN)}: {entity_name}")
+
+        shaped_data = _shape_entity_data(compute_step, context, entity_name)
+        context[entity_name] = shaped_data
+        logger.debug(f"[CONTEXT] - Stored computation result: {entity_name}")
+{% endif %}
+
+{% if response_chain %}
+def compute_response_chain(context: Dict[str, Any]) -> None:
+    """Execute response transformation chain (for mutations)."""
+    logger.info(f"[COMPUTE-RESPONSE] - Executing chain with {len(_RESPONSE_CHAIN)} step(s)")
+
+    for step_index, compute_step in enumerate(_RESPONSE_CHAIN, 1):
+        entity_name = compute_step["name"]
+        logger.debug(f"[COMPUTE-RESPONSE] - Step {step_index}/{len(_RESPONSE_CHAIN)}: {entity_name}")
+
+        shaped_data = _shape_entity_data(compute_step, context, entity_name)
+        context[entity_name] = shaped_data
+        logger.debug(f"[CONTEXT] - Stored response transformation result: {entity_name}")
+{% endif %}
+
+
+def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_name: str) -> Dict[str, Any]:
+    """Shape entity data by evaluating attribute expressions."""
+    shaped_data: Dict[str, Any] = {}
+
+    # Add partial entity to context so attributes can reference earlier attributes
+    # (e.g., LoginMatch.token can reference LoginMatch.user)
+    context[entity_name] = shaped_data
+
+    for attr_config in config.get("attrs", []):
+        attr_name = attr_config["name"]
+        attr_expr = attr_config["expr"]
+
+        try:
+            compiled_expr = compile_safe(attr_expr)
+            eval_globals = {**safe_globals, **context}
+            shaped_data[attr_name] = eval(compiled_expr, eval_globals, {})
+            logger.debug(f"[SHAPE] - {entity_name}.{attr_name} computed successfully")
+        except HTTPException:
+            raise
+        except Exception as eval_error:
+            logger.error(f"[SHAPE] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to compute {entity_name}.{attr_name}"
+            )
+
+    # Default to raw payload if no attributes specified
+    if not shaped_data and config.get("alias"):
+        shaped_data = {"raw": context.get(config["alias"], {})}
+
+    return shaped_data
+
+
+{% if flow.has_writes %}
+async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Write data to external targets.
+    Returns the response from the last target (for endpoints that return data after mutation).
+    """
+    http_client = get_http_client()
+    last_response = None
+
+    for target_config in _WRITE_TARGETS:
+        target_name = target_config["name"]
+        url = target_config["url"]
+        method = target_config["method"]
+        headers = resolve_headers(target_config.get("headers", []))
+
+        {% if request_entity %}
+        # Get the transformed entity from context (terminal entity)
+        payload = context.get("{{ request_entity.name }}", request_body)
+        {% else %}
+        # No request entity - send raw request body
+        payload = request_body
+        {% endif %}
+
+        logger.info(f"[WRITE] - Writing to {target_name} at {url} ({method})")
+        logger.debug(f"[WRITE] - Payload: {json.dumps(payload, indent=2)[:500]}")
+
+        try:
+            response = await http_client.request(method, url, headers=headers, json=payload)
+
+            if response.status_code >= 400:
+                logger.error(f"[WRITE] - Failed to write to {target_name}: HTTP {response.status_code}")
+                logger.error(f"[WRITE] - Response: {response.text[:500]}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"External target {target_name} returned {response.status_code}"
+                )
+
+            # Store response
+            try:
+                last_response = response.json()
+                logger.info(f"[WRITE] - Successfully wrote to {target_name}")
+            except:
+                last_response = {"status": "success"}
+                logger.info(f"[WRITE] - Successfully wrote to {target_name} (no JSON response)")
+
+        except HTTPException:
+            raise
+        except Exception as write_error:
+            logger.error(f"[WRITE] - Unexpected error writing to {target_name}: {write_error}", exc_info=True)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to write to external target: {target_name}"
+            )
+
+    return last_response or {}
+{% endif %}
+
+
+async def execute_flow(
+    path_params: Dict[str, str] = None,
+    query_params: Dict[str, Any] = None,
+    headers: Dict[str, str] = None,
+    request_body: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Main service function to execute the complete data flow.
+
+    Flow type: {{ flow.type }}
+    {% if flow.has_reads %}
+    - Reads from {{ rest_inputs | length }} external source(s)
+    {% endif %}
+    {% if flow.has_writes %}
+    - Writes to {{ write_targets | length }} external target(s)
+    {% endif %}
+    {% if compiled_chain %}
+    - Computes {{ compiled_chain | length }} entity transformation(s)
+    {% endif %}
+    """
+    context: Dict[str, Any] = {}
+
+    # Create endpoint parameter object for expressions (e.g., GetProduct.productId)
+    endpoint_params = {}
+    if path_params:
+        endpoint_params.update(path_params)
+    if query_params:
+        endpoint_params.update(query_params)
+    if headers:
+        endpoint_params.update(headers)
+
+    # Add endpoint parameter object to context
+    context["{{ endpoint.name }}"] = endpoint_params
+    logger.debug(f"[CONTEXT] - Created endpoint parameter object {{ endpoint.name }} with keys: {list(endpoint_params.keys())}")
+
+    {% if request_entity %}
+    # Seed context with request body entity
+    if request_body:
+        context["{{ request_entity.name }}"] = request_body
+        logger.debug(f"[CONTEXT] - Seeded request entity {{ request_entity.name }}")
+    {% endif %}
+
+    # ========================================================================
+    # EXECUTE FLOW PIPELINE
+    # ========================================================================
+
+    {% if flow.type == 'read' %}
+    # READ flow: Fetch → Compute → Return
+    {% if flow.has_reads %}
+    await fetch_external_sources(context)
+    await fetch_internal_dependencies(context)
+    {% endif %}
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+
+    {% elif flow.type == 'write' %}
+    # WRITE flow: Compute → Write → Return
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+    {% if flow.has_writes %}
+    write_response = await write_to_targets(context, request_body or {})
+    # Store write response in context for error checking
+    {% if response_source_entity %}
+    context["{{ response_source_entity.name }}"] = write_response
+    {% endif %}
+    {% endif %}
+
+    {% elif flow.type == 'read_write' %}
+    # READ_WRITE flow: Fetch → Compute → Write → Transform Response → Return
+    {% if flow.has_reads %}
+    await fetch_external_sources(context)
+    await fetch_internal_dependencies(context)
+    {% endif %}
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+    {% if flow.has_writes %}
+    write_response = await write_to_targets(context, request_body or {})
+    # Store write response in context
+    {% if response_source_entity %}
+    context["{{ response_source_entity.name }}"] = write_response
+    {% endif %}
+    {% endif %}
+    {% if response_chain %}
+    compute_response_chain(context)
+    {% endif %}
+
+    {% else %}
+    # COMPUTE flow: Pure computation (no external I/O)
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+    {% endif %}
+
+    # ========================================================================
+    # ERROR HANDLING
+    # ========================================================================
+    {% if errors %}
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+        # Skip this error check if evaluation fails
+    {% endfor %}
+    {% endif %}
+
+    # ========================================================================
+    # EXTRACT AND RETURN RESULT
+    # ========================================================================
+    {% if response_entity %}
+    final_entity_name = "{{ response_entity.name }}"
+    {% elif request_entity %}
+    final_entity_name = "{{ request_entity.name }}"
+    {% else %}
+    final_entity_name = "{{ entity.name }}"
+    {% endif %}
+
+    final_attributes = context.get(final_entity_name, {})
+
+    logger.info(f"[SUCCESS] - Flow completed successfully")
+    logger.debug(f"[RESULT] - Entity: {final_entity_name}, Attributes: {list(final_attributes.keys()) if isinstance(final_attributes, dict) else type(final_attributes)}")
+
+    # Unwrap response based on type
+    {% if response_type in ('string', 'number', 'integer', 'boolean', 'array') %}
+    # Response type is {{ response_type }} - unwrap the single attribute
+    if final_attributes and isinstance(final_attributes, dict):
+        attribute_values = list(final_attributes.values())
+        if attribute_values:
+            unwrapped = attribute_values[0]
+            logger.debug(f"[UNWRAP] - Unwrapped {{ response_type }} response")
+            return unwrapped
+    logger.warning(f"[UNWRAP] - No attributes found for {{ response_type }} response, returning empty")
+    return [] if "{{ response_type }}" == "array" else None
+    {% else %}
+    # Response type is object - return full entity attributes
+    return final_attributes
+    {% endif %}
