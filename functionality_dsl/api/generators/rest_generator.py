@@ -148,22 +148,33 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             write_targets.append(target_config)
 
     # =========================================================================
-    # STEP 5: Build Computation Chain
+    # STEP 5: Build Computation Chain (entities needed BEFORE write)
     # =========================================================================
     compiled_chain = []
 
-    # For WRITE flows: do NOT build response entity in main chain (it comes AFTER write)
-    # For READ flows: build response entity in main chain (it comes AFTER fetch)
-
-    if flow.flow_type in {EndpointFlowType.READ}:
+    # For READ flows: Build response entity chain (no writes)
+    if flow.flow_type == EndpointFlowType.READ:
         if response_entity:
-            # Build transformation chain for response
             compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+
+    # For WRITE/READ_WRITE flows: Build computed entities referenced in write target parameters
+    # These must be computed BEFORE we can evaluate write target parameters!
     elif flow.flow_type in {EndpointFlowType.WRITE, EndpointFlowType.READ_WRITE}:
-        # For WRITE flows, only build request entity chain (if exists and not response entity)
-        if request_entity and not response_entity:
-            compiled_chain = build_entity_chain(request_entity, model, all_source_names, context="ctx")
-        # Response entity computation happens in response_chain AFTER write
+        # Collect all computed entities from flow analysis
+        if flow.computed_entities:
+            # Build chains for all computed entities (excluding response entity)
+            for computed_entity in flow.computed_entities:
+                if computed_entity != response_entity:  # Response comes AFTER write
+                    entity_chain = build_entity_chain(computed_entity, model, all_source_names, context="ctx")
+                    compiled_chain.extend(entity_chain)
+
+        # Also include request entity if it has computed attributes
+        if request_entity:
+            request_chain = build_entity_chain(request_entity, model, all_source_names, context="ctx")
+            # Only add if not already in compiled_chain
+            for step in request_chain:
+                if not any(s.get("name") == step.get("name") for s in compiled_chain):
+                    compiled_chain.append(step)
 
     # =========================================================================
     # STEP 6: Build Response Transformation Chain (for mutations with response)

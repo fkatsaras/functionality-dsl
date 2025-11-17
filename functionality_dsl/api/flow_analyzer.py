@@ -166,6 +166,25 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         else:  # POST, PUT, PATCH, DELETE
             response_write_targets.append(src)
 
+    # Track ALL computed entities in the response dependency chain
+    if response_entity:
+        from textx import get_children_of_type
+        import networkx as nx
+        try:
+            ancestors = nx.ancestors(dep_graph.graph, response_entity.name)
+            for ancestor_name in ancestors:
+                if dep_graph.graph.nodes[ancestor_name].get("type") == "entity":
+                    for entity in get_children_of_type("Entity", model):
+                        if entity.name == ancestor_name:
+                            # Check if this entity has computed attributes
+                            for attr in getattr(entity, "attributes", []):
+                                if hasattr(attr, "expr") and attr.expr:
+                                    if entity not in computed_entities:
+                                        computed_entities.append(entity)
+                                    break
+        except Exception:
+            pass
+
     # =========================================================================
     # 3. RESOLVE WRITE TARGETS + READS FOR REQUEST ENTITY
     # =========================================================================
@@ -214,10 +233,10 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # 4. RESOLVE READS FROM WRITE TARGET PARAMETER EXPRESSIONS (AST-based)
     # =========================================================================
     # For WRITE/READ_WRITE flows: If write targets have parameter expressions
-    # that reference entities, we need to read those entities first.
+    # that reference entities, we need to compute/read those entities first.
     #
     # Example: Source CreateOrder with parameter productId = ProductData.id
-    #   → Must read ProductData before writing to CreateOrder
+    #   → Must compute ProductData before writing to CreateOrder
     # =========================================================================
     for tgt in write_targets:
         params = getattr(tgt, "parameters", None)
@@ -230,6 +249,12 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                 if hasattr(param, "expr") and param.expr:
                     ents = _extract_entity_refs_from_expr(param.expr, model)
                     for ent in ents:
+                        # Track as computed entity if it has expressions
+                        for attr in getattr(ent, "attributes", []):
+                            if hasattr(attr, "expr") and attr.expr:
+                                if ent not in computed_entities:
+                                    computed_entities.append(ent)
+                                break
                         deps = dep_graph.get_source_dependencies(ent.name)
                         for src in deps["read_sources"]:
                             method = getattr(src, "method", "GET").upper()
@@ -246,6 +271,12 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                 if hasattr(param, "expr") and param.expr:
                     ents = _extract_entity_refs_from_expr(param.expr, model)
                     for ent in ents:
+                        # Track as computed entity if it has expressions
+                        for attr in getattr(ent, "attributes", []):
+                            if hasattr(attr, "expr") and attr.expr:
+                                if ent not in computed_entities:
+                                    computed_entities.append(ent)
+                                break
                         deps = dep_graph.get_source_dependencies(ent.name)
                         for src in deps["read_sources"]:
                             method = getattr(src, "method", "GET").upper()
