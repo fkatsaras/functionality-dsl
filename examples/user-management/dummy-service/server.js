@@ -17,7 +17,7 @@ app.use(bodyParser.json());
 
 // ====== SIMPLE CRUD OPERATIONS (No business logic) ======
 
-// GET /db/users - List all users
+// SELECT * FROM _ /db/users - List all users
 app.get("/db/users", (req, res) => {
   console.log(`[DB] GET /db/users - Returning ${users.length} users`);
   res.json({ users });
@@ -37,7 +37,7 @@ app.get("/db/users/:id", (req, res) => {
   res.json(user);
 });
 
-// POST /db/users - Create new user
+// INSERT /db/users - Create new user
 app.post("/db/users", (req, res) => {
   const { username, password, email } = req.body;
 
@@ -57,7 +57,7 @@ app.post("/db/users", (req, res) => {
   res.status(201).json(newUser);
 });
 
-// PATCH /db/users/:id - Update user
+// UPDATE _ SET _ WHERE /db/users/:id - Update user
 app.patch("/db/users/:id", (req, res) => {
   const id = parseInt(req.params.id);
   const user = users.find((u) => u.id === id);
@@ -76,7 +76,7 @@ app.patch("/db/users/:id", (req, res) => {
   res.json(user);
 });
 
-// DELETE /db/users/:id - Delete user
+// DELETE FROM _ WHERE /db/users/:id - Delete user
 app.delete("/db/users/:id", (req, res) => {
   const id = parseInt(req.params.id);
   const index = users.findIndex((u) => u.id === id);
