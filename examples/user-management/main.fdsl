@@ -229,7 +229,7 @@ Endpoint<REST> UpdatePassword
     entity: UpdateResponse
   errors:
     - 404: condition: not PasswordUpdateData.user "User with this email not found";
-    - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
+    - 400: condition: PasswordUpdateData.user.password == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
 end
 
 // Update user by ID
@@ -260,7 +260,7 @@ Endpoint<REST> UserDeleteEndpoint
   errors:
     - 404: condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.id) "User doesnt exist";
+        u -> u["id"] == UserDeleteEndpoint.userId) "User doesnt exist";
     - 500: condition: not UsersListWrapper.users "No more users left";
 end
 

@@ -498,6 +498,7 @@ class DependencyGraph:
             "accepted_by",   # Entity -> Endpoint (request entity)
             "consumed_by",   # Entity -> Source (entity sent to source)
             "param_dependency",  # Entity -> Source (entity used in params)
+            "parent",
         }
 
         # Edge types we follow during BACKWARD traversal (from node to predecessors)

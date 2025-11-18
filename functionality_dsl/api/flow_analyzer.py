@@ -260,6 +260,8 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     #   - Read sources: ProductDB (to validate product IDs in request)
     # =========================================================================
     if request_entity is not None:
+
+        import networkx as nx
         # WRITE targets: External services that consume this entity
         # Filter by parameter compatibility (only include targets whose parameters reference available entities)
         all_targets = dep_graph.get_target_dependencies(request_entity.name, endpoint)
@@ -268,6 +270,14 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
             # So only targets that reference endpoint params or request entity should be included
             if _is_write_target_compatible(tgt, endpoint, [request_entity], model):
                 write_targets.append(tgt)
+
+        #  also check inherited entities
+        for desc in nx.descendants(dep_graph.graph, request_entity.name):
+            if dep_graph.graph.nodes[desc].get("type") == "entity":
+                extra_targets = dep_graph.get_target_dependencies(desc, endpoint)
+                for tgt in extra_targets:
+                    if tgt not in write_targets:
+                        write_targets.append(tgt)
 
         # READs: External sources needed to validate/transform request data
         req_deps = dep_graph.get_source_dependencies(request_entity.name, endpoint)
