@@ -457,46 +457,7 @@ async def execute_flow(
     compute_entity_chain(context)
     {% endif %}
 
-    {% elif flow.type == 'write' %}
-    # WRITE flow: Compute → Write → Transform Response → Return
-    {% if compiled_chain %}
-    compute_entity_chain(context)
-    {% endif %}
-    {% if flow.has_writes %}
-    write_response = await write_to_targets(context, request_body or {})
-    # Store write response in context for error checking and response transformation
-    {% if response_source_entity %}
-    context["{{ response_source_entity.name }}"] = write_response
-    {% endif %}
-    {% endif %}
-    {% if response_chain %}
-    compute_response_chain(context)
-    {% endif %}
-
-    {% elif flow.type == 'read_write' %}
-    # READ_WRITE flow: Fetch → Compute → Write → Transform Response → Return
-    {% if flow.has_reads %}
-    await fetch_external_sources(context)
-    await fetch_internal_dependencies(context)
-    {% endif %}
-    {% if compiled_chain %}
-    compute_entity_chain(context)
-    {% endif %}
-    {% if flow.has_writes %}
-    write_response = await write_to_targets(context, request_body or {})
-    # Store write response in context
-    {% if response_source_entity %}
-    context["{{ response_source_entity.name }}"] = write_response
-    {% endif %}
-    {% endif %}
-    {% if response_chain %}
-    compute_response_chain(context)
-    {% endif %}
-    {% endif %}
-
-    # ========================================================================
-    # ERROR HANDLING
-    # ========================================================================
+    # READ FLOW ERRORS (after fetch)
     {% if errors %}
     eval_globals = {**safe_globals, **context}
     {% for error in errors %}
@@ -508,8 +469,79 @@ async def execute_flow(
         raise
     except Exception as eval_error:
         logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
-        # Skip this error check if evaluation fails
     {% endfor %}
+    {% endif %}
+
+    {% elif flow.type == 'write' %}
+    # WRITE flow: Compute → Validate → Write → Transform Response → Return
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+    {# PRE-WRITE ERROR CHECKS #}
+    {% if errors %}
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+    {% endfor %}
+    {% endif %}
+
+    {% if flow.has_writes %}
+    write_response = await write_to_targets(context, request_body or {})
+
+    {% if response_source_entity %}
+    context["{{ response_source_entity.name }}"] = write_response
+    {% endif %}
+    {% endif %}
+
+    {% if response_chain %}
+    compute_response_chain(context)
+    {% endif %}
+
+    {% elif flow.type == 'read_write' %}
+    # READ_WRITE flow: Fetch → Compute → Validate → Write → Transform Response → Return   
+    {% if flow.has_reads %}
+    await fetch_external_sources(context)
+    await fetch_internal_dependencies(context)
+    {% endif %}
+
+    {% if compiled_chain %}
+    compute_entity_chain(context)
+    {% endif %}
+    {# -------------------------------------------- #}
+    {# PRE-WRITE ERROR CHECKS                       #}
+    {# -------------------------------------------- #}
+    {% if errors %}
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+    {% endfor %}
+    {% endif %}
+
+    {% if flow.has_writes %}
+    write_response = await write_to_targets(context, request_body or {})
+
+    {% if response_source_entity %}
+    context["{{ response_source_entity.name }}"] = write_response
+    {% endif %}
+    {% endif %}
+
+    {% if response_chain %}
+    compute_response_chain(context)
+    {% endif %}
     {% endif %}
 
     # ========================================================================

@@ -181,6 +181,11 @@ Endpoint<REST> Register
   response:
     type: object
     entity: RegisterResponse
+  errors:
+  - 409: condition: find(
+        UsersListWrapper.users,
+        u -> u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
+      ) "Username or Password already registered.";
 end
 
 // Login (validates credentials in FDSL layer)
@@ -194,7 +199,7 @@ Endpoint<REST> Login
     type: object
     entity: LoginResponse
   errors:
-    - 401: condition: not LoginMatch.user "Invalid username or password"
+    - 401: condition: not LoginMatch.user "Invalid username or password";
 end
 
 // Update password (finds user by email, updates in DB)
@@ -208,8 +213,8 @@ Endpoint<REST> UpdatePassword
     type: object
     entity: UpdateResponse
   errors:
-    - 404: condition: not PasswordUpdateData.user "User with this email not found"
-    - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password"
+    - 404: condition: not PasswordUpdateData.user "User with this email not found";
+    - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
 end
 
 // Update user by ID
@@ -236,7 +241,12 @@ Endpoint<REST> UserDeleteEndpoint
       - userId: integer
   response:
     type: object
-    entity: DeleteResponse
+    entity: DeleteResponseSchema
+  errors:
+    - 404: condition: not find(
+        UsersListWrapper.users,
+        u -> u["id"] == UserDeleteEndpoint.id) "User doesnt exist";
+    - 500: condition: not UsersListWrapper.users "No more users left";
 end
 
 // ============================================================

@@ -147,7 +147,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # =========================================================================
     response_sources = []
     if response_entity is not None:
-        src_deps = dep_graph.get_source_dependencies(response_entity.name)
+        src_deps = dep_graph.get_source_dependencies(response_entity.name, endpoint)
         response_sources = src_deps["read_sources"]  # All sources that provide this entity
 
         # Track computed attributes for transformation chain
@@ -166,22 +166,45 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         else:  # POST, PUT, PATCH, DELETE
             response_write_targets.append(src)
 
-    # Track ALL computed entities in the response dependency chain
+    # Track computed entities in the response dependency chain
+    # ONLY follow parent/expression edges, NOT arbitrary ancestors
     if response_entity:
-        from textx import get_children_of_type
-        import networkx as nx
+        def collect_response_computed_entities(entity, visited=None):
+            """
+            Recursively collect computed entities in the response chain.
+            Only follows parent and expression edges (not arbitrary graph paths).
+            """
+            if visited is None:
+                visited = set()
+
+            if entity.name in visited:
+                return
+            visited.add(entity.name)
+
+            # Check if this entity has computed attributes
+            has_computed = False
+            for attr in getattr(entity, "attributes", []):
+                if hasattr(attr, "expr") and attr.expr:
+                    has_computed = True
+                    if entity not in computed_entities:
+                        computed_entities.append(entity)
+                    break
+
+            # Follow parent edges (inheritance)
+            for parent in getattr(entity, "parents", []) or []:
+                collect_response_computed_entities(parent, visited)
+
+            # ONLY follow expression dependencies if this entity has computed attributes
+            # This prevents traversing to unrelated entities
+            if has_computed:
+                for attr in getattr(entity, "attributes", []):
+                    if hasattr(attr, "expr") and attr.expr:
+                        referenced_entities = dep_graph._extract_entity_refs_from_expr(attr.expr)
+                        for ref_entity in referenced_entities:
+                            collect_response_computed_entities(ref_entity, visited)
+
         try:
-            ancestors = nx.ancestors(dep_graph.graph, response_entity.name)
-            for ancestor_name in ancestors:
-                if dep_graph.graph.nodes[ancestor_name].get("type") == "entity":
-                    for entity in get_children_of_type("Entity", model):
-                        if entity.name == ancestor_name:
-                            # Check if this entity has computed attributes
-                            for attr in getattr(entity, "attributes", []):
-                                if hasattr(attr, "expr") and attr.expr:
-                                    if entity not in computed_entities:
-                                        computed_entities.append(entity)
-                                    break
+            collect_response_computed_entities(response_entity)
         except Exception:
             pass
 
@@ -197,10 +220,10 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # =========================================================================
     if request_entity is not None:
         # WRITE targets: External services that consume this entity
-        write_targets.extend(dep_graph.get_target_dependencies(request_entity.name))
+        write_targets.extend(dep_graph.get_target_dependencies(request_entity.name, endpoint))
 
         # READs: External sources needed to validate/transform request data
-        req_deps = dep_graph.get_source_dependencies(request_entity.name)
+        req_deps = dep_graph.get_source_dependencies(request_entity.name, endpoint)
         for src in req_deps["read_sources"]:
             method = getattr(src, "method", "GET").upper()
             if method in {"GET", "HEAD", "OPTIONS"}:
@@ -212,20 +235,24 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
 
         # Also include read dependencies for descendants in mutation chains
         # (entities that inherit from or transform the request entity)
+        # IMPORTANT: Use endpoint-specific subgraph to avoid cross-contamination
         try:
             import networkx as nx
 
-            for desc in nx.descendants(dep_graph.graph, request_entity.name):
-                if dep_graph.graph.nodes[desc].get("type") == "entity":
-                    desc_src = dep_graph.get_source_dependencies(desc)
+            # Get endpoint-specific subgraph (without flow info, so not fully filtered yet)
+            # This at least excludes entities from other endpoints
+            endpoint_subgraph = dep_graph.get_endpoint_subgraph(endpoint, endpoint_flow=None)
+
+            for desc in nx.descendants(endpoint_subgraph, request_entity.name):
+                if endpoint_subgraph.nodes[desc].get("type") == "entity":
+                    desc_src = dep_graph.get_source_dependencies(desc, endpoint)
                     for src in desc_src["read_sources"]:
                         method = getattr(src, "method", "GET").upper()
                         if method in {"GET", "HEAD", "OPTIONS"}:
                             if not any(s.name == src.name for s in read_sources):
                                 read_sources.append(src)
-                        else:  # POST, PUT, PATCH, DELETE
-                            if not any(t.name == src.name for t in write_targets):
-                                write_targets.append(src)
+                        # DON'T add non-GET sources as write targets from descendants
+                        # Only the direct request entity consumption should determine write targets
         except Exception:
             pass
 
@@ -255,7 +282,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                                 if ent not in computed_entities:
                                     computed_entities.append(ent)
                                 break
-                        deps = dep_graph.get_source_dependencies(ent.name)
+                        deps = dep_graph.get_source_dependencies(ent.name, endpoint)
                         for src in deps["read_sources"]:
                             method = getattr(src, "method", "GET").upper()
                             if method in {"GET", "HEAD", "OPTIONS"}:
@@ -277,7 +304,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                                 if ent not in computed_entities:
                                     computed_entities.append(ent)
                                 break
-                        deps = dep_graph.get_source_dependencies(ent.name)
+                        deps = dep_graph.get_source_dependencies(ent.name, endpoint)
                         for src in deps["read_sources"]:
                             method = getattr(src, "method", "GET").upper()
                             if method in {"GET", "HEAD", "OPTIONS"}:
@@ -300,8 +327,17 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         for err in endpoint.errors.mappings:
             ents = _extract_entity_refs_from_expr(err.condition, model)
             for ent in ents:
-                deps = dep_graph.get_source_dependencies(ent.name)
-                # Classify sources by HTTP method
+                # Add entity to computed_entities if it has expressions
+                for attr in getattr(ent, "attributes", []):
+                    if hasattr(attr, "expr") and attr.expr:
+                        if ent not in computed_entities:
+                            computed_entities.append(ent)
+                        break
+
+                # Find read sources for this entity
+                # Use GLOBAL graph (endpoint=None) because the endpoint subgraph
+                # doesn't include error-condition entities yet
+                deps = dep_graph.get_source_dependencies(ent.name, endpoint=None)
                 for src in deps["read_sources"]:
                     method = getattr(src, "method", "GET").upper()
                     if method in {"GET", "HEAD", "OPTIONS"}:
@@ -311,17 +347,34 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                         if not any(t.name == src.name for t in write_targets):
                             write_targets.append(src)
 
+                # Find write targets that depend on this entity (via parameters)
+                # Use GLOBAL graph (endpoint=None) for same reason
+                targets = dep_graph.get_target_dependencies(ent.name, endpoint=None)
+                for tgt in targets:
+                    if not any(t.name == tgt.name for t in write_targets):
+                        write_targets.append(tgt)
+
     # =========================================================================
     # 6. MERGE RESPONSE SOURCES INTO READ/WRITE LISTS
     # =========================================================================
     # Add response sources to appropriate lists:
     # - Response READ sources → read_sources
-    # - Response WRITE targets → write_targets
+    # - Response WRITE targets → ONLY if they're already in write_targets from request flow
+    #
+    # Important: For WRITE endpoints, the response entity's sources should NOT
+    # automatically become write targets. Only sources that are explicitly consumed
+    # by the request entity or referenced in parameter expressions should be write targets.
+    #
+    # Example: Register endpoint
+    #   - Request: RegisterRequest consumed by CreateUser → CreateUser is a write target
+    #   - Response: RegisterResponse(UserSchema) provided by CreateUser AND UpdateUser
+    #   - Only CreateUser should be a write target (it's in both request and response flow)
+    #   - UpdateUser should be excluded (not used by this endpoint)
     # =========================================================================
-    # Add response write targets
-    for tgt in response_write_targets:
-        if not any(t.name == tgt.name for t in write_targets):
-            write_targets.append(tgt)
+
+    # For write targets: Don't merge response_write_targets
+    # They should already be in write_targets if they're consumed by the request flow.
+    # This prevents adding unrelated sources just because they provide the response entity.
 
     # Add response read sources (avoid duplicates with existing reads)
     for src in response_read_sources:
@@ -543,15 +596,15 @@ def print_flow_analysis(endpoint, flow: EndpointFlow):
     print(f"\n[FLOW ANALYSIS] {endpoint.name}")
     print(f"  HTTP Method: {flow.http_method}")
     print(f"  Flow Type: {flow.flow_type.value.upper()}")
-
     print(f"  Read Sources: {len(flow.read_sources)}")
     for src in flow.read_sources:
         print(f"    - {src.name} ({getattr(src, 'method', 'GET')})")
-
     print(f"  Write Targets: {len(flow.write_targets)}")
     for tgt in flow.write_targets:
         print(f"    - {tgt.name} ({getattr(tgt, 'method', 'POST')})")
-
     print(f"  Computed Entities: {len(flow.computed_entities)}")
     for ent in flow.computed_entities:
         print(f"    - {ent.name}")
+
+    print("\n  === Endpoint-local dependency graph ===")
+    print(flow.dependency_graph.visualize_endpoint(endpoint, flow))

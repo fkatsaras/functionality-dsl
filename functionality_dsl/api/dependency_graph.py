@@ -362,6 +362,140 @@ class DependencyGraph:
 
         visit(expr)
         return entities
+    
+    def get_endpoint_subgraph(self, endpoint, endpoint_flow=None):
+        """
+        Build a subgraph containing ONLY nodes relevant to this specific endpoint.
+
+        This is a flow-aware traversal that:
+        1. Starts from the endpoint's request/response entities
+        2. Includes only sources used by this endpoint (from flow analysis)
+        3. Traverses entity dependencies (parents, expressions)
+        4. STOPS at other endpoint nodes (prevents cross-endpoint pollution)
+
+        Args:
+            endpoint: The endpoint object
+            endpoint_flow: Optional EndpointFlow object with read_sources/write_targets
+                          If provided, only these sources are included
+
+        Returns:
+            A subgraph containing only this endpoint's dependencies
+        """
+        from .extractors import get_request_schema, get_response_schema
+
+        endpoint_node = f"Endpoint:{endpoint.name}"
+
+        if endpoint_node not in self.graph:
+            return self.graph.subgraph([])
+
+        # ===================================================================
+        # STEP 1: Identify starting nodes (seeds for traversal)
+        # ===================================================================
+        seed_nodes = {endpoint_node}
+
+        # Add request entity (if exists)
+        request_schema = get_request_schema(endpoint)
+        if request_schema and request_schema.get("type") == "entity":
+            seed_nodes.add(request_schema["entity"].name)
+
+        # Add response entity (if exists)
+        response_schema = get_response_schema(endpoint)
+        if response_schema and response_schema.get("type") == "entity":
+            seed_nodes.add(response_schema["entity"].name)
+
+        # Add sources from flow analysis (if provided)
+        allowed_sources = set()
+        if endpoint_flow:
+            for src in endpoint_flow.read_sources:
+                source_node = f"Source:{src.name}"
+                seed_nodes.add(source_node)
+                allowed_sources.add(source_node)
+
+            for src in endpoint_flow.write_targets:
+                source_node = f"Source:{src.name}"
+                seed_nodes.add(source_node)
+                allowed_sources.add(source_node)
+
+        # ===================================================================
+        # STEP 2: Traverse the graph from seeds
+        # ===================================================================
+        reachable = set()
+        stack = list(seed_nodes)
+
+        # Edge types we follow during FORWARD traversal (from node to successors)
+        # These edges represent "depends on" or "uses" relationships
+        forward_edges = {
+            "returns",       # Endpoint -> Entity (response entity)
+            "accepted_by",   # Entity -> Endpoint (request entity)
+            "consumed_by",   # Entity -> Source (entity sent to source)
+            "param_dependency",  # Entity -> Source (entity used in params)
+        }
+
+        # Edge types we follow during BACKWARD traversal (from node to predecessors)
+        # These edges represent "is provided by" or "inherits from" relationships
+        backward_edges = {
+            "provides",      # Source -> Entity (entity provided by source)
+            "parent",        # Parent -> Child (inheritance - traverse UP to parents only)
+            "expression"     # Entity -> Entity (dependency in computed attributes)
+        }
+
+        while stack:
+            node = stack.pop()
+            if node in reachable:
+                continue
+
+            reachable.add(node)
+            node_type = self.graph.nodes[node].get("type")
+
+            # CRITICAL: Stop at other endpoint nodes (prevents cross-contamination)
+            if node_type == "endpoint" and node != endpoint_node:
+                continue
+
+            # If we have flow analysis, only include allowed sources
+            if endpoint_flow and node_type == "source":
+                if node not in allowed_sources:
+                    continue
+
+            # Traverse successors (FORWARD edges: where this entity is USED)
+            for succ in self.graph.successors(node):
+                edge_data = self.graph.get_edge_data(node, succ)
+                edge_type = edge_data.get("type") if edge_data else None
+
+                if edge_type in forward_edges:
+                    succ_type = self.graph.nodes[succ].get("type")
+
+                    # Don't traverse to other endpoints
+                    if succ_type == "endpoint" and succ != endpoint_node:
+                        continue
+
+                    # If we have flow analysis, filter sources
+                    if endpoint_flow and succ_type == "source":
+                        if f"Source:{succ.split(':')[1]}" not in allowed_sources:
+                            continue
+
+                    stack.append(succ)
+
+            # Traverse predecessors (BACKWARD edges: where this entity COMES FROM)
+            for pred in self.graph.predecessors(node):
+                edge_data = self.graph.get_edge_data(pred, node)
+                edge_type = edge_data.get("type") if edge_data else None
+
+                if edge_type in backward_edges:
+                    pred_type = self.graph.nodes[pred].get("type")
+
+                    # Don't traverse to other endpoints
+                    if pred_type == "endpoint" and pred != endpoint_node:
+                        continue
+
+                    # If we have flow analysis, filter sources
+                    if endpoint_flow and pred_type == "source":
+                        if f"Source:{pred.split(':')[1]}" not in allowed_sources:
+                            continue
+
+                    stack.append(pred)
+
+        return self.graph.subgraph(reachable).copy()
+
 
 
     def detect_cycles(self) -> List[List[str]]:
@@ -379,7 +513,7 @@ class DependencyGraph:
         except nx.NetworkXNoCycle:
             return []
 
-    def get_entity_dependencies(self, entity_name: str, include_self: bool = False) -> List[str]:
+    def get_entity_dependencies(self, entity_name: str, endpoint: str = None, include_self: bool = False) -> List[str]:
         """
         Get all entities that the given entity depends on (transitive closure).
 
@@ -395,12 +529,14 @@ class DependencyGraph:
         Returns:
             List of entity names in dependency order (dependencies first)
         """
-        if entity_name not in self.graph:
+        graph = self.graph if endpoint is None else self.get_endpoint_subgraph(endpoint)
+
+        if entity_name not in graph:
             return []
 
         # Get all ancestors (transitive dependencies)
         try:
-            ancestors = nx.ancestors(self.graph, entity_name)
+            ancestors = nx.ancestors(graph, entity_name)
         except nx.NetworkXError:
             return []
 
@@ -411,7 +547,7 @@ class DependencyGraph:
         ]
 
         # Sort topologically
-        subgraph = self.graph.subgraph(entity_ancestors | {entity_name})
+        subgraph = graph.subgraph(entity_ancestors | {entity_name})
         try:
             sorted_entities = list(nx.topological_sort(subgraph))
         except nx.NetworkXError:
@@ -423,7 +559,7 @@ class DependencyGraph:
 
         return sorted_entities
 
-    def get_source_dependencies(self, entity_name: str) -> Dict[str, List]:
+    def get_source_dependencies(self, entity_name: str, endpoint: str =None) -> Dict[str, List]:
         """
         Get all sources that provide entities in the dependency chain.
 
@@ -435,12 +571,14 @@ class DependencyGraph:
         NOTE: This function ONLY returns sources that provide data (reads).
         For write targets, use get_target_dependencies().
         """
-        if entity_name not in self.graph:
+        graph = self.graph if endpoint is None else self.get_endpoint_subgraph(endpoint)
+
+        if entity_name not in graph:
             return {"read_sources": [], "write_sources": []}
 
         # Get all ancestors (including indirect dependencies)
         try:
-            ancestors = nx.ancestors(self.graph, entity_name) | {entity_name}
+            ancestors = nx.ancestors(graph, entity_name) | {entity_name}
         except nx.NetworkXError:
             ancestors = {entity_name}
 
@@ -449,12 +587,12 @@ class DependencyGraph:
         # Find sources that provide any of the ancestor entities
         for node in ancestors:
             # Look for source nodes that provide this entity (edge: source → entity)
-            for predecessor in self.graph.predecessors(node):
-                if self.graph.nodes[predecessor].get("type") == "source":
+            for predecessor in graph.predecessors(node):
+                if graph.nodes[predecessor].get("type") == "source":
                     # Check edge type - only "provides" edges indicate READ operations
-                    edge_data = self.graph.get_edge_data(predecessor, node)
+                    edge_data = graph.get_edge_data(predecessor, node)
                     if edge_data and edge_data.get("type") == "provides":
-                        source_obj = self.graph.nodes[predecessor]["obj"]
+                        source_obj = graph.nodes[predecessor]["obj"]
                         if source_obj not in read_sources:
                             read_sources.append(source_obj)
 
@@ -463,7 +601,7 @@ class DependencyGraph:
             "write_sources": []  # Deprecated - use get_target_dependencies instead
         }
 
-    def get_target_dependencies(self, entity_name: str) -> List:
+    def get_target_dependencies(self, entity_name: str, endpoint: str = None) -> List:
         """
         Get all sources (targets) that consume this entity.
         Used for mutations - where does this entity get sent to?
@@ -474,21 +612,24 @@ class DependencyGraph:
         Returns:
             List of source objects that consume this entity
         """
-        if entity_name not in self.graph:
+
+        graph = self.graph if endpoint is None else self.get_endpoint_subgraph(endpoint)
+
+        if entity_name not in graph:
             return []
 
         write_targets = []
 
         # Find sources that consume this entity (request body or parameters)
-        for successor in self.graph.successors(entity_name):
-            if self.graph.nodes[successor].get("type") == "source":
+        for successor in graph.successors(entity_name):
+            if graph.nodes[successor].get("type") == "source":
                 # Check edge type
-                edge_data = self.graph.get_edge_data(entity_name, successor)
+                edge_data = graph.get_edge_data(entity_name, successor)
                 edge_type = edge_data.get("type") if edge_data else None
 
                 # Include if consumed_by (request body) or param_dependency (path/query params)
                 if edge_type in {"consumed_by", "param_dependency"}:
-                    source_obj = self.graph.nodes[successor]["obj"]
+                    source_obj = graph.nodes[successor]["obj"]
                     method = getattr(source_obj, "method", "POST").upper()
 
                     if method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -526,6 +667,36 @@ class DependencyGraph:
                 edge_data = subgraph.get_edge_data(node, successor)
                 edge_type = edge_data.get("type", "unknown")
                 lines.append(f"  --({edge_type})--> {successor}")
+
+        lines.append(f"{'='*60}\n")
+        return "\n".join(lines)
+    
+    def visualize_endpoint(self, endpoint, endpoint_flow=None):
+        """
+        Visualize only the subgraph relevant to a specific endpoint.
+        Uses the endpoint-local subgraph produced by get_endpoint_subgraph().
+
+        Args:
+            endpoint: The endpoint object to visualize
+            endpoint_flow: Optional EndpointFlow object with read_sources/write_targets
+                          If provided, only these sources are included in the subgraph
+        """
+        sub = self.get_endpoint_subgraph(endpoint, endpoint_flow)
+
+        lines = [
+            f"\n{'='*60}",
+            f"Endpoint-local Dependency Graph for: {endpoint.name}",
+            f"{'='*60}"
+        ]
+
+        for node in sub.nodes():
+            node_type = sub.nodes[node].get("type", "unknown")
+            lines.append(f"\n[{node_type.upper()}] {node}")
+
+            for succ in sub.successors(node):
+                edge = sub.get_edge_data(node, succ)
+                edge_type = edge.get("type", "unknown")
+                lines.append(f"  --({edge_type})--> {succ}")
 
         lines.append(f"{'='*60}\n")
         return "\n".join(lines)
