@@ -137,7 +137,7 @@ Source<REST> UpdateUser
   method: PATCH
   parameters:
     path:
-      - userId: integer = PasswordUpdateData.userId;
+      - userId: integer = UpdateUserById.userId;
   request:
     type: object
     entity: UpdateUserRequest
@@ -145,6 +145,21 @@ Source<REST> UpdateUser
     type: object
     entity: UserSchema
 end
+
+Source<REST> UpdateUserPassword
+  url: "http://dummydb:9000/db/users/{userId}"
+  method: PATCH
+  parameters:
+    path:
+      - userId: integer = PasswordUpdateData.userId;
+  request:
+    type: object
+    entity: UpdatePasswordRequest
+  response:
+    type: object
+    entity: UserSchema
+end
+
 
 // DELETE: Remove user by ID
 Source<REST> DeleteUser

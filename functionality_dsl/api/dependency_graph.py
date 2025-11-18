@@ -707,115 +707,6 @@ class DependencyGraph:
 
         return write_targets
 
-    
-    def visualize_endpoint(self, endpoint, endpoint_flow=None):
-        """
-        Visualize only the subgraph relevant to a specific endpoint.
-        Uses the endpoint-local subgraph produced by get_endpoint_subgraph().
-
-        Args:
-            endpoint: The endpoint object to visualize
-            endpoint_flow: Optional EndpointFlow object with read_sources/write_targets
-                          If provided, only these sources are included in the subgraph
-        """
-        sub = self.get_endpoint_subgraph(endpoint, endpoint_flow)
-
-        lines = [
-            f"\n{'='*60}",
-            f"Endpoint-local Dependency Graph for: {endpoint.name}",
-            f"{'='*60}",
-            ""
-        ]
-
-        # Group nodes by type for better readability
-        endpoint_nodes = []
-        source_nodes = []
-        entity_nodes = []
-
-        for node in sub.nodes():
-            node_type = sub.nodes[node].get("type", "unknown")
-            if node_type == "endpoint":
-                endpoint_nodes.append(node)
-            elif node_type == "source":
-                source_nodes.append(node)
-            elif node_type == "entity":
-                entity_nodes.append(node)
-
-        # Display endpoint
-        if endpoint_nodes:
-            lines.append("+-- ENDPOINT --------------------------------------------------+")
-            for node in endpoint_nodes:
-                lines.append(f"|  * {node.replace('Endpoint:', '')}")
-
-                # Show request/response
-                for succ in sub.successors(node):
-                    edge = sub.get_edge_data(node, succ)
-                    edge_type = edge.get("type", "")
-                    if edge_type == "returns":
-                        lines.append(f"|    +--[response]--> {succ}")
-
-                for pred in sub.predecessors(node):
-                    edge = sub.get_edge_data(pred, node)
-                    edge_type = edge.get("type", "")
-                    if edge_type == "accepted_by":
-                        lines.append(f"|    +--[request]---> {pred}")
-            lines.append("+--------------------------------------------------------------+")
-            lines.append("")
-
-        # Display sources
-        if source_nodes:
-            lines.append("+-- SOURCES (External APIs) -----------------------------------+")
-            for node in source_nodes:
-                source_name = node.replace('Source:', '')
-                source_obj = sub.nodes[node].get("obj")
-                method = getattr(source_obj, "method", "GET") if source_obj else "?"
-                lines.append(f"|  * {source_name} ({method})")
-
-                # Show what it provides
-                for succ in sub.successors(node):
-                    edge = sub.get_edge_data(node, succ)
-                    edge_type = edge.get("type", "")
-                    if edge_type == "provides":
-                        lines.append(f"|    +--[provides]--> {succ}")
-
-                # Show what it consumes
-                for pred in sub.predecessors(node):
-                    edge = sub.get_edge_data(pred, node)
-                    edge_type = edge.get("type", "")
-                    if edge_type == "consumed_by":
-                        lines.append(f"|    +--[consumes]--> {pred}")
-                    elif edge_type == "param_dependency":
-                        lines.append(f"|    +--[uses]------> {pred}")
-            lines.append("+--------------------------------------------------------------+")
-            lines.append("")
-
-        # Display entities
-        if entity_nodes:
-            lines.append("+-- ENTITIES (Data Models) ------------------------------------+")
-            for node in entity_nodes:
-                obj = sub.nodes[node].get("obj")
-                has_expr = False
-                if obj:
-                    for attr in getattr(obj, "attributes", []):
-                        if hasattr(attr, "expr") and attr.expr:
-                            has_expr = True
-                            break
-
-                marker = "[C]" if has_expr else "[S]"
-                lines.append(f"|  {marker} {node}")
-
-                # Show parents
-                for pred in sub.predecessors(node):
-                    edge = sub.get_edge_data(pred, node)
-                    edge_type = edge.get("type", "")
-                    if edge_type == "parent":
-                        lines.append(f"|       +--[inherits]--> {pred}")
-            lines.append("|")
-            lines.append("|  Legend: [S] = Schema only,  [C] = Has computed attributes")
-            lines.append("+--------------------------------------------------------------+")
-
-        lines.append(f"{'='*60}\n")
-        return "\n".join(lines)
 
     def export_endpoint_mermaid(self, endpoint, endpoint_flow=None) -> str:
         """
@@ -829,71 +720,179 @@ class DependencyGraph:
             Mermaid flowchart as a string
         """
         sub = self.get_endpoint_subgraph(endpoint, endpoint_flow)
+        # -----------------------------
+        # 1. Collect nodes by type
+        # -----------------------------
+        endpoint_node = None
+        endpoint_label = None
+        entity_nodes = {}
+        source_nodes = {}
 
-        lines = []
-        lines.append("```mermaid")
-        lines.append("flowchart TD")
-        lines.append("")
-
-        # Node style classes
-        lines.append("    classDef endpoint fill:#cfe3ff,stroke:#004a99,stroke-width:1px;")
-        lines.append("    classDef source fill:#d1ffd6,stroke:#0b6623,stroke-width:1px;")
-        lines.append("    classDef entity fill:#fff,stroke:#333,stroke-width:1px;")
-        lines.append("    classDef computed fill:#ffe0e0,stroke:#b30000,stroke-width:1px;")
-        lines.append("")
-
-        # ---------- 1. DEFINE NODES ----------
         for node in sub.nodes():
-            ntype = sub.nodes[node].get("type", "unknown")
+            ntype = sub.nodes[node].get("type")
             obj = sub.nodes[node].get("obj")
             nid = node.replace(":", "_")
 
             if ntype == "endpoint":
-                label = node.replace("Endpoint:", "")
-                lines.append(f'    {nid}[{label}]:::endpoint')
+                endpoint_node = node
+                endpoint_label = node.replace("Endpoint:", "")
+                continue
 
-            elif ntype == "source":
+            if ntype == "entity":
+                entity_nodes[node] = (nid, node.replace("Entity:", ""))
+                continue
+
+            if ntype == "source":
                 src_name = node.replace("Source:", "")
-                method = getattr(obj, "method", "GET") if obj else "GET"
-                lines.append(f'    {nid}[[Source: {src_name}\\n({method})]]:::source')
+                method = getattr(obj, "method", "GET").upper()
+                source_nodes[node] = (nid, src_name, method)
+                continue
 
-            elif ntype == "entity":
-                # detect if computed
-                computed = False
-                if obj:
-                    for attr in getattr(obj, "attributes", []):
-                        if hasattr(attr, "expr") and attr.expr:
-                            computed = True
-                            break
+        if endpoint_node is None:
+            return "```mermaid\nflowchart TD\n```"
 
-                label = node
-                css_class = "computed" if computed else "entity"
-                lines.append(f'    {nid}[{label}]:::{css_class}')
+        # -----------------------------
+        # 1b. Classify sources (read/write/error)
+        # -----------------------------
+        write_source_names = set()
+        read_source_names = set()
+        error_source_names = set()
 
+        if endpoint_flow:
+            write_source_names = {s.name for s in endpoint_flow.write_targets}
+            read_source_names = {s.name for s in endpoint_flow.read_sources}
+
+        if hasattr(endpoint, "errors") and endpoint.errors:
+            for err in endpoint.errors.mappings:
+                try:
+                    ents = self._extract_entity_refs_from_expr(err.condition)
+                except Exception:
+                    ents = []
+                for ent in ents:
+                    deps = self.get_source_dependencies(ent.name, endpoint)
+                    for src in deps["read_sources"]:
+                        error_source_names.add(src.name)
+
+        # -----------------------------
+        # 2. Find request & response entities
+        # -----------------------------
+        request_entity = None
+        response_entity = None
+
+        for u, v, data in sub.edges(data=True):
+            if data.get("type") == "accepted_by" and v == endpoint_node:
+                request_entity = u
+            if data.get("type") == "returns" and u == endpoint_node:
+                response_entity = v
+
+        # -----------------------------
+        # 3. Build main vertical chain
+        # -----------------------------
+        inherits_g = nx.DiGraph()
+        for u, v, data in sub.edges(data=True):
+            if data.get("type") in ("parent", "inherits"):
+                inherits_g.add_edge(u, v)
+
+        main_chain_nodes = []
+
+        # Only if request/response have actual inheritance relationship
+        if request_entity in inherits_g.nodes and response_entity in inherits_g.nodes:
+            try:
+                chain_path = nx.shortest_path(inherits_g, request_entity, response_entity)
+                main_chain_nodes = chain_path
+            except Exception:
+                pass
+
+        # If no chain exists, vertical chain = ONLY request → response
+        if not main_chain_nodes:
+            if request_entity:
+                main_chain_nodes.append(request_entity)
+            if response_entity:
+                main_chain_nodes.append(response_entity)
+        # Build pairs for skipping later
+        main_pairs = set()
+        for i in range(len(main_chain_nodes) - 1):
+            a = main_chain_nodes[i].replace(":", "_")
+            b = main_chain_nodes[i + 1].replace(":", "_")
+            main_pairs.add((a, b))
+
+        # -----------------------------
+        # 4. Emit Mermaid
+        # -----------------------------
+        lines = []
+        lines.append("```mermaid")
+        lines.append("flowchart TD\n")
+
+        lines.append("classDef endpoint fill:#cfe3ff,stroke:#004a99,stroke-width:1px;")
+        lines.append("classDef entity fill:#fff,stroke:#333,stroke-width:1px;")
+        lines.append("classDef source_read fill:#d1ffd6,stroke:#0b6623,stroke-width:1px;")
+        lines.append("classDef source_write fill:#ffd6d6,stroke:#a30000,stroke-width:1px;")
+        lines.append("classDef source_error fill:#fff2cc,stroke:#996f00,stroke-width:1px;")
+        lines.append("classDef hidden stroke-width:0px,fill-opacity:0,stroke-opacity:0;\n")
+
+        lines.append(f"Start(({endpoint_label})):::endpoint")
+        lines.append(f"End(({endpoint_label})):::endpoint\n")
+
+        # Entities
+        for _, (nid, label) in entity_nodes.items():
+            lines.append(f"{nid}[{label}]:::entity")
         lines.append("")
 
-        # ---------- 2. DEFINE EDGES ----------
-        for u, v in sub.edges():
-            edge = sub.get_edge_data(u, v)
-            etype = edge.get("type", "")
+        # Sources
+        for graph_node, (nid, src_label, method) in source_nodes.items():
+            if src_label in error_source_names:
+                cls = "source_error"
+            elif src_label in write_source_names:
+                cls = "source_write"
+            else:
+                cls = "source_read"
+            lines.append(f"{nid}(((Source: {src_label} {method}))):::{cls}")
+        lines.append("")
+
+        # -----------------------------
+        # 5. Main vertical flow edges
+        # -----------------------------
+        if main_chain_nodes:
+            first_id = entity_nodes[main_chain_nodes[0]][0]
+            lines.append(f"Start -->|request| {first_id}")
+
+            for i in range(len(main_chain_nodes) - 1):
+                a = entity_nodes[main_chain_nodes[i]][0]
+                b = entity_nodes[main_chain_nodes[i + 1]][0]
+                lines.append(f"{a} --> {b}")
+
+            last_id = entity_nodes[main_chain_nodes[-1]][0]
+            lines.append(f"{last_id} -->|response| End\n")
+
+        # -----------------------------
+        # 6. Other edges (side flows)
+        # -----------------------------
+        label_map = {
+            "provides": "responds",
+            "consumed_by": "requests",
+            "param_dependency": "uses",
+            "parent": "inherits",
+            "expression": "refs",
+        }
+
+        for u, v, data in sub.edges(data=True):
+            etype = data.get("type")
             uid = u.replace(":", "_")
             vid = v.replace(":", "_")
-    
-            # Pretty edge labels
-            label = {
-                "accepted_by": "request",
-                "returns": "response",
-                "provides": "provides",
-                "consumed_by": "consumes",
-                "param_dependency": "uses",
-                "parent": "inherits",
-                "expression": "refs"
-            }.get(etype, etype)
-    
-            lines.append(f'    {uid} -->|{label}| {vid}')
-    
+
+            if u == endpoint_node or v == endpoint_node:
+                continue
+            if etype in ("accepted_by", "returns"):
+                continue
+            if (uid, vid) in main_pairs:
+                continue
+
+            label = label_map.get(etype, etype)
+            lines.append(f"{uid} -->|{label}| {vid}")
+
         lines.append("```")
         return "\n".join(lines)
+
 
 
     def has_cycles_in_entity_chain(self, entity_name: str) -> bool:

@@ -5,14 +5,6 @@ Server UserManagement2
   loglevel: debug
 end
 
-// READ: Get all users
-Source<REST> ReadUsers
-  url: "http://dummydb:9000/db/users"
-  method: GET
-  response:
-    type: object
-    entity: UsersListWrapper
-end
 
 Entity UserSchema
   attributes:
@@ -22,18 +14,6 @@ Entity UserSchema
     - email: string<email>;
 end
 
-Entity UsersListWrapper
-  attributes:
-    - users: array<UserSchema>;
-end
-
-
-Entity UpdatePasswordRequest
-  attributes:
-    - email: string<email>;
-    - newPassword: string(6..);
-end
-
 Entity UpdateUserRequest
   attributes:
     - email: string<email>?;
@@ -41,26 +21,10 @@ Entity UpdateUserRequest
 end
 
 
-// Update password: Find user by email and prepare update
-Entity PasswordUpdateData(UpdatePasswordRequest, UsersListWrapper)
+Entity UpdateResponse(UserSchema)
   attributes:
-    - user: object? = find(UsersListWrapper.users, u -> u["email"] == UpdatePasswordRequest.email);
-    - userId: integer = get(PasswordUpdateData.user, "id", 0);
-    - email: string<email> = UpdatePasswordRequest.email;
-    - password: string = UpdatePasswordRequest.newPassword;
-end
-
-
-Entity UpdatePasswordResponse
-  attributes:
-    - success: boolean;
-    - message: string;
-end
-
-Entity UpdateUserResponse
-  attributes:
-    - success: boolean;
-    - message: string;
+    - success: boolean = true;
+    - message: string = "User updated successfully";
 end
 
 
@@ -79,35 +43,6 @@ Source<REST> UpdateUser
     entity: UserSchema
 end
 
-// UPDATE: Modify user by email lookup (for UpdatePassword endpoint)
-Source<REST> UpdateUserByEmail
-  url: "http://dummydb:9000/db/users/{userId}"
-  method: PATCH
-  parameters:
-    path:
-      - userId: integer = PasswordUpdateData.userId;
-  request:
-    type: object
-    entity: UpdateUserRequest
-  response:
-    type: object
-    entity: UserSchema
-end
-
-Endpoint<REST> UpdatePassword
-  path: "/api/users/password"
-  method: PUT
-  request:
-    type: object
-    entity: UpdatePasswordRequest
-  response:
-    type: object
-    entity: UpdatePasswordResponse
-  errors:
-    - 404: condition: not PasswordUpdateData.user "User with this email not found";
-    - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
-end
-
 Endpoint<REST> UpdateUserById
   path: "/api/users/{userId}"
   method: PATCH
@@ -119,14 +54,10 @@ Endpoint<REST> UpdateUserById
     entity: UpdateUserRequest
   response:
     type: object
-    entity: UpdateUserResponse
+    entity: UpdateResponse
+    
 end
 
-Component<ActionForm> UpdatePasswordForm
-  endpoint: UpdatePassword
-  fields: [email, newPassword]
-  submitLabel: "Update Password"
-end
 
 Component<ActionForm> UpdateUserForm
   endpoint: UpdateUserById

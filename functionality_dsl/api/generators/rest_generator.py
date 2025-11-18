@@ -305,6 +305,18 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     service_file.write_text(service_code, encoding="utf-8")
     print(f"[GENERATED] {flow.flow_type.value.upper()} service: {service_file}")
 
+    # generate mermaid graph
+    graph_dir = Path(output_dir) / "app" / "docs"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+
+    mermaid = flow.dependency_graph.export_endpoint_mermaid(
+        endpoint,
+        endpoint_flow=flow  # <- optional but recommended
+    )
+
+    (graph_dir / f"{endpoint.name}.md").write_text(mermaid, encoding="utf-8")
+    print(f"[GRAPH] Mermaid diagram exported: {graph_dir / f'{endpoint.name}.md'}")
+
 
 # =============================================================================
 # LEGACY COMPATIBILITY FUNCTIONS

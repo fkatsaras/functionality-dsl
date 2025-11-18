@@ -72,7 +72,8 @@ class EndpointFlow:
         write_targets: List,
         computed_entities: List,
         http_method: str,
-        dependency_graph=None
+        dependency_graph=None,
+        endpoint_subgraph=None,
     ):
         self.flow_type = flow_type
         self.read_sources = read_sources
@@ -80,6 +81,7 @@ class EndpointFlow:
         self.computed_entities = computed_entities
         self.http_method = http_method.upper()
         self.dependency_graph = dependency_graph
+        self.endpoint_subgraph = endpoint_subgraph
 
     def __repr__(self):
         return (
@@ -544,9 +546,9 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         flow_type = EndpointFlowType.READ
 
     # =========================================================================
-    # 8. RETURN RESULT
+    # 8. CALCULATE SUBGRAPH AND RETURN RESULT
     # =========================================================================
-    return EndpointFlow(
+    flow = EndpointFlow(
         flow_type=flow_type,
         read_sources=read_sources,
         write_targets=write_targets,
@@ -554,6 +556,10 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         http_method=http_method,
         dependency_graph=dep_graph,
     )
+
+    flow.endpoint_subgraph = dep_graph.get_endpoint_subgraph(endpoint, endpoint_flow=flow)
+
+    return flow
 
 
 def _extract_entity_refs_from_expr(expr, model, visited=None):
@@ -728,6 +734,3 @@ def print_flow_analysis(endpoint, flow: EndpointFlow):
     print(f"  Computed Entities: {len(flow.computed_entities)}")
     for ent in flow.computed_entities:
         print(f"    - {ent.name}")
-
-    print("\n  === Endpoint-local dependency graph ===")
-    print(flow.dependency_graph.visualize_endpoint(endpoint, flow))
