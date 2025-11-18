@@ -14,17 +14,9 @@ Source<REST> ReadUsers
     entity: UsersListWrapper
 end
 
-Entity UserSchema
-  attributes:
-    - id: integer;
-    - username: string;
-    - password: string;
-    - email: string<email>;
-end
-
 Entity UsersListWrapper
   attributes:
-    - users: array<UserSchema>;
+    - users: array;
 end
 
 Entity LoginRequest

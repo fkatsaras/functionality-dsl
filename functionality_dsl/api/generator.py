@@ -61,6 +61,10 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
+    # Generate entity graph
+    print("\n[PHASE 0] Generating entity graph...")
+    generate_domain_models(model, templates_dir, out_dir)
+
     # Generate domain models
     print("\n[PHASE 1] Generating domain models...")
     generate_domain_models(model, templates_dir, out_dir)

@@ -20,7 +20,7 @@ Edge Types:
 """
 
 import networkx as nx
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional, Any
 from textx import get_children_of_type
 
 
@@ -143,16 +143,16 @@ class DependencyGraph:
                 )
 
             # Parameters: Source depends on entities referenced in parameter expressions
-            # Use AST traversal to extract entity references
+            # Use simple extraction for Entity.attribute patterns only
             if hasattr(source, "parameters") and source.parameters:
                 # Path parameters
                 if hasattr(source.parameters, "path_params") and source.parameters.path_params:
                     if hasattr(source.parameters.path_params, "params") and source.parameters.path_params.params:
                         for param in source.parameters.path_params.params:
                             if hasattr(param, "expr") and param.expr:
-                                # Extract entity references from expression AST
-                                entity_refs = self._extract_entity_refs_from_expr(param.expr)
-                                for entity in entity_refs:
+                                # Extract simple entity reference (Entity.attribute only)
+                                entity = self._extract_simple_entity_ref(param.expr)
+                                if entity:
                                     self.graph.add_edge(entity.name, source_node, type="param_dependency")
 
                 # Query parameters
@@ -160,9 +160,9 @@ class DependencyGraph:
                     if hasattr(source.parameters.query_params, "params") and source.parameters.query_params.params:
                         for param in source.parameters.query_params.params:
                             if hasattr(param, "expr") and param.expr:
-                                # Extract entity references from expression AST
-                                entity_refs = self._extract_entity_refs_from_expr(param.expr)
-                                for entity in entity_refs:
+                                # Extract simple entity reference (Entity.attribute only)
+                                entity = self._extract_simple_entity_ref(param.expr)
+                                if entity:
                                     self.graph.add_edge(entity.name, source_node, type="param_dependency")
 
         # WebSocket sources
@@ -242,6 +242,75 @@ class DependencyGraph:
                     endpoint_node,
                     type="received_by"
                 )
+
+    def _extract_simple_entity_ref(self, expr) -> Optional[Any]:
+        """
+        Extract entity reference from SIMPLE member access: Entity.attribute
+        Used for parameter expressions which should only be simple references.
+
+        Returns the Entity object if found, None otherwise.
+        """
+        from textx import get_children_of_type
+
+        # Traverse down to PostfixExpr through the expression wrappers
+        # IfThenElse -> OrExpr -> AndExpr -> CmpExpr -> AddExpr -> MulExpr -> UnaryExpr -> PostfixExpr
+        node = expr
+
+        # Unwrap IfThenElse
+        if hasattr(node, 'orExpr'):
+            node = node.orExpr
+
+        # Unwrap OrExpr
+        if hasattr(node, 'left'):
+            node = node.left
+
+        # Unwrap AndExpr
+        if hasattr(node, 'left'):
+            node = node.left
+
+        # Unwrap CmpExpr
+        if hasattr(node, 'left'):
+            node = node.left
+
+        # Unwrap AddExpr
+        if hasattr(node, 'left'):
+            node = node.left
+
+        # Unwrap MulExpr
+        if hasattr(node, 'left'):
+            node = node.left
+
+        # Unwrap UnaryExpr - get PostfixExpr
+        if hasattr(node, 'post'):
+            node = node.post
+        else:
+            return None
+
+        # Now we should have PostfixExpr
+        # Check if it's a simple Var with MemberAccess tail: Entity.attribute
+        if not hasattr(node, 'base') or not hasattr(node, 'tails'):
+            return None
+
+        # Base should be AtomBase with var
+        if not hasattr(node.base, 'var') or not node.base.var:
+            return None
+
+        entity_name = node.base.var.name
+
+        # Should have exactly one tail which is a MemberAccess
+        if not node.tails or len(node.tails) != 1:
+            return None
+
+        tail = node.tails[0]
+        if not hasattr(tail, 'member') or not tail.member:
+            return None
+
+        # Find the entity in the model
+        for entity in get_children_of_type("Entity", self.model):
+            if entity.name == entity_name:
+                return entity
+
+        return None
 
     def _extract_entity_refs_from_expr(self, expr, visited=None) -> Set:
         """
@@ -638,38 +707,6 @@ class DependencyGraph:
 
         return write_targets
 
-    def visualize_subgraph(self, entity_name: str) -> str:
-        """
-        Generate a text visualization of the dependency subgraph for an entity.
-        Useful for debugging.
-        """
-        if entity_name not in self.graph:
-            return f"Entity '{entity_name}' not found in graph"
-
-        # Get ancestors
-        try:
-            ancestors = nx.ancestors(self.graph, entity_name) | {entity_name}
-        except nx.NetworkXError:
-            ancestors = {entity_name}
-
-        # Build subgraph
-        subgraph = self.graph.subgraph(ancestors)
-
-        # Generate text representation
-        lines = [f"\n{'='*60}", f"Dependency Graph for: {entity_name}", f"{'='*60}"]
-
-        for node in subgraph.nodes():
-            node_type = self.graph.nodes[node].get("type", "unknown")
-            lines.append(f"\n[{node_type.upper()}] {node}")
-
-            # Show outgoing edges
-            for successor in subgraph.successors(node):
-                edge_data = subgraph.get_edge_data(node, successor)
-                edge_type = edge_data.get("type", "unknown")
-                lines.append(f"  --({edge_type})--> {successor}")
-
-        lines.append(f"{'='*60}\n")
-        return "\n".join(lines)
     
     def visualize_endpoint(self, endpoint, endpoint_flow=None):
         """
@@ -686,20 +723,178 @@ class DependencyGraph:
         lines = [
             f"\n{'='*60}",
             f"Endpoint-local Dependency Graph for: {endpoint.name}",
-            f"{'='*60}"
+            f"{'='*60}",
+            ""
         ]
+
+        # Group nodes by type for better readability
+        endpoint_nodes = []
+        source_nodes = []
+        entity_nodes = []
 
         for node in sub.nodes():
             node_type = sub.nodes[node].get("type", "unknown")
-            lines.append(f"\n[{node_type.upper()}] {node}")
+            if node_type == "endpoint":
+                endpoint_nodes.append(node)
+            elif node_type == "source":
+                source_nodes.append(node)
+            elif node_type == "entity":
+                entity_nodes.append(node)
 
-            for succ in sub.successors(node):
-                edge = sub.get_edge_data(node, succ)
-                edge_type = edge.get("type", "unknown")
-                lines.append(f"  --({edge_type})--> {succ}")
+        # Display endpoint
+        if endpoint_nodes:
+            lines.append("+-- ENDPOINT --------------------------------------------------+")
+            for node in endpoint_nodes:
+                lines.append(f"|  * {node.replace('Endpoint:', '')}")
+
+                # Show request/response
+                for succ in sub.successors(node):
+                    edge = sub.get_edge_data(node, succ)
+                    edge_type = edge.get("type", "")
+                    if edge_type == "returns":
+                        lines.append(f"|    +--[response]--> {succ}")
+
+                for pred in sub.predecessors(node):
+                    edge = sub.get_edge_data(pred, node)
+                    edge_type = edge.get("type", "")
+                    if edge_type == "accepted_by":
+                        lines.append(f"|    +--[request]---> {pred}")
+            lines.append("+--------------------------------------------------------------+")
+            lines.append("")
+
+        # Display sources
+        if source_nodes:
+            lines.append("+-- SOURCES (External APIs) -----------------------------------+")
+            for node in source_nodes:
+                source_name = node.replace('Source:', '')
+                source_obj = sub.nodes[node].get("obj")
+                method = getattr(source_obj, "method", "GET") if source_obj else "?"
+                lines.append(f"|  * {source_name} ({method})")
+
+                # Show what it provides
+                for succ in sub.successors(node):
+                    edge = sub.get_edge_data(node, succ)
+                    edge_type = edge.get("type", "")
+                    if edge_type == "provides":
+                        lines.append(f"|    +--[provides]--> {succ}")
+
+                # Show what it consumes
+                for pred in sub.predecessors(node):
+                    edge = sub.get_edge_data(pred, node)
+                    edge_type = edge.get("type", "")
+                    if edge_type == "consumed_by":
+                        lines.append(f"|    +--[consumes]--> {pred}")
+                    elif edge_type == "param_dependency":
+                        lines.append(f"|    +--[uses]------> {pred}")
+            lines.append("+--------------------------------------------------------------+")
+            lines.append("")
+
+        # Display entities
+        if entity_nodes:
+            lines.append("+-- ENTITIES (Data Models) ------------------------------------+")
+            for node in entity_nodes:
+                obj = sub.nodes[node].get("obj")
+                has_expr = False
+                if obj:
+                    for attr in getattr(obj, "attributes", []):
+                        if hasattr(attr, "expr") and attr.expr:
+                            has_expr = True
+                            break
+
+                marker = "[C]" if has_expr else "[S]"
+                lines.append(f"|  {marker} {node}")
+
+                # Show parents
+                for pred in sub.predecessors(node):
+                    edge = sub.get_edge_data(pred, node)
+                    edge_type = edge.get("type", "")
+                    if edge_type == "parent":
+                        lines.append(f"|       +--[inherits]--> {pred}")
+            lines.append("|")
+            lines.append("|  Legend: [S] = Schema only,  [C] = Has computed attributes")
+            lines.append("+--------------------------------------------------------------+")
 
         lines.append(f"{'='*60}\n")
         return "\n".join(lines)
+
+    def export_endpoint_mermaid(self, endpoint, endpoint_flow=None) -> str:
+        """
+        Generate a Mermaid flowchart for the endpoint-local dependency graph.
+
+        Args:
+            endpoint: Endpoint object
+            endpoint_flow: Optional EndpointFlow (read/write classification)
+
+        Returns:
+            Mermaid flowchart as a string
+        """
+        sub = self.get_endpoint_subgraph(endpoint, endpoint_flow)
+
+        lines = []
+        lines.append("```mermaid")
+        lines.append("flowchart TD")
+        lines.append("")
+
+        # Node style classes
+        lines.append("    classDef endpoint fill:#cfe3ff,stroke:#004a99,stroke-width:1px;")
+        lines.append("    classDef source fill:#d1ffd6,stroke:#0b6623,stroke-width:1px;")
+        lines.append("    classDef entity fill:#fff,stroke:#333,stroke-width:1px;")
+        lines.append("    classDef computed fill:#ffe0e0,stroke:#b30000,stroke-width:1px;")
+        lines.append("")
+
+        # ---------- 1. DEFINE NODES ----------
+        for node in sub.nodes():
+            ntype = sub.nodes[node].get("type", "unknown")
+            obj = sub.nodes[node].get("obj")
+            nid = node.replace(":", "_")
+
+            if ntype == "endpoint":
+                label = node.replace("Endpoint:", "")
+                lines.append(f'    {nid}[{label}]:::endpoint')
+
+            elif ntype == "source":
+                src_name = node.replace("Source:", "")
+                method = getattr(obj, "method", "GET") if obj else "GET"
+                lines.append(f'    {nid}[[Source: {src_name}\\n({method})]]:::source')
+
+            elif ntype == "entity":
+                # detect if computed
+                computed = False
+                if obj:
+                    for attr in getattr(obj, "attributes", []):
+                        if hasattr(attr, "expr") and attr.expr:
+                            computed = True
+                            break
+
+                label = node
+                css_class = "computed" if computed else "entity"
+                lines.append(f'    {nid}[{label}]:::{css_class}')
+
+        lines.append("")
+
+        # ---------- 2. DEFINE EDGES ----------
+        for u, v in sub.edges():
+            edge = sub.get_edge_data(u, v)
+            etype = edge.get("type", "")
+            uid = u.replace(":", "_")
+            vid = v.replace(":", "_")
+    
+            # Pretty edge labels
+            label = {
+                "accepted_by": "request",
+                "returns": "response",
+                "provides": "provides",
+                "consumed_by": "consumes",
+                "param_dependency": "uses",
+                "parent": "inherits",
+                "expression": "refs"
+            }.get(etype, etype)
+    
+            lines.append(f'    {uid} -->|{label}| {vid}')
+    
+        lines.append("```")
+        return "\n".join(lines)
+
 
     def has_cycles_in_entity_chain(self, entity_name: str) -> bool:
         """

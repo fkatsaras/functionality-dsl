@@ -337,10 +337,10 @@ class ActionFormComponent(_BaseComponent):
         match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
         path_key = self.pathKey or (match.group(1) if match else None)
 
-        if match:
-            path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
+        # if match:
+        #     path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
             
-        path = path.replace("{", "{{").replace("}", "}}")
+        # path = path.replace("{", "{{").replace("}", "}}")
 
         return {
             "endpointPath": path,

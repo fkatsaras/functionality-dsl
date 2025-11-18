@@ -91,6 +91,45 @@ class EndpointFlow:
         )
 
 
+def _is_write_target_compatible(target, endpoint, available_entities, model):
+    """
+    Check if a write target's parameter expressions are compatible with the current endpoint.
+    Returns True if all parameter expressions reference entities/endpoints that are available.
+
+    Args:
+        target: The Source to check
+        endpoint: The Endpoint being analyzed
+        available_entities: List of Entity objects available in this endpoint's context
+        model: The DSL model
+    """
+    params = getattr(target, "parameters", None)
+    if not params:
+        return True  # No parameters = compatible
+
+    # Check path parameters
+    if hasattr(params, "path_params") and params.path_params:
+        for param in getattr(params.path_params, "params", []):
+            if hasattr(param, "expr") and param.expr:
+                param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                for ent in param_entities:
+                    # Entity is available if:
+                    # 1. It's the endpoint itself (e.g., UpdateUserById.userId)
+                    # 2. It's in the available_entities list
+                    if ent.name != endpoint.name and ent not in available_entities:
+                        return False
+
+    # Check query parameters
+    if hasattr(params, "query_params") and params.query_params:
+        for param in getattr(params.query_params, "params", []):
+            if hasattr(param, "expr") and param.expr:
+                param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                for ent in param_entities:
+                    if ent.name != endpoint.name and ent not in available_entities:
+                        return False
+
+    return True
+
+
 def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     """
     Determine the endpoint's READ / WRITE / READ_WRITE classification.
@@ -220,7 +259,13 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # =========================================================================
     if request_entity is not None:
         # WRITE targets: External services that consume this entity
-        write_targets.extend(dep_graph.get_target_dependencies(request_entity.name, endpoint))
+        # Filter by parameter compatibility (only include targets whose parameters reference available entities)
+        all_targets = dep_graph.get_target_dependencies(request_entity.name, endpoint)
+        for tgt in all_targets:
+            # At this point, only request_entity is available (no reads yet)
+            # So only targets that reference endpoint params or request entity should be included
+            if _is_write_target_compatible(tgt, endpoint, [request_entity], model):
+                write_targets.append(tgt)
 
         # READs: External sources needed to validate/transform request data
         req_deps = dep_graph.get_source_dependencies(request_entity.name, endpoint)
@@ -359,27 +404,105 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # =========================================================================
     # Add response sources to appropriate lists:
     # - Response READ sources → read_sources
-    # - Response WRITE targets → ONLY if they're already in write_targets from request flow
+    # - Response WRITE targets → Add if:
+    #   1. No request entity (DELETE/PUT endpoints without body), OR
+    #   2. Already in write_targets from request flow
     #
-    # Important: For WRITE endpoints, the response entity's sources should NOT
-    # automatically become write targets. Only sources that are explicitly consumed
-    # by the request entity or referenced in parameter expressions should be write targets.
+    # Important: For endpoints WITH request entities, response write targets should
+    # only be included if they're consumed by the request flow (prevents adding unrelated sources).
     #
-    # Example: Register endpoint
+    # Example 1 - DELETE endpoint (no request entity):
+    #   - Response: DeleteResponse from DeleteUser (DELETE method)
+    #   - DeleteUser should be added as write target (it performs the deletion)
+    #
+    # Example 2 - Register endpoint (with request entity):
     #   - Request: RegisterRequest consumed by CreateUser → CreateUser is a write target
     #   - Response: RegisterResponse(UserSchema) provided by CreateUser AND UpdateUser
     #   - Only CreateUser should be a write target (it's in both request and response flow)
     #   - UpdateUser should be excluded (not used by this endpoint)
     # =========================================================================
 
-    # For write targets: Don't merge response_write_targets
-    # They should already be in write_targets if they're consumed by the request flow.
-    # This prevents adding unrelated sources just because they provide the response entity.
+    # Add response write targets if no request entity (DELETE/PUT without body)
+    # OR if they're already in write_targets (confirms they're used by request flow)
+    if request_entity is None:
+        # No request entity: Add all response write targets
+        # (e.g., DELETE endpoints that validate then delete)
+        for src in response_write_targets:
+            if not any(t.name == src.name for t in write_targets):
+                write_targets.append(src)
+    else:
+        # Has request entity: Only add if already in write_targets from request flow
+        # This prevents adding unrelated sources just because they provide the response entity
+        pass
 
     # Add response read sources (avoid duplicates with existing reads)
     for src in response_read_sources:
         if not any(s.name == src.name for s in read_sources):
             read_sources.append(src)
+
+    # =========================================================================
+    # FILTER WRITE TARGETS BY PARAMETER EXPRESSION COMPATIBILITY
+    # =========================================================================
+    # Remove write targets whose parameter expressions reference entities/endpoints
+    # that aren't available in this endpoint's context.
+    #
+    # Example: UpdateUserById endpoint
+    #   - Has UpdateUser source: param = UpdateUserById.userId (VALID - endpoint param)
+    #   - Has UpdateUserByEmail source: param = PasswordUpdateData.userId (INVALID - not in context)
+    #   → Keep only UpdateUser, remove UpdateUserByEmail
+    # =========================================================================
+    filtered_write_targets = []
+    for tgt in write_targets:
+        params = getattr(tgt, "parameters", None)
+        is_compatible = True
+
+        if params:
+            # Check path parameters
+            if hasattr(params, "path_params") and params.path_params:
+                for param in getattr(params.path_params, "params", []):
+                    if hasattr(param, "expr") and param.expr:
+                        # Extract entity/endpoint references from parameter expression
+                        param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                        for ent in param_entities:
+                            # Check if this entity is available (either a computed entity or a read source entity)
+                            entity_available = (
+                                ent in computed_entities or
+                                any(src.name == getattr(src, "response", {}).get("entity", {}).name for src in read_sources if hasattr(src, "response"))
+                            )
+
+                            # Also check if expression references endpoint parameters (e.g., UpdateUserById.userId)
+                            # by checking if the entity name matches the endpoint name
+                            if ent.name == endpoint.name:
+                                entity_available = True
+
+                            if not entity_available:
+                                is_compatible = False
+                                break
+                    if not is_compatible:
+                        break
+
+            # Check query parameters
+            if is_compatible and hasattr(params, "query_params") and params.query_params:
+                for param in getattr(params.query_params, "params", []):
+                    if hasattr(param, "expr") and param.expr:
+                        param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                        for ent in param_entities:
+                            entity_available = (
+                                ent in computed_entities or
+                                any(src.name == getattr(src, "response", {}).get("entity", {}).name for src in read_sources if hasattr(src, "response"))
+                            )
+                            if ent.name == endpoint.name:
+                                entity_available = True
+                            if not entity_available:
+                                is_compatible = False
+                                break
+                    if not is_compatible:
+                        break
+
+        if is_compatible:
+            filtered_write_targets.append(tgt)
+
+    write_targets = filtered_write_targets
 
     # Deduplicate
     read_sources = list({s.name: s for s in read_sources}.values())

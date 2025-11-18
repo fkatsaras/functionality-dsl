@@ -60,6 +60,12 @@ Endpoint<REST> UserDeleteEndpoint
   errors:
     - 404: condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.id) "User doesnt exist";
+        u -> u["id"] == UserDeleteEndpoint.userId) "User doesnt exist";
     - 500: condition: not UsersListWrapper.users "No more users left";
+end
+
+Component<ActionForm> DeleteUserForm
+  endpoint: UserDeleteEndpoint
+  fields: [userId]
+  submitLabel: "Delete User"
 end

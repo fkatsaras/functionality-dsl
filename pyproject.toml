@@ -17,6 +17,7 @@ dependencies = [
     "black",
     "six",
     "plantuml",
+    "networkx",
 ]
 
 [project.scripts]

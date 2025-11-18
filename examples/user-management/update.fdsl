@@ -1,7 +1,7 @@
-Server UserManagement
+Server UserManagement2
   host: "localhost"
-  port: 8081
-  cors: "http://localhost:5173"
+  port: 8082
+  cors: "http://localhost:5174"
   loglevel: debug
 end
 
@@ -51,15 +51,36 @@ Entity PasswordUpdateData(UpdatePasswordRequest, UsersListWrapper)
 end
 
 
-Entity UpdateResponse(UserSchema)
+Entity UpdatePasswordResponse
   attributes:
-    - success: boolean = true;
-    - message: string = "User updated successfully";
+    - success: boolean;
+    - message: string;
+end
+
+Entity UpdateUserResponse
+  attributes:
+    - success: boolean;
+    - message: string;
 end
 
 
-// UPDATE: Modify user by ID
+// UPDATE: Modify user by ID (for UpdateUserById endpoint)
 Source<REST> UpdateUser
+  url: "http://dummydb:9000/db/users/{userId}"
+  method: PATCH
+  parameters:
+    path:
+      - userId: integer = UpdateUserById.userId;
+  request:
+    type: object
+    entity: UpdateUserRequest
+  response:
+    type: object
+    entity: UserSchema
+end
+
+// UPDATE: Modify user by email lookup (for UpdatePassword endpoint)
+Source<REST> UpdateUserByEmail
   url: "http://dummydb:9000/db/users/{userId}"
   method: PATCH
   parameters:
@@ -81,7 +102,7 @@ Endpoint<REST> UpdatePassword
     entity: UpdatePasswordRequest
   response:
     type: object
-    entity: UpdateResponse
+    entity: UpdatePasswordResponse
   errors:
     - 404: condition: not PasswordUpdateData.user "User with this email not found";
     - 400: condition: get(PasswordUpdateData.user, "password", "") == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
@@ -98,5 +119,17 @@ Endpoint<REST> UpdateUserById
     entity: UpdateUserRequest
   response:
     type: object
-    entity: UpdateResponse
+    entity: UpdateUserResponse
+end
+
+Component<ActionForm> UpdatePasswordForm
+  endpoint: UpdatePassword
+  fields: [email, newPassword]
+  submitLabel: "Update Password"
+end
+
+Component<ActionForm> UpdateUserForm
+  endpoint: UpdateUserById
+  fields: [userId, email, password]
+  submitLabel: "Update User"
 end

@@ -5,7 +5,7 @@
 import logging
 from typing import Any, Dict, Optional, List
 
-from fastapi import APIRouter, HTTPException, Request, Query, Header
+from fastapi import APIRouter, HTTPException, Request, Query, Header, Path
 {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -24,6 +24,7 @@ router = APIRouter(
 
 
 {% set pparams = endpoint.path_params or [] %}
+{% set pparams_typed = endpoint.path_params_typed or [] %}
 {% set http_method = flow.http_method %}
 
 {# Determine response model based on response type #}
@@ -35,10 +36,20 @@ router = APIRouter(
 {% set response_model = 'Dict[str, Any]' %}
 {% endif %}
 
+{# Helper macro to convert FDSL types to Python types #}
+{% macro python_type(fdsl_type) -%}
+{%- if fdsl_type.baseType == 'string' -%}str
+{%- elif fdsl_type.baseType == 'integer' -%}int
+{%- elif fdsl_type.baseType == 'number' -%}float
+{%- elif fdsl_type.baseType == 'boolean' -%}bool
+{%- else -%}str
+{%- endif -%}
+{%- endmacro %}
+
 @router.{{ http_method }}("", response_model={{ response_model }})
 async def {{ flow.type }}_{{ endpoint.name | lower }}(
-    request: Request{% for p in pparams %},
-    {{ p }}: str{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
+    request: Request{% for p in pparams_typed %},
+    {{ p.name }}: {{ python_type(p.type) }}{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
     credentials: HTTPAuthorizationCredentials = Depends(security){% elif endpoint.auth and endpoint.auth.kind == 'api_key' %}{% if endpoint.auth.location == 'header' %},
     {{ endpoint.auth.key | replace('-', '_') | lower }}: Optional[str] = Header(None, alias="{{ endpoint.auth.key }}"){% elif endpoint.auth.location == 'query' %},
     {{ endpoint.auth.key }}: Optional[str] = Query(None){% endif %}{% endif %}
@@ -85,8 +96,8 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
     try:
         # Build path parameters dict
         path_params = {
-            {% for p in pparams %}
-            "{{ p }}": {{ p }}{% if not loop.last %},{% endif %}
+            {% for p in pparams_typed %}
+            "{{ p.name }}": {{ p.name }}{% if not loop.last %},{% endif %}
             {% endfor %}
         }
 

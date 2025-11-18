@@ -202,7 +202,11 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     # STEP 7: Extract Path Parameters and Auth
     # =========================================================================
     route_path = get_route_path(endpoint)
-    path_params = extract_path_params(route_path)
+    path_params = extract_path_params(route_path)  # Just names for backward compatibility
+
+    # NEW: Extract path parameters WITH type information
+    from ..utils.paths import get_path_params_from_block
+    path_params_typed = get_path_params_from_block(endpoint)
 
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
@@ -240,7 +244,8 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             "name": endpoint.name,
             "method": http_method,
             "summary": getattr(endpoint, "summary", None),
-            "path_params": path_params,
+            "path_params": path_params,  # Backward compatibility (just names)
+            "path_params_typed": path_params_typed,  # WITH type information
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },
