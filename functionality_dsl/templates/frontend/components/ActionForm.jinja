@@ -4,12 +4,12 @@
 {%- set safe_url = raw_url.replace('{', '&#123;').replace('}', '&#125;') -%}
 
 <ActionForm
-  name="{{ common.name }}"
-  url="{{ safe_url }}"
-  method="{{ props.get('method', 'POST') }}"
-  fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
-  {% if props.get('pathKey') %}
-  pathKey="{{ props['pathKey'] }}"
-  {% endif %}
-  submitLabel="{{ props.get('submitLabel') or 'Submit' }}"
+    name="{{ common.name }}"
+    url="{{ safe_url }}"
+    method="{{ props.get('method', 'POST') }}"
+    fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
+    {% if props.get('pathKey') %}
+    pathKey="{{ props['pathKey'] }}"
+    {% endif %}
+    submitLabel="{{ props.get('submitLabel') or 'Submit' }}"
 />

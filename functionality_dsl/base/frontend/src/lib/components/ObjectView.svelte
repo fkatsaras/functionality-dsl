@@ -1,178 +1,174 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import RefreshButton from "$lib/components/util/RefreshButton.svelte";
-  import { buildUrlWithParams, allParamsFilled } from "$lib/utils/paramBuilder";
+    import { onMount } from "svelte";
+    import Card from "$lib/primitives/Card.svelte";
+    import RefreshButton from "$lib/primitives/RefreshButton.svelte";
+    import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
 
-  // Props (from backend-generated component)
-  const {
-    name = "ObjectView",
-    endpoint = "",
-    pathParams = [],
-    fields = [],
-    label = "",
-  } = $props<{
-    name?: string;
-    endpoint?: string;
-    pathParams?: string[];
-    fields?: string[];
-    label?: string;
-  }>();
+    import { buildUrlWithParams } from "$lib/utils/paramBuilder";
+    import Spinner from "../primitives/icons/Spinner.svelte";
+    
 
-  // State
-  let id = $state("");
-  let paramValues = $state<Record<string, string>>({});
-  let data: Record<string, any> | null = $state(null);
-  let loading = $state(false);
-  let error: string | null = $state(null);
+    // Props
+    const props = $props<{
+        name?: string;
+        endpoint?: string;
+        pathParams?: string[];
+        fields?: string[];
+        label?: string;
+    }>();
 
-  // Initialize param values when pathParams changes
-  $effect(() => {
-    // Only read pathParams, don't read paramValues to avoid infinite loop
-    const initial: Record<string, string> = {};
-    for (const param of pathParams) {
-      initial[param] = "";
-    }
-    // Only update if pathParams actually changed (first run or different params)
-    if (Object.keys(paramValues).length !== pathParams.length) {
-      paramValues = initial;
-    }
-  });
+    const label = props.label || props.name || "ObjectView";
 
-  function buildUrl() {
-    if (!endpoint) return "";
+    // state
+    let id = $state("");
+    let paramValues = $state<Record<string, string>>({});
+    let data: Record<string, any> | null = $state(null);
+    let loading = $state(false);
+    let error: string | null = $state(null);
 
-    // If we have path params, use the reusable param builder
-    if (pathParams.length > 0) {
-      return buildUrlWithParams(endpoint, paramValues);
-    } else {
-      // Legacy behavior: append ID
-      if (!id.trim()) return "";
-      return `${endpoint}/${encodeURIComponent(id.trim())}`;
-    }
-  }
+    // initialize path params on change
+    $effect(() => {
+        const init: Record<string, string> = {};
+        for (const p of props.pathParams ?? []) init[p] = "";
+        if (Object.keys(paramValues).length !== (props.pathParams?.length ?? 0)) {
+            paramValues = init;
+        }
+    });
 
-  async function fetchData() {
-    const finalUrl = buildUrl();
-    if (!finalUrl) {
-      error = pathParams.length > 0 ? "Please fill in all parameters." : "Please enter an ID.";
-      return;
+    // URL builder
+    function buildUrl() {
+        if (!props.endpoint) return "";
+
+        if (props.pathParams?.length) {
+            return buildUrlWithParams(props.endpoint, paramValues);
+        }
+
+        if (!id.trim()) return "";
+        return `${props.endpoint}/${encodeURIComponent(id.trim())}`;
     }
 
-    loading = true;
-    error = null;
-    data = null;
+    async function fetchData() {
+        const url = buildUrl();
+        if (!url) {
+            error = props.pathParams?.length
+                ? "Please fill in all parameters."
+                : "Please enter an ID.";
+            data = null;
+            return;
+        }
 
-    try {
-      const res = await fetch(finalUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      data = await res.json();
-    } catch (err) {
-      error = String(err);
-    } finally {
-      loading = false;
+        loading = true;
+        error = null;
+        data = null;
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            data = await res.json();
+        } catch (e) {
+            error = String(e);
+        } finally {
+            loading = false;
+        }
     }
-  }
 
-  // Helper function to access nested fields like "user.name" or "summary.totalOrders"
-  function getNestedValue(obj: any, path: string): any {
-    const keys = path.split('.');
-    let current = obj;
-    for (const key of keys) {
-      if (current === null || current === undefined) return undefined;
-      current = current[key];
+    // dotted path accessor
+    function getNestedValue(obj: any, path: string) {
+        return path.split(".").reduce((acc, key) => acc?.[key], obj);
     }
-    return current;
-  }
-
-  onMount(() => {
-    // Don't auto-load - user must click Get button
-  });
 </script>
 
-<div class="w-full flex justify-center items-center">
-  <div class="w-4/5">
-    <!-- Card -->
-    <div class="rounded-2xl shadow-card border table-border bg-[color:var(--card)] transition-shadow hover:shadow-md">
-      <!-- Header -->
-      <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
-        <h2 class="text-xl font-bold font-approachmono text-text/90">{label || name}</h2>
+<Card>
+    <svelte:fragment slot="header">
+        <div class="w-full flex justify-between items-center">
+            <span class="font-approachmono text-xl">{label}</span>
 
-        <div class="flex items-center gap-2">
-          <RefreshButton on:click={fetchData} {loading} ariaLabel="Refresh object" />
-          {#if error}
-            <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
-          {/if}
-        </div>
-      </div>
+            <div class="flex items-center gap-2">
+                <RefreshButton on:click={fetchData} {loading} ariaLabel="Refresh object" />
 
-      <!-- Input Row -->
-      {#if pathParams.length > 0}
-        <div class="flex gap-2 px-4 pb-3">
-          {#each pathParams as param}
-            <input
-              id="param-{param}"
-              type="text"
-              bind:value={paramValues[param]}
-              class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder={param}
-              onkeydown={(e) => e.key === 'Enter' && fetchData()}
-            />
-          {/each}
-          <button
-            class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-            onclick={fetchData}
-            disabled={loading || pathParams.some(p => !paramValues[p])}
-          >
-            Get
-          </button>
+                {#if error}
+                    <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">
+                        {error}
+                    </span>
+                {/if}
+            </div>
         </div>
-      {:else}
-        <div class="flex gap-2 px-4 pb-3">
-          <input
-            type="text"
-            bind:value={id}
-            placeholder="Enter ID..."
-            class="border thin-border rounded px-3 py-2 flex-1 font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-            onkeydown={(e) => e.key === 'Enter' && fetchData()}
-          />
-          <button
-            class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-            onclick={fetchData}
-            disabled={loading || !id.trim()}
-          >
-            View
-          </button>
-        </div>
-      {/if}
+    </svelte:fragment>
 
-      <!-- Content -->
-      <div class="px-4 pb-4">
-        {#if loading}
-          <p class="font-approachmono text-sm opacity-60">Loading…</p>
-        {:else if error && !data}
-          <p class="font-approachmono text-sm text-dag-danger">{error}</p>
-        {:else if data}
-          <div class="border-t thin-border divide-y divide-[color:var(--edge)]">
-            {#each fields as f}
-              <div class="flex justify-between py-2 px-1 even:bg-[color:var(--surface)] font-approachmono text-text/90">
-                <span class="font-medium text-text/80">{f}</span>
-                <span class="text-text/70">{getNestedValue(data, f)}</span>
-              </div>
-            {/each}
-          </div>
+    <svelte:fragment slot="children">
+
+        {#if props.pathParams?.length}
+            <div class="flex gap-2 mb-4">
+                {#each props.pathParams as param}
+                    <input
+                        id="param-{param}"
+                        type="text"
+                        bind:value={paramValues[param]}
+                        placeholder={param}
+                        class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        onkeydown={(e) => e.key === 'Enter' && fetchData()}
+                    />
+                {/each}
+
+                <button
+                    class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
+                    onclick={fetchData}
+                    disabled={loading || props.pathParams.some(p => !paramValues[p])}
+                >
+                    Get
+                </button>
+            </div>
+
         {:else}
-          <p class="font-approachmono text-sm opacity-60">No data loaded.</p>
+
+            <div class="flex gap-2 mb-4">
+                <input
+                    type="text"
+                    bind:value={id}
+                    placeholder="Enter ID…"
+                    class="px-3 py-2 flex-1 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    onkeydown={(e) => e.key === 'Enter' && fetchData()}
+                />
+                <button
+                    class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
+                    onclick={fetchData}
+                    disabled={loading || !id.trim()}
+                >
+                    View
+                </button>
+            </div>
+
         {/if}
-      </div>
-    </div>
-  </div>
-</div>
+
+        {#if loading}
+            <Spinner size={20} />
+
+        {:else if error && !data}
+            <p class="font-approachmono text-sm text-dag-danger">{error}</p>
+
+        {:else if data}
+            <div class="border-t thin-border divide-y divide-[color:var(--edge)]">
+                {#each props.fields as f}
+                    <div class="flex justify-between py-2 px-1 even:bg-[color:var(--surface)] font-approachmono text-text/90">
+                        <span class="font-medium text-text/80">{f}</span>
+                        <span class="text-text/70">{getNestedValue(data, f)}</span>
+                    </div>
+                {/each}
+            </div>
+
+        {:else}
+            <EmptyState message="No data loaded." />
+        {/if}
+
+    </svelte:fragment>
+</Card>
 
 <style>
-  .font-approachmono {
-    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  }
-  .thin-border, .table-border {
-    border-color: var(--edge);
-  }
+    .font-approachmono {
+        font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+    }
+    .thin-border {
+        border-color: var(--edge);
+    }
 </style>

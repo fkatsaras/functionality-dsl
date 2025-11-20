@@ -1,97 +1,95 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { subscribe } from "$lib/ws";
+    import { onMount, onDestroy } from "svelte";
+    import Card from "$lib/primitives/Card.svelte";
+    import LiveIndicator from "$lib/primitives/LiveIndicator.svelte";
+    import EmptyState from "../primitives/icons/EmptyState.svelte";
 
-  const {
-    streamPath,
-    fields = [],
-    label = "Live",
-    maxMessages = 50,
-    name = "LiveView",
-  } = $props<{
-    streamPath: string;
-    fields: string[];
-    label?: string;
-    maxMessages?: number;
-    name?: string;
-  }>();
+    import { subscribe } from "$lib/ws";
 
-  let connected = $state(false);
-  let error = $state<string | null>(null);
-  let messages = $state<any[]>([]);
+    const props = $props<{
+        streamPath: string;
+        fields: string[];
+        label?: string;
+        maxMessages?: number;
+        name?: string;
+    }>();
 
-  let unsubscribe: (() => void) | null = null;
+    // defaults
+    const label = props.label ?? "Live";
+    const maxMessages = props.maxMessages ?? 50;
 
-  function pickFields(msg: any) {
-    const obj: Record<string, any> = {};
-    for (const f of fields) obj[f] = msg?.[f];
-    return obj;
-  }
+    // reactive state
+    let connected = $state(false);
+    let error = $state<string | null>(null);
+    let messages = $state<any[]>([]);
 
-  onMount(() => {
-    if (!streamPath) { error = "No streamPath"; return; }
+    let unsub: null | (() => void) = null;
 
-    unsubscribe = subscribe(streamPath, (msg: any) => {
-      if (msg?.__meta === "open") { connected = true; return; }
-      if (msg?.__meta === "close") { connected = false; return; }
+    function pick(msg: any) {
+        const obj: Record<string, any> = {};
+        for (const f of props.fields) obj[f] = msg?.[f];
+        return obj;
+    }
 
-      connected = true;
-      messages = [...messages, pickFields(msg)].slice(-maxMessages);
+    function handleStream(msg: any) {
+        if (msg?.__meta === "open") { connected = true; return; }
+        if (msg?.__meta === "close") { connected = false; return; }
+
+        connected = true;
+        messages = [...messages, pick(msg)].slice(-maxMessages);
+    }
+
+    onMount(() => {
+        if (!props.streamPath) {
+            error = "No streamPath provided";
+            return;
+        }
+
+        unsub = subscribe(props.streamPath, handleStream);
+
+        onDestroy(() => {
+            unsub?.();
+            unsub = null;
+        });
     });
-  });
-
-  onDestroy(() => { unsubscribe?.(); unsubscribe = null; });
 </script>
 
-<div class="w-full flex justify-center p-6">
-  <!-- make container wider -->
-  <div class="w-full max-w-3xl">
-    <div
-      class="rounded-2xl shadow-lg border bg-[color:var(--card)] p-6 flex flex-col gap-4 transition-shadow duration-200 hover:shadow-xl h-[600px]"
-      class:border-dag-success={connected}
-      class:border-dag-danger={!connected}
-    >
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-bold font-approachmono text-text/90">{label}</h2>
-        <div
-          class="flex items-center gap-2 px-2 py-1 rounded-md border"
-          class:border-dag-success={connected}
-          class:border-dag-danger={!connected}
-        >
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"
-            class:text-dag-success={connected}
-            class:text-dag-danger={!connected}>
-            <circle cx="10" cy="10" r="8.5" />
-          </svg>
-          <span class="text-xs font-approachmono"
-            class:text-dag-success={connected}
-            class:text-dag-danger={!connected}>
-            {connected ? "LIVE" : "OFF"}
-          </span>
+<Card>
+    <svelte:fragment slot="header">
+        <div class="w-full flex justify-between items-center">
+            <span class="font-approachmono text-xl">{label}</span>
+            <LiveIndicator connected={connected} />
         </div>
-      </div>
 
-      {#if error}
-        <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
-      {/if}
+        {#if error}
+            <div class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded mt-2">
+                {error}
+            </div>
+        {/if}
+    </svelte:fragment>
 
-      <!-- Messages -->
-      <div class="flex-1 flex flex-col gap-2 overflow-y-auto rounded-md p-3 bg-dag-surface">
-        {#each messages as msg}
-          <div class="px-3 py-2 font-approachmono text-sm text-text border-b border-white/10">
-            {#each fields as f}
-              {msg[f]}{#if f !== fields[fields.length - 1]} · {/if}
+    <svelte:fragment slot="children">
+        <div class="flex-1 flex flex-col gap-2 overflow-y-auto rounded-md p-3 bg-dag-surface h-[500px]">
+            {#each messages as msg}
+                <div class="px-3 py-2 font-approachmono text-sm text-text border-b border-white/10">
+                    {#each props.fields as f}
+                        {msg[f]}{#if f !== props.fields[props.fields.length - 1]} · {/if}
+                    {/each}
+                </div>
             {/each}
-          </div>
-        {/each}
-      </div>
-    </div>
-  </div>
-</div>
+
+            {#if !messages.length && !error}
+                <div class="text-center text-text-muted font-approachmono py-20">
+                    <EmptyState message="No telemetry data yet..." />
+                </div>
+            {/if}
+        </div>
+    </svelte:fragment>
+</Card>
 
 <style>
-  .font-approachmono {
-    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  }
+    .font-approachmono {
+        font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+    }
 </style>

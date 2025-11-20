@@ -1,9 +1,10 @@
 {% macro render_component(cmp) %}
-  {% set kind = cmp.kind %}
-  {% set props = cmp.to_props() %}
-  {% set common = {
-    "name": cmp.name or (kind ~ 'Component'),
-    "entity": cmp.entity and cmp.entity.name or None
-  } %}
-  {% include "components/" ~ kind ~ ".jinja" %}
+    {% set kind = cmp.kind %}
+    {% set props = cmp.to_props() %}
+    {% set common = {
+        "name": cmp.name or (kind ~ 'Component'),
+        "entity": cmp.entity and cmp.entity.name or None
+    } %}
+    {% include "components/" ~ kind ~ ".jinja" %}
 {% endmacro %}
+ 

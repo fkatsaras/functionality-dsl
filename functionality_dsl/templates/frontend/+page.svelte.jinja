@@ -3,22 +3,26 @@
 
 {% set uniq = namespace(kinds=[]) %}
 {% for cmp in components %}
-  {% set k = cmp.kind %}
-  {% if k not in uniq.kinds %}
-    {% set uniq.kinds = uniq.kinds + [k] %}
-  {% endif %}
+    {% set k = cmp.kind %}
+    {% if k not in uniq.kinds %}
+        {% set uniq.kinds = uniq.kinds + [k] %}
+    {% endif %}
 {% endfor %}
 
 <script lang="ts">
-  {% for k in uniq.kinds %}
-  import {{ k }} from "$lib/components/{{ k }}.svelte";
-  {% endfor %}
+    {% for k in uniq.kinds %}
+    import {{ k }} from "$lib/components/{{ k }}.svelte";
+    {% endfor %}
 </script>
 
-<div class="flex flex-wrap gap-6 justify-center items-start">
-  {% for cmp in components %}
-    <div class="flex-1 min-w-[300px] w-[1600px]">
-      {{ macros.render_component(cmp) }}
+<div class="dashboard-container mx-auto max-w-[1800px] px-10 py-12">
+    <div class="dashboard-grid">
+        {% for cmp in components %}
+            <div class="dashboard-item">
+                <div class="dashboard-card">
+                    {{ macros.render_component(cmp) }}
+                </div>
+            </div>
+        {% endfor %}
     </div>
-  {% endfor %}
 </div>

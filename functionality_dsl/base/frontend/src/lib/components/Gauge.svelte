@@ -1,196 +1,264 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { subscribe } from "$lib/ws";
+    import { onMount, onDestroy } from "svelte";
+    import { spring } from "svelte/motion";
 
-  const {
-    wsPath = null,
-    valueKey = "value",
-    min = 0,              // may be string at runtime
-    max = 100,
-    label = "",
-    unit = "",
-    name = "Gauge",
-    initial = null,
-  } = $props<{
-    wsPath?: string | null;
-    valueKey?: string;
-    min?: number | string;
-    max?: number | string;
-    label?: string;
-    unit?: string;
-    name?: string;
-    initial?: number | string | null;
-  }>();
+    import Card from "$lib/primitives/Card.svelte";
+    import LiveIndicator from "$lib/primitives/LiveIndicator.svelte";
+    import { subscribe } from "$lib/ws";
+    import { extractValue, clamp } from "$lib/utils/gaugeData";
 
-  // ---- numeric coercions (handle SSR + string props) ----
-  const minN = $derived(Number(min) || 0);
-  const maxN = $derived(Number(max) || 100);
+    const {
+        wsPath = null,
+        valueKey = "value",
+        min = 0,
+        max = 100,
+        name = "Gauge",
+        unit = "",
+        label = "",
+        initial = 0,
+        height = 200
+    } = $props();
 
-  let value = $state<number>(Number(initial ?? minN));
-  let connected = $state(false);
-  let error = $state<string | null>(null);
+    // connection + error state
+    let connected = $state(false);
+    let error = $state<string | null>(null);
 
-  function getByPath(obj: any, path: string) {
-    try { return path.split(".").reduce((acc: any, k: string) => (acc == null ? undefined : acc[k]), obj); }
-    catch { return undefined; }
-  }
+    // numeric coercions
+    const minN = $derived(Number(min) || 0);
+    const maxN = $derived(Number(max) || 100);
 
-  let unsubscribe: (() => void) | null = null;
+    // initial clamped value
+    const initialN = clamp(Number(initial) || 0, minN, maxN);
 
-  onMount(() => {
-    if (!wsPath) { error = "No wsPath provided"; return; }
-    unsubscribe = subscribe(wsPath, (msg: any) => {
-      console.log("Gauge message:", msg); 
-      if (msg && msg.__meta === "open")  { connected = true;  return; }
-      if (msg && msg.__meta === "close") { connected = false; return; }
-        
-      connected = true; // any data implies live
-        
-      try {
-        const raw = getByPath(msg, valueKey);
-        const minLocal = Number(min) || 0;
-        const maxLocal = Number(max) || 100;
-        const num = Number(raw);
-        if (Number.isFinite(num)) {
-          value = Math.min(maxLocal, Math.max(minLocal, num));
-        }
-      } catch (e: any) {
-        error = e?.message ?? "Parse error";
-      }
+    // reactive numeric needle value
+    let value = $state(initialN);
+
+    // spring animation
+    const valueSpring = spring(initialN, {
+        stiffness: 0.4,
+        damping: 0.07,
+        precision: 0.0001
     });
-  });
 
-  onDestroy(() => { try { unsubscribe?.(); } catch {} unsubscribe = null; connected = false; });
+    //analog vibration
+    let jitterTimer: number = 0;
+    let lastTarget = initialN;
 
-  // runes reactivity
-  const R = 60;
-  const CIRC = 2 * Math.PI * R;
-  const span = $derived((maxN - minN) || 1);
-  const pct  = $derived(Math.max(0, Math.min(1, (value - minN) / span)));
-  const dash = $derived(`${CIRC * pct} ${CIRC}`);
+    function animateTo(next: number) {
+        lastTarget = next;
+        
+        // trigger the main spring wiggle
+        valueSpring.set(next);
+    }
 
-  function fmt(v: any) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(2) : String(v ?? "");
-  }
+
+    // feed spring back into rune state
+    $effect.pre(() => {
+        valueSpring.subscribe(v => {
+            value = v;
+
+            if (jitterTimer != 0 ) clearTimeout(jitterTimer);
+
+            const remaining = Math.abs(v - lastTarget);
+
+            if (remaining < 0.1) {
+                jitterTimer = setTimeout(() => {
+                    const microJitter = (Math.random() - 0.5) * 0.24;
+
+                    valueSpring.set(lastTarget + microJitter);
+                }, 30);
+            }
+        });
+    });
+
+    // -----------------------
+    // Arc geometry and length
+    // -----------------------
+    const ARC_PATH_D = "M -90 0 A 90 90 0 0 1 90 0";
+    let arcLengthRaw = $state(1);
+
+    const pct = $derived(
+        maxN <= minN ? 0 :
+        Math.min(1, Math.max(0, (value - minN) / (maxN - minN)))
+    );
+
+    const ARC_LEN = $derived(arcLengthRaw);
+
+    const derivedDash = $derived(`${ARC_LEN * pct} ${ARC_LEN}`);
+
+    const derivedAngle = $derived(-90 + pct * 180);
+
+    const derivedArcColor = $derived(
+      pct >= 0.9 ? "var(--danger)" :
+      pct >= 0.6 ? "var(--warning)" :
+      "var(--accent)"
+    );
+
+    onMount(() => {
+        // measure SVG arc length at runtime
+        const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("d", ARC_PATH_D);
+        arcLengthRaw = p.getTotalLength();
+
+
+        if (!wsPath) {
+            error = "No wsPath provided";
+            return;
+        }
+
+        unsub = subscribe(wsPath, (msg: any) => {
+            if (msg?.__meta === "open") { connected = true; return; }
+            if (msg?.__meta === "close") { connected = false; return; }
+
+            connected = true;
+
+            try {
+                const num = extractValue(msg, valueKey);
+                if (num == null) return;
+
+                const next = clamp(Number(num), minN, maxN);
+
+                if (Number.isFinite(next))
+                    animateTo(next);
+
+            } catch (e: any) {
+                error = e?.message ?? "Parse error";
+            }
+        });
+    });
+
+    let unsub: null | (() => void) = null;
+
+    onDestroy(() => {
+        try { unsub?.(); } catch {}
+        unsub = null;
+        connected = false;
+    });
+
 </script>
 
-<div class="w-full flex justify-center p-4">
-  <div class="w-full max-w-sm">
-
-    <!-- Card-->
-    <div
-      class="rounded-2xl shadow-lg border bg-[color:var(--card)] p-6 flex flex-col items-center gap-4 transition-shadow duration-200 hover:shadow-xl"
-      class:border-dag-success={connected}
-      class:border-dag-danger={!connected}
-    >
-      <!-- Header -->
-      <div class="mb-6 w-full flex items-center justify-between">
-        <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
-      
-        <!-- NEW: actionform-style live indicator -->
-        <div
-          class="flex items-center gap-2 px-2 py-1 rounded-md border"
-          class:border-dag-success={connected}
-          class:border-dag-danger={!connected}
-        >
-          <!-- outlined circle like ActionForm tick color -->
-          <svg
-            class="w-4 h-4"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-            class:text-dag-success={connected}
-            class:text-dag-danger={!connected}
-          >
-            <circle cx="10" cy="10" r="8.5" />
-          </svg>
-        
-          <!-- LIVE/OFF label in Approach Mono, green/red letters only -->
-          <span
-            class="text-xs font-approachmono"
-            class:text-dag-success={connected}
-            class:text-dag-danger={!connected}
-          >
-            {connected ? "LIVE" : "OFF"}
-          </span>
+<Card>
+    <svelte:fragment slot="header">
+        <div class="flex justify-between items-center w-full">
+            <span class="font-approachmono text-xl">{name}</span>
+            <LiveIndicator connected={connected} />
         </div>
-      
+
         {#if error}
-          <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">{error}</span>
+            <div class="mt-2 text-xs text-dag-danger font-approachmono bg-red-50/10 px-2 py-1 rounded">
+                {error}
+            </div>
         {/if}
-      </div>
-      
-      <!-- gauge -->
-      <div class="relative flex items-end gap-4">
-        <!-- Min indicator -->
-        <div class="flex flex-col items-end gap-1">
-          <div class="w-2 h-2 rounded-full bg-text/30"></div>
-          <div class="text-xs font-approachmono text-text/50">{min}</div>
-        </div>
-        
-        <svg width="200" height="130" viewBox="0 0 220 130" aria-label="gauge" class="drop-shadow-sm">
-          <!-- Background arc -->
-          <path 
-            d="M30,120 A90,90 0 0,1 190,120" 
-            fill="none" 
-            stroke="var(--edge)" 
-            stroke-width="12" 
-            opacity="0.3"
-          />
-          <!-- Progress arc -->
-          <path
-            d="M30,120 A90,90 0 0,1 190,120"
-            fill="none"
-            stroke-width="12"
-            stroke-linecap="round"
-            stroke="currentColor"
-            style="stroke-dasharray: {dash}; transition: stroke-dasharray 0.3s ease-out;"
-            class="text-text"
-          />
-          <!-- Needle -->
-          <g transform="translate(110,120)">
-            <line 
-              x1="0" y1="0" x2="0" y2="-75" 
-              stroke="currentColor" 
-              stroke-width="3" 
-              stroke-linecap="round"
-              transform="rotate({180 * pct})" 
-              class="transition-transform duration-300 ease-out text-text"
-            />
-            <circle cx="0" cy="0" r="5" fill="currentColor" class="text-text" />
-            <circle cx="0" cy="0" r="2" fill="var(--card)" />
-          </g>
-        </svg>
-        
-        <!-- Max indicator -->
-        <div class="flex flex-col items-end gap-1">
-          <div class="w-2 h-2 rounded-full bg-text/30"></div>
-          <div class="text-xs font-approachmono text-text/50">{max}</div>
-        </div>
-      </div>
+    </svelte:fragment>
 
-      <!-- value display  -->
-      <div class="text-center space-y-2">
-        <div class="text-3xl font-bold font-approachmono text-text tracking-tight">
-          {fmt(value)}{unit ? ` ${unit}` : ''}
-        </div>
-        {#if label}
-          <div class="text-sm text-text/70 font-approachmono">{label}</div>
-        {/if}
-      </div>
-    </div>
-  </div>
-</div>
+    <svelte:fragment slot="children">
+            <div class="gauge">
+            
+                <div class="label-min">{minN}</div>
+                <div class="label-max">{maxN}</div>
+            
+                <svg viewBox="-100 -90 200 140">
+                    <!-- Background -->
+                    <path
+                        d={ARC_PATH_D}
+                        stroke="var(--edge)"
+                        stroke-width="14"
+                        stroke-linecap="round"
+                        fill="none"
+                        opacity="0.3"
+                    />
+                
+                    <!-- Animated arc -->
+                    <path
+                        d={ARC_PATH_D}
+                        stroke={derivedArcColor}
+                        stroke-width="14"
+                        stroke-linecap="round"
+                        fill="none"
+                        stroke-dasharray={derivedDash}
+                        class="arc-fill"
+                    />
+                </svg>
+            
+                <!-- Needle -->
+                <svg
+                    class="needle-svg"
+                    viewBox="0 0 200 200"
+                    style:transform={`rotate(${derivedAngle}deg)`}>
+                        
+                    <!-- tapered needle -->
+                    <polygon
+                        points="96,100 104,100 102,10 98,10"
+                        fill="var(--accent)"
+                    />
+                        
+                    <!-- pivot -->
+                    <circle
+                        cx="100" cy="100"
+                        r="12"
+                        fill="black"
+                    />
+                </svg>
+            
+            </div>
+        
+            <div class="text-center mt-4">
+                <div class="text-3xl font-approachmono font-bold">
+                    {value.toFixed(2)}{unit ? ` ${unit}` : ""}
+                </div>
+                {#if label}
+                    <div class="text-sm text-text-muted font-approachmono">{label}</div>
+                {/if}
+            </div>
+    </svelte:fragment>
+</Card>
 
 <style>
-  .font-approachmono {
-    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  }
-  .thin-border { 
-    border-color: var(--edge); 
-    border-width: 1px;
-  }
+    .font-approachmono {
+        font-family: "Approach Mono", ui-monospace, monospace;
+    }
+
+    .gauge {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        width: 100%;
+        transform: translateY(70px);
+    }
+
+    svg {
+        position: relative;
+        z-index: 30;
+        overflow: visible;
+        pointer-events: none;
+        margin-top: 20px;
+    }
+
+    .label-min,
+    .label-max {
+        position: absolute;
+        bottom: 20px;
+        font-size: 1rem;
+        font-weight: 400;
+        font-family: "Approach Mono", monospace;
+        color: var(--text-muted);
+    }
+    .label-min { left: 5%; transform: translateY(-20px); }
+    .label-max { right: 5%; transform: translateY(-20px); }
+
+    .needle-svg {
+        position: absolute;
+        width: 200px;
+        height: 200px;
+        transform-origin: 100px 100px;
+        border-radius: 2px;
+        transition: transform 0.25s cubic-bezier(0.3, 1.4, 0.4, 1.0);
+    }
+
+    .arc-fill {
+        transition:
+            stroke-dasharray 0.35s cubic-bezier(0.3, 1.4, 0.4, 1.0),
+            stroke 0.25s ease-out;
+    }
 </style>

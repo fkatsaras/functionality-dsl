@@ -1,207 +1,124 @@
 <script lang="ts">
-  import { preventDefault } from "svelte/legacy";
+    import { preventDefault } from "svelte/legacy";
 
-  const {
-    name = "ActionForm",
-    url,
-    method = "POST",
-    fields = [] as string[],
-    pathKey = null as string | null,
-    submitLabel = "Submit",
-  } = $props<{
-    name?: string;
-    url: string;
-    method?: "POST" | "PUT" | "PATCH" | "DELETE" | "GET" | "UPDATE";
-    fields?: string[];
-    pathKey?: string | null;
-    submitLabel?: string;
-  }>();
+    import Card from "$lib/primitives/Card.svelte";
+    import Input from "$lib/primitives/Input.svelte";
+    import Button from "$lib/primitives/Button.svelte";
+    import Badge from "$lib/primitives/Badge.svelte";
 
-  let model: Record<string, any> = {};
-  for (const k of fields) model[k] = "";
+    import CheckIcon from "$lib/primitives/icons/CheckIcon.svelte";
+    import ErrorIcon from "$lib/primitives/icons/ErrorIcon.svelte";
+    import Spinner from "$lib/primitives/icons/Spinner.svelte";
 
-  let busy = $state<boolean>(false);
-  let error = $state<string | null>(null);
-  let ok = $state<string | null>(null);
+    const {
+        name = "ActionForm",
+        url,
+        method = "POST",
+        fields = [] as string[],
+        pathKey = null,
+        submitLabel = "Submit"
+    } = $props();
 
-  /**
-   * Compute the effective endpoint URL by replacing any path parameters
-   * like {id}, {userId}, {postId}, etc. with their corresponding model values.
-   * If a param has no matching field in the model, it is left unchanged.
-   */
-  function endpoint(): string {
-    const base = url.replace(/\/+$/, ""); // strip trailing slash
-    let final = base;
-  
-    // Find all placeholders {param}
-    const matches = [...base.matchAll(/\{([^{}]+)\}/g)];
-    for (const m of matches) {
-      const key = m[1];
-      const val = model[key];
-      if (val != null && `${val}`.trim() !== "") {
-        final = final.replace(new RegExp(`\\{${key}\\}`, "g"), encodeURIComponent(val));
-      }
+    // Build model
+    let model: Record<string, any> = {};
+    for (const f of fields) model[f] = "";
+
+    // Reactive state
+    let busy = $state(false);
+    let error = $state<string | null>(null);
+    let ok = $state<string | null>(null);
+
+    function endpoint(): string {
+        const base = url.replace(/\/+$/, "");
+        let out = base;
+
+        for (const m of base.matchAll(/\{([^{}]+)\}/g)) {
+            const key = m[1];
+            const val = model[key];
+            if (val != null && `${val}`.trim()) {
+                out = out.replace(`{${key}}`, encodeURIComponent(val));
+            }
+        }
+        return out;
     }
-  
-    return final;
-  }
 
-  async function submit() {
-    error = ok = null;
-    busy = true;
+    async function submit() {
+        busy = true;
+        error = ok = null;
 
-    try {
-      const body = structuredClone(model);
-      if (pathKey) delete body[pathKey]; // remove path parameter from body
+        try {
+            const body = structuredClone(model);
+            if (pathKey) delete body[pathKey];
 
-      const target = endpoint();
+            const finalUrl = endpoint();
 
-      const res = await fetch(target, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body:
-          method === "DELETE" || method === "GET"
-            ? undefined
-            : JSON.stringify(body),
-      });
+            const res = await fetch(finalUrl, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body:
+                    method === "DELETE" || method === "GET"
+                        ? undefined
+                        : JSON.stringify(body)
+            });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `${res.status} ${res.statusText}`);
-      }
+            if (!res.ok) {
+                const text = await res.text().catch(() => "");
+                throw new Error(text || `${res.status} ${res.statusText}`);
+            }
 
-      ok = "Done.";
-      setTimeout(() => {
-        ok = null;
-      }, 3000);
-    } catch (e: any) {
-      error = e?.message ?? "Request failed.";
-    } finally {
-      busy = false;
+            ok = "Done.";
+            setTimeout(() => (ok = null), 2500);
+        } catch (e: any) {
+            error = e?.message ?? "Request failed.";
+        } finally {
+            busy = false;
+        }
     }
-  }
 </script>
 
-<div class="w-full flex justify-center items-center">
-  <div class="w-4/5">
-    <form
-      class="rounded-2xl shadow-card border bg-[color:var(--card)] transition-all duration-300"
-      class:border-dag-success={ok && !error}
-      class:border-dag-danger={!!error}
-      class:table-border={!ok && !error}
-      on:submit={preventDefault(submit)}
-      aria-live="polite"
-    >
-      <div class="p-4 pb-3 w-full flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <h2 class="text-xl font-bold font-approachmono text-text/90">{name}</h2>
+<!-- Card wrapper -->
+<Card>
+    <svelte:fragment slot="header">
+        <span>{name}</span>
 
-          {#if ok && !error}
-            <svg
-              class="w-5 h-5 text-dag-success animate-fade-in"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              role="img"
-              aria-label="Success"
-            >
-              <circle cx="10" cy="10" r="8.5" />
-              <path d="M6.5 10.5l2.5 2.5 4.5-5.5" />
-            </svg>
-          {/if}
+        {#if ok}
+            <CheckIcon class="text-[var(--green-text)]" size={20} />
+        {/if}
 
-          {#if error}
-            <svg
-              class="w-5 h-5 text-dag-danger animate-fade-in"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              role="img"
-              aria-label="Error"
-            >
-              <!-- Circle -->
-              <circle cx="10" cy="10" r="8.5" />
-              <!-- X -->
-              <path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6" />
-            </svg>
-          {/if}
-        </div>
-      </div>
+        {#if error}
+            <ErrorIcon class="text-[var(--edge-light)]" size={20} />
+        {/if}
+    </svelte:fragment>
 
-      <div class="p-4 pt-0 space-y-4">
-        {#each fields as key}
-          <label class="flex flex-col gap-1.5">
-            <span class="text-xs font-approachmono text-text/70 font-medium">{key}</span>
-            <input
-              class="px-3.5 py-2.5 rounded-lg border thin-border bg-[color:var(--surface)] text-text/90 outline-none transition-all duration-200 focus:ring-2 focus:ring-[color:var(--edge)] focus:border-[color:var(--edge)] hover:border-[color:var(--edge)]/60"
-              bind:value={model[key]}
-              placeholder={key}
-            />
-          </label>
-        {/each}
+    <svelte:fragment slot="children">
 
-        <div class="flex items-center gap-3 pt-2">
-          <button
-            class="px-4 py-2 text-sm font-medium rounded-lg border thin-border bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[color:var(--surface)]"
-            type="submit"
-            disabled={busy}
-          >
-            {#if busy}
-              <div class="spinner" role="status" aria-label="Loading"></div>
-            {:else}
-              {submitLabel}
+        <form class="space-y-4 max-w-[500px]" onsubmit={preventDefault(submit)}>
+        
+            {#each fields as field}
+                <label class="flex flex-col gap-1.5">
+                    <span class="text-sm font-mono text-text-muted font-medium tracking-wide">{field}</span>
+
+                    <Input
+                        bind:value={model[field]}
+                        placeholder={field}
+                    />
+                </label>
+            {/each}
+
+            <div class="pt-2">
+                <Button type="submit" disabled={busy}>
+                    {#if busy}
+                        <Spinner size={16} />
+                    {:else}
+                        {submitLabel}
+                    {/if}
+                </Button>
+            </div>
+
+            {#if error}
+                <Badge class="text-[var(--edge-light)] mt-2">{error}</Badge>
             {/if}
-          </button>
-        </div>
-      </div>
-    </form>
-  </div>
-</div>
+        </form>
 
-<style>
-  .font-approachmono {
-    font-family: "Approach Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      "Liberation Mono", "Courier New", monospace;
-  }
-
-  .thin-border,
-  .table-border {
-    border-color: var(--edge);
-  }
-
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-      transform: scale(0.8);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  .animate-fade-in {
-    animation: fade-in 0.2s ease-out;
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>
+    </svelte:fragment>
+</Card>

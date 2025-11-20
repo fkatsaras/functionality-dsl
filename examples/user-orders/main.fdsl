@@ -88,7 +88,7 @@ end
 
 // Fetch all orders (for the list view)
 Source<REST> AllOrdersSource
-  url: "http://dummy-order-service:8002/orders"
+  url: "http://host.docker.internal:8002/orders"
   method: GET
   response:
     type: array
@@ -97,7 +97,7 @@ end
 
 // Fetch user profile from User Service
 Source<REST> UserProfile
-  url: "http://dummy-user-service:8001/users/{userId}"
+  url: "http://host.docker.internal:8001/users/{userId}"
   method: GET
   parameters:
     path:
@@ -109,7 +109,7 @@ end
 
 // Fetch ALL orders from Order Service (no filtering - dumb source)
 Source<REST> OrderHistory
-  url: "http://dummy-order-service:8002/orders"
+  url: "http://host.docker.internal:8002/orders"
   method: GET
   response:
     type: array
@@ -118,7 +118,7 @@ end
 
 // Create order in external service
 Source<REST> CreateOrderTarget
-  url: "http://dummy-order-service:8002/orders"
+  url: "http://host.docker.internal:8002/orders"
   method: POST
   request:
     type: object
@@ -130,7 +130,7 @@ end
 
 // Update order status in external service
 Source<REST> UpdateStatusTarget
-  url: "http://dummy-order-service:8002/orders/{orderId}/status"
+  url: "http://host.docker.internal:8002/orders/{orderId}/status"
   method: PATCH
   parameters:
     path:
