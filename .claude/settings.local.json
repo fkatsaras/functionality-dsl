@@ -83,7 +83,10 @@
       "Bash(./venv_WIN/Scripts/pip install:*)",
       "Bash(for file in examples/user-management/*.fdsl)",
       "Bash(for file in examples/rest-basics/main.fdsl examples/json-parsing/main.fdsl examples/rest-mutations/main.fdsl)",
-      "Bash(do echo \"=== Testing $file ===\")"
+      "Bash(do echo \"=== Testing $file ===\")",
+      "Bash(if [ -d \"generated/app/services\" ])",
+      "Bash(then grep -A 5 \"_WS_INPUTS\" generated/app/services/wikieditsstream_service.py)",
+      "Bash(else echo \"Generated files not found\")"
     ],
     "deny": [],
     "ask": []

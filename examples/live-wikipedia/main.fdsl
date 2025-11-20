@@ -8,7 +8,7 @@ end
 // --- External WS feed ------------------------------------------
 Source<WS> WikiMonEN
   channel: "wss://wikimon.hatnote.com/en/"
-  publish:
+  subscribe:
     type: object
     entity: WikiEdit
 end
@@ -35,14 +35,14 @@ end
 // --- Internal endpoints -----------------------------------------
 Endpoint<WS> EditGaugeStream
   channel: "/api/wiki/edits"
-  publish:
+  subscribe:
     type: object
     entity: EditGauge
 end
 
 Endpoint<WS> WikiEditsStream
   channel: "/api/wiki/edits/feed"
-  publish:
+  subscribe:
     type: object
     entity: WikiEdit
 end
