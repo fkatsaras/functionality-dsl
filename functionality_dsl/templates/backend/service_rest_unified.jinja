@@ -151,7 +151,7 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
             separator = "&" if "?" in url else "?"
             url = f"{url}{separator}{query_string}"
 
-        logger.info(f"[FETCH] - Fetching {entity_name} from {url} ({method})")
+        logger.info(f"[FETCH] → {method} {url}")
 
         try:
             headers = resolve_headers(source_config.get("headers", []))
@@ -165,7 +165,7 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
             response = await http_client.request(method, url, headers=headers)
 
             if response.status_code >= 400:
-                logger.error(f"[FETCH] - Failed to fetch {entity_name}: HTTP {response.status_code}")
+                logger.error(f"[FETCH] ✗ HTTP {response.status_code} from {entity_name}")
                 raise HTTPException(
                     status_code=502,
                     detail=f"External source {entity_name} returned {response.status_code}"
@@ -173,6 +173,12 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
 
             raw_payload = response.json()
             logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
+
+            # Log response data at INFO level (truncated for readability)
+            payload_preview = json.dumps(raw_payload, indent=2)[:300]
+            if len(json.dumps(raw_payload)) > 300:
+                payload_preview += "\n  ... (truncated)"
+            logger.info(f"[FETCH] ✓ Received data from {entity_name}:\n{payload_preview}")
 
             # Store raw payload by alias
             has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
@@ -190,7 +196,7 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
 
             # Store shaped entity in context
             context[entity_name] = shaped_data
-            logger.info(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys()) if isinstance(shaped_data, dict) else type(shaped_data)}")
+            logger.debug(f"[CONTEXT] - Stored {entity_name} with keys: {list(shaped_data.keys()) if isinstance(shaped_data, dict) else type(shaped_data)}")
 
         except HTTPException:
             raise
@@ -210,13 +216,13 @@ async def fetch_internal_dependencies(context: Dict[str, Any]) -> None:
         entity_name = dependency["name"]
         endpoint_path = dependency["endpoint"]
 
-        logger.info(f"[DEPENDENCY] - Fetching computed parent {entity_name} from {endpoint_path}")
+        logger.info(f"[DEPENDENCY] → GET {endpoint_path}")
 
         try:
             response = await http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
 
             if response.status_code >= 400:
-                logger.error(f"[DEPENDENCY] - Failed to fetch {entity_name}: HTTP {response.status_code}")
+                logger.error(f"[DEPENDENCY] ✗ HTTP {response.status_code} from {entity_name}")
                 raise HTTPException(
                     status_code=502,
                     detail=f"Internal dependency {entity_name} returned {response.status_code}"
@@ -230,7 +236,8 @@ async def fetch_internal_dependencies(context: Dict[str, Any]) -> None:
             else:
                 context[entity_name] = payload
 
-            logger.info(f"[CONTEXT] - Stored computed parent {entity_name}")
+            logger.info(f"[DEPENDENCY] ✓ Received {entity_name}")
+            logger.debug(f"[CONTEXT] - Stored computed parent {entity_name}")
 
         except HTTPException:
             raise
@@ -245,7 +252,7 @@ async def fetch_internal_dependencies(context: Dict[str, Any]) -> None:
 {% if compiled_chain %}
 def compute_entity_chain(context: Dict[str, Any]) -> None:
     """Execute computation chain to transform data."""
-    logger.info(f"[COMPUTE] - Executing chain with {len(_COMPUTATION_CHAIN)} step(s)")
+    logger.info(f"[COMPUTE] Computing {len(_COMPUTATION_CHAIN)} transformation(s)")
 
     for step_index, compute_step in enumerate(_COMPUTATION_CHAIN, 1):
         entity_name = compute_step["name"]
@@ -259,7 +266,7 @@ def compute_entity_chain(context: Dict[str, Any]) -> None:
 {% if response_chain %}
 def compute_response_chain(context: Dict[str, Any]) -> None:
     """Execute response transformation chain (for mutations)."""
-    logger.info(f"[COMPUTE-RESPONSE] - Executing chain with {len(_RESPONSE_CHAIN)} step(s)")
+    logger.info(f"[COMPUTE] Computing response transformation ({len(_RESPONSE_CHAIN)} step(s))")
 
     for step_index, compute_step in enumerate(_RESPONSE_CHAIN, 1):
         entity_name = compute_step["name"]
@@ -366,14 +373,17 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
         payload = request_body
         {% endif %}
 
-        logger.info(f"[WRITE] - Writing to {target_name} at {url} ({method})")
-        logger.debug(f"[WRITE] - Payload: {json.dumps(payload, indent=2)[:500]}")
+        # Log request data at INFO level (truncated for readability)
+        payload_preview = json.dumps(payload, indent=2)[:300]
+        if len(json.dumps(payload)) > 300:
+            payload_preview += "\n  ... (truncated)"
+        logger.info(f"[WRITE] → {method} {url}\nPayload:\n{payload_preview}")
 
         try:
             response = await http_client.request(method, url, headers=headers, json=payload)
 
             if response.status_code >= 400:
-                logger.error(f"[WRITE] - Failed to write to {target_name}: HTTP {response.status_code}")
+                logger.error(f"[WRITE] ✗ HTTP {response.status_code} from {target_name}")
                 logger.error(f"[WRITE] - Response: {response.text[:500]}")
                 raise HTTPException(
                     status_code=502,
@@ -383,10 +393,14 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
             # Store response
             try:
                 last_response = response.json()
-                logger.info(f"[WRITE] - Successfully wrote to {target_name}")
+                # Log response data at INFO level (truncated for readability)
+                response_preview = json.dumps(last_response, indent=2)[:300]
+                if len(json.dumps(last_response)) > 300:
+                    response_preview += "\n  ... (truncated)"
+                logger.info(f"[WRITE] ✓ Response from {target_name}:\n{response_preview}")
             except:
                 last_response = {"status": "success"}
-                logger.info(f"[WRITE] - Successfully wrote to {target_name} (no JSON response)")
+                logger.info(f"[WRITE] ✓ Success (no JSON response)")
 
         except HTTPException:
             raise
@@ -421,6 +435,23 @@ async def execute_flow(
     - Computes {{ compiled_chain | length }} entity transformation(s)
     {% endif %}
     """
+    # Log incoming request at INFO level
+    incoming_data = {}
+    if path_params:
+        incoming_data["path"] = path_params
+    if query_params:
+        incoming_data["query"] = query_params
+    if request_body:
+        incoming_data["body"] = request_body
+
+    if incoming_data:
+        incoming_preview = json.dumps(incoming_data, indent=2)[:400]
+        if len(json.dumps(incoming_data)) > 400:
+            incoming_preview += "\n  ... (truncated)"
+        logger.info(f"[REQUEST] ← Incoming request:\n{incoming_preview}")
+    else:
+        logger.info(f"[REQUEST] ← No request parameters")
+
     context: Dict[str, Any] = {}
 
     # Create endpoint parameter object for expressions (e.g., GetProduct.productId)
@@ -557,7 +588,6 @@ async def execute_flow(
 
     final_attributes = context.get(final_entity_name, {})
 
-    logger.info(f"[SUCCESS] - Flow completed successfully")
     logger.debug(f"[RESULT] - Entity: {final_entity_name}, Attributes: {list(final_attributes.keys()) if isinstance(final_attributes, dict) else type(final_attributes)}")
 
     # Unwrap response based on type
@@ -568,10 +598,21 @@ async def execute_flow(
         if attribute_values:
             unwrapped = attribute_values[0]
             logger.debug(f"[UNWRAP] - Unwrapped {{ response_type }} response")
+            # Log final response at INFO level
+            response_preview = json.dumps(unwrapped, indent=2)[:400]
+            if len(json.dumps(unwrapped)) > 400:
+                response_preview += "\n  ... (truncated)"
+            logger.info(f"[RESPONSE] → Outgoing response:\n{response_preview}")
             return unwrapped
     logger.warning(f"[UNWRAP] - No attributes found for {{ response_type }} response, returning empty")
+    logger.info(f"[RESPONSE] → Empty response")
     return [] if "{{ response_type }}" == "array" else None
     {% else %}
     # Response type is object - return full entity attributes
+    # Log final response at INFO level
+    response_preview = json.dumps(final_attributes, indent=2)[:400]
+    if len(json.dumps(final_attributes)) > 400:
+        response_preview += "\n  ... (truncated)"
+    logger.info(f"[RESPONSE] → Outgoing response:\n{response_preview}")
     return final_attributes
     {% endif %}

@@ -1,11 +1,9 @@
-{# components/ActionForm.jinja — escaped curly braces #}
+{# components/ActionForm.jinja #}
+{# Use backticks (template literal) to prevent Svelte from interpreting {userId} as expression #}
 {%- set raw_url = props.get('endpointPath') or '' -%}
-{# Escape curly braces so that Svelte doesn’t interpret them as expressions #}
-{%- set safe_url = raw_url.replace('{', '&#123;').replace('}', '&#125;') -%}
-
 <ActionForm
     name="{{ common.name }}"
-    url="{{ safe_url }}"
+    url={`{{ raw_url }}`}
     method="{{ props.get('method', 'POST') }}"
     fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
     {% if props.get('pathKey') %}

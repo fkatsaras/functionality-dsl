@@ -1,14 +1,10 @@
 <script>
-    const props = $props();
-
-    // Make value reactive using $state()
-    let value = $state(props.value ?? "");
-
-    const {
+    let {
+        value = $bindable(""),
         class: className = "",
         type = "text",
         placeholder = ""
-    } = props;
+    } = $props();
 </script>
 
 <input

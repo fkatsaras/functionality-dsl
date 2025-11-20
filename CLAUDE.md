@@ -255,18 +255,6 @@ Endpoint<REST> GetUser
 end
 ```
 
-### Common HTTP Status Codes
-
-- **400** - Bad Request (validation errors, invalid input)
-- **401** - Unauthorized (missing or invalid authentication)
-- **403** - Forbidden (insufficient permissions)
-- **404** - Not Found (resource doesn't exist)
-- **409** - Conflict (duplicate resource, constraint violation)
-- **422** - Unprocessable Entity (semantic validation errors)
-- **500** - Internal Server Error (unexpected server errors)
-- **502** - Bad Gateway (external service error)
-- **503** - Service Unavailable (temporary outage)
-
 ### Condition Expressions
 
 Error conditions are FDSL expressions that have access to:
@@ -294,46 +282,6 @@ When you define error conditions:
 5. **Document error messages**: Use clear, actionable error messages for API users
 
 ---
-
-## Authentication
-
-### Bearer Token (most common)
-```fdsl
-Endpoint<REST> GetProfile
-  path: "/api/profile"
-  method: GET
-  response:
-    entity: UserProfile
-  auth:
-    type: bearer
-    token: "required"
-end
-```
-
-### Basic Auth
-```fdsl
-Source<REST> ExternalAPI
-  url: "https://api.example.com/data"
-  method: GET
-  auth:
-    type: basic
-    username: "user"
-    password: "pass"
-end
-```
-
-### API Key
-```fdsl
-Source<REST> ThirdPartyAPI
-  url: "https://api.service.com/endpoint"
-  method: GET
-  auth:
-    type: api_key
-    key: "X-API-Key"
-    in: header
-    value: "your-api-key-here"
-end
-```
 
 ---
 
