@@ -101,6 +101,36 @@ _RESPONSE_CHAIN = [
 #                          SERVICE FUNCTIONS
 # ============================================================================
 
+{% if request_entity %}
+def validate_request_body(request_body: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate request body against Pydantic schema."""
+    from pydantic import ValidationError
+    from app.domain.models import {{ request_entity.name }}
+
+    try:
+        validated_payload = {{ request_entity.name }}(**request_body)
+        logger.debug(f"[VALIDATION] ✓ Schema validation passed for {{ request_entity.name }}")
+        return validated_payload.model_dump()
+    except ValidationError as validation_error:
+        # Build simple error message
+        error_messages = []
+        for error in validation_error.errors():
+            field = ".".join(str(loc) for loc in error["loc"])
+            message = error["msg"]
+            error_messages.append(f"{field}: {message}")
+
+        error_summary = "; ".join(error_messages)
+        error_detail = f"Validation error: {error_summary}"
+
+        logger.error(f"[VALIDATION] ✗ Schema validation failed for {{ request_entity.name }}: {error_summary}")
+        logger.info(f"[RESPONSE] → Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
+
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail
+        )
+{% endif %}
+
 {% if flow.has_reads %}
 async def fetch_external_sources(context: Dict[str, Any]) -> None:
     """Fetch data from external REST sources and populate context."""
@@ -468,10 +498,11 @@ async def execute_flow(
     logger.debug(f"[CONTEXT] - Created endpoint parameter object {{ endpoint.name }} with keys: {list(endpoint_params.keys())}")
 
     {% if request_entity %}
-    # Seed context with request body entity
+    # Validate and seed context with request body entity
     if request_body:
-        context["{{ request_entity.name }}"] = request_body
-        logger.debug(f"[CONTEXT] - Seeded request entity {{ request_entity.name }}")
+        validated_body = validate_request_body(request_body)
+        context["{{ request_entity.name }}"] = validated_body
+        logger.debug(f"[CONTEXT] - Seeded validated request entity {{ request_entity.name }}")
     {% endif %}
 
     # ========================================================================
@@ -495,7 +526,11 @@ async def execute_flow(
     try:
         compiled_condition = compile_safe({{ error.condition | tojson }})
         if eval(compiled_condition, eval_globals, {}):
-            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+            error_detail = "{{ error.message }}"
+            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
+            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
+            logger.info(f"[RESPONSE] → Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
+            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
     except HTTPException:
         raise
     except Exception as eval_error:
@@ -515,7 +550,11 @@ async def execute_flow(
     try:
         compiled_condition = compile_safe({{ error.condition | tojson }})
         if eval(compiled_condition, eval_globals, {}):
-            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+            error_detail = "{{ error.message }}"
+            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
+            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
+            logger.info(f"[RESPONSE] → Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
+            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
     except HTTPException:
         raise
     except Exception as eval_error:
@@ -554,7 +593,11 @@ async def execute_flow(
     try:
         compiled_condition = compile_safe({{ error.condition | tojson }})
         if eval(compiled_condition, eval_globals, {}):
-            raise HTTPException(status_code={{ error.status_code }}, detail="{{ error.message }}")
+            error_detail = "{{ error.message }}"
+            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
+            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
+            logger.info(f"[RESPONSE] → Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
+            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
     except HTTPException:
         raise
     except Exception as eval_error:
