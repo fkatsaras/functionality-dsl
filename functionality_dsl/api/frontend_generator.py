@@ -1,13 +1,21 @@
 from __future__ import annotations
+
+
 from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from bs4 import BeautifulSoup
+
 from textx import get_children_of_type
 
 from functionality_dsl.lib.component_types import COMPONENT_TYPES
 
 
 # ---------- helpers ----------
+
+def beautify_html(html_str: str) -> str:
+    soup = BeautifulSoup(html_str, "html.parser")
+    return soup.prettify()
 
 def _components(model):
     cmps = getattr(model, "aggregated_components", None)
@@ -109,3 +117,14 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
         ),
         encoding="utf-8",
     )
+
+    # Format for readability
+    # try:
+    #     page_path = out_dir / "src" / "routes" / "+page.svelte"
+
+    #     raw = page_path.read_text(encoding="utf-8")
+    #     pretty = beautify_html(raw)
+
+    #     page_path.write_text(pretty, encoding="utf-8")
+    # except Exception as e:
+    #     print("[WARN] HTML beautification failed:", e)
