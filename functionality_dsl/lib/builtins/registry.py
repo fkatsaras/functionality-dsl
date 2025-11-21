@@ -5,6 +5,10 @@ from .time_funcs import DSL_FUNCTIONS as TIME_FUNCS
 from .json_funcs import DSL_FUNCTIONS as JSON_FUNCS
 from .collection_funcs import DSL_COLLECTION_FUNCS as COLLECTION_FUNCS
 from .validation_funcs import DSL_VALIDATION_FUNCS as VALIDATION_FUNCS
+from .timeseries_funcs import DSL_TIMESERIES_FUNCS as TIMESERIES_FUNCS
+from .geo_funcs import DSL_GEO_FUNCS as GEO_FUNCS
+from .window_funcs import DSL_WINDOW_FUNCS as WINDOW_FUNCS
+from .url_funcs import DSL_URL_FUNCS as URL_FUNCS
 
 DSL_FUNCTIONS = {}
 for group in [
@@ -15,6 +19,10 @@ for group in [
     JSON_FUNCS,
     COLLECTION_FUNCS,
     VALIDATION_FUNCS,
+    TIMESERIES_FUNCS,
+    GEO_FUNCS,
+    WINDOW_FUNCS,
+    URL_FUNCS,
 ]:
     DSL_FUNCTIONS.update(group)
 

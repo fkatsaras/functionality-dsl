@@ -71,7 +71,7 @@
 
                 legend: {
                     show: false,
-                    live: false,
+                    live: true,
                 },
             
                 cursor: {

@@ -104,7 +104,7 @@ end
 // Computed metrics
 Entity TelemetryComputed(TelemetryCombined)
   attributes:
-    - t: integer = TelemetryCombined.ts;
+    - t: string = formatDate(TelemetryCombined.ts / 1000, "YYYY-MM-DD HH:mm:ss");
     - avg_temp: number = avg(map(TelemetryCombined.readings, r -> r["temp"]));
     - avg_hum:  number = avg(map(TelemetryCombined.readings, r -> r["hum"]));
     - avg_heat: number = avg(map(TelemetryCombined.readings, r -> r["temp"] + 0.2 * r["hum"]));
@@ -202,8 +202,7 @@ end
 
 Component<LiveChart> HeatIndexTrend
   endpoint: TelemetryStream
-  values: avg_heat
-  seriesLabels: ["Avg Heat Index"]
-  xLabel: string "Time"
-  yLabel: string "Heat Index"
+  seriesLabels: ["Avg Temperature", "Avg Humidity", "Avg Heat Index"]
+  xLabel: string<datetime> "Time"
+  yLabel: number "Sensor Readings"
 end
