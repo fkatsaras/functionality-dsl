@@ -14,24 +14,28 @@ from ..builders import (
 
 def generate_websocket_router(endpoint, model, all_source_names, templates_dir, output_dir):
     """Generate a WebSocket (duplex) router for an Endpoint<WS>."""
-    # Extract entities from subscribe/publish blocks
+    # Extract entities and content types from subscribe/publish blocks
     # IMPORTANT: From client perspective:
     #   subscribe: clients subscribe (receive from server) = outbound from server perspective
     #   publish: clients publish (send to server) = inbound from server perspective
     entity_in = None
     entity_out = None
+    content_type_in = "application/json"
+    content_type_out = "application/json"
 
     subscribe_block = getattr(endpoint, "subscribe", None)
     if subscribe_block:
         message = getattr(subscribe_block, "message", None)
         if message:
             entity_out = getattr(message, "entity", None)  # Clients subscribe = server sends = outbound
+        content_type_out = getattr(subscribe_block, "content_type", "application/json")
 
     publish_block = getattr(endpoint, "publish", None)
     if publish_block:
         message = getattr(publish_block, "message", None)
         if message:
             entity_in = getattr(message, "entity", None)  # Clients publish = server receives = inbound
+        content_type_in = getattr(publish_block, "content_type", "application/json")
 
     route_path = get_route_path(endpoint)
 
@@ -81,6 +85,8 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         },
         "entity_in": entity_in,
         "entity_out": entity_out,
+        "content_type_in": content_type_in,
+        "content_type_out": content_type_out,
         "route_prefix": route_path,
         "compiled_chain_inbound": compiled_chain_inbound,
         "compiled_chain_outbound": compiled_chain_outbound,

@@ -98,7 +98,8 @@ def get_subscribe_schema(endpoint_or_source):
             "type": "entity",
             "entity": entity,
             "inline_spec": None,
-            "content_type": getattr(subscribe, "content_type", "application/json")
+            "content_type": getattr(subscribe, "content_type", "application/json"),
+            "message_type": getattr(subscribe, "type", "object")  # Add message type from subscribe block
         }
 
     # Check if it's an inline type
@@ -108,7 +109,8 @@ def get_subscribe_schema(endpoint_or_source):
             "type": "inline",
             "entity": None,
             "inline_spec": parse_inline_type(inline_type),
-            "content_type": getattr(subscribe, "content_type", "application/json")
+            "content_type": getattr(subscribe, "content_type", "application/json"),
+            "message_type": getattr(subscribe, "type", "object")  # Add message type from subscribe block
         }
 
     return None
@@ -134,7 +136,8 @@ def get_publish_schema(endpoint_or_source):
             "type": "entity",
             "entity": entity,
             "inline_spec": None,
-            "content_type": getattr(publish, "content_type", "application/json")
+            "content_type": getattr(publish, "content_type", "application/json"),
+            "message_type": getattr(publish, "type", "object")  # Add message type from publish block
         }
 
     # Check if it's an inline type
@@ -144,7 +147,8 @@ def get_publish_schema(endpoint_or_source):
             "type": "inline",
             "entity": None,
             "inline_spec": parse_inline_type(inline_type),
-            "content_type": getattr(publish, "content_type", "application/json")
+            "content_type": getattr(publish, "content_type", "application/json"),
+            "message_type": getattr(publish, "type", "object")  # Add message type from publish block
         }
 
     return None

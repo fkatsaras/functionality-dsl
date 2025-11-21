@@ -50,6 +50,7 @@ def map_to_python_type(attr):
         "boolean": "bool",
         "array": "list",
         "object": "dict",
+        "binary": "bytes",
     }.get(base_type_str.lower(), "Any")
 
     # Handle format specifications (OpenAPI formats)

@@ -230,14 +230,50 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
     chain_entities = get_all_ancestors(terminal, model) + [terminal]
 
     for entity in chain_entities:
+        # Find if this entity has a WS source
+        source, source_type = find_source_for_entity(entity, model)
+
         attribute_configs = []
-        for attr in getattr(entity, "attributes", []) or []:
-            if hasattr(attr, "expr") and attr.expr is not None:
-                expr_code = compile_expr_to_python(attr.expr)
-                attribute_configs.append({
-                    "name": attr.name,
-                    "pyexpr": expr_code
-                })
+
+        # For WS source entities, check if it's a wrapper and needs wrapping logic
+        if source and source_type == "WS":
+            # Build WS input config to get wrapping logic
+            from ..extractors import get_subscribe_schema
+
+            attributes = getattr(entity, "attributes", []) or []
+            subscribe_schema = get_subscribe_schema(source)
+            message_type = subscribe_schema.get("message_type", "object") if subscribe_schema else "object"
+            is_wrapper = (len(attributes) == 1) and (message_type in ['array', 'string', 'number', 'integer', 'boolean', 'binary'])
+
+            for attr in attributes:
+                if hasattr(attr, "expr") and attr.expr is not None:
+                    expr_code = compile_expr_to_python(attr.expr)
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": expr_code
+                    })
+                elif is_wrapper:
+                    # Wrapper entity: wrap the raw source data directly
+                    # The single attribute gets the entire payload
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": source.name
+                    })
+                else:
+                    # Multi-attribute entity: extract field from source object
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": f"dsl_funcs['get']({source.name}, '{attr.name}', None)"
+                    })
+        else:
+            # Regular computed entity or endpoint entity
+            for attr in getattr(entity, "attributes", []) or []:
+                if hasattr(attr, "expr") and attr.expr is not None:
+                    expr_code = compile_expr_to_python(attr.expr)
+                    attribute_configs.append({
+                        "name": attr.name,
+                        "pyexpr": expr_code
+                    })
 
         # Always include the entity — even if it has no expressions.
         compiled_chain.append({

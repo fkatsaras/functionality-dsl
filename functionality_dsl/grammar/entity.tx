@@ -2,7 +2,7 @@ import utils
 import expression
 
 AttrType:
-  'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object'
+  'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
 ;
 
 // Format qualifiers for types (OpenAPI-aligned)
@@ -147,7 +147,16 @@ ParametersBlock:
 
 // Content type can be specified, defaults to application/json
 ContentType:
-  'application/json' | 'text/plain' | 'multipart/form-data' | 'application/xml'
+    'application/json'
+  | 'text/plain'
+  | 'multipart/form-data'
+  | 'application/xml'
+  | 'image/png'
+  | 'image/jpeg'
+  | 'application/octet-stream'
+  | 'audio/wav'
+  | 'audio/mpeg'
+  | 'video/mp4'
 ;
 
 // Schema reference: either inline type or Entity reference

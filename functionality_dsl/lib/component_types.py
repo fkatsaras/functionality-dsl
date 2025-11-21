@@ -526,3 +526,35 @@ class ObjectViewComponent(_BaseComponent):
             "fields": self.fields,
             "label": self.label or self.endpoint.name,
         }
+
+@register_component
+class CameraComponent(_BaseComponent):
+    """
+    <Component<Camera> ...>
+      endpoint: <Endpoint<WS>> (subscribe to image frames)
+      label: optional string label
+
+    Displays a live camera feed from a WebSocket endpoint that streams
+    binary image frames (JPEG, PNG, etc.)
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, label=None):
+        super().__init__(parent, name, endpoint)
+
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+
+        # Validate: Camera only works with WebSocket endpoints
+        if endpoint.__class__.__name__ != "EndpointWS":
+            raise ValueError(f"Component '{name}': Camera component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+
+        self.label = _strip_quotes(label) or "Camera"
+
+    def to_props(self):
+        """
+        Props for Camera.svelte component.
+        Provides the WebSocket URL for subscribing to image frames.
+        """
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "label": self.label,
+        }

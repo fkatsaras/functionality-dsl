@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 
 from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
+from app.core.content_handler import ContentTypeHandler
 
 
 logger = logging.getLogger("fdsl.service.ws.{{ endpoint.name }}")
@@ -42,6 +43,7 @@ _WS_INPUTS = [
         "headers": {{ w.headers }},
         "subprotocols": {{ (w.subprotocols or []) | tojson }},
         "protocol": "{{ w.protocol or 'json' }}",
+        "content_type": "{{ w.content_type or 'application/json' }}",
         "attrs": {{ w.attrs | tojson }}
     },
 {%- endfor %}
@@ -339,9 +341,10 @@ async def ws_input_consumer(inp: dict, bus_in):
     headers = inp.get("headers") or []
     subprotocols = inp.get("subprotocols") or None
     protocol = inp.get("protocol") or "json"
+    content_type = inp.get("content_type") or "application/json"
     source_name = inp.get("endpoint")
 
-    logger.info(f"[WS_INPUT] - Starting consumer for {entity} ({url})")
+    logger.info(f"[WS_INPUT] - Starting consumer for {entity} ({url}) content-type: {content_type}")
 
     while True:
         try:
@@ -355,15 +358,21 @@ async def ws_input_consumer(inp: dict, bus_in):
                 logger.info(f"[WS_INPUT] - Connected to upstream feed: {entity}")
                 async for raw in ws_conn:
                     try:
-                        if protocol == "json":
-                            payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-                        elif protocol == "text":
-                            payload = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
-                        elif protocol == "raw":
-                            payload = raw if isinstance(raw, (bytes, bytearray)) else bytes(str(raw), "utf-8")
+                        # Use ContentTypeHandler to parse WebSocket messages based on content type
+                        # For binary content types, preserve the raw bytes
+                        is_binary = ContentTypeHandler.is_binary(content_type)
+
+                        if is_binary:
+                            # Binary data: keep as bytes, will be base64-encoded when published
+                            payload = raw if isinstance(raw, (bytes, bytearray)) else bytes(raw, "utf-8")
+                            logger.debug(f"[WS_INPUT] - Received binary frame ({len(payload)} bytes)")
                         else:
-                            payload = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
-                    except Exception:
+                            # Text-based content: parse according to content type
+                            raw_bytes = raw if isinstance(raw, (bytes, bytearray)) else bytes(raw, "utf-8")
+                            payload = await ContentTypeHandler.parse_external_response(raw_bytes, content_type)
+                            logger.debug(f"[WS_INPUT] - Parsed {content_type} message")
+                    except Exception as parse_error:
+                        logger.warning(f"[WS_INPUT] - Parse error: {parse_error}, using raw payload")
                         payload = raw
 
                     # For publish-only endpoints, use outbound chain; otherwise use inbound chain

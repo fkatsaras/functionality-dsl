@@ -1304,6 +1304,8 @@ def verify_components(model):
     for comp in get_model_components(model):
         if comp.__class__.__name__ == "TableComponent":
             _validate_table_component(comp)
+        elif comp.__class__.__name__ == "CameraComponent":
+            _validate_camera_component(comp)
 
 
 def _validate_table_component(comp):
@@ -1336,6 +1338,36 @@ def _validate_table_component(comp):
             f"Table '{comp.name}': duplicate colNames not allowed.",
             **get_location(comp)
         )
+
+
+def _validate_camera_component(comp):
+    """Camera component validation rules."""
+    # Must have WebSocket endpoint
+    if comp.endpoint is None:
+        raise TextXSemanticError(
+            f"Camera '{comp.name}' must bind an 'endpoint:' Endpoint<WS>.",
+            **get_location(comp)
+        )
+
+    # Verify it's a WebSocket endpoint
+    if comp.endpoint.__class__.__name__ != "EndpointWS":
+        raise TextXSemanticError(
+            f"Camera '{comp.name}' requires Endpoint<WS>, got {comp.endpoint.__class__.__name__}.",
+            **get_location(comp.endpoint)
+        )
+
+    # Check subscribe block for content type
+    subscribe = getattr(comp.endpoint, "subscribe", None)
+    if subscribe:
+        content_type = getattr(subscribe, "content_type", None)
+        if content_type:
+            # Validate it's an image or binary content type
+            valid_types = ["image/png", "image/jpeg", "application/octet-stream"]
+            if content_type not in valid_types:
+                raise TextXSemanticError(
+                    f"Camera '{comp.name}': endpoint content-type '{content_type}' is not valid for camera feed (expected image/png, image/jpeg, or application/octet-stream).",
+                    **get_location(subscribe)
+                )
 
 
 def _backlink_external_targets(model):

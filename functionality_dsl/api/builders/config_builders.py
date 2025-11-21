@@ -125,7 +125,7 @@ def build_ws_input_config(entity, ws_source, all_source_names):
     message_type = subscribe_schema.get("message_type", "object") if subscribe_schema else "object"
 
     # Wrapper only if: 1 attribute AND message is not an object
-    is_wrapper = (len(attributes) == 1) and (message_type in ['array', 'string', 'number', 'integer', 'boolean'])
+    is_wrapper = (len(attributes) == 1) and (message_type in ['array', 'string', 'number', 'integer', 'boolean', 'binary'])
 
     # Build attribute expressions
     attribute_configs = []
@@ -148,6 +148,9 @@ def build_ws_input_config(entity, ws_source, all_source_names):
     # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
     channel_url = getattr(ws_source, "channel", None) or getattr(ws_source, "url", None)
 
+    # Get content_type from subscribe schema to determine how to handle binary data
+    content_type = subscribe_schema.get("content_type", "application/json") if subscribe_schema else "application/json"
+
     return {
         "entity": entity.name,
         "endpoint": ws_source.name,
@@ -156,6 +159,7 @@ def build_ws_input_config(entity, ws_source, all_source_names):
         "headers": normalize_headers(ws_source) + build_auth_headers(ws_source),
         "subprotocols": [],  # Removed subprotocols field in new design
         "protocol": "json",  # Default protocol
+        "content_type": content_type,  # Pass content type for binary handling
         "attrs": attribute_configs,
     }
 

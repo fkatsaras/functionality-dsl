@@ -122,6 +122,7 @@ generated*/
 
 # Examples 
 node_modules/
+vidf1_33_000*
 
 # tests
 test_*/

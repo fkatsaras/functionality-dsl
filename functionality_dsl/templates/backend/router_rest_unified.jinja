@@ -13,6 +13,7 @@ security = HTTPBearer()
 {% endif %}
 
 from app.services import {{ endpoint.name | lower }}_service
+from app.core.content_handler import ContentTypeHandler
 
 
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
@@ -106,13 +107,25 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
         headers = dict(request.headers)
 
         {% if http_method in ('post', 'put', 'patch') %}
-        # Parse request body
+        # Parse request body based on Content-Type
+        content_type = request.headers.get("content-type", "application/json")
         try:
-            request_body = await request.json()
-            logger.info(f"[REQUEST] - Received payload with keys: {list(request_body.keys()) if isinstance(request_body, dict) else type(request_body)}")
+            raw_body = await request.body()
+            request_body = await ContentTypeHandler.parse_request(raw_body, content_type)
+
+            if isinstance(request_body, dict):
+                logger.info(f"[REQUEST] - Received {content_type} payload with keys: {list(request_body.keys())}")
+            elif isinstance(request_body, bytes):
+                logger.info(f"[REQUEST] - Received binary {content_type} payload ({len(request_body)} bytes)")
+            else:
+                logger.info(f"[REQUEST] - Received {content_type} payload")
         except Exception as parse_error:
-            logger.warning(f"[REQUEST] - Failed to parse JSON body: {parse_error}")
-            request_body = {}
+            logger.warning(f"[REQUEST] - Failed to parse {content_type} body: {parse_error}")
+            # Fallback to empty dict for JSON-like types
+            if ContentTypeHandler.is_text(content_type):
+                request_body = {}
+            else:
+                request_body = b""
 
         # Execute flow (with request body)
         return await {{ endpoint.name | lower }}_service.execute_flow(

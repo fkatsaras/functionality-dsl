@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from app.core.http import get_http_client
 from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.utils import resolve_headers, interpolate_url, seed_context_with_path_params
+from app.core.content_handler import ContentTypeHandler
 from app.core.service_helpers import (
     log_incoming_request,
     log_outgoing_response,
@@ -191,9 +192,13 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
                     detail=f"External source {entity_name} returned {response.status_code}"
                 )
 
-            raw_payload = response.json()
-            logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}")
-            log_fetch_success(logger, entity_name, raw_payload)
+            # Parse response based on Content-Type
+            content_type = response.headers.get("content-type", "application/json")
+            raw_payload = await ContentTypeHandler.parse_external_response(
+                response.content, content_type
+            )
+            logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}, content-type: {content_type}")
+            log_fetch_success(logger, entity_name, raw_payload if isinstance(raw_payload, dict) else f"<{type(raw_payload).__name__}>")
 
             # Store raw payload by alias
             has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
@@ -379,7 +384,14 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
         log_write_request(logger, method, url, payload)
 
         try:
-            response = await http_client.request(method, url, headers=headers, json=payload)
+            # Prepare request with appropriate content type
+            request_content_type = headers.get("Content-Type", "application/json")
+            request_body, request_headers = ContentTypeHandler.prepare_external_request(
+                payload, request_content_type
+            )
+            headers.update(request_headers)
+
+            response = await http_client.request(method, url, headers=headers, content=request_body)
 
             if response.status_code >= 400:
                 log_write_error(logger, target_name, response.status_code, response.text[:500])
@@ -388,13 +400,16 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
                     detail=f"External target {target_name} returned {response.status_code}"
                 )
 
-            # Store response
+            # Parse response based on Content-Type
+            response_content_type = response.headers.get("content-type", "application/json")
             try:
-                last_response = response.json()
-                log_write_success(logger, target_name, last_response)
+                last_response = await ContentTypeHandler.parse_external_response(
+                    response.content, response_content_type
+                )
+                log_write_success(logger, target_name, last_response if isinstance(last_response, dict) else f"<{type(last_response).__name__}>")
             except:
                 last_response = {"status": "success"}
-                logger.info(f"[WRITE] ✓ Success (no JSON response)")
+                logger.info(f"[WRITE] ✓ Success (no parseable response)")
 
         except HTTPException:
             raise

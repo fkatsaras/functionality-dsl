@@ -16,7 +16,7 @@ Component:
   | LiveViewComponent
   | ToggleComponent
   | ObjectViewComponent
-  | PageViewComponent
+  | CameraComponent
 ;
 
 // Column definition with type specification
@@ -51,14 +51,6 @@ TableComponent:
 
 ObjectViewComponent:
   'Component' '<' 'ObjectView' '>' name=ID
-  'endpoint:' endpoint=[entity.Endpoint]
-  'fields:' fields=StringList                // explicit list of attributes to display
-  ('label:' label=STRING)?
-  'end'
-;
-
-PageViewComponent:
-  'Component' '<' 'PageView' '>' name=ID
   'endpoint:' endpoint=[entity.Endpoint]
   'fields:' fields=StringList                // explicit list of attributes to display
   ('label:' label=STRING)?
@@ -145,6 +137,14 @@ ToggleComponent:
   | ('onLabel:' onLabel=STRING)
   | ('offLabel:' offLabel=STRING)
   | ('field:' field=STRING)
+  )*
+  'end'
+;
+
+CameraComponent:
+  'Component' '<' 'Camera' '>' name=ID
+  'endpoint' ':' endpoint=[EndpointWS]
+  ( ('label:' label=STRING)
   )*
   'end'
 ;
