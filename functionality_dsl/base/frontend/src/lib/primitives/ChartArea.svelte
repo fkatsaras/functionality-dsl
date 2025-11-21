@@ -98,16 +98,18 @@
                 ],
 
                 axes: [
-                    { 
+                    {
                         label: props.xLabel,
                         font: "12px \"Approach Mono\"",
                         labelFont: "14px \"Approach Mono\"",
+                        stroke: getComputedStyle(root).getPropertyValue('--text').trim(),
                         draw: true,
                     },
                     {
                         label: props.yLabel,
                         font: "12px \"Approach Mono\"",
                         labelFont: "14px \"Approach Mono\"",
+                        stroke: getComputedStyle(root).getPropertyValue('--text').trim(),
                         draw: true,
                     }
                 ],

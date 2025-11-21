@@ -20,7 +20,6 @@ export function detectKeys(row: any) {
     const keys = Object.keys(row).filter(k => !k.startsWith('__'));
 
     if (keys.length === 0) {
-        console.error('[detectKeys] No valid keys found in row:', row);
         return { xKey: null, yKeys: [], series: {} };
     }
 
@@ -30,8 +29,6 @@ export function detectKeys(row: any) {
     const series = Object.fromEntries(
         yKeys.map(k => [k, [] as Point[]])
     );
-
-    console.log('[detectKeys] Detected:', { xKey, yKeys, allKeys: Object.keys(row) });
 
     return { xKey, yKeys, series };
 }
@@ -49,19 +46,13 @@ export function pushRow(
     xMeta: any
 ) {
     const t = normalizeX(row[xKey], xMeta);
-    if (t == null) {
-        console.warn('[chartData] normalizeX returned null for:', row[xKey], 'xMeta:', xMeta);
-        return series;
-    }
+    if (t == null) return series;
 
     const next = { ...series };
 
     for (const key of yKeys) {
         const y = Number(row[key]);
-        if (!Number.isFinite(y)) {
-            console.warn('[chartData] Invalid y value for key', key, ':', row[key], '→', y);
-            continue;
-        }
+        if (!Number.isFinite(y)) continue;
 
         const arr = [...(next[key] ?? []), { t, y }];
         next[key] = windowSize ? arr.slice(-windowSize) : arr;
