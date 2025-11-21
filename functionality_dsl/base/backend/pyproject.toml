@@ -12,6 +12,7 @@ dependencies = [
   "httpx>=0.27.0",
   "websockets>=11,<13",
   "xmltodict>=0.13.0",
+  "Pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
