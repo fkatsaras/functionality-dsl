@@ -102,8 +102,7 @@ end
 
 Component<Chart> TempComparison
   endpoint: WeatherStatsAPI
-  values: rows
   seriesLabels: ["Thessaloniki", "London"]
-  xLabel: string "Time"
-  yLabel: string "Temperature (°C)"
+  xLabel: string<datetime> "Time"
+  yLabel: number "Temperature (°C)"
 end

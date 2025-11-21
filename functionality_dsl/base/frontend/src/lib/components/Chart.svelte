@@ -5,7 +5,7 @@
     import Legend from "$lib/primitives/Legend.svelte";
     import ChartArea from "$lib/primitives/ChartArea.svelte";
     import type { LegendEntry } from "$lib/primitives/Legend.svelte";
-    import EmptyState from "$lib/primitives/EmptyState.svelte";
+    import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
 
 
     import { detectKeys, pushRow } from "$lib/utils/chartData";
@@ -17,6 +17,8 @@
         windowSize?: number;
         xLabel?: string;
         yLabel?: string;
+        xMeta?: { type?: string; format?: string; text?: string } | null;
+        yMeta?: { type?: string; format?: string; text?: string } | null;
         seriesLabels?: string[] | null;
         seriesColors?: string[] | null;
     }>();
@@ -58,7 +60,7 @@
 
             // Push all rows
             for (const row of payload) {
-                series = pushRow(row, xKey, yKeys, series, props.windowSize);
+                series = pushRow(row, xKey, yKeys, series, props.windowSize, props.xMeta);
             }
 
         } catch (e: any) {
@@ -133,11 +135,13 @@
                 {colors}
                 xLabel={props.xLabel}
                 yLabel={props.yLabel}
+                xMeta={props.xMeta}
+                yMeta={props.yMeta}
                 on:legend={handleLegend}
             />
         {:else}
             <div class="text-center py-20 text-text-muted font-approachmono">
-                No data...
+                <EmptyState message="No data loaded." />
             </div>
         {/if}
     </svelte:fragment>

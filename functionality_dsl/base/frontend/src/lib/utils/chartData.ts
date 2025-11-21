@@ -16,13 +16,22 @@ export interface NormalizedChartData {
  * The rest of the keys become Y series.
  */
 export function detectKeys(row: any) {
-    const keys = Object.keys(row);
+    // Filter out metadata keys that shouldn't be part of the chart
+    const keys = Object.keys(row).filter(k => !k.startsWith('__'));
+
+    if (keys.length === 0) {
+        console.error('[detectKeys] No valid keys found in row:', row);
+        return { xKey: null, yKeys: [], series: {} };
+    }
+
     const xKey = keys[0];
     const yKeys = keys.slice(1);
 
     const series = Object.fromEntries(
         yKeys.map(k => [k, [] as Point[]])
     );
+
+    console.log('[detectKeys] Detected:', { xKey, yKeys, allKeys: Object.keys(row) });
 
     return { xKey, yKeys, series };
 }
@@ -40,13 +49,19 @@ export function pushRow(
     xMeta: any
 ) {
     const t = normalizeX(row[xKey], xMeta);
-    if (t == null) return series;
+    if (t == null) {
+        console.warn('[chartData] normalizeX returned null for:', row[xKey], 'xMeta:', xMeta);
+        return series;
+    }
 
     const next = { ...series };
 
     for (const key of yKeys) {
         const y = Number(row[key]);
-        if (!Number.isFinite(y)) continue;
+        if (!Number.isFinite(y)) {
+            console.warn('[chartData] Invalid y value for key', key, ':', row[key], '→', y);
+            continue;
+        }
 
         const arr = [...(next[key] ?? []), { t, y }];
         next[key] = windowSize ? arr.slice(-windowSize) : arr;
@@ -57,15 +72,36 @@ export function pushRow(
 
 
 export function normalizeX(value: any, xMeta: any): number | null {
-    if (value == null || xMeta == null) return null;
+    if (value == null) return null;
+
+    // If no metadata, try to auto-detect
+    if (xMeta == null) {
+        // Try parsing as date string
+        if (typeof value === "string") {
+            const t = Date.parse(value);
+            if (!Number.isNaN(t)) return t;
+        }
+        // Try parsing as number
+        const n = Number(value);
+        if (Number.isFinite(n)) return n;
+        return null;
+    }
 
     // ---------------------------
     // numeric types
     // ---------------------------
     if (xMeta.type === "number" || xMeta.type === "integer") {
-        // int / float / int64 / double → numeric timestamp
         const n = Number(value);
-        return Number.isFinite(n) ? n : null;
+        if (!Number.isFinite(n)) return null;
+
+        // If xMeta has datetime format, treat as Unix timestamp in seconds
+        // and convert to milliseconds for JavaScript
+        if (xMeta.format === "datetime" || xMeta.format === "date_time") {
+            return n * 1000;
+        }
+
+        // Otherwise, use as-is
+        return n;
     }
 
     // ---------------------------
@@ -73,14 +109,20 @@ export function normalizeX(value: any, xMeta: any): number | null {
     // ---------------------------
     if (xMeta.type === "string") {
 
-        // string <date> 
+        // string <date>
         if (xMeta.format === "date") {
             const t = Date.parse(value);
             return Number.isNaN(t) ? null : t;
         }
 
-        // string <date_time>
-        if (xMeta.format === "date_time") {
+        // string <date_time> or <datetime>
+        if (xMeta.format === "date_time" || xMeta.format === "datetime") {
+            const t = Date.parse(value);
+            return Number.isNaN(t) ? null : t;
+        }
+
+        // string <time>
+        if (xMeta.format === "time") {
             const t = Date.parse(value);
             return Number.isNaN(t) ? null : t;
         }

@@ -17,6 +17,8 @@
         windowSize?: number;
         xLabel?: string;
         yLabel?: string;
+        xMeta?: { type?: string; format?: string; text?: string } | null;
+        yMeta?: { type?: string; format?: string; text?: string } | null;
         seriesLabels?: string[] | null;
         seriesColors?: string[] | null;
     }>();
@@ -38,7 +40,10 @@
     function pushPayload(row: any) {
         loading = false;
 
-        if (!row || typeof row !== "object") return;
+        if (!row || typeof row !== "object") {
+            console.warn('[LiveChart] Invalid row:', row);
+            return;
+        }
 
         // detect keys on first packet
         if (!xKey) {
@@ -46,10 +51,18 @@
             xKey = init.xKey;
             yKeys = init.yKeys;
             series = init.series;
+            console.log('[LiveChart] Detected keys:', { xKey, yKeys });
+            console.log('[LiveChart] xMeta:', props.xMeta);
         }
 
         // push streaming row
-        series = pushRow(row, xKey, yKeys, series, props.windowSize);
+        const before = Object.keys(series).length;
+        series = pushRow(row, xKey, yKeys, series, props.windowSize, props.xMeta);
+        const after = Object.keys(series).length;
+
+        if (before === 0 && after > 0) {
+            console.log('[LiveChart] First data point added:', series);
+        }
     }
 
     onMount(() => {
@@ -119,6 +132,8 @@
                 {colors}
                 xLabel={props.xLabel}
                 yLabel={props.yLabel}
+                xMeta={props.xMeta}
+                yMeta={props.yMeta}
                 on:legend={handleLegend}
             />
         {:else}

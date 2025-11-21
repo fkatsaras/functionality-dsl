@@ -12,10 +12,35 @@
         colors: string[];
         xLabel?: string;
         yLabel?: string;
+        xMeta?: { type?: string; format?: string; text?: string } | null;
+        yMeta?: { type?: string; format?: string; text?: string } | null;
     }>();
 
     const dispatch = createEventDispatcher();
 
+    // Determine if X axis should be treated as time
+    function isTimeAxis(): boolean {
+        if (!props.xMeta) return true; // Default to time for backward compatibility
+
+        const { type, format } = props.xMeta;
+
+        // String types with date/time formats
+        if (type === "string" && (format === "date" || format === "datetime" || format === "date_time" || format === "time")) {
+            return true;
+        }
+
+        // Numeric types with datetime format (Unix timestamps)
+        if ((type === "number" || type === "integer") && (format === "datetime" || format === "date_time")) {
+            return true;
+        }
+
+        // Other numeric types are not time-based
+        if (type === "number" || type === "integer") {
+            return false;
+        }
+
+        return true; // Default to time
+    }
 
     let root: HTMLDivElement;
     let plot: uPlot | null = null;
@@ -59,7 +84,7 @@
                 },
             
                 scales: {
-                    x: { time: true },
+                    x: { time: isTimeAxis() },
                     y: { auto: true },
                 },
             

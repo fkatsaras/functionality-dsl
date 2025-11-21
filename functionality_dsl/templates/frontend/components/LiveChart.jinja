@@ -7,9 +7,11 @@
   {%- endif %}
   {%- if props.get('xLabel') %}
   xLabel="{{ props.get('xLabel').get('text') if props.get('xLabel') else '' }}"
+  xMeta={{ "{" }}{{ props.get('xLabel') | tojson }}{{ "}" }}
   {%- endif %}
   {%- if props.get('yLabel') %}
   yLabel="{{ props.get('yLabel').get('text') if props.get('yLabel') else '' }}"
+  yMeta={{ "{" }}{{ props.get('yLabel') | tojson }}{{ "}" }}
   {%- endif %}
   {%- if props.get('windowSize') %}
   windowSize={{ props.get('windowSize') }}

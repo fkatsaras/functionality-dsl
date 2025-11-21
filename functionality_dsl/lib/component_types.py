@@ -215,8 +215,7 @@ class ChartComponent(_BaseComponent):
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if self.values is None:
-            raise ValueError(f"Component '{name}': 'values:' is required.")
+        # Note: values field is optional - chart auto-detects keys from data if not specified
 
         # Validate: Chart only works with REST endpoints
         if endpoint.__class__.__name__ != "EndpointREST":
@@ -275,8 +274,7 @@ class LiveChartComponent(_BaseComponent):
 
         if endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
-        if self.values is None:
-            raise ValueError(f"Component '{name}': 'values:' is required.")
+        # Note: values field is optional - chart auto-detects keys from data if not specified
 
         # Validate: LiveChart only works with WebSocket endpoints
         if endpoint.__class__.__name__ != "EndpointWS":

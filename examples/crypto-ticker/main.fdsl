@@ -22,7 +22,8 @@ end
 // ------------------- Computed Entity -------------------
 Entity Prices(BTCRaw)
   attributes:
-    - tick: object = { "t": now(), "btc": BTCRaw.c };
+    - t: string = formatDate(now(), "YYYY-MM-DD HH:mm:ss");
+    - btc: number = BTCRaw.c;
 end
 
 // ------------------- Internal endpoint ---------
@@ -36,8 +37,7 @@ end
 // ------------------- Component (bound to internal endpoint) -------
 Component<LiveChart> BitcoinPrice
   endpoint: PricesStream
-  values: tick
   seriesLabels: ["BTC Price"]
   xLabel: string<datetime> "Time"
-  yLabel: string "USDT"
+  yLabel: number "USDT"
 end
