@@ -18,6 +18,7 @@ dependencies = [
     "six",
     "plantuml",
     "networkx",
+    "bs4",
 ]
 
 [project.scripts]
