@@ -95,7 +95,9 @@
       "Bash(../venv_WIN/Scripts/python.exe:*)",
       "Bash(for file in examples/user-management/delete.fdsl examples/user-management/login.fdsl examples/user-management/register.fdsl)",
       "Bash(../../../../venv_WIN/Scripts/python.exe -m py_compile:*)",
-      "Bash(for file in examples/user-management/*.fdsl examples/rest-basics/main.fdsl examples/json-parsing/main.fdsl)"
+      "Bash(for file in examples/user-management/*.fdsl examples/rest-basics/main.fdsl examples/json-parsing/main.fdsl)",
+      "Bash(make env-info:*)",
+      "Bash(./venv_WIN/Scripts/pytest.exe:*)"
     ],
     "deny": [],
     "ask": []

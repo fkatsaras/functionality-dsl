@@ -1,11 +1,32 @@
 # Functionality DSL (FDSL) - Makefile
 # Easy entry points for development, testing, and deployment
+#
+# Platform Support:
+#   - Linux/macOS: Native make support
+#   - Windows: Requires WSL, Git Bash, or make for Windows
+#   - CI/CD: Works in GitHub Actions and other CI environments
+#
+# Usage without venv:
+#   This Makefile will fall back to system Python/pip/pytest if no venv is found
 
-# Variables
-PYTHON := ./venv_WIN/Scripts/python.exe
-FDSL := ./venv_WIN/Scripts/fdsl.exe
-PIP := ./venv_WIN/Scripts/pip
-PYTEST := ./venv_WIN/Scripts/pytest
+# Auto-detect platform and set appropriate paths
+ifeq ($(OS),Windows_NT)
+	# Windows (cmd/PowerShell)
+	VENV_DIR := venv_WIN
+	VENV_BIN := $(VENV_DIR)/Scripts
+	PYTHON_EXT := .exe
+else
+	# Unix-like (Linux/macOS/WSL)
+	VENV_DIR := venv_WSL
+	VENV_BIN := $(VENV_DIR)/bin
+	PYTHON_EXT :=
+endif
+
+# Try to use venv if it exists, otherwise fall back to system Python
+PYTHON := $(shell if [ -f "$(VENV_BIN)/python$(PYTHON_EXT)" ]; then echo "$(VENV_BIN)/python$(PYTHON_EXT)"; else echo "python3"; fi)
+FDSL := $(shell if [ -f "$(VENV_BIN)/fdsl$(PYTHON_EXT)" ]; then echo "$(VENV_BIN)/fdsl$(PYTHON_EXT)"; else echo "fdsl"; fi)
+PIP := $(shell if [ -f "$(VENV_BIN)/pip$(PYTHON_EXT)" ]; then echo "$(VENV_BIN)/pip$(PYTHON_EXT)"; else echo "pip3"; fi)
+PYTEST := $(shell if [ -f "$(VENV_BIN)/pytest$(PYTHON_EXT)" ]; then echo "$(VENV_BIN)/pytest$(PYTHON_EXT)"; else echo "pytest"; fi)
 
 # Directories
 EXAMPLES_DIR := examples
@@ -26,6 +47,16 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 
+.PHONY: env-info
+env-info: ## Show detected environment and paths
+	@echo "$(BLUE)Environment Information$(NC)"
+	@echo "Platform: $(OS)"
+	@echo "Virtual environment: $(VENV_DIR)"
+	@echo "Python: $(PYTHON)"
+	@echo "FDSL: $(FDSL)"
+	@echo "Pytest: $(PYTEST)"
+	@echo "PIP: $(PIP)"
+
 # ==============================================================================
 # Setup & Installation
 # ==============================================================================
@@ -33,10 +64,16 @@ help: ## Show this help message
 .PHONY: setup
 setup: ## Install dependencies and set up development environment
 	@echo "$(BLUE)Setting up development environment...$(NC)"
-	python -m venv venv_WIN
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "Creating virtual environment at $(VENV_DIR)..."; \
+		python3 -m venv $(VENV_DIR) || python -m venv $(VENV_DIR); \
+	fi
+	@echo "Installing dependencies..."
 	$(PIP) install -e .
 	$(PIP) install pytest pytest-cov black flake8
 	@echo "$(GREEN)Setup complete!$(NC)"
+	@echo "Virtual environment: $(VENV_DIR)"
+	@echo "Python: $(PYTHON)"
 
 .PHONY: clean
 clean: ## Clean generated files and caches
