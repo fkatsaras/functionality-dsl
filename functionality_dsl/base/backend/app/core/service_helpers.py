@@ -134,6 +134,20 @@ def transform_entity_data(
         except HTTPException:
             raise
         except Exception as eval_error:
+            error_msg = str(eval_error)
+
+            # Provide helpful context for common errors
+            if "is not defined" in error_msg:
+                missing_name = error_msg.split("'")[1] if "'" in error_msg else "unknown"
+                logger.error(
+                    f"[TRANSFORM] - Missing required data: {missing_name} not in context. "
+                    f"This may indicate a missing or invalid request body."
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Request validation failed: required data '{missing_name}' not provided"
+                )
+
             logger.error(f"[TRANSFORM] - Error computing {entity_name}.{attr_name}: {eval_error}", exc_info=True)
             raise HTTPException(
                 status_code=500,

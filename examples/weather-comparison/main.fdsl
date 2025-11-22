@@ -88,16 +88,16 @@ end
 Component<Table> WeatherTable
   endpoint: WeatherCompareAPI
   columns:
-    - "time": string<time>
-    - "th_temp": number
-    - "ln_temp": number
-    - "th_hum": number
-    - "ln_hum": number
-    - "delta_temp": number
-    - "hotter_city": string
-    - "big_gap": boolean
-    - "th_is_comfy": boolean
-    - "ln_is_comfy": boolean
+    - "Time": string<time>
+    - "Thess temp": number
+    - "Lon temp": number
+    - "Thess hum": number
+    - "Lon hum": number
+    - "Temp Diff": number
+    - "Hotter city": string
+    - "Big gap": boolean
+    - "Thess is comfy": boolean
+    - "Lon is comfy": boolean
 end
 
 Component<Chart> TempComparison

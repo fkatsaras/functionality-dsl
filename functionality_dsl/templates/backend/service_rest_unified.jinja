@@ -464,10 +464,15 @@ async def execute_flow(
 
     {% if request_entity %}
     # Validate and seed context with request body entity
-    if request_body:
-        validated_body = validate_request_body(request_body)
-        context["{{ request_entity.name }}"] = validated_body
-        logger.debug(f"[CONTEXT] - Seeded validated request entity {{ request_entity.name }}")
+    if request_body is None or (isinstance(request_body, dict) and not request_body):
+        logger.error("[VALIDATION] - Request body is required but not provided or empty")
+        raise HTTPException(
+            status_code=400,
+            detail="Request body is required for this endpoint"
+        )
+    validated_body = validate_request_body(request_body)
+    context["{{ request_entity.name }}"] = validated_body
+    logger.debug(f"[CONTEXT] - Seeded validated request entity {{ request_entity.name }}")
     {% endif %}
 
     # ========================================================================

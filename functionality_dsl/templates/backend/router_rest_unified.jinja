@@ -120,12 +120,11 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             else:
                 logger.info(f"[REQUEST] - Received {content_type} payload")
         except Exception as parse_error:
-            logger.warning(f"[REQUEST] - Failed to parse {content_type} body: {parse_error}")
-            # Fallback to empty dict for JSON-like types
-            if ContentTypeHandler.is_text(content_type):
-                request_body = {}
-            else:
-                request_body = b""
+            logger.error(f"[REQUEST] - Failed to parse {content_type} body: {parse_error}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Malformed request body: unable to parse {content_type}"
+            )
 
         # Execute flow (with request body)
         return await {{ endpoint.name | lower }}_service.execute_flow(
