@@ -242,6 +242,7 @@ EventMapping:
   '-' close_code=WebSocketCloseCode ':'
     'condition:' condition=Expr
     'message:' message=STRING
+    ('close:' close=BOOL)?
   ';'?
 ;
 

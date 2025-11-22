@@ -60,6 +60,7 @@ Endpoint<WS> ChatDup
     - 3000:
       condition: OutgoingWrapper.value == "QUIT"
       message: "User requested to quit"
+      close: true
 end
 
 // ------------------ UI ------------------

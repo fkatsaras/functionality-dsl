@@ -421,15 +421,20 @@ async def ensure_ws_inputs_started(bus_in):
 
 {% if events %}
 def check_event_conditions(context: Dict[str, Any]) -> Optional[tuple]:
-    """Check all event conditions and return (close_code, message) if any match."""
+    """Check all event conditions and return (close_code, message, should_close) if any match."""
     eval_globals = {**safe_globals, **context}
     {% for event in events %}
     try:
         compiled_condition = compile_safe({{ event.condition | tojson }})
         if eval(compiled_condition, eval_globals, {}):
+            {% if event.close %}
             logger.error("[EVENT] ✗ Event condition triggered: {{ event.condition }}")
-            logger.error("[EVENT]   Close Code: {{ event.close_code }}, Message: {{ event.message }}")
-            return ({{ event.close_code }}, "{{ event.message }}")
+            logger.error("[EVENT]   Close Code: {{ event.close_code }}, Message: {{ event.message }}, Action: Closing connection")
+            {% else %}
+            logger.warning("[EVENT] ⚠ Event condition triggered: {{ event.condition }}")
+            logger.warning("[EVENT]   Close Code: {{ event.close_code }}, Message: {{ event.message }}, Action: Logging only")
+            {% endif %}
+            return ({{ event.close_code }}, "{{ event.message }}", {{ "True" if event.close else "False" }})
     except Exception as eval_error:
         logger.error(f"[EVENT] - Failed to evaluate event condition: {eval_error}")
     {% endfor %}

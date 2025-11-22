@@ -10,6 +10,7 @@
     type={type}
     disabled={disabled}
     class={`btn ${className}`}
+    on:click
 >
     <slot />
 </button>

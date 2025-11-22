@@ -106,10 +106,23 @@ async def duplex(ws: WebSocket):
                 # Check event conditions after computation
                 event_result = ws_service.check_event_conditions(context)
                 if event_result:
-                    close_code, close_message = event_result
-                    logger.error(f"[EVENT] - Closing connection with code {close_code}: {close_message}")
-                    await ws.close(code=close_code, reason=close_message)
-                    return
+                    close_code, close_message, should_close = event_result
+                    if should_close:
+                        logger.error(f"[EVENT] - Closing connection with code {close_code}: {close_message}")
+                        await ws.close(code=close_code, reason=close_message)
+                        return
+                    else:
+                        # Send error message but keep connection open
+                        logger.warning(f"[EVENT] - Event triggered (no close) - code {close_code}: {close_message}")
+                        error_response = {
+                            "type": "event",
+                            "event": {
+                                "code": close_code,
+                                "message": close_message
+                            }
+                        }
+                        await ws.send_text(json.dumps(error_response))
+                        continue
                 {% endif %}
 
                 if row is not None and bus_out:

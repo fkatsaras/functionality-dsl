@@ -12,6 +12,7 @@
     type={type}
     placeholder={placeholder}
     bind:value
+    on:keydown
 />
 
 <style>

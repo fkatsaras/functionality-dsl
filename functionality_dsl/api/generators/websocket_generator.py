@@ -81,10 +81,13 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         from ...lib.compiler.expr_compiler import compile_expr_to_python
         for event_mapping in endpoint.events.mappings:
             compiled_condition = compile_expr_to_python(event_mapping.condition)
+            # Default to True if close flag not specified (backwards compatible)
+            should_close = event_mapping.close if hasattr(event_mapping, "close") and event_mapping.close is not None else True
             events_config.append({
                 "close_code": int(event_mapping.close_code),
                 "condition": compiled_condition,
                 "message": event_mapping.message,
+                "close": should_close,
             })
 
     # Prepare template context
