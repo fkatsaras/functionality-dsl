@@ -286,7 +286,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     )
 
     # Generate router
-    router_template = env.get_template("router_rest_unified.jinja")
+    router_template = env.get_template("router_rest.jinja")
     router_code = router_template.render(template_context)
     router_code = format_python_code(router_code)
 
@@ -295,7 +295,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     print(f"[GENERATED] {flow.flow_type.value.upper()} router: {router_file}")
 
     # Generate service
-    service_template = env.get_template("service_rest_unified.jinja")
+    service_template = env.get_template("service_rest.jinja")
     service_code = service_template.render(template_context)
     service_code = format_python_code(service_code)
 
