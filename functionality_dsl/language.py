@@ -1062,7 +1062,7 @@ def verify_endpoints(model):
     """
     Validate WebSocket endpoints:
     - Must have subscribe and/or publish blocks
-    - Each bound entity must trace back to a source (via inheritance)
+    - Each bound entity must trace back to a source (via inheritance or direct Source<WS> reference)
     """
     for iwep in get_model_internal_ws_endpoints(model):
         subscribe_block = getattr(iwep, "subscribe", None)
@@ -1089,14 +1089,103 @@ def verify_endpoints(model):
             if message:
                 ent_publish = getattr(message, "entity", None)
 
-        # NOTE: In the new design, entities don't have source: fields.
-        # Instead, Sources have response:/publish: blocks that reference entities.
-        # This validation would need to be redesigned to check reverse lookups.
-        # For now, we skip the source validation for WebSocket entities.
-        #
-        # TODO: Add validation that checks if entities referenced in subscribe:/publish:
-        # are provided by a Source<WS> or computed from parent entities.
-                
+        # Validate that entities are properly sourced
+        _validate_ws_endpoint_entities(model, iwep, ent_subscribe, ent_publish)
+
+
+def _validate_ws_endpoint_entities(model, endpoint, ent_subscribe, ent_publish):
+    """
+    Validate that entities referenced in WebSocket endpoint subscribe/publish blocks
+    are properly sourced.
+
+    Note: WebSocket direction semantics (from CLIENT perspective):
+    - Endpoint SUBSCRIBE = clients subscribe (receive FROM server) = outbound from server → must be sourced/computed
+    - Endpoint PUBLISH = clients publish (send TO server) = inbound to server → can be pure schema (client is source)
+    """
+    # Build map of entities provided by Source<WS>
+    ws_source_entities = set()
+
+    for source in get_children_of_type("SourceWS", model):
+        # Check subscribe message (data FROM external source)
+        subscribe = getattr(source, "subscribe", None)
+        if subscribe:
+            message = getattr(subscribe, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
+                if entity:
+                    ws_source_entities.add(entity.name)
+
+        # Check publish message (data TO external source)
+        publish = getattr(source, "publish", None)
+        if publish:
+            message = getattr(publish, "message", None)
+            if message:
+                entity = getattr(message, "entity", None)
+                if entity:
+                    ws_source_entities.add(entity.name)
+
+    # Helper: Check if entity or any of its parents is sourced from WS
+    def is_ws_sourced_or_computed(entity):
+        """
+        Returns True if:
+        - Entity is directly provided by Source<WS>
+        - Entity inherits from a Source<WS> entity
+        - Entity is a computed entity (has expressions)
+        """
+        if entity is None:
+            return True  # No entity specified (edge case)
+
+        # Check if entity has any attributes with expressions (computed entity)
+        attrs = getattr(entity, "attributes", []) or []
+        has_expressions = any(getattr(attr, "expr", None) is not None for attr in attrs)
+
+        # Computed entities are allowed - they transform data from context
+        if has_expressions:
+            return True
+
+        # Check if entity is directly sourced from WS
+        if entity.name in ws_source_entities:
+            return True
+
+        # Check parent hierarchy
+        queue = deque([entity])
+        visited = set()
+
+        while queue:
+            current = queue.popleft()
+            eid = id(current)
+            if eid in visited:
+                continue
+            visited.add(eid)
+
+            # Check if current entity is WS sourced
+            if current.name in ws_source_entities:
+                return True
+
+            # Add parents to queue
+            parents = getattr(current, "parents", []) or []
+            queue.extend(parents)
+
+        return False
+
+    # SUBSCRIBE entity: Clients receive FROM server (outbound from server)
+    # Must be sourced from Source<WS> or computed (like REST response)
+    if ent_subscribe and not is_ws_sourced_or_computed(ent_subscribe):
+        raise TextXSemanticError(
+            f"Endpoint<WS> '{endpoint.name}' subscribe entity '{ent_subscribe.name}' is not sourced from a Source<WS> "
+            f"and has no computed attributes. WebSocket subscribe entities must either:\n"
+            f"  1. Be provided by a Source<WS> subscribe/publish block\n"
+            f"  2. Inherit from an entity provided by Source<WS>\n"
+            f"  3. Be a computed entity (with expressions) that transforms data\n"
+            f"Note: Endpoint subscribe = clients receive FROM server (must be sourced/computed)",
+            **get_location(endpoint)
+        )
+
+    # PUBLISH entity: Clients send TO server (inbound to server)
+    # Can be pure schema - client is the data source (like REST request)
+    # No validation needed
+
+
 def verify_path_params(model):
     """
     Validate path parameters with relaxed constraints:
@@ -1166,6 +1255,7 @@ def verify_entities(model):
     """Entity-specific cross-model validation."""
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
+    _validate_rest_endpoint_entities(model)
 
 
 def _validate_schema_only_entities(model):
@@ -1297,6 +1387,97 @@ def _validate_source_response_entities(model):
                         f"  end",
                         **get_location(attr)
                     )
+
+
+def _validate_rest_endpoint_entities(model):
+    """
+    Validate that entities referenced in Endpoint<REST> response schemas are either:
+    1. Provided by a Source<REST> (directly or via parent inheritance)
+    2. Computed entities that transform Source<REST> data
+    3. Pure transformation entities (compute from context/parameters)
+
+    This ensures REST endpoints don't reference orphan entities with no data source.
+    """
+    # Build map of entities provided by Source<REST>
+    rest_source_entities = set()
+
+    for source in get_children_of_type("SourceREST", model):
+        response = getattr(source, "response", None)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    rest_source_entities.add(entity.name)
+
+    # Helper: Check if entity is properly sourced for REST
+    def is_rest_sourced_or_computed(entity):
+        """
+        Returns True if:
+        - Entity is directly provided by Source<REST>
+        - Entity inherits from a Source<REST> entity
+        - Entity is a computed entity (has expressions)
+        """
+        if entity is None:
+            return True  # No entity specified (edge case)
+
+        # Check if entity has any attributes with expressions (computed entity)
+        attrs = getattr(entity, "attributes", []) or []
+        has_expressions = any(getattr(attr, "expr", None) is not None for attr in attrs)
+
+        # Computed entities are allowed - they transform data from context
+        if has_expressions:
+            return True
+
+        # Check if entity is directly sourced from REST
+        if entity.name in rest_source_entities:
+            return True
+
+        # Check parent hierarchy
+        queue = deque([entity])
+        visited = set()
+
+        while queue:
+            current = queue.popleft()
+            eid = id(current)
+            if eid in visited:
+                continue
+            visited.add(eid)
+
+            # Check if current entity is REST sourced
+            if current.name in rest_source_entities:
+                return True
+
+            # Add parents to queue
+            parents = getattr(current, "parents", []) or []
+            queue.extend(parents)
+
+        return False
+
+    # Validate REST endpoints
+    for endpoint in get_model_internal_rest_endpoints(model):
+        response = getattr(endpoint, "response", None)
+        if not response:
+            continue  # No response to validate
+
+        schema = getattr(response, "schema", None)
+        if not schema:
+            continue
+
+        entity = getattr(schema, "entity", None)
+        if not entity:
+            continue
+
+        # Validate the response entity
+        if not is_rest_sourced_or_computed(entity):
+            raise TextXSemanticError(
+                f"Endpoint<REST> '{endpoint.name}' response entity '{entity.name}' is not sourced from a Source<REST> "
+                f"and has no computed attributes. REST response entities must either:\n"
+                f"  1. Be provided by a Source<REST> response block\n"
+                f"  2. Inherit from an entity provided by Source<REST>\n"
+                f"  3. Be a computed entity (with expressions) that transforms data",
+                **get_location(endpoint)
+            )
 
 
 def verify_components(model):

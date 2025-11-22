@@ -1,0 +1,19 @@
+// Test: Source with invalid URL scheme
+// Expected: FAIL - URL must start with http:// or https://
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Entity Data
+  attributes:
+    - value: string;
+end
+
+Source<REST> BadSource
+  url: "ftp://api.example.com/data"
+  method: GET
+  response:
+    type: object
+    entity: Data
+end

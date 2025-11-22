@@ -1,0 +1,32 @@
+// Test: Computed entity (valid)
+// Expected: PASS - Entity has expressions
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Source<REST> DataSource
+  url: "http://api.example.com/data"
+  method: GET
+  response:
+    type: object
+    entity: RawData
+end
+
+Entity RawData
+  attributes:
+    - value: number;
+end
+
+Entity ComputedData(RawData)
+  attributes:
+    - doubled: number = RawData.value * 2;
+end
+
+Endpoint<REST> GetData
+  path: "/api/data"
+  method: GET
+  response:
+    type: object
+    entity: ComputedData
+end

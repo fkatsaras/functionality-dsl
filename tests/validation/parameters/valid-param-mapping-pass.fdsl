@@ -1,0 +1,37 @@
+// Test: Valid parameter expression mapping
+// Expected: PASS
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Entity UserData
+  attributes:
+    - id: string;
+end
+
+Endpoint<REST> GetUser
+  path: "/api/users/{userId}"
+  method: GET
+  parameters:
+    path:
+      - userId: string
+    query:
+      - format: string?
+  response:
+    type: object
+    entity: UserData
+end
+
+Source<REST> UserAPI
+  url: "http://external.api.com/users/{id}"
+  method: GET
+  parameters:
+    path:
+      - id: string = GetUser.userId;
+    query:
+      - fmt: string = GetUser.format;
+  response:
+    type: object
+    entity: UserData
+end

@@ -1,0 +1,20 @@
+// Test: type=array with multi-attribute entity
+// Expected: FAIL - Array type requires single-attribute wrapper entity
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Entity ItemWrapper
+  attributes:
+    - items: array;
+    - count: integer;
+end
+
+Source<REST> ItemsAPI
+  url: "http://api.example.com/items"
+  method: GET
+  response:
+    type: array
+    entity: ItemWrapper
+end
