@@ -5,11 +5,13 @@ This module provides reusable utilities for service functions to:
 - Log requests, responses, and errors in a consistent format
 - Transform entity data by evaluating attribute expressions
 - Handle validation and error responses
+- Evaluate URL parameters (path and query)
 """
 
 import json
 import logging
 from typing import Any, Dict
+from urllib.parse import urlencode
 
 from fastapi import HTTPException
 
@@ -200,3 +202,79 @@ def validate_request_body(
             status_code=400,
             detail=error_detail
         )
+
+
+def evaluate_url_parameters(
+    base_url: str,
+    path_param_exprs: Dict[str, str],
+    query_param_exprs: Dict[str, str],
+    context: Dict[str, Any],
+    safe_globals: Dict[str, Any],
+    logger: logging.Logger,
+    source_name: str
+) -> str:
+    """
+    Evaluate path and query parameter expressions and build complete URL.
+
+    Args:
+        base_url: Base URL template with {placeholders}
+        path_param_exprs: Dict of path param name -> compiled expression
+        query_param_exprs: Dict of query param name -> compiled expression
+        context: Runtime context for expression evaluation
+        safe_globals: Safe globals for expression evaluation
+        logger: Logger instance
+        source_name: Name of source/target for logging
+
+    Returns:
+        Complete URL with path and query parameters
+
+    Raises:
+        HTTPException: If parameter evaluation fails
+    """
+    from app.core.runtime.safe_eval import compile_safe
+
+    # Evaluate path parameters
+    path_params = {}
+    for param_name, param_expr in path_param_exprs.items():
+        try:
+            compiled_expr = compile_safe(param_expr)
+            eval_globals = {**safe_globals, **context}
+            param_value = eval(compiled_expr, eval_globals, {})
+            path_params[param_name] = str(param_value)
+            logger.debug(f"[PARAM] - {source_name}.{param_name} = {param_value}")
+        except Exception as e:
+            logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to evaluate path parameter {param_name}"
+            )
+
+    # Evaluate query parameters
+    query_params = {}
+    for param_name, param_expr in query_param_exprs.items():
+        try:
+            compiled_expr = compile_safe(param_expr)
+            eval_globals = {**safe_globals, **context}
+            param_value = eval(compiled_expr, eval_globals, {})
+            if param_value is not None:  # Skip None values
+                query_params[param_name] = param_value
+            logger.debug(f"[QUERY] - {source_name}.{param_name} = {param_value}")
+        except Exception as e:
+            logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to evaluate query parameter {param_name}"
+            )
+
+    # Build URL with path parameters
+    url = base_url
+    for param_name, param_value in path_params.items():
+        url = url.replace("{" + param_name + "}", param_value)
+
+    # Add query parameters
+    if query_params:
+        query_string = urlencode(query_params)
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}{query_string}"
+
+    return url

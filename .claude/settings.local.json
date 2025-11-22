@@ -91,7 +91,8 @@
       "Bash(../../venv_WIN/Scripts/python.exe -c \"from functionality_dsl.language import build_model; m = build_model(''./main.fdsl''); print(''Model built successfully'')\")",
       "Bash(../../venv_WIN/Scripts/python.exe -c \"from functionality_dsl.language import build_model; from functionality_dsl.api.extractors import get_subscribe_schema; m = build_model(''./main.fdsl''); src = [x for x in m.eClass.metamodel.get_all_of_type(''SourceWS'') if x.name == ''CameraFeedSource''][0]; print(''Subscribe schema:'', get_subscribe_schema(src))\")",
       "Bash(../../venv_WIN/Scripts/python.exe -c \"from functionality_dsl.language import build_model; from functionality_dsl.api.extractors import get_subscribe_schema; from textx import get_children_of_type; m = build_model(''./main.fdsl''); src = list(get_children_of_type(''SourceWS'', m))[0]; schema = get_subscribe_schema(src); print(''message_type:'', schema.get(''message_type'') if schema else None); print(''Full schema:'', schema)\")",
-      "Bash(../../venv_WIN/Scripts/python.exe:*)"
+      "Bash(../../venv_WIN/Scripts/python.exe:*)",
+      "Bash(../venv_WIN/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

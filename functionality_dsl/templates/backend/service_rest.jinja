@@ -24,6 +24,7 @@ from app.core.service_helpers import (
     log_write_error,
     transform_entity_data,
     validate_request_body as validate_body_helper,
+    evaluate_url_parameters,
 )
 
 
@@ -133,44 +134,16 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
         base_url = source_config["url"]
         method = source_config["method"]
 
-        # Evaluate path parameter expressions
-        path_params = {}
-        for param_name, param_expr in source_config.get("path_param_exprs", {}).items():
-            try:
-                compiled_expr = compile_safe(param_expr)
-                eval_globals = {**safe_globals, **context}
-                param_value = eval(compiled_expr, eval_globals, {})
-                path_params[param_name] = str(param_value)
-                logger.debug(f"[PARAM] - {source_alias}.{param_name} = {param_value}")
-            except Exception as e:
-                logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
-                raise HTTPException(status_code=500, detail=f"Failed to evaluate path parameter {param_name}")
-
-        # Evaluate query parameter expressions
-        query_params = {}
-        for param_name, param_expr in source_config.get("query_param_exprs", {}).items():
-            try:
-                compiled_expr = compile_safe(param_expr)
-                eval_globals = {**safe_globals, **context}
-                param_value = eval(compiled_expr, eval_globals, {})
-                if param_value is not None:  # Skip None values
-                    query_params[param_name] = param_value
-                logger.debug(f"[QUERY] - {source_alias}.{param_name} = {param_value}")
-            except Exception as e:
-                logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
-                raise HTTPException(status_code=500, detail=f"Failed to evaluate query parameter {param_name}")
-
-        # Build URL with path parameters
-        url = base_url
-        for param_name, param_value in path_params.items():
-            url = url.replace("{" + param_name + "}", param_value)
-
-        # Add query parameters
-        if query_params:
-            from urllib.parse import urlencode
-            query_string = urlencode(query_params)
-            separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}{query_string}"
+        # Evaluate URL parameters and build URL
+        url = evaluate_url_parameters(
+            base_url=base_url,
+            path_param_exprs=source_config.get("path_param_exprs", {}),
+            query_param_exprs=source_config.get("query_param_exprs", {}),
+            context=context,
+            safe_globals=safe_globals,
+            logger=logger,
+            source_name=source_alias
+        )
 
         log_fetch_request(logger, method, url, entity_name)
 
@@ -334,44 +307,16 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
         method = target_config["method"]
         headers = resolve_headers(target_config.get("headers", []))
 
-        # Evaluate path parameter expressions
-        path_params = {}
-        for param_name, param_expr in target_config.get("path_param_exprs", {}).items():
-            try:
-                compiled_expr = compile_safe(param_expr)
-                eval_globals = {**safe_globals, **context}
-                param_value = eval(compiled_expr, eval_globals, {})
-                path_params[param_name] = str(param_value)
-                logger.debug(f"[PARAM] - {target_name}.{param_name} = {param_value}")
-            except Exception as e:
-                logger.error(f"[PARAM] - Error evaluating path param {param_name}: {e}")
-                raise HTTPException(status_code=500, detail=f"Failed to evaluate path parameter {param_name}")
-
-        # Evaluate query parameter expressions
-        query_params = {}
-        for param_name, param_expr in target_config.get("query_param_exprs", {}).items():
-            try:
-                compiled_expr = compile_safe(param_expr)
-                eval_globals = {**safe_globals, **context}
-                param_value = eval(compiled_expr, eval_globals, {})
-                if param_value is not None:  # Skip None values
-                    query_params[param_name] = param_value
-                logger.debug(f"[QUERY] - {target_name}.{param_name} = {param_value}")
-            except Exception as e:
-                logger.error(f"[QUERY] - Error evaluating query param {param_name}: {e}")
-                raise HTTPException(status_code=500, detail=f"Failed to evaluate query parameter {param_name}")
-
-        # Build URL with path parameters
-        url = base_url
-        for param_name, param_value in path_params.items():
-            url = url.replace("{" + param_name + "}", param_value)
-
-        # Add query parameters
-        if query_params:
-            from urllib.parse import urlencode
-            query_string = urlencode(query_params)
-            separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}{query_string}"
+        # Evaluate URL parameters and build URL
+        url = evaluate_url_parameters(
+            base_url=base_url,
+            path_param_exprs=target_config.get("path_param_exprs", {}),
+            query_param_exprs=target_config.get("query_param_exprs", {}),
+            context=context,
+            safe_globals=safe_globals,
+            logger=logger,
+            source_name=target_name
+        )
 
         {% if request_entity %}
         # Get the transformed entity from context (terminal entity)
@@ -421,6 +366,26 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
             )
 
     return last_response or {}
+{% endif %}
+
+{% if errors %}
+def check_error_conditions(context: Dict[str, Any]) -> None:
+    """Check all error conditions and raise HTTPException if any match."""
+    eval_globals = {**safe_globals, **context}
+    {% for error in errors %}
+    try:
+        compiled_condition = compile_safe({{ error.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            error_detail = "{{ error.message }}"
+            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
+            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
+            log_outgoing_error(logger, error_detail)
+            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
+    except HTTPException:
+        raise
+    except Exception as eval_error:
+        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
+    {% endfor %}
 {% endif %}
 
 
@@ -480,7 +445,7 @@ async def execute_flow(
     # ========================================================================
 
     {% if flow.type == 'read' %}
-    # READ flow: Fetch → Compute → Return
+    # READ flow: Fetch → Compute → Check Errors → Return
     {% if flow.has_reads %}
     await fetch_external_sources(context)
     await fetch_internal_dependencies(context)
@@ -488,101 +453,46 @@ async def execute_flow(
     {% if compiled_chain %}
     compute_entity_chain(context)
     {% endif %}
-
-    # READ FLOW ERRORS (after fetch)
     {% if errors %}
-    eval_globals = {**safe_globals, **context}
-    {% for error in errors %}
-    try:
-        compiled_condition = compile_safe({{ error.condition | tojson }})
-        if eval(compiled_condition, eval_globals, {}):
-            error_detail = "{{ error.message }}"
-            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
-            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
-            log_outgoing_error(logger, error_detail)
-            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
-    except HTTPException:
-        raise
-    except Exception as eval_error:
-        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
-    {% endfor %}
+    check_error_conditions(context)
     {% endif %}
 
     {% elif flow.type == 'write' %}
-    # WRITE flow: Compute → Validate → Write → Transform Response → Return
+    # WRITE flow: Compute → Check Errors → Write → Transform Response → Return
     {% if compiled_chain %}
     compute_entity_chain(context)
     {% endif %}
-    {# PRE-WRITE ERROR CHECKS #}
     {% if errors %}
-    eval_globals = {**safe_globals, **context}
-    {% for error in errors %}
-    try:
-        compiled_condition = compile_safe({{ error.condition | tojson }})
-        if eval(compiled_condition, eval_globals, {}):
-            error_detail = "{{ error.message }}"
-            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
-            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
-            log_outgoing_error(logger, error_detail)
-            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
-    except HTTPException:
-        raise
-    except Exception as eval_error:
-        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
-    {% endfor %}
+    check_error_conditions(context)
     {% endif %}
-
     {% if flow.has_writes %}
     write_response = await write_to_targets(context, request_body or {})
-
     {% if response_source_entity %}
     context["{{ response_source_entity.name }}"] = write_response
     {% endif %}
     {% endif %}
-
     {% if response_chain %}
     compute_response_chain(context)
     {% endif %}
 
     {% elif flow.type == 'read_write' %}
-    # READ_WRITE flow: Fetch → Compute → Validate → Write → Transform Response → Return
+    # READ_WRITE flow: Fetch → Compute → Check Errors → Write → Transform Response → Return
     {% if flow.has_reads %}
     await fetch_external_sources(context)
     await fetch_internal_dependencies(context)
     {% endif %}
-
     {% if compiled_chain %}
     compute_entity_chain(context)
     {% endif %}
-    {# -------------------------------------------- #}
-    {# PRE-WRITE ERROR CHECKS                       #}
-    {# -------------------------------------------- #}
     {% if errors %}
-    eval_globals = {**safe_globals, **context}
-    {% for error in errors %}
-    try:
-        compiled_condition = compile_safe({{ error.condition | tojson }})
-        if eval(compiled_condition, eval_globals, {}):
-            error_detail = "{{ error.message }}"
-            logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
-            logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
-            log_outgoing_error(logger, error_detail)
-            raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)
-    except HTTPException:
-        raise
-    except Exception as eval_error:
-        logger.error(f"[ERROR] - Failed to evaluate error condition: {eval_error}")
-    {% endfor %}
+    check_error_conditions(context)
     {% endif %}
-
     {% if flow.has_writes %}
     write_response = await write_to_targets(context, request_body or {})
-
     {% if response_source_entity %}
     context["{{ response_source_entity.name }}"] = write_response
     {% endif %}
     {% endif %}
-
     {% if response_chain %}
     compute_response_chain(context)
     {% endif %}
