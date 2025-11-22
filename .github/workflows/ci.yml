@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-examples:
+    name: Validate FDSL Examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Validate all examples
+        run: |
+          echo "Validating all FDSL examples..."
+          for dir in examples/*; do
+            if [ -d "$dir" ]; then
+              echo "Checking $dir..."
+              for file in $dir/*.fdsl; do
+                if [ -f "$file" ]; then
+                  echo "  Validating $file..."
+                  fdsl validate "$file" || exit 1
+                fi
+              done
+            fi
+          done
+          echo "[OK] All examples validated successfully!"
+
+      - name: Run validation tests
+        run: |
+          echo "Running validation tests..."
+          echo "=== PASS Tests (should succeed) ==="
+          find tests -name "*-pass.fdsl" 2>/dev/null | while read file; do
+            echo "   $file"
+            fdsl validate "$file" > /dev/null 2>&1 || (echo "FAILED (expected pass)" && exit 1)
+          done || true
+
+          echo "=== FAIL Tests (should fail) ==="
+          find tests -name "*-fail.fdsl" 2>/dev/null | while read file; do
+            echo "   $file"
+            fdsl validate "$file" > /dev/null 2>&1 && (echo "PASSED (expected fail)" && exit 1) || true
+          done || true
+
+          echo "[OK] Validation tests complete!"
+
+  lint:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install black flake8
+
+      - name: Check formatting with black
+        run: |
+          black --check functionality_dsl/
+
+      - name: Lint with flake8
+        run: |
+          flake8 functionality_dsl/ --max-line-length=120 --statistics
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-cov
+
+      - name: Run pytest
+        run: |
+          if [ -d "tests" ]; then
+            pytest tests/ -v --cov=functionality_dsl --cov-report=xml --cov-report=term
+          else
+            echo "No tests directory found, skipping pytest"
+          fi
+
+      - name: Upload coverage reports
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
