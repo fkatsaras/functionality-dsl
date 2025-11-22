@@ -8,10 +8,14 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from pydantic import ValidationError
 
 from app.core.logging import set_request_id
 from app.core import wsbus
 from app.services import {{ endpoint.name | lower }}_service as ws_service
+{% if entity_in %}
+from app.domain.models import {{ entity_in.name }}
+{% endif %}
 
 
 logger = logging.getLogger("fdsl.router.ws.{{ endpoint.name }}")
@@ -96,6 +100,53 @@ async def duplex(ws: WebSocket):
                 payload = json.loads(raw)
             except Exception:
                 payload = raw
+
+            {% if entity_in %}
+            # Validate incoming message against Pydantic model
+            try:
+                {% if publish_is_primitive %}
+                # Primitive type ({{ publish_type }}) - wrap in entity's first attribute
+                # For wrapper entities with single attribute, payload is the raw value
+                validated = {{ entity_in.name }}(**{"{{ compiled_chain_inbound[0].attrs[0].name if compiled_chain_inbound and compiled_chain_inbound[0].attrs else 'value' }}": payload})
+                {% else %}
+                # Object type - payload should be a dict
+                validated = {{ entity_in.name }}(**payload)
+                {% endif %}
+                payload = validated.model_dump()
+                logger.debug(f"[VALIDATION] ✓ Message validated against {{ entity_in.name }}")
+            except ValidationError as validation_error:
+                error_messages = []
+                for error in validation_error.errors():
+                    field = ".".join(str(loc) for loc in error["loc"])
+                    message = error["msg"]
+                    error_messages.append(f"{field}: {message}")
+
+                error_summary = "; ".join(error_messages)
+                logger.error(f"[VALIDATION] ✗ Message validation failed: {error_summary}")
+
+                error_response = {
+                    "type": "validation_error",
+                    "error": {
+                        "code": 1003,  # Unsupported Data
+                        "message": "Message validation failed",
+                        "details": error_summary
+                    }
+                }
+                await ws.send_text(json.dumps(error_response))
+                continue
+            except Exception as validation_error:
+                logger.error(f"[VALIDATION] - Unexpected validation error: {validation_error}")
+                error_response = {
+                    "type": "error",
+                    "error": {
+                        "code": 1011,  # Internal Server Error
+                        "message": "Validation error",
+                        "details": str(validation_error)
+                    }
+                }
+                await ws.send_text(json.dumps(error_response))
+                continue
+            {% endif %}
 
             try:
                 row, context = ws_service.compute_entity_chain(

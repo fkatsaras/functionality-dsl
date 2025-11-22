@@ -11,6 +11,9 @@ from ..builders import (
     build_sync_config,
 )
 
+# Single source of truth for primitive types that need wrapping
+PRIMITIVE_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'binary']
+
 
 def generate_websocket_router(endpoint, model, all_source_names, templates_dir, output_dir):
     """Generate a WebSocket (duplex) router for an Endpoint<WS>."""
@@ -31,7 +34,10 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         content_type_out = getattr(subscribe_block, "content_type", "application/json")
 
     publish_block = getattr(endpoint, "publish", None)
+    publish_type = None
     if publish_block:
+        type_obj = getattr(publish_block, "type", None)
+        publish_type = str(type_obj) if type_obj else None
         message = getattr(publish_block, "message", None)
         if message:
             entity_in = getattr(message, "entity", None)  # Clients publish = server receives = inbound
@@ -42,6 +48,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     print(f"\n--- Processing WebSocket: {endpoint.name} ---")
     print(f"    entity_in:  {entity_in.name if entity_in else 'None'}")
     print(f"    entity_out: {entity_out.name if entity_out else 'None'}")
+    print(f"    publish_type: {publish_type}")
 
     # Build inbound chain (incoming messages from clients)
     compiled_chain_inbound, ws_inputs_from_subscribe, terminal_in = build_inbound_chain(
@@ -90,6 +97,9 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
                 "close": should_close,
             })
 
+    # Check if publish type is primitive (needs wrapping)
+    publish_is_primitive = publish_type in PRIMITIVE_TYPES if publish_type else False
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -100,6 +110,8 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         },
         "entity_in": entity_in,
         "entity_out": entity_out,
+        "publish_type": publish_type,
+        "publish_is_primitive": publish_is_primitive,
         "content_type_in": content_type_in,
         "content_type_out": content_type_out,
         "route_prefix": route_path,

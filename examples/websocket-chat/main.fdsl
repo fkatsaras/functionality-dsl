@@ -24,7 +24,7 @@ end
 // Wrapper for primitive string from client
 Entity OutgoingWrapper
   attributes:
-    - value: string;
+    - value: string(3..);
 end
 
 Entity OutgoingProcessed(OutgoingWrapper)
