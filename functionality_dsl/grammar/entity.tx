@@ -189,14 +189,72 @@ ResponseBlock:
       'entity:' schema=SchemaRef
 ;
 
-// Error handling block for REST endpoints
-ErrorMapping:
-  '-' status_code=INT ':' 'condition' ':' condition=Expr message=STRING ';'
+// HTTP Status Codes (comprehensive list for REST endpoints)
+HttpStatusCode:
+    // 1xx Informational
+    '100' | '101' | '102' | '103' |
+    // 2xx Success
+    '200' | '201' | '202' | '203' | '204' | '205' | '206' | '207' | '208' | '226' |
+    // 3xx Redirection
+    '300' | '301' | '302' | '303' | '304' | '305' | '307' | '308' |
+    // 4xx Client Error
+    '400' | '401' | '402' | '403' | '404' | '405' | '406' | '407' | '408' | '409' |
+    '410' | '411' | '412' | '413' | '414' | '415' | '416' | '417' | '418' | '421' |
+    '422' | '423' | '424' | '425' | '426' | '428' | '429' | '431' | '451' |
+    // 5xx Server Error
+    '500' | '501' | '502' | '503' | '504' | '505' | '506' | '507' | '508' | '510' | '511'
 ;
 
+// WebSocket Close Codes (RFC 6455 + common extensions)
+WebSocketCloseCode:
+    // Standard codes
+    '1000' |  // Normal Closure
+    '1001' |  // Going Away
+    '1002' |  // Protocol Error
+    '1003' |  // Unsupported Data
+    '1005' |  // No Status Received (reserved)
+    '1006' |  // Abnormal Closure (reserved)
+    '1007' |  // Invalid frame payload data
+    '1008' |  // Policy Violation
+    '1009' |  // Message Too Big
+    '1010' |  // Mandatory Extension
+    '1011' |  // Internal Server Error
+    '1012' |  // Service Restart
+    '1013' |  // Try Again Later
+    '1014' |  // Bad Gateway
+    '1015' |  // TLS handshake (reserved)
+    // Custom application codes (3000-3999)
+    '3000' | '3001' | '3002' | '3003' | '3004' | '3005' | '3006' | '3007' | '3008' | '3009' |
+    // Library/framework codes (4000-4999)
+    '4000' | '4001' | '4002' | '4003' | '4004' | '4005' | '4006' | '4007' | '4008' | '4009'
+;
+
+// Error/Event mapping for REST endpoints
+ErrorMapping:
+  '-' status_code=HttpStatusCode ':'
+    'condition:' condition=Expr
+    'message:' message=STRING
+  ';'?
+;
+
+// Event mapping for WebSocket endpoints
+EventMapping:
+  '-' close_code=WebSocketCloseCode ':'
+    'condition:' condition=Expr
+    'message:' message=STRING
+  ';'?
+;
+
+// Error block for REST endpoints
 ErrorsBlock:
   'errors:'
-    mappings+=ErrorMapping
+    mappings+=ErrorMapping+
+;
+
+// Events block for WebSocket endpoints
+EventsBlock:
+  'events:'
+    mappings+=EventMapping+
 ;
 
 EndpointREST:
@@ -222,6 +280,7 @@ EndpointWS:
     (subscribe=SubscribeBlock)?
     ('auth:' auth=AuthBlock)?
     ('summary:' summary=STRING)?
+    (events=EventsBlock)?
   )
   'end'
 ;

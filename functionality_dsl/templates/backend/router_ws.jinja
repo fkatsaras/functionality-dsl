@@ -98,9 +98,19 @@ async def duplex(ws: WebSocket):
                 payload = raw
 
             try:
-                row = ws_service.compute_entity_chain(
+                row, context = ws_service.compute_entity_chain(
                     payload, rid, chain_inbound, "{{ endpoint.name }}"
                 )
+
+                {% if events %}
+                # Check event conditions after computation
+                event_result = ws_service.check_event_conditions(context)
+                if event_result:
+                    close_code, close_message = event_result
+                    logger.error(f"[EVENT] - Closing connection with code {close_code}: {close_message}")
+                    await ws.close(code=close_code, reason=close_message)
+                    return
+                {% endif %}
 
                 if row is not None and bus_out:
                     await bus_out.publish(row)

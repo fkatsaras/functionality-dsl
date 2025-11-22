@@ -92,9 +92,10 @@ _target_lock = asyncio.Lock()
 #                          COMPUTATION FUNCTIONS
 # ============================================================================
 
-def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source_name: str) -> Dict[str, Any]:
+def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source_name: str) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Compute entity attributes through chain with flat context.
+    Returns: (final_result, full_context)
     """
     logger.debug(f"[COMPUTE] - Processing payload from {source_name}")
 
@@ -115,7 +116,7 @@ def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source
     final_entity = chain[-1]["name"] if chain else source_name
     result = context[final_entity] if chain else {source_name: payload}
     logger.info(f"[COMPUTE] - Computation complete, final entity: {final_entity}")
-    return result
+    return result, context
 
 
 {% if sync_config_inbound %}
@@ -291,7 +292,7 @@ async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
                 {% if sync_config_inbound %}
                 row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
                 {% else %}
-                row = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                row, _ = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
                 {% endif %}
 
                 if row is not None:
@@ -385,7 +386,7 @@ async def ws_input_consumer(inp: dict, bus_in):
                     {% if sync_config_inbound %}
                     row = await compute_with_sync(payload, uuid.uuid4().hex, chain_to_use, source_name)
                     {% else %}
-                    row = compute_entity_chain(payload, uuid.uuid4().hex, chain_to_use, source_name)
+                    row, _ = compute_entity_chain(payload, uuid.uuid4().hex, chain_to_use, source_name)
                     {% endif %}
 
                     if row is not None:
@@ -412,6 +413,28 @@ async def ensure_ws_inputs_started(bus_in):
         for inp in inputs_to_start:
             asyncio.create_task(ws_input_consumer(inp, bus_in))
         _started_inputs = True
+
+
+# ============================================================================
+#                          EVENT CHECKING
+# ============================================================================
+
+{% if events %}
+def check_event_conditions(context: Dict[str, Any]) -> Optional[tuple]:
+    """Check all event conditions and return (close_code, message) if any match."""
+    eval_globals = {**safe_globals, **context}
+    {% for event in events %}
+    try:
+        compiled_condition = compile_safe({{ event.condition | tojson }})
+        if eval(compiled_condition, eval_globals, {}):
+            logger.error("[EVENT] ✗ Event condition triggered: {{ event.condition }}")
+            logger.error("[EVENT]   Close Code: {{ event.close_code }}, Message: {{ event.message }}")
+            return ({{ event.close_code }}, "{{ event.message }}")
+    except Exception as eval_error:
+        logger.error(f"[EVENT] - Failed to evaluate event condition: {eval_error}")
+    {% endfor %}
+    return None
+{% endif %}
 
 
 # ============================================================================

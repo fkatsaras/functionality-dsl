@@ -58,10 +58,14 @@ Endpoint<REST> UserDeleteEndpoint
     type: object
     entity: DeleteResponseSchema
   errors:
-    - 404: condition: not find(
+    - 404:
+      condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.userId) "User doesnt exist";
-    - 500: condition: not UsersListWrapper.users "No more users left";
+        u -> u["id"] == UserDeleteEndpoint.userId)
+      message: "User doesnt exist"
+    - 500:
+      condition: not UsersListWrapper.users
+      message: "No more users left"
 end
 
 Component<ActionForm> DeleteUserForm

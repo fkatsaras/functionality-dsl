@@ -197,10 +197,12 @@ Endpoint<REST> Register
     type: object
     entity: RegisterResponse
   errors:
-  - 409: condition: find(
+    - 409:
+      condition: find(
         UsersListWrapper.users,
         u -> u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
-      ) "Username or Password already registered.";
+      )
+      message: "Username or Password already registered."
 end
 
 // Login (validates credentials in FDSL layer)
@@ -214,7 +216,9 @@ Endpoint<REST> Login
     type: object
     entity: LoginResponse
   errors:
-    - 401: condition: not LoginMatch.user "Invalid username or password";
+    - 401:
+      condition: not LoginMatch.user
+      message: "Invalid username or password"
 end
 
 // Update password (finds user by email, updates in DB)
@@ -228,8 +232,12 @@ Endpoint<REST> UpdatePassword
     type: object
     entity: UpdateResponse
   errors:
-    - 404: condition: not PasswordUpdateData.user "User with this email not found";
-    - 400: condition: PasswordUpdateData.user.password == UpdatePasswordRequest.newPassword "New password cannot be the same as current password";
+    - 404:
+      condition: not PasswordUpdateData.user
+      message: "User with this email not found"
+    - 400:
+      condition: PasswordUpdateData.user.password == UpdatePasswordRequest.newPassword
+      message: "New password cannot be the same as current password"
 end
 
 // Update user by ID
@@ -258,10 +266,14 @@ Endpoint<REST> UserDeleteEndpoint
     type: object
     entity: DeleteResponseSchema
   errors:
-    - 404: condition: not find(
+    - 404:
+      condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.userId) "User doesnt exist";
-    - 500: condition: not UsersListWrapper.users "No more users left";
+        u -> u["id"] == UserDeleteEndpoint.userId)
+      message: "User doesnt exist"
+    - 500:
+      condition: not UsersListWrapper.users
+      message: "No more users left"
 end
 
 // ============================================================

@@ -67,8 +67,10 @@ Endpoint<REST> Register
     type: object
     entity: RegisterResponse
   errors:
-  - 409: condition: find(
+    - 409:
+      condition: find(
         UsersListWrapper.users,
         u -> u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
-      ) "Username or Password already registered.";
+      )
+      message: "Username or Password already registered."
 end

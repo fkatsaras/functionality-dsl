@@ -75,6 +75,18 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
 
+    # --- Extract event configurations ---
+    events_config = []
+    if hasattr(endpoint, "events") and endpoint.events:
+        from ...lib.compiler.expr_compiler import compile_expr_to_python
+        for event_mapping in endpoint.events.mappings:
+            compiled_condition = compile_expr_to_python(event_mapping.condition)
+            events_config.append({
+                "close_code": int(event_mapping.close_code),
+                "condition": compiled_condition,
+                "message": event_mapping.message,
+            })
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -93,6 +105,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "ws_inputs": ws_inputs,
         "external_targets": external_targets,
         "sync_config_inbound": sync_config_inbound,
+        "events": events_config,
     }
 
     # Setup Jinja2 environment

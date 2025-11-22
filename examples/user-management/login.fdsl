@@ -52,6 +52,8 @@ Endpoint<REST> Login
     type: object
     entity: LoginResponse
   errors:
-    - 401: condition: not LoginMatch.user "Invalid username or password";
+    - 401:
+      condition: not LoginMatch.user
+      message: "Invalid username or password"
 end
 

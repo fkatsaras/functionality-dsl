@@ -53,6 +53,13 @@ Endpoint<WS> ChatDup
   subscribe:
     type: object
     entity: EchoProcessed
+  events:
+    - 1008:
+      condition: len(OutgoingWrapper.value) > 100
+      message: "Message too long - maximum 100 characters"
+    - 3000:
+      condition: OutgoingWrapper.value == "QUIT"
+      message: "User requested to quit"
 end
 
 // ------------------ UI ------------------
