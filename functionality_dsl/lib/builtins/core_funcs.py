@@ -1,9 +1,5 @@
-from fastapi import HTTPException
 from functools import wraps
 
-def _error(status: int, message: str):
-    """Raise an HTTP error from inside a DSL expression."""
-    raise HTTPException(status_code=status, detail={"error": message})
 
 def _safe_str(fn):
     @wraps(fn)
@@ -131,7 +127,6 @@ def _notNull(value) -> bool:
 DSL_FUNCTIONS = {
     "zip":        (_safe_zip,   (1, None)),
     "get":        (_get,        (2, 3)),
-    "error":      (_error,      (2, 2)),
     "contains":   (_contains,   (2, 2)),
     "icontains":  (_icontains,  (2, 2)),
     "startswith": (_startswith, (2, 2)),

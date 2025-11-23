@@ -4,11 +4,12 @@
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
 
-    import { buildUrlWithParams } from "$lib/utils/paramBuilder";
-    import Spinner from "../primitives/icons/Spinner.svelte";
-    
+    import Input from "$lib/primitives/Input.svelte";
+    import Spinner from "$lib/primitives/icons/Spinner.svelte";
+    import Button from "$lib/primitives/Button.svelte";
 
-    // Props
+    import { buildUrlWithParams } from "$lib/utils/paramBuilder";
+
     const props = $props<{
         name?: string;
         endpoint?: string;
@@ -19,14 +20,13 @@
 
     const label = props.label || props.name || "ObjectView";
 
-    // state
     let id = $state("");
     let paramValues = $state<Record<string, string>>({});
     let data: Record<string, any> | null = $state(null);
     let loading = $state(false);
     let error: string | null = $state(null);
 
-    // initialize path params on change
+    // initialize path params
     $effect(() => {
         const init: Record<string, string> = {};
         for (const p of props.pathParams ?? []) init[p] = "";
@@ -35,7 +35,6 @@
         }
     });
 
-    // URL builder
     function buildUrl() {
         if (!props.endpoint) return "";
 
@@ -72,11 +71,11 @@
         }
     }
 
-    // dotted path accessor
     function getNestedValue(obj: any, path: string) {
         return path.split(".").reduce((acc, key) => acc?.[key], obj);
     }
 </script>
+
 
 <Card>
     <svelte:fragment slot="header">
@@ -100,44 +99,47 @@
         {#if props.pathParams?.length}
             <div class="flex gap-2 mb-4">
                 {#each props.pathParams as param}
-                    <input
-                        id="param-{param}"
-                        type="text"
+                    <Input
                         bind:value={paramValues[param]}
                         placeholder={param}
-                        class="px-3 py-2 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        onkeydown={(e) => e.key === 'Enter' && fetchData()}
+                        class="font-approachmono"
+                        on:keydown={(e: KeyboardEvent) => e.key === "Enter" && fetchData()}
                     />
                 {/each}
 
-                <button
-                    class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-                    onclick={fetchData}
-                    disabled={loading || props.pathParams.some(p => !paramValues[p])}
+                <Button
+                    on:click={fetchData}
+                    disabled={loading || props.pathParams.some((p: string) => !paramValues[p])}
                 >
-                    Get
-                </button>
+                    {#if loading}
+                        <Spinner size={16} />
+                    {:else}
+                        Get
+                    {/if}
+                </Button>
             </div>
 
         {:else}
 
             <div class="flex gap-2 mb-4">
-                <input
-                    type="text"
+                <Input
                     bind:value={id}
                     placeholder="Enter ID…"
-                    class="px-3 py-2 flex-1 text-sm border thin-border rounded font-approachmono bg-[color:var(--surface)] text-text focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    onkeydown={(e) => e.key === 'Enter' && fetchData()}
+                    class="font-approachmono flex-1"
+                    on:keydown={(e: KeyboardEvent) => e.key === "Enter" && fetchData()}
                 />
-                <button
-                    class="px-4 py-2 rounded bg-dag-success text-white font-approachmono transition-colors hover:bg-green-600 disabled:opacity-50"
-                    onclick={fetchData}
+
+                <Button
+                    on:click={fetchData}
                     disabled={loading || !id.trim()}
                 >
-                    View
-                </button>
+                    {#if loading}
+                        <Spinner size={16} />
+                    {:else}
+                        View
+                    {/if}
+                </Button>
             </div>
-
         {/if}
 
         {#if loading}
@@ -162,6 +164,7 @@
 
     </svelte:fragment>
 </Card>
+
 
 <style>
     .font-approachmono {
