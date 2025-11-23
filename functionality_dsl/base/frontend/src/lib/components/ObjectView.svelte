@@ -3,6 +3,7 @@
     import Card from "$lib/primitives/Card.svelte";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
+    import Badge from "$lib/primitives/Badge.svelte";
 
     import Input from "$lib/primitives/Input.svelte";
     import Spinner from "$lib/primitives/icons/Spinner.svelte";
@@ -86,12 +87,6 @@
 
             <div class="flex items-center gap-2">
                 <RefreshButton on:click={fetchData} {loading} ariaLabel="Refresh object" />
-
-                {#if error}
-                    <span class="text-xs text-dag-danger font-approachmono bg-red-50 px-2 py-1 rounded">
-                        {error}
-                    </span>
-                {/if}
             </div>
         </div>
     </svelte:fragment>
@@ -144,11 +139,12 @@
             </div>
         {/if}
 
+        {#if error}
+            <Badge class="text-[var(--edge-light)] mt-2">{error}</Badge>
+        {/if}
+
         {#if loading}
             <Spinner size={20} />
-
-        {:else if error && !data}
-            <p class="font-approachmono text-sm text-dag-danger">{error}</p>
 
         {:else if data}
             <div class="border-t thin-border divide-y divide-[color:var(--edge)]">

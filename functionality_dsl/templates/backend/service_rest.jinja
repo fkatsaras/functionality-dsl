@@ -160,8 +160,9 @@ async def fetch_external_sources(context: Dict[str, Any]) -> None:
 
             if response.status_code >= 400:
                 log_fetch_error(logger, entity_name, response.status_code)
+                # Pass through the actual status code from external source
                 raise HTTPException(
-                    status_code=502,
+                    status_code=response.status_code,
                     detail=f"External source {entity_name} returned {response.status_code}"
                 )
 
