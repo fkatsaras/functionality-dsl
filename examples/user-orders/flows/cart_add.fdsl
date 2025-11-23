@@ -1,0 +1,69 @@
+// ============================================
+// FLOW: Add to Cart
+// ============================================
+// Private endpoint (session-based) to add items to shopping cart
+// Fetches product details (name, price) from catalog before adding to cart
+
+// External source - Fetch product details (maps to AddToCart.productId parameter)
+Source<REST> ProductDetailsForCart
+  url: "http://host.docker.internal:9001/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string = AddToCart.productId;
+  response:
+    type: object
+    entity: Product
+end
+
+// External source - Cart service API
+Source<REST> AddToCartAPI
+  url: "http://host.docker.internal:9002/cart/add"
+  method: POST
+  request:
+    type: object
+    entity: AddToCartAPIRequest
+  response:
+    type: object
+    entity: Cart
+end
+
+// Internal endpoint - what clients call
+Endpoint<REST> AddToCart
+  path: "/cart/add"
+  method: POST
+  parameters:
+    query:
+      - productId: string
+      - quantity: integer
+  response:
+    type: object
+    entity: AddToCartResponse
+end
+
+// Request to external cart API (enriched with product details)
+Entity AddToCartAPIRequest
+  attributes:
+    - productId: string = AddToCart.productId;
+    - productName: string = Product["name"];
+    - price: number = Product["price"];
+    - quantity: integer = AddToCart.quantity;
+end
+
+// Transform: Build response with cart summary
+Entity AddToCartResponse(Cart)
+  attributes:
+    - success: boolean = "true";
+    - message: string = "Item added to cart";
+    - sessionId: string = Cart["sessionId"];
+    - itemCount: integer = len(Cart["items"]);
+    - total: number = round(sum(map(Cart["items"], i -> i["price"] * i["quantity"])), 2);
+    - items: array = Cart["items"];
+end
+
+// UI Component - Simple form with just productId and quantity
+Component<ActionForm> AddToCartForm
+  endpoint: AddToCart
+  fields: [productId, quantity]
+  submitLabel: "Add to Cart"
+end

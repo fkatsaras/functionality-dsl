@@ -184,6 +184,118 @@ class TableComponent(_BaseComponent):
 
 
 @register_component
+class LiveTableComponent(_BaseComponent):
+    """
+    LiveTable component for WebSocket endpoints - displays streaming data in a table
+    with in-place row updates based on a key field.
+
+    Unlike LiveView (which appends messages), LiveTable updates existing rows when
+    a message with the same key is received, making it perfect for tracking state
+    like shopping carts, user sessions, inventory, etc.
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, keyField=None,
+                 colNames=None, columns=None, label=None, maxRows=None):
+        super().__init__(parent, name, endpoint)
+
+        # Strip quotes from keyField
+        self.keyField = self._strip_column_name(keyField) if keyField else None
+
+        # Support both legacy colNames and new typed columns (same as Table)
+        if columns:
+            # New typed columns format
+            self.columns = []
+            for col_def in columns:
+                col_name = self._strip_column_name(col_def.name)
+                col_type = self._extract_type_info(col_def)
+                self.columns.append({
+                    "name": col_name,
+                    "type": col_type
+                })
+            self.colNames = [c["name"] for c in self.columns]
+        elif colNames:
+            # Legacy colNames format
+            if hasattr(colNames, "items"):
+                col_items = colNames.items
+            else:
+                col_items = colNames or []
+
+            self.colNames = [self._attr_name(c) for c in col_items]
+            # Create columns list with default string type
+            self.columns = [{"name": name, "type": {"baseType": "string"}} for name in self.colNames]
+        else:
+            self.colNames = []
+            self.columns = []
+
+        self.label = self._strip_column_name(label) if label else None
+        self.maxRows = int(maxRows) if maxRows is not None else 100
+
+        # Validation
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if endpoint.__class__.__name__ != "EndpointWS":
+            raise ValueError(f"Component '{name}': LiveTable requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+        if not self.keyField:
+            raise ValueError(f"Component '{name}': 'keyField:' is required for LiveTable.")
+        if not self.colNames:
+            raise ValueError(f"Component '{name}': 'colNames:' or 'columns:' cannot be empty.")
+
+    def _strip_column_name(self, name):
+        """Strip quotes from column name string."""
+        if isinstance(name, str):
+            s = name.strip()
+            if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+                return s[1:-1]
+            return s
+        return str(name)
+
+    def _extract_type_info(self, type_spec):
+        """Extract type information from ColumnDef node (same as Table)."""
+        result = {
+            "baseType": getattr(type_spec, "typename", "string")
+        }
+
+        if hasattr(type_spec, "format") and type_spec.format:
+            result["format"] = type_spec.format
+
+        if hasattr(type_spec, "constraint") and type_spec.constraint:
+            constraint = type_spec.constraint
+            if hasattr(constraint, "rangeCol"):
+                range_expr = constraint.rangeCol
+                if hasattr(range_expr, "min") and range_expr.min is not None:
+                    result["min"] = range_expr.min
+                if hasattr(range_expr, "max") and range_expr.max is not None:
+                    result["max"] = range_expr.max
+                if hasattr(range_expr, "exact") and range_expr.exact is not None:
+                    result["exact"] = range_expr.exact
+
+        if hasattr(type_spec, "nullable") and type_spec.nullable:
+            result["nullable"] = True
+
+        return result
+
+    def _attr_name(self, a):
+        if a is None:
+            return None
+        if isinstance(a, str):
+            s = a.strip()
+            if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+                return s[1:-1]
+            return s
+        n = getattr(a, "name", None)
+        return n
+
+    def to_props(self):
+        return {
+            "streamPath": self._endpoint_path(""),
+            "keyField": self.keyField,
+            "colNames": self.colNames,
+            "columns": self.columns,
+            "label": self.label or self.endpoint.name,
+            "maxRows": self.maxRows,
+        }
+
+
+@register_component
 class ChartComponent(_BaseComponent):
     """
     Chart component for REST endpoints - displays time-series data with polling.

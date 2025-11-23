@@ -8,6 +8,7 @@ AttrRef: 'data' '.' attr=[entity.Attribute] ;
 
 Component:
     TableComponent
+  | LiveTableComponent
   | ChartComponent
   | LiveChartComponent
   | ActionFormComponent
@@ -46,6 +47,19 @@ TableComponent:
       ('colNames:' colNames=StringList)                   // legacy: explicit list of column names ['id','name',...]
     | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
   )?
+  'end'
+;
+
+LiveTableComponent:
+  'Component' '<' 'LiveTable' '>' name=ID
+  'endpoint:' endpoint=[EndpointWS]
+  'keyField:' keyField=STRING
+  (
+      ('colNames:' colNames=StringList)
+    | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)
+  )?
+  ('label:' label=STRING)?
+  ('maxRows:' maxRows=INT)?
   'end'
 ;
 

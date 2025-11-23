@@ -102,7 +102,7 @@
       "patterns": [
         {
           "name": "support.class.componentkind.fdsl",
-          "match": "(?<=Component<)(Table|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView)(?=>)"
+          "match": "(?<=Component<)(Table|LiveTable|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView|Camera)(?=>)"
         }
       ]
     },

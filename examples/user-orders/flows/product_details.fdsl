@@ -1,0 +1,57 @@
+// ============================================
+// FLOW: Product Details (Get single product)
+// ============================================
+// Public endpoint that shows detailed info for a specific product
+
+// External source - Product details service
+Source<REST> ProductDetailsAPI
+  url: "http://host.docker.internal:9001/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string = GetProduct.productId;
+  response:
+    type: object
+    entity: Product
+end
+
+// Internal endpoint - what clients call
+Endpoint<REST> GetProduct
+  path: "/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string
+  response:
+    type: object
+    entity: ProductDetailView
+  errors:
+    - 404:
+      condition: not Product["id"]
+      message: "Product not found"
+end
+
+// Transform: Enrich product details with computed fields
+Entity ProductDetailView(Product)
+  attributes:
+    - id: string = Product["id"];
+    - name: string = Product["name"];
+    - price: number = Product["price"];
+    - stock: integer = Product["stock"];
+    - category: string = Product["category"];
+    - thumbnail: string = Product["thumbnail"];
+    - description: string = Product["description"];
+    - gallery: array = Product["gallery"];
+    - rating: number = Product["rating"];
+    - specs: object = Product["specs"];
+    - available: boolean = Product["stock"] > 0;
+    - stockStatus: string = "Out of Stock" if Product["stock"] == 0 else ("Low Stock" if Product["stock"] < 10 else "In Stock");
+    - shippingEstimate: string = "2-3 business days" if Product["stock"] > 0 else "Currently unavailable";
+end
+
+// UI Component
+Component<ObjectView> ProductDetails
+  endpoint: GetProduct
+  fields: ["name", "price", "description", "stockStatus", "rating", "specs", "shippingEstimate"]
+  label: "Product Details"
+end

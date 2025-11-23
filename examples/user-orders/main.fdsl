@@ -1,21 +1,19 @@
 // ============================================
-// E-Commerce API - Product Catalog & Shopping Cart
+// E-Commerce API - User Orders Example
 // ============================================
-//
-// This example demonstrates:
-// - Public REST endpoints (product catalog)
-// - Private REST endpoints with session-based auth (cart)
-// - Real-time WebSocket updates (cart changes)
-// - Data enrichment and transformation
-// - Session handling
-//
-// Architecture:
-// - Product Service (port 9001): Product catalog data
-// - Cart Service (port 9002): Shopping cart REST API
-// - Cart WebSocket (port 9003): Real-time cart updates
-// - Generated API (port 8000): Public-facing e-commerce API
-//
-// ============================================
+// Flow-based organization:
+// - Each flow file contains its complete definition (source + endpoint + transforms + UI)
+// - Shared entities (Product, Cart) are in shared/common_entities.fdsl
+// - Shared sources (ProductCatalogAPI) are in shared/common_sources.fdsl
+// - Flow-specific sources stay in their respective files (e.g., ProductDetailsAPI with different params)
+// - This makes each flow self-contained and easy to understand
+
+import shared.common_entities
+import shared.common_sources
+import flows.product_catalog
+import flows.product_details
+import flows.cart_add
+import flows.cart_updates
 
 Server ShopAPI
   host: "localhost"
@@ -23,9 +21,3 @@ Server ShopAPI
   cors: "http://localhost:3000"
   loglevel: debug
 end
-
-// Import definitions
-import entities
-import sources
-import endpoints
-import components

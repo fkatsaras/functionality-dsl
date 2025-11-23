@@ -1,0 +1,45 @@
+// ============================================
+// FLOW: Product Catalog (List all products)
+// ============================================
+// Public endpoint that shows all available products with enriched data
+// Note: ProductCatalogAPI and ProductListWrapper are defined in shared/common_sources.fdsl
+
+// Internal endpoint - what clients call
+Endpoint<REST> ListProducts
+  path: "/products"
+  method: GET
+  response:
+    type: object
+    entity: ProductCatalogView
+end
+
+// Transform: Enrich product list with computed fields
+Entity ProductCatalogView(ProductListWrapper)
+  attributes:
+    - products: array = map(ProductListWrapper["products"], p -> {
+        "id": p["id"],
+        "name": p["name"],
+        "price": p["price"],
+        "stock": p["stock"],
+        "category": p["category"],
+        "thumbnail": p["thumbnail"],
+        "available": p["stock"] > 0,
+        "stockStatus": "Out of Stock" if p["stock"] == 0 else ("Low Stock" if p["stock"] < 10 else "In Stock")
+      });
+    - totalProducts: integer = len(ProductListWrapper["products"]);
+    - inStock: integer = len(filter(ProductListWrapper["products"], p -> p["stock"] > 0));
+    - categories: array = unique(map(ProductListWrapper["products"], p -> p["category"]));
+end
+
+// UI Component
+Component<Table> ProductCatalog
+  endpoint: ListProducts
+  columns:
+    - "thumbnail": string<image>
+    - "name": string
+    - "price": number
+    - "category": string
+    - "stockStatus": string
+    - "stock": integer
+    - "available": boolean
+end

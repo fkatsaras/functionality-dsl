@@ -1,0 +1,19 @@
+// ============================================
+// Shared/Reusable Source Definitions
+// ============================================
+// These sources are used across multiple flows
+
+// External source - Product catalog list (used by product_catalog flow)
+Source<REST> ProductCatalogAPI
+  url: "http://host.docker.internal:9001/products"
+  method: GET
+  response:
+    type: array
+    entity: ProductListWrapper
+end
+
+// Wrapper for product array response
+Entity ProductListWrapper
+  attributes:
+    - products: array<Product>;
+end

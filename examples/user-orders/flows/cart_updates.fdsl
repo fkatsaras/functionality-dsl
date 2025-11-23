@@ -1,0 +1,81 @@
+// ============================================
+// FLOW: Cart Updates (Real-time WebSocket)
+// ============================================
+// Private WebSocket endpoint for real-time cart update notifications
+
+// External source - Cart WebSocket service
+Source<WS> CartUpdatesAPI
+  channel: "ws://host.docker.internal:9003"
+  publish:
+    type: object
+    entity: CartUpdateWrapper
+end
+
+// WebSocket cart update message structure
+Entity CartUpdateMessage
+  attributes:
+    - type: string;
+    - sessionId: string;
+    - cart: object;
+    - itemCount: integer;
+    - total: number;
+    - timestamp: string;
+end
+
+// Wrapper for WebSocket messages
+Entity CartUpdateWrapper
+  attributes:
+    - message: object<CartUpdateMessage>;
+end
+
+// Internal endpoint - what clients subscribe to
+Endpoint<WS> CartUpdates
+  channel: "/ws/cart"
+  subscribe:
+    type: object
+    entity: CartUpdateView
+end
+
+// Transform: Format WebSocket messages for clients
+Entity CartUpdateView(CartUpdateWrapper)
+  attributes:
+    - type: string = CartUpdateWrapper["message"]["type"];
+    - sessionId: string = CartUpdateWrapper["message"]["sessionId"];
+    - itemCount: integer = CartUpdateWrapper["message"]["itemCount"];
+    - total: number = CartUpdateWrapper["message"]["total"];
+    - timestamp: string = CartUpdateWrapper["message"]["timestamp"];
+    - cartDetails: object = CartUpdateWrapper["message"]["cart"];
+end
+
+// Internal endpoint - stream individual cart items
+Endpoint<WS> CartItemsStream
+  channel: "/ws/cart/items"
+  subscribe:
+    type: object
+    entity: CartItemView
+end
+
+// Transform: Extract individual cart items for table display
+Entity CartItemView(CartUpdateWrapper)
+  attributes:
+    - productId: string = get(CartUpdateWrapper["message"]["cart"], "productId", "");
+    - productName: string = get(CartUpdateWrapper["message"]["cart"], "productName", "");
+    - price: number = get(CartUpdateWrapper["message"]["cart"], "price", 0.0);
+    - quantity: integer = get(CartUpdateWrapper["message"]["cart"], "quantity", 0);
+    - addedAt: string = get(CartUpdateWrapper["message"]["cart"], "addedAt", "");
+    - subtotal: number = get(CartUpdateWrapper["message"]["cart"], "price", 0.0) * get(CartUpdateWrapper["message"]["cart"], "quantity", 1);
+end
+
+// UI Component: Live table showing cart items with real-time updates
+Component<LiveTable> LiveCartTable
+  endpoint: CartItemsStream
+  keyField: "productId"
+  columns:
+    - "productId": string
+    - "productName": string
+    - "quantity": integer
+    - "price": number
+    - "subtotal": number
+  label: "Shopping Cart (Live)"
+  maxRows: 50
+end

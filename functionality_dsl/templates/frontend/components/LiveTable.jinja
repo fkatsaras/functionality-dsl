@@ -1,0 +1,9 @@
+<LiveTable
+  name="{{ common.name }}"
+  streamPath="{{ props.get('streamPath') }}"
+  keyField="{{ props.get('keyField') }}"
+  colNames={{ "{" }}{{ props.get('colNames') | tojson }}{{ "}" }}
+  columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}
+  label="{{ props.get('label') or '' }}"
+  maxRows={{ props.get('maxRows') }}
+/>
