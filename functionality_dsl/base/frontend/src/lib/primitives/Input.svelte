@@ -1,6 +1,6 @@
 <script>
     let {
-        value = $bindable(""),
+        value = $bindable(),
         class: className = "",
         type = "text",
         placeholder = ""

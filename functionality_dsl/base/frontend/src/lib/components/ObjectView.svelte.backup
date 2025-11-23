@@ -26,13 +26,11 @@
     let loading = $state(false);
     let error: string | null = $state(null);
 
-    // initialize path params when they change
+    // initialize path params
     $effect(() => {
-        if (props.pathParams?.length) {
-            const init: Record<string, string> = {};
-            for (const p of props.pathParams) {
-                init[p] = "";
-            }
+        const init: Record<string, string> = {};
+        for (const p of props.pathParams ?? []) init[p] = "";
+        if (Object.keys(paramValues).length !== (props.pathParams?.length ?? 0)) {
             paramValues = init;
         }
     });

@@ -1,0 +1,30 @@
+// ============================================
+// UI Components
+// ============================================
+
+// Product catalog table
+Component<Table> ProductCatalog
+  endpoint: ListProducts
+  columns:
+    - "thumbnail": string<image>
+    - "name": string
+    - "price": number
+    - "category": string
+    - "stockStatus": string
+    - "stock": integer
+    - "available": boolean
+end
+
+// Product detail view
+Component<ObjectView> ProductDetails
+  endpoint: GetProduct
+  fields: ["name", "price", "description", "stockStatus", "rating", "specs", "shippingEstimate"]
+  label: "Product Details"
+end
+
+// Add to cart form
+Component<ActionForm> AddToCartForm
+  endpoint: AddToCart
+  fields: [productId, productName, price, quantity]
+  submitLabel: "Add to Cart"
+end

@@ -1,0 +1,124 @@
+// ============================================
+// API Endpoints
+// ============================================
+
+// 1. GET /products - List all products (public)
+Endpoint<REST> ListProducts
+  path: "/products"
+  method: GET
+  response:
+    type: object
+    entity: ProductCatalogView
+end
+
+// View entity: Enrich products with availability status
+Entity ProductCatalogView(ProductListWrapper)
+  attributes:
+    - products: array = map(ProductListWrapper["products"], p -> {
+        "id": p["id"],
+        "name": p["name"],
+        "price": p["price"],
+        "stock": p["stock"],
+        "category": p["category"],
+        "thumbnail": p["thumbnail"],
+        "available": p["stock"] > 0,
+        "stockStatus": "Out of Stock" if p["stock"] == 0 else ("Low Stock" if p["stock"] < 10 else "In Stock")
+      });
+    - totalProducts: integer = len(ProductListWrapper["products"]);
+    - inStock: integer = len(filter(ProductListWrapper["products"], p -> p["stock"] > 0));
+    - categories: array = unique(map(ProductListWrapper["products"], p -> p["category"]));
+end
+
+// 2. GET /products/{productId} - Get product details (public)
+Endpoint<REST> GetProduct
+  path: "/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string
+  response:
+    type: object
+    entity: ProductDetailView
+  errors:
+    - 404:
+      condition: not Product["id"]
+      message: "Product not found"
+end
+
+// View entity: Enrich product details
+Entity ProductDetailView(Product)
+  attributes:
+    - id: string = Product["id"];
+    - name: string = Product["name"];
+    - price: number = Product["price"];
+    - stock: integer = Product["stock"];
+    - category: string = Product["category"];
+    - thumbnail: string = Product["thumbnail"];
+    - description: string = Product["description"];
+    - gallery: array = Product["gallery"];
+    - rating: number = Product["rating"];
+    - specs: object = Product["specs"];
+    - available: boolean = Product["stock"] > 0;
+    - stockStatus: string = "Out of Stock" if Product["stock"] == 0 else ("Low Stock" if Product["stock"] < 10 else "In Stock");
+    - shippingEstimate: string = "2-3 business days" if Product["stock"] > 0 else "Currently unavailable";
+end
+
+// 3. POST /cart/add - Add item to cart (private, session-based)
+Endpoint<REST> AddToCart
+  path: "/cart/add"
+  method: POST
+  request:
+    type: object
+    entity: AddToCartRequest
+  response:
+    type: object
+    entity: AddToCartResponse
+end
+
+// Request entity (from client)
+Entity AddToCartRequest
+  attributes:
+    - productId: string;
+    - productName: string;
+    - price: number;
+    - quantity: integer;
+end
+
+// Payload to cart service
+Entity AddToCartPayload(AddToCartRequest)
+  attributes:
+    - productId: string = AddToCartRequest["productId"];
+    - productName: string = AddToCartRequest["productName"];
+    - price: number = AddToCartRequest["price"];
+    - quantity: integer = AddToCartRequest["quantity"];
+end
+
+// Response entity with cart summary
+Entity AddToCartResponse(Cart)
+  attributes:
+    - success: boolean = true;
+    - message: string = "Item added to cart";
+    - sessionId: string = Cart["sessionId"];
+    - itemCount: integer = len(Cart["items"]);
+    - total: number = round(sum(map(Cart["items"], i -> i["price"] * i["quantity"])), 2);
+    - items: array = Cart["items"];
+end
+
+// 4. WebSocket /ws/cart - Real-time cart updates (private)
+Endpoint<WS> CartUpdates
+  channel: "/ws/cart"
+  subscribe:
+    type: object
+    entity: CartUpdateView
+end
+
+// Transform WebSocket messages for clients
+Entity CartUpdateView(CartUpdateWrapper)
+  attributes:
+    - type: string = CartUpdateWrapper["message"]["type"];
+    - sessionId: string = CartUpdateWrapper["message"]["sessionId"];
+    - itemCount: integer = CartUpdateWrapper["message"]["itemCount"];
+    - total: number = CartUpdateWrapper["message"]["total"];
+    - timestamp: string = CartUpdateWrapper["message"]["timestamp"];
+    - cartDetails: object = CartUpdateWrapper["message"]["cart"];
+end

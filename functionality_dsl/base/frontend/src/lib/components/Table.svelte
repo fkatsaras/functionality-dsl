@@ -107,10 +107,8 @@
                 }
         }
 
-        function getValueByPosition(row: any, position: number) {
-                if (position < 0 || position >= entityKeys.length) return undefined;
-                const key = entityKeys[position];
-                return row[key];
+        function getValueByName(row: any, fieldName: string) {
+                return row[fieldName];
         }
 
         function formatValue(value: any, column: ColumnInfo): string {
@@ -238,7 +236,7 @@
                             <tr class="odd:bg-transparent even:bg-[color:var(--surface)] hover:bg-[color:var(--edge-soft)] transition-colors">
                                 {#each colNames as displayName, position}
                                     {@const column = columns[position] || { name: displayName, type: { baseType: "string" } }}
-                                    {@const rawValue = getValueByPosition(row, position)}
+                                    {@const rawValue = getValueByName(row, column.name)}
                             
                                     <td class="px-3 py-2 border-b border-[color:var(--edge)] text-text/90 font-mono">
                                         {#if column.type?.format === "image" && rawValue}

@@ -1,0 +1,44 @@
+// ============================================
+// External Service Definitions (Sources)
+// ============================================
+
+// Product catalog service - Get all products
+Source<REST> ProductCatalog
+  url: "http://host.docker.internal:9001/products"
+  method: GET
+  response:
+    type: array
+    entity: ProductListWrapper
+end
+
+// Product catalog service - Get single product
+Source<REST> ProductDetails
+  url: "http://host.docker.internal:9001/products/{productId}"
+  method: GET
+  parameters:
+    path:
+      - productId: string = GetProduct.productId;
+  response:
+    type: object
+    entity: Product
+end
+
+// Cart service - Add item to cart
+Source<REST> AddToCartTarget
+  url: "http://host.docker.internal:9002/cart/add"
+  method: POST
+  request:
+    type: object
+    entity: AddToCartPayload
+  response:
+    type: object
+    entity: Cart
+end
+
+// Cart WebSocket - Real-time cart updates
+Source<WS> CartUpdatesStream
+  channel: "ws://host.docker.internal:9003"
+  publish:
+    type: object
+    entity: CartUpdateWrapper
+end
