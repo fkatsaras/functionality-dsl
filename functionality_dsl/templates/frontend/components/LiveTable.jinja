@@ -1,6 +1,7 @@
 <LiveTable
   name="{{ common.name }}"
   streamPath="{{ props.get('streamPath') }}"
+  {% if props.get('arrayField') %}arrayField="{{ props.get('arrayField') }}"{% endif %}
   keyField="{{ props.get('keyField') }}"
   colNames={{ "{" }}{{ props.get('colNames') | tojson }}{{ "}" }}
   columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}

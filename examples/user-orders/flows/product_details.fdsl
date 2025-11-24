@@ -1,55 +1,51 @@
 // ============================================
 // FLOW: Product Details (Get single product)
 // ============================================
-// Public endpoint that shows detailed info for a specific product
 
-// External source - Product details service
-Source<REST> ProductDetailsAPI
-  url: "http://host.docker.internal:9001/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string = GetProduct.productId;
-  response:
-    type: object
-    entity: Product
-end
-
-// Internal endpoint - what clients call
 Endpoint<REST> GetProduct
-  path: "/products/{productId}"
+  path: "/products/details"
   method: GET
   parameters:
-    path:
-      - productId: string
+    query:
+      - productName: string
   response:
     type: object
     entity: ProductDetailView
   errors:
     - 404:
-      condition: not Product["id"]
+      condition: not ProductBase["id"]
       message: "Product not found"
 end
 
-// Transform: Enrich product details with computed fields
-Entity ProductDetailView(Product)
+// Step 1: Filter products by name
+Entity FilteredProduct(ProductListWrapper)
   attributes:
-    - id: string = Product["id"];
-    - name: string = Product["name"];
-    - price: number = Product["price"];
-    - stock: integer = Product["stock"];
-    - category: string = Product["category"];
-    - thumbnail: string = Product["thumbnail"];
-    - description: string = Product["description"];
-    - gallery: array = Product["gallery"];
-    - rating: number = Product["rating"];
-    - specs: object = Product["specs"];
-    - available: boolean = Product["stock"] > 0;
-    - stockStatus: string = "Out of Stock" if Product["stock"] == 0 else ("Low Stock" if Product["stock"] < 10 else "In Stock");
-    - shippingEstimate: string = "2-3 business days" if Product["stock"] > 0 else "Currently unavailable";
+    - filtered: array = filter(ProductListWrapper["products"], p -> p["name"] == GetProduct.productName);
 end
 
-// UI Component
+// Step 2: Extract base fields from filtered product, TODO convention : return first match 
+Entity ProductBase(FilteredProduct)
+  attributes:
+    - id: string = get(FilteredProduct["filtered"][0], "id", "") if len(FilteredProduct["filtered"]) > 0 else "";
+    - name: string = get(FilteredProduct["filtered"][0], "name", "") if len(FilteredProduct["filtered"]) > 0 else "";
+    - price: number = get(FilteredProduct["filtered"][0], "price", 0.0) if len(FilteredProduct["filtered"]) > 0 else 0.0;
+    - stock: integer = get(FilteredProduct["filtered"][0], "stock", 0) if len(FilteredProduct["filtered"]) > 0 else 0;
+    - category: string = get(FilteredProduct["filtered"][0], "category", "") if len(FilteredProduct["filtered"]) > 0 else "";
+    - thumbnail: string = get(FilteredProduct["filtered"][0], "thumbnail", "") if len(FilteredProduct["filtered"]) > 0 else "";
+    - description: string = get(FilteredProduct["filtered"][0], "description", "") if len(FilteredProduct["filtered"]) > 0 else "";
+    - gallery: array = get(FilteredProduct["filtered"][0], "gallery", []) if len(FilteredProduct["filtered"]) > 0 else [];
+    - rating: number = get(FilteredProduct["filtered"][0], "rating", 0.0) if len(FilteredProduct["filtered"]) > 0 else 0.0;
+    - specs: object = get(FilteredProduct["filtered"][0], "specs", {}) if len(FilteredProduct["filtered"]) > 0 else {};
+end
+
+// Step 3: Add computed enrichment fields
+Entity ProductDetailView(ProductBase)
+  attributes:
+    - available: boolean = ProductBase["stock"] > 0;
+    - stockStatus: string = "Out of Stock" if ProductBase["stock"] == 0 else ("Low Stock" if ProductBase["stock"] < 10 else "In Stock");
+    - shippingEstimate: string = "2-3 business days" if ProductBase["stock"] > 0 else "Currently unavailable";
+end
+
 Component<ObjectView> ProductDetails
   endpoint: GetProduct
   fields: ["name", "price", "description", "stockStatus", "rating", "specs", "shippingEstimate"]

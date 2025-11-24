@@ -106,7 +106,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
         query_params = dict(request.query_params)
         headers = dict(request.headers)
 
-        {% if http_method in ('post', 'put', 'patch') %}
+        {% if http_method in ('post', 'put', 'patch') and request_entity %}
         # Parse request body based on Content-Type
         content_type = request.headers.get("content-type", "application/json")
         try:

@@ -6,9 +6,12 @@
 // External source - Cart WebSocket service
 Source<WS> CartUpdatesAPI
   channel: "ws://host.docker.internal:9003"
-  publish:
+  subscribe:
     type: object
-    entity: CartUpdateWrapper
+    entity: CartUpdateMessage
+  publish:
+    type: string
+    entity: SessionId
 end
 
 // WebSocket cart update message structure
@@ -22,60 +25,50 @@ Entity CartUpdateMessage
     - timestamp: string;
 end
 
-// Wrapper for WebSocket messages
-Entity CartUpdateWrapper
-  attributes:
-    - message: object<CartUpdateMessage>;
-end
-
-// Internal endpoint - what clients subscribe to
+// Internal endpoint - subscribes to the source with session id, streams cart updates to clients
 Endpoint<WS> CartUpdates
   channel: "/ws/cart"
+  publish:
+    type: string
+    entity: SessionId
   subscribe:
     type: object
     entity: CartUpdateView
 end
 
-// Transform: Format WebSocket messages for clients
-Entity CartUpdateView(CartUpdateWrapper)
+// Client input - just the session ID as a string
+Entity SessionId
   attributes:
-    - type: string = CartUpdateWrapper["message"]["type"];
-    - sessionId: string = CartUpdateWrapper["message"]["sessionId"];
-    - itemCount: integer = CartUpdateWrapper["message"]["itemCount"];
-    - total: number = CartUpdateWrapper["message"]["total"];
-    - timestamp: string = CartUpdateWrapper["message"]["timestamp"];
-    - cartDetails: object = CartUpdateWrapper["message"]["cart"];
+    - value: string;
 end
 
-// Internal endpoint - stream individual cart items
-Endpoint<WS> CartItemsStream
-  channel: "/ws/cart/items"
-  subscribe:
-    type: object
-    entity: CartItemView
-end
-
-// Transform: Extract individual cart items for table display
-Entity CartItemView(CartUpdateWrapper)
+// Transform: Extract cart data with items array
+Entity CartUpdateView(CartUpdateMessage)
   attributes:
-    - productId: string = get(CartUpdateWrapper["message"]["cart"], "productId", "");
-    - productName: string = get(CartUpdateWrapper["message"]["cart"], "productName", "");
-    - price: number = get(CartUpdateWrapper["message"]["cart"], "price", 0.0);
-    - quantity: integer = get(CartUpdateWrapper["message"]["cart"], "quantity", 0);
-    - addedAt: string = get(CartUpdateWrapper["message"]["cart"], "addedAt", "");
-    - subtotal: number = get(CartUpdateWrapper["message"]["cart"], "price", 0.0) * get(CartUpdateWrapper["message"]["cart"], "quantity", 1);
+    - sessionId: string = CartUpdateMessage["sessionId"];
+    - items: array = get(CartUpdateMessage["cart"], "items", []);
+    - itemCount: integer = CartUpdateMessage["itemCount"];
+    - total: number = CartUpdateMessage["total"];
+    - timestamp: string = CartUpdateMessage["timestamp"];
 end
 
-// UI Component: Live table showing cart items with real-time updates
+// UI Component: LiveTable showing cart items with real-time updates
 Component<LiveTable> LiveCartTable
-  endpoint: CartItemsStream
+  endpoint: CartUpdates
+  arrayField: "items"
   keyField: "productId"
   columns:
     - "productId": string
     - "productName": string
     - "quantity": integer
     - "price": number
-    - "subtotal": number
-  label: "Shopping Cart (Live)"
+  label: "Shopping Cart"
   maxRows: 50
+end
+
+Component<Input> CartSelect
+  endpoint: CartUpdates
+  placeholder: "Enter session ID..."
+  label: "SessionID"
+  submitLabel: "Show"
 end
