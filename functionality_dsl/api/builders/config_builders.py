@@ -161,6 +161,8 @@ def build_ws_input_config(entity, ws_source, all_source_names):
         "protocol": "json",  # Default protocol
         "content_type": content_type,  # Pass content type for binary handling
         "attrs": attribute_configs,
+        "subscribe_is_primitive": is_wrapper,  # Whether incoming messages are primitives that need wrapping
+        "subscribe_attr_name": attributes[0].name if is_wrapper and attributes else None,  # Attribute to wrap into
     }
 
 
@@ -172,6 +174,10 @@ def build_ws_external_targets(entity_out, model):
     NEW DESIGN: Uses publish schema to find which entities we send TO external sources.
     """
     from ..extractors import get_publish_schema
+
+    # Primitive types that need wrapping/unwrapping
+    PRIMITIVE_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'binary']
+
     external_targets = []
 
     for external_ws in get_children_of_type("SourceWS", model):
@@ -182,15 +188,27 @@ def build_ws_external_targets(entity_out, model):
 
         target_entity = publish_schema["entity"]
 
+        # Get the message type from the schema
+        message_type = publish_schema.get("message_type")
+        is_primitive = message_type in PRIMITIVE_TYPES if message_type else False
+
         # Include if we send entity_out (or its descendants) TO this external source
         if calculate_distance_to_ancestor(target_entity, entity_out) is not None:
             # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
             channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
+
+            # Get the first attribute name for unwrapping primitives
+            first_attr_name = None
+            if is_primitive and hasattr(target_entity, 'attributes') and target_entity.attributes:
+                first_attr_name = target_entity.attributes[0].name
+
             external_targets.append({
                 "url": channel_url,
                 "headers": normalize_headers(external_ws) + build_auth_headers(external_ws),
                 "subprotocols": [],  # Removed subprotocols field in new design
                 "protocol": "json",  # Default protocol
+                "publish_is_primitive": is_primitive,  # Whether to unwrap before sending
+                "publish_attr_name": first_attr_name,  # Attribute name to unwrap from
             })
 
     return external_targets

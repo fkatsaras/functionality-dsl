@@ -53,6 +53,7 @@ TableComponent:
 LiveTableComponent:
   'Component' '<' 'LiveTable' '>' name=ID
   'endpoint:' endpoint=[EndpointWS]
+  ('arrayField:' arrayField=STRING)?
   'keyField:' keyField=STRING
   (
       ('colNames:' colNames=StringList)

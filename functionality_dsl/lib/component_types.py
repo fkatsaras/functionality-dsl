@@ -192,13 +192,20 @@ class LiveTableComponent(_BaseComponent):
     Unlike LiveView (which appends messages), LiveTable updates existing rows when
     a message with the same key is received, making it perfect for tracking state
     like shopping carts, user sessions, inventory, etc.
+
+    If arrayField is specified, the component will extract that field from each
+    WebSocket message and iterate over the array to display multiple rows.
+    This is useful when the WebSocket sends messages like:
+    {sessionId: "...", items: [{id:1, name:"A"}, {id:2, name:"B"}], total: 100}
+    With arrayField: "items", the table will display rows from the items array.
     """
     def __init__(self, parent=None, name=None, endpoint=None, keyField=None,
-                 colNames=None, columns=None, label=None, maxRows=None):
+                 colNames=None, columns=None, label=None, maxRows=None, arrayField=None):
         super().__init__(parent, name, endpoint)
 
-        # Strip quotes from keyField
+        # Strip quotes from keyField and arrayField
         self.keyField = self._strip_column_name(keyField) if keyField else None
+        self.arrayField = self._strip_column_name(arrayField) if arrayField else None
 
         # Support both legacy colNames and new typed columns (same as Table)
         if columns:
@@ -287,6 +294,7 @@ class LiveTableComponent(_BaseComponent):
     def to_props(self):
         return {
             "streamPath": self._endpoint_path(""),
+            "arrayField": self.arrayField,
             "keyField": self.keyField,
             "colNames": self.colNames,
             "columns": self.columns,

@@ -1058,6 +1058,32 @@ def verify_unique_names(model):
     ensure_unique(get_model_components(model), "Component")
 
 
+def verify_unique_endpoint_paths(model):
+    """
+    Ensure no two REST endpoints have the same path + method combination.
+    This prevents router conflicts where one endpoint shadows another.
+    """
+    # Track (method, path) tuples
+    seen_routes = {}
+
+    for endpoint in get_model_internal_rest_endpoints(model):
+        method = getattr(endpoint, "method", "GET").upper()
+        path = getattr(endpoint, "path", "")
+
+        route_key = (method, path)
+
+        if route_key in seen_routes:
+            existing_endpoint = seen_routes[route_key]
+            raise TextXSemanticError(
+                f"Endpoint<REST> '{endpoint.name}' has the same path and method as '{existing_endpoint.name}': "
+                f"{method} {path}\n"
+                f"Each endpoint must have a unique (method, path) combination to avoid router conflicts.",
+                **get_location(endpoint)
+            )
+
+        seen_routes[route_key] = endpoint
+
+
 def verify_endpoints(model):
     """
     Validate WebSocket endpoints:
@@ -1582,6 +1608,7 @@ def model_processor(model, metamodel=None):
     Note: Imports are handled in build_model() via _preload_imports() before parsing.
     """
     verify_unique_names(model)
+    verify_unique_endpoint_paths(model)
     verify_endpoints(model)
     verify_path_params(model)
     verify_entities(model)
