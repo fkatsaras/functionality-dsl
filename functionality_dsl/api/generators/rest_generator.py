@@ -137,6 +137,12 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                                 compiled_expr = compile_expr_to_python(param.expr)
                                 query_param_exprs[param.name] = compiled_expr
 
+            # Extract request entity for this specific write target (if any)
+            target_request_entity_name = None
+            target_request_schema = get_request_schema(target_source)
+            if target_request_schema and target_request_schema.get("type") == "entity":
+                target_request_entity_name = target_request_schema["entity"].name
+
             target_config = {
                 "name": target_source.name,
                 "url": target_source.url,
@@ -144,6 +150,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                 "headers": normalize_headers(target_source) + build_auth_headers(target_source),
                 "path_param_exprs": path_param_exprs,
                 "query_param_exprs": query_param_exprs,
+                "request_entity_name": target_request_entity_name,  # Entity to send as request body
             }
             write_targets.append(target_config)
 
@@ -168,13 +175,31 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                     entity_chain = build_entity_chain(computed_entity, model, all_source_names, context="ctx")
                     compiled_chain.extend(entity_chain)
 
-        # Also include request entity if it has computed attributes
+        # Also include endpoint's request entity if it has computed attributes
         if request_entity:
             request_chain = build_entity_chain(request_entity, model, all_source_names, context="ctx")
             # Only add if not already in compiled_chain
             for step in request_chain:
                 if not any(s.get("name") == step.get("name") for s in compiled_chain):
                     compiled_chain.append(step)
+
+        # IMPORTANT: Also include write target request entities (for POST/PUT/PATCH sources)
+        # These are entities that will be sent as request bodies to external APIs
+        from textx import get_children_of_type
+        for target_source in flow.write_targets:
+            # Find the Source object to get its request schema
+            for src in get_children_of_type("SourceREST", model):
+                if src.name == target_source.name:
+                    target_request_schema = get_request_schema(src)
+                    if target_request_schema and target_request_schema.get("type") == "entity":
+                        target_request_entity = target_request_schema["entity"]
+                        # Build chain for this entity (it may have computed attributes)
+                        target_request_chain = build_entity_chain(target_request_entity, model, all_source_names, context="ctx")
+                        # Only add if not already in compiled_chain
+                        for step in target_request_chain:
+                            if not any(s.get("name") == step.get("name") for s in compiled_chain):
+                                compiled_chain.append(step)
+                    break
 
     # =========================================================================
     # STEP 6: Build Response Transformation Chain (for mutations with response)

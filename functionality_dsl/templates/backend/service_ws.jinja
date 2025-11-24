@@ -289,6 +289,12 @@ async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
                 except Exception:
                     payload = raw
 
+                # Wrap primitive types into entity
+                if inp.get("subscribe_is_primitive") and inp.get("subscribe_attr_name"):
+                    attr_name = inp["subscribe_attr_name"]
+                    payload = {attr_name: payload}
+                    logger.debug(f"[TARGET_READER] - Wrapped primitive into '{attr_name}': {payload}")
+
                 {% if sync_config_inbound %}
                 row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
                 {% else %}
@@ -313,12 +319,21 @@ async def forward_to_targets(row: Dict[str, Any], inbound_entity_name: str):
         conn = _target_connections[idx]
         if conn:
             try:
+                # Unwrap primitive types before sending
+                payload = row
+                if tgt.get("publish_is_primitive") and tgt.get("publish_attr_name"):
+                    # Extract the primitive value from the wrapper entity
+                    attr_name = tgt["publish_attr_name"]
+                    if isinstance(row, dict) and attr_name in row:
+                        payload = row[attr_name]
+                        logger.debug(f"[FORWARD] - Unwrapped primitive from '{attr_name}': {payload}")
+
                 if tgt["protocol"] == "json":
-                    await conn.send(json.dumps(row))
+                    await conn.send(json.dumps(payload))
                 elif tgt["protocol"] == "text":
-                    await conn.send(str(row))
+                    await conn.send(str(payload))
                 else:
-                    await conn.send(json.dumps(row))
+                    await conn.send(json.dumps(payload))
                 logger.debug(f"[FORWARD] - Successfully sent to {tgt['url']}")
             except Exception as ex:
                 logger.error(f"[FORWARD] - Failed to send to {tgt['url']}: {ex}", exc_info=True)
@@ -375,6 +390,12 @@ async def ws_input_consumer(inp: dict, bus_in):
                     except Exception as parse_error:
                         logger.warning(f"[WS_INPUT] - Parse error: {parse_error}, using raw payload")
                         payload = raw
+
+                    # Wrap primitive types into entity
+                    if inp.get("subscribe_is_primitive") and inp.get("subscribe_attr_name"):
+                        attr_name = inp["subscribe_attr_name"]
+                        payload = {attr_name: payload}
+                        logger.debug(f"[WS_INPUT] - Wrapped primitive into '{attr_name}': {payload}")
 
                     # For publish-only endpoints, use outbound chain; otherwise use inbound chain
                     {% if entity_out and not entity_in %}

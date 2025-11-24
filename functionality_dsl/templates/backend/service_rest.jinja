@@ -74,6 +74,7 @@ _WRITE_TARGETS = [
         "headers": {{ target.headers }},
         "path_param_exprs": {{ target.path_param_exprs | tojson }},
         "query_param_exprs": {{ target.query_param_exprs | tojson }},
+        "request_entity_name": {{ target.get("request_entity_name") | tojson }},
     },
 {%- endfor %}
 ]
@@ -319,13 +320,17 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
             source_name=target_name
         )
 
+        # Determine which entity to send as payload
+        # Priority: target-specific request entity > endpoint request entity > raw request body
+        target_request_entity = target_config.get("request_entity_name")
+        if target_request_entity and target_request_entity in context:
+            payload = context[target_request_entity]
         {% if request_entity %}
-        # Get the transformed entity from context (terminal entity)
-        payload = context.get("{{ request_entity.name }}", request_body)
-        {% else %}
-        # No request entity - send raw request body
-        payload = request_body
+        elif "{{ request_entity.name }}" in context:
+            payload = context["{{ request_entity.name }}"]
         {% endif %}
+        else:
+            payload = request_body
 
         log_write_request(logger, method, url, payload)
 

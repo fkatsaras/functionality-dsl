@@ -107,7 +107,7 @@ async def duplex(ws: WebSocket):
                 {% if publish_is_primitive %}
                 # Primitive type ({{ publish_type }}) - wrap in entity's first attribute
                 # For wrapper entities with single attribute, payload is the raw value
-                validated = {{ entity_in.name }}(**{"{{ compiled_chain_inbound[0].attrs[0].name if compiled_chain_inbound and compiled_chain_inbound[0].attrs else 'value' }}": payload})
+                validated = {{ entity_in.name }}(**{"{{ entity_in.attributes[0].name if entity_in.attributes else 'value' }}": payload})
                 {% else %}
                 # Object type - payload should be a dict
                 validated = {{ entity_in.name }}(**payload)

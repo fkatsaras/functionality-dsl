@@ -100,6 +100,17 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     # Check if publish type is primitive (needs wrapping)
     publish_is_primitive = publish_type in PRIMITIVE_TYPES if publish_type else False
 
+    # IMPORTANT: When publish_is_primitive, the router already wraps the primitive into the entity.
+    # Don't include the wrapper entity in the inbound chain to avoid double-wrapping.
+    # Example: client sends "default-session" (string)
+    #   -> router wraps: {"sessionId": "default-session"}
+    #   -> service should NOT wrap again
+    if publish_is_primitive and compiled_chain_inbound and entity_in:
+        # Skip the first entity (the wrapper) in the chain
+        if compiled_chain_inbound[0].get("name") == entity_in.name:
+            print(f"[FIX] Skipping wrapper entity {entity_in.name} in inbound chain (router already wrapped primitive)")
+            compiled_chain_inbound = compiled_chain_inbound[1:]
+
     # Prepare template context
     template_context = {
         "endpoint": {
