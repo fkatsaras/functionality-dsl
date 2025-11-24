@@ -27,11 +27,15 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     content_type_out = "application/json"
 
     subscribe_block = getattr(endpoint, "subscribe", None)
+    subscribe_type = "object"  # default
     if subscribe_block:
         message = getattr(subscribe_block, "message", None)
         if message:
             entity_out = getattr(message, "entity", None)  # Clients subscribe = server sends = outbound
-        content_type_out = getattr(subscribe_block, "content_type", "application/json")
+        content_type_out = getattr(subscribe_block, "content_type", None) or "application/json"
+        # Extract subscribe type (object, string, array, etc.)
+        type_obj = getattr(subscribe_block, "type", None)
+        subscribe_type = str(type_obj) if type_obj else "object"
 
     publish_block = getattr(endpoint, "publish", None)
     publish_type = None
@@ -41,7 +45,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         message = getattr(publish_block, "message", None)
         if message:
             entity_in = getattr(message, "entity", None)  # Clients publish = server receives = inbound
-        content_type_in = getattr(publish_block, "content_type", "application/json")
+        content_type_in = getattr(publish_block, "content_type", None) or "application/json"
 
     route_path = get_route_path(endpoint)
 
@@ -112,6 +116,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "entity_out": entity_out,
         "publish_type": publish_type,
         "publish_is_primitive": publish_is_primitive,
+        "subscribe_type": subscribe_type,
         "content_type_in": content_type_in,
         "content_type_out": content_type_out,
         "route_prefix": route_path,

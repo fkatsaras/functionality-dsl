@@ -10,10 +10,11 @@ _buses: Dict[str, "WSBus"] = {}
 
 
 class WSBus:
-    def __init__(self, name: str, keep_last: bool = True, content_type: str = "application/json"):
+    def __init__(self, name: str, keep_last: bool = True, content_type: str = "application/json", message_type: str = "object"):
         self.name = name
         self.keep_last = keep_last
         self.content_type = content_type  # Content type for serialization
+        self.message_type = message_type  # Message type (object, string, array, etc.)
         self.last_message: Optional[Any] = None
         self.subscribers: Set[WebSocket] = set()
         self._lock = asyncio.Lock()
@@ -57,31 +58,41 @@ class WSBus:
         """Send message via WebSocket using appropriate format for content type."""
         from app.core.content_handler import ContentTypeHandler
 
-        # For binary content types, extract binary data from wrapper entity
+        # PRIMITIVE_TYPES that need unwrapping
+        PRIMITIVE_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'binary']
+
+        # Unwrap primitive messages (extract from wrapper entity)
+        unwrapped_msg = msg
+        if self.message_type in PRIMITIVE_TYPES and isinstance(msg, dict) and len(msg) > 0:
+            # Extract first value from wrapper entity
+            unwrapped_msg = next(iter(msg.values()), None)
+            logger.debug(f"[WSBUS] Unwrapped {self.message_type} message from wrapper entity")
+
+        # Send based on content type
         if ContentTypeHandler.is_binary(content_type):
-            # Extract binary data from dict (wrapper entity pattern)
-            if isinstance(msg, dict):
-                # Get first value which should be the binary data
+            # Binary data
+            if isinstance(unwrapped_msg, (bytes, bytearray)):
+                await ws.send_bytes(bytes(unwrapped_msg))
+            elif isinstance(msg, dict):
+                # Fallback: extract from dict if unwrapping didn't work
                 binary_data = next(iter(msg.values()), b"")
                 if isinstance(binary_data, (bytes, bytearray)):
                     await ws.send_bytes(bytes(binary_data))
-                    return
-            # Fallback: if already bytes, send directly
-            elif isinstance(msg, (bytes, bytearray)):
-                await ws.send_bytes(bytes(msg))
-                return
-
-        # For text/json content types
-        if content_type == "text/plain":
-            # Extract string from dict or send directly
-            if isinstance(msg, dict):
-                text_data = next(iter(msg.values()), "")
-                await ws.send_text(str(text_data))
             else:
-                await ws.send_text(str(msg))
+                logger.warning(f"[WSBUS] Expected binary data, got {type(unwrapped_msg)}")
+                await ws.send_bytes(b"")
+
+        elif content_type == "text/plain":
+            # Plain text
+            await ws.send_text(str(unwrapped_msg))
+
         else:
-            # Default: JSON serialization
-            await ws.send_json(msg)
+            # JSON (default)
+            # For object types, send the full dict; for primitives, send unwrapped value
+            if self.message_type == "object":
+                await ws.send_json(msg)  # Keep object as-is
+            else:
+                await ws.send_json(unwrapped_msg)  # Send unwrapped primitive
 
     async def add_ws(self, ws: WebSocket):
         """Register a subscriber and send last message if available."""
@@ -114,8 +125,8 @@ class WSBus:
             })
 
 
-def get_bus(name: str, keep_last: bool = True, content_type: str = "application/json") -> WSBus:
-    """Get or create a message bus by name with specified content type."""
+def get_bus(name: str, keep_last: bool = True, content_type: str = "application/json", message_type: str = "object") -> WSBus:
+    """Get or create a message bus by name with specified content type and message type."""
     if name not in _buses:
-        _buses[name] = WSBus(name, keep_last=keep_last, content_type=content_type)
+        _buses[name] = WSBus(name, keep_last=keep_last, content_type=content_type, message_type=message_type)
     return _buses[name]

@@ -73,9 +73,9 @@ async def duplex(ws: WebSocket):
     inbound_entity, outbound_entity = ws_service.get_inbound_outbound_entities()
     logger.info(f"[CLIENT] - Inbound entity: {inbound_entity or 'none'}, Outbound entity: {outbound_entity or 'none'}")
 
-    # Get message buses with content types
-    bus_in = wsbus.get_bus(inbound_entity, content_type="{{ content_type_in }}") if inbound_entity else None
-    bus_out = wsbus.get_bus(outbound_entity, content_type="{{ content_type_out }}") if outbound_entity else None
+    # Get message buses with content types and message types
+    bus_in = wsbus.get_bus(inbound_entity, content_type="{{ content_type_in }}", message_type="{{ publish_type or 'object' }}") if inbound_entity else None
+    bus_out = wsbus.get_bus(outbound_entity, content_type="{{ content_type_out }}", message_type="{{ subscribe_type }}") if outbound_entity else None
 
     # Start WS input consumers and pre-warm target connections
     # For publish-only endpoints, WS inputs feed into the outbound bus
