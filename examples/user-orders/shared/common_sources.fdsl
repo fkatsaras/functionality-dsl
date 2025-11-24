@@ -3,7 +3,8 @@
 // ============================================
 // These sources are used across multiple flows
 
-// External source - Product catalog list (used by product_catalog flow)
+// External source - ALL products from catalog
+// Each flow filters the results in their own entities
 Source<REST> ProductCatalogAPI
   url: "http://host.docker.internal:9001/products"
   method: GET

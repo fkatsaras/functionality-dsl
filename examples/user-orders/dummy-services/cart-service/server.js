@@ -112,10 +112,21 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", (message) => {
     try {
-      const data = JSON.parse(message);
+      // Accept plain string as session ID
+      const messageStr = message.toString();
 
-      if (data.type === "subscribe" && data.sessionId) {
-        sessionId = data.sessionId;
+      // Try to parse as JSON first (for backwards compatibility)
+      let receivedSessionId;
+      try {
+        const data = JSON.parse(messageStr);
+        receivedSessionId = data.sessionId || data;
+      } catch {
+        // If not JSON, treat as plain string session ID
+        receivedSessionId = messageStr.replace(/^"|"$/g, ''); // Remove quotes if present
+      }
+
+      if (receivedSessionId) {
+        sessionId = receivedSessionId;
         sessions.set(sessionId, ws);
 
         console.log(`[CART-WS] Session ${sessionId} subscribed`);
@@ -126,6 +137,8 @@ wss.on("connection", (ws, req) => {
           type: "cart_update",
           sessionId,
           cart,
+          itemCount: cart.items.length,
+          total: cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
           timestamp: new Date().toISOString()
         }));
       }
@@ -162,4 +175,4 @@ function broadcastCartUpdate(sessionId, cart) {
 }
 
 console.log(`Cart WebSocket Service running on ws://localhost:${WS_PORT}`);
-console.log(`Send {"type": "subscribe", "sessionId": "your-session-id"} to subscribe`);
+console.log(`Send "your-session-id" (plain string) to subscribe`);

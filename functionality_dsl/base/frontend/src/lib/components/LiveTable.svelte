@@ -44,6 +44,7 @@
     let unsub: null | (() => void) = null;
 
     function handleStream(msg: any) {
+        // meta events
         if (msg?.__meta === "open") {
             connected = true;
             return;
@@ -52,38 +53,48 @@
             connected = false;
             return;
         }
-
+    
         connected = true;
-
-        // Extract the key from the message
-        const key = msg?.[props.keyField];
-        if (key === undefined || key === null) {
-            console.warn(`Received message without keyField '${props.keyField}':`, msg);
-            return;
-        }
-
-        // Update or insert the row
-        if (rowsMap.has(key)) {
+    
+        // Extract array of messages (or single message)
+        const messages = props.arrayField
+            ? (msg?.[props.arrayField] ?? [])
+            : [msg];
+    
+        for (const item of messages) {
+            const key = item?.[props.keyField];
+        
+            if (key === undefined || key === null) {
+                console.warn(
+                    `Received item without keyField '${props.keyField}':`,
+                    item
+                );
+                continue;
+            }
+        
             // Update existing row
-            rowsMap.set(key, msg);
-        } else {
-            // Insert new row
-            rowsMap.set(key, msg);
-            orderedKeys = [...orderedKeys, key];
-
-            // Enforce maxRows limit (FIFO)
-            if (orderedKeys.length > maxRows) {
-                const removedKey = orderedKeys.shift();
-                if (removedKey !== undefined) {
-                    rowsMap.delete(removedKey);
+            if (rowsMap.has(key)) {
+                rowsMap.set(key, item);
+            } else {
+                // Insert new row
+                rowsMap.set(key, item);
+                orderedKeys = [...orderedKeys, key];
+            
+                // Enforce maxRows (FIFO)
+                if (orderedKeys.length > maxRows) {
+                    const removedKey = orderedKeys.shift();
+                    if (removedKey !== undefined) {
+                        rowsMap.delete(removedKey);
+                    }
                 }
             }
         }
-
-        // Trigger reactivity
+    
+        // Trigger Svelte reactivity
         rowsMap = rowsMap;
         orderedKeys = orderedKeys;
     }
+
 
     function getValueByName(row: any, fieldName: string) {
         return row[fieldName];

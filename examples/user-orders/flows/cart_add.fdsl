@@ -2,19 +2,7 @@
 // FLOW: Add to Cart
 // ============================================
 // Private endpoint (session-based) to add items to shopping cart
-// Fetches product details (name, price) from catalog before adding to cart
-
-// External source - Fetch product details (maps to AddToCart.productId parameter)
-Source<REST> ProductDetailsForCart
-  url: "http://host.docker.internal:9001/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string = AddToCart.productId;
-  response:
-    type: object
-    entity: Product
-end
+// Fetches product details (name, price) from shared ProductCatalogAPI and filters by ID
 
 // External source - Cart service API
 Source<REST> AddToCartAPI
@@ -28,29 +16,41 @@ Source<REST> AddToCartAPI
     entity: Cart
 end
 
+// Request entity for AddToCart endpoint
+Entity AddToCartRequest
+  attributes:
+    - productName: string;
+    - quantity: integer;
+end
+
 // Internal endpoint - what clients call
 Endpoint<REST> AddToCart
   path: "/cart/add"
   method: POST
-  parameters:
-    query:
-      - productId: string
-      - quantity: integer
+  request:
+    type: object
+    entity: AddToCartRequest
   response:
     type: object
     entity: AddToCartResponse
 end
 
-// Request to external cart API (enriched with product details)
-Entity AddToCartAPIRequest
+// Step 1: Filter product by name from request
+Entity FilteredProductForCart(ProductListWrapper, AddToCartRequest)
   attributes:
-    - productId: string = AddToCart.productId;
-    - productName: string = Product["name"];
-    - price: number = Product["price"];
-    - quantity: integer = AddToCart.quantity;
+    - filtered: array = filter(ProductListWrapper["products"], p -> p["name"] == AddToCartRequest["productName"]);
 end
 
-// Transform: Build response with cart summary
+// Step 2: Build request to external cart API (enriched with product details)
+Entity AddToCartAPIRequest(FilteredProductForCart, AddToCartRequest)
+  attributes:
+    - productId: string = get(FilteredProductForCart["filtered"][0], "id", "") if len(FilteredProductForCart["filtered"]) > 0 else "";
+    - productName: string = AddToCartRequest["productName"];
+    - price: number = get(FilteredProductForCart["filtered"][0], "price", 0.0) if len(FilteredProductForCart["filtered"]) > 0 else 0.0;
+    - quantity: integer = AddToCartRequest["quantity"];
+end
+
+// Transform: Build response with cart summary (depends on Cart entity from write source)
 Entity AddToCartResponse(Cart)
   attributes:
     - success: boolean = "true";
@@ -61,9 +61,9 @@ Entity AddToCartResponse(Cart)
     - items: array = Cart["items"];
 end
 
-// UI Component - Simple form with just productId and quantity
+// UI Component - Form submits as JSON request body
 Component<ActionForm> AddToCartForm
   endpoint: AddToCart
-  fields: [productId, quantity]
+  fields: [productName, quantity]
   submitLabel: "Add to Cart"
 end
