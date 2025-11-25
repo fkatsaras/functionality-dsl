@@ -119,7 +119,8 @@ wss.on("connection", (ws, req) => {
       let receivedSessionId;
       try {
         const data = JSON.parse(messageStr);
-        receivedSessionId = data.sessionId || data;
+        // Check for wrapper entity format first (e.g., {"value": "session-id"})
+        receivedSessionId = data.value || data.sessionId || data;
       } catch {
         // If not JSON, treat as plain string session ID
         receivedSessionId = messageStr.replace(/^"|"$/g, ''); // Remove quotes if present

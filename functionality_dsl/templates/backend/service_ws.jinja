@@ -30,7 +30,8 @@ _EXTERNAL_TARGETS = [
         "url": "{{ tgt.url }}",
         "headers": {{ tgt.headers }},
         "subprotocols": {{ (tgt.subprotocols or []) | tojson }},
-        "protocol": "{{ tgt.protocol or 'json' }}"
+        "protocol": "{{ tgt.protocol or 'json' }}",
+        "message_type": "{{ tgt.message_type or 'object' }}"
     },
 {%- endfor %}
 ]
@@ -268,7 +269,7 @@ async def ensure_target_connection(idx: int, inbound_entity_name: str):
 
 
 async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
-    """Read messages from external connection and run INBOUND chain."""
+    """Read messages from external connection and run OUTBOUND chain (data flows TO client)."""
     tgt = _EXTERNAL_TARGETS[idx]
     logger.info(f"[TARGET_READER] - Starting reader for target {idx}: {tgt['url']}")
 
@@ -277,7 +278,9 @@ async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
         logger.warning(f"[TARGET_READER] - No WS input found for target URL: {tgt['url']}")
         return
 
-    bus_in = wsbus.get_bus(inbound_entity_name)
+    # Get outbound entity name and bus (data from external WS flows to client)
+    _, outbound_entity_name = get_inbound_outbound_entities()
+    bus_out = wsbus.get_bus(outbound_entity_name)
 
     while True:
         conn = _target_connections[idx]
@@ -294,15 +297,16 @@ async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
                 except Exception:
                     payload = raw
 
-                {% if sync_config_inbound %}
-                row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                # Use OUTBOUND chain - data from external WS flows TO client
+                {% if sync_config_outbound %}
+                row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_OUTBOUND, inp["endpoint"])
                 {% else %}
-                row, _ = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"], inp.get("entity"))
+                row, _ = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_OUTBOUND, inp["endpoint"], inp.get("entity"))
                 {% endif %}
 
                 if row is not None:
-                    await bus_in.publish(row)
-                    logger.debug(f"[WS_MESSAGE] - Published to bus")
+                    await bus_out.publish(row)
+                    logger.debug(f"[WS_MESSAGE] - Published to outbound bus")
         except Exception as ex:
             logger.error(f"[TARGET_READER] - Reader failed for {tgt['url']}: {ex}", exc_info=True)
             _target_connections[idx] = None
