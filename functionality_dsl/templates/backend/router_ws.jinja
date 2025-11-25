@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.core.logging import set_request_id
 from app.core import wsbus
+from app.core.ws_wrapper import WSMessageWrapper
 from app.services import {{ endpoint.name | lower }}_service as ws_service
 {% if entity_in %}
 from app.domain.models import {{ entity_in.name }}
@@ -102,16 +103,19 @@ async def duplex(ws: WebSocket):
                 payload = raw
 
             {% if entity_in %}
+            # Wrap primitive types for internal processing
+            if WSMessageWrapper.should_wrap("{{ publish_type or 'object' }}"):
+                # Get the wrapper entity's attribute name
+                attr_name = "{{ wrapper_attr_name }}"
+                wrapped_payload = WSMessageWrapper.wrap(payload, attr_name)
+                logger.debug(f"[WRAPPER] Wrapped {{ publish_type }} message: {payload} -> {wrapped_payload}")
+            else:
+                # Object type - use as-is
+                wrapped_payload = payload
+
             # Validate incoming message against Pydantic model
             try:
-                {% if publish_is_primitive %}
-                # Primitive type ({{ publish_type }}) - wrap in entity's first attribute
-                # For wrapper entities with single attribute, payload is the raw value
-                validated = {{ entity_in.name }}(**{"{{ compiled_chain_inbound[0].attrs[0].name if compiled_chain_inbound and compiled_chain_inbound[0].attrs else 'value' }}": payload})
-                {% else %}
-                # Object type - payload should be a dict
-                validated = {{ entity_in.name }}(**payload)
-                {% endif %}
+                validated = {{ entity_in.name }}(**wrapped_payload)
                 payload = validated.model_dump()
                 logger.debug(f"[VALIDATION] ✓ Message validated against {{ entity_in.name }}")
             except ValidationError as validation_error:
@@ -150,7 +154,7 @@ async def duplex(ws: WebSocket):
 
             try:
                 row, context = ws_service.compute_entity_chain(
-                    payload, rid, chain_inbound, "{{ endpoint.name }}"
+                    payload, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}"
                 )
 
                 {% if events %}

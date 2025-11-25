@@ -3,6 +3,8 @@ import logging
 from typing import Any, Dict, Set, Optional
 from fastapi import WebSocket
 
+from app.core.ws_wrapper import WSMessageWrapper
+
 logger = logging.getLogger("fdsl.wsbus")
 
 # global registry of buses
@@ -58,14 +60,9 @@ class WSBus:
         """Send message via WebSocket using appropriate format for content type."""
         from app.core.content_handler import ContentTypeHandler
 
-        # PRIMITIVE_TYPES that need unwrapping
-        PRIMITIVE_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'binary']
-
         # Unwrap primitive messages (extract from wrapper entity)
-        unwrapped_msg = msg
-        if self.message_type in PRIMITIVE_TYPES and isinstance(msg, dict) and len(msg) > 0:
-            # Extract first value from wrapper entity
-            unwrapped_msg = next(iter(msg.values()), None)
+        unwrapped_msg = WSMessageWrapper.unwrap_if_needed(msg, self.message_type)
+        if unwrapped_msg != msg:
             logger.debug(f"[WSBUS] Unwrapped {self.message_type} message from wrapper entity")
 
         # Send based on content type

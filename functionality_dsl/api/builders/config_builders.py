@@ -160,6 +160,7 @@ def build_ws_input_config(entity, ws_source, all_source_names):
         "subprotocols": [],  # Removed subprotocols field in new design
         "protocol": "json",  # Default protocol
         "content_type": content_type,  # Pass content type for binary handling
+        "message_type": message_type,  # Pass message type for wrapping logic
         "attrs": attribute_configs,
     }
 
@@ -186,11 +187,13 @@ def build_ws_external_targets(entity_out, model):
         if calculate_distance_to_ancestor(target_entity, entity_out) is not None:
             # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
             channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
+            message_type = publish_schema.get("message_type", "object")
             external_targets.append({
                 "url": channel_url,
                 "headers": normalize_headers(external_ws) + build_auth_headers(external_ws),
                 "subprotocols": [],  # Removed subprotocols field in new design
                 "protocol": "json",  # Default protocol
+                "message_type": message_type,  # Pass message type for unwrapping logic
             })
 
     return external_targets

@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from app.core.runtime.safe_eval import compile_safe, compile_safe_exec, safe_globals
 from app.core.content_handler import ContentTypeHandler
+from app.core.ws_wrapper import WSMessageWrapper
 
 
 logger = logging.getLogger("fdsl.service.ws.{{ endpoint.name }}")
@@ -44,6 +45,7 @@ _WS_INPUTS = [
         "subprotocols": {{ (w.subprotocols or []) | tojson }},
         "protocol": "{{ w.protocol or 'json' }}",
         "content_type": "{{ w.content_type or 'application/json' }}",
+        "message_type": "{{ w.message_type or 'object' }}",
         "attrs": {{ w.attrs | tojson }}
     },
 {%- endfor %}
@@ -92,26 +94,40 @@ _target_lock = asyncio.Lock()
 #                          COMPUTATION FUNCTIONS
 # ============================================================================
 
-def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source_name: str) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def compute_entity_chain(payload: Any, sender_id: str, chain: List[Dict], source_name: str, entity_name: str = None) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Compute entity attributes through chain with flat context.
     Returns: (final_result, full_context)
+
+    Args:
+        payload: The incoming data
+        sender_id: Request ID for logging
+        chain: The computation chain
+        source_name: Name of the source (endpoint/feed)
+        entity_name: Optional entity name for the payload (if different from source_name)
     """
     logger.debug(f"[COMPUTE] - Processing payload from {source_name}")
 
+    # Build initial context with both source_name and entity_name (if provided)
     context = {
         source_name: payload,
         "__sender": sender_id
     }
 
+    # For inbound chains, also add the entity name to context
+    # This allows expressions to reference OutgoingWrapper.value instead of ChatDup.value
+    if entity_name and entity_name != source_name:
+        context[entity_name] = payload
+        logger.debug(f"[COMPUTE] - Added {entity_name} to context (alias for {source_name})")
+
     logger.info(f"[COMPUTE] - Executing chain with {len(chain)} step(s)")
     for step_index, ent in enumerate(chain, 1):
-        entity_name = ent["name"]
-        logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {entity_name}")
+        step_entity_name = ent["name"]
+        logger.debug(f"[COMPUTE] - Step {step_index}/{len(chain)}: {step_entity_name}")
 
-        shaped = _shape_entity_data(ent, context, entity_name)
-        context[entity_name] = shaped
-        logger.debug(f"[COMPUTE] - {entity_name} shaped with keys: {list(shaped.keys())}")
+        shaped = _shape_entity_data(ent, context, step_entity_name)
+        context[step_entity_name] = shaped
+        logger.debug(f"[COMPUTE] - {step_entity_name} shaped with keys: {list(shaped.keys())}")
 
     final_entity = chain[-1]["name"] if chain else source_name
     result = context[final_entity] if chain else {source_name: payload}
@@ -191,22 +207,11 @@ def _shape_entity_data(config: Dict[str, Any], context: Dict[str, Any], entity_n
         attr_name = a["name"]
         attr_expr = a["expr"]
 
-        # Special handling for wrapper entities
-        if attr_expr == "__WRAP_PAYLOAD__":
-            # Find the first non-special key in context (the payload source)
-            payload_value = None
-            for key in context:
-                if not key.startswith("__") and key != entity_name:
-                    payload_value = context[key]
-                    break
-            shaped[attr_name] = payload_value
-            logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} wrapped payload")
-            continue
-
         compiled = compile_safe(attr_expr)
         try:
             eval_globals = {**safe_globals, **context}
-            shaped[attr_name] = eval(compiled, eval_globals, {})
+            result = eval(compiled, eval_globals, {})
+            shaped[attr_name] = result
             logger.debug(f"[COMPUTE] - {entity_name}.{attr_name} computed")
         except HTTPException:
             raise
@@ -292,7 +297,7 @@ async def start_target_reader(idx: int, inbound_entity_name: str, wsbus):
                 {% if sync_config_inbound %}
                 row = await compute_with_sync(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
                 {% else %}
-                row, _ = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"])
+                row, _ = compute_entity_chain(payload, uuid.uuid4().hex, _COMPILED_CHAIN_INBOUND, inp["endpoint"], inp.get("entity"))
                 {% endif %}
 
                 if row is not None:
@@ -313,12 +318,16 @@ async def forward_to_targets(row: Dict[str, Any], inbound_entity_name: str):
         conn = _target_connections[idx]
         if conn:
             try:
+                # Unwrap primitive types before sending to external targets
+                message_type = tgt.get("message_type", "object")
+                message_to_send = WSMessageWrapper.unwrap_if_needed(row, message_type)
+
                 if tgt["protocol"] == "json":
-                    await conn.send(json.dumps(row))
+                    await conn.send(json.dumps(message_to_send))
                 elif tgt["protocol"] == "text":
-                    await conn.send(str(row))
+                    await conn.send(str(message_to_send))
                 else:
-                    await conn.send(json.dumps(row))
+                    await conn.send(json.dumps(message_to_send))
                 logger.debug(f"[FORWARD] - Successfully sent to {tgt['url']}")
             except Exception as ex:
                 logger.error(f"[FORWARD] - Failed to send to {tgt['url']}: {ex}", exc_info=True)
@@ -376,6 +385,14 @@ async def ws_input_consumer(inp: dict, bus_in):
                         logger.warning(f"[WS_INPUT] - Parse error: {parse_error}, using raw payload")
                         payload = raw
 
+                    # Wrap primitive types for internal processing
+                    message_type = inp.get("message_type", "object")
+                    if WSMessageWrapper.should_wrap(message_type):
+                        # Get the wrapper entity's attribute name
+                        attr_name = inp["attrs"][0]["name"] if inp.get("attrs") else "value"
+                        payload = WSMessageWrapper.wrap(payload, attr_name)
+                        logger.debug(f"[WS_INPUT] - Wrapped {message_type} message: {payload}")
+
                     # For publish-only endpoints, use outbound chain; otherwise use inbound chain
                     {% if entity_out and not entity_in %}
                     chain_to_use = _COMPILED_CHAIN_OUTBOUND
@@ -386,7 +403,7 @@ async def ws_input_consumer(inp: dict, bus_in):
                     {% if sync_config_inbound %}
                     row = await compute_with_sync(payload, uuid.uuid4().hex, chain_to_use, source_name)
                     {% else %}
-                    row, _ = compute_entity_chain(payload, uuid.uuid4().hex, chain_to_use, source_name)
+                    row, _ = compute_entity_chain(payload, uuid.uuid4().hex, chain_to_use, source_name, entity)
                     {% endif %}
 
                     if row is not None:

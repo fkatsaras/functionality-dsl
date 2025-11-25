@@ -99,7 +99,9 @@
       "Bash(make env-info:*)",
       "Bash(./venv_WIN/Scripts/pytest.exe:*)",
       "Bash(timeout 15 ../../venv_WIN/Scripts/fdsl.exe generate:*)",
-      "Bash(timeout 20 ../../venv_WIN/Scripts/fdsl.exe generate:*)"
+      "Bash(timeout 20 ../../venv_WIN/Scripts/fdsl.exe generate:*)",
+      "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/8080 && echo \"\"\"\"GET / HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\"\"\"\" >&3 && cat <&3')",
+      "Bash(read:*)"
     ],
     "deny": [],
     "ask": []

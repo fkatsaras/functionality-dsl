@@ -101,8 +101,13 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
                 "close": should_close,
             })
 
-    # Check if publish type is primitive (needs wrapping)
-    publish_is_primitive = publish_type in PRIMITIVE_TYPES if publish_type else False
+    # Extract wrapper attribute name for primitive types
+    wrapper_attr_name = None
+    if entity_in and publish_type in PRIMITIVE_TYPES:
+        # For primitive types, get the first attribute name from entity_in
+        attributes = getattr(entity_in, "attributes", [])
+        if attributes:
+            wrapper_attr_name = attributes[0].name
 
     # Prepare template context
     template_context = {
@@ -115,8 +120,8 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "entity_in": entity_in,
         "entity_out": entity_out,
         "publish_type": publish_type,
-        "publish_is_primitive": publish_is_primitive,
         "subscribe_type": subscribe_type,
+        "wrapper_attr_name": wrapper_attr_name,
         "content_type_in": content_type_in,
         "content_type_out": content_type_out,
         "route_prefix": route_path,

@@ -128,6 +128,12 @@ def build_inbound_chain(entity_in, model, all_source_names):
     Handles Source<WS>, Endpoint<WS>, and pure computed entities.
 
     Walks from entity_in to the terminal entity that gets sent to external targets.
+
+    Args:
+        entity_in: The starting entity (from endpoint publish block)
+        model: The DSL model
+        all_source_names: List of all source names
+
     Returns: (compiled_chain, ws_inputs, terminal_entity)
     """
     if not entity_in:
@@ -140,7 +146,7 @@ def build_inbound_chain(entity_in, model, all_source_names):
     terminal = _find_inbound_terminal_entity(entity_in, model)
     chain_entities = get_all_ancestors(terminal, model) + [terminal]
 
-    for entity in chain_entities:
+    for idx, entity in enumerate(chain_entities):
         # NEW DESIGN: Find source via reverse lookup
         source, source_type = find_source_for_entity(entity, model)
 
@@ -155,46 +161,19 @@ def build_inbound_chain(entity_in, model, all_source_names):
                     "attrs": config["attrs"],
                 })
 
-        # Note: Internal WebSocket endpoints (Endpoint<WS>) don't appear in find_source_for_entity
-        # They would need separate handling if needed
-        elif source is None:
-            attributes = getattr(entity, "attributes", []) or []
-            is_wrapper = len(attributes) == 1
-
-            attribute_configs = []
-            for attr in attributes:
-                if hasattr(attr, "expr") and attr.expr is not None:
-                    expr_code = compile_expr_to_python(attr.expr)
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": expr_code
-                    })
-                elif is_wrapper:
-                    # Wrapper entity: wrap primitive/array from endpoint in dict
-                    # The source_name in compute_entity_chain is the endpoint name
-                    # We need to reference the first available source in context (excluding __sender)
-                    # Use a special marker that the template will handle
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": "__WRAP_PAYLOAD__"
-                    })
-
-            if attribute_configs:
-                compiled_chain.append({
-                    "name": entity.name,
-                    "attrs": attribute_configs,
-                })
-
-        # Pure computed entity (no explicit source)
+        # Entity without explicit source (computed or schema-only)
         else:
             attribute_configs = []
             for attr in getattr(entity, "attributes", []) or []:
                 if hasattr(attr, "expr") and attr.expr is not None:
+                    # Entity has expressions - compile them
                     expr_code = compile_expr_to_python(attr.expr)
                     attribute_configs.append({
                         "name": attr.name,
                         "pyexpr": expr_code
                     })
+                # else: Schema-only attribute (no expression)
+                # Don't add to attribute_configs - will be handled as passthrough
 
             if attribute_configs:
                 compiled_chain.append({
@@ -230,50 +209,21 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
     chain_entities = get_all_ancestors(terminal, model) + [terminal]
 
     for entity in chain_entities:
-        # Find if this entity has a WS source
+        # Find if this entity has a source
         source, source_type = find_source_for_entity(entity, model)
 
         attribute_configs = []
 
-        # For WS source entities, check if it's a wrapper and needs wrapping logic
-        if source and source_type == "WS":
-            # Build WS input config to get wrapping logic
-            from ..extractors import get_subscribe_schema
-
-            attributes = getattr(entity, "attributes", []) or []
-            subscribe_schema = get_subscribe_schema(source)
-            message_type = subscribe_schema.get("message_type", "object") if subscribe_schema else "object"
-            is_wrapper = (len(attributes) == 1) and (message_type in ['array', 'string', 'number', 'integer', 'boolean', 'binary'])
-
-            for attr in attributes:
-                if hasattr(attr, "expr") and attr.expr is not None:
-                    expr_code = compile_expr_to_python(attr.expr)
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": expr_code
-                    })
-                elif is_wrapper:
-                    # Wrapper entity: wrap the raw source data directly
-                    # The single attribute gets the entire payload
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": source.name
-                    })
-                else:
-                    # Multi-attribute entity: extract field from source object
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": f"dsl_funcs['get']({source.name}, '{attr.name}', None)"
-                    })
-        else:
-            # Regular computed entity or endpoint entity
-            for attr in getattr(entity, "attributes", []) or []:
-                if hasattr(attr, "expr") and attr.expr is not None:
-                    expr_code = compile_expr_to_python(attr.expr)
-                    attribute_configs.append({
-                        "name": attr.name,
-                        "pyexpr": expr_code
-                    })
+        # For all entities, compile expressions if present
+        for attr in getattr(entity, "attributes", []) or []:
+            if hasattr(attr, "expr") and attr.expr is not None:
+                expr_code = compile_expr_to_python(attr.expr)
+                attribute_configs.append({
+                    "name": attr.name,
+                    "pyexpr": expr_code
+                })
+            # else: Schema-only attribute (no expression)
+            # Don't add to attribute_configs - will be handled as passthrough
 
         # Always include the entity — even if it has no expressions.
         compiled_chain.append({
