@@ -137,6 +137,12 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                                 compiled_expr = compile_expr_to_python(param.expr)
                                 query_param_exprs[param.name] = compiled_expr
 
+            # Get the request entity that this target expects
+            target_request_schema = get_request_schema(target_source)
+            target_request_entity_name = None
+            if target_request_schema and target_request_schema.get("type") == "entity":
+                target_request_entity_name = target_request_schema["entity"].name
+
             target_config = {
                 "name": target_source.name,
                 "url": target_source.url,
@@ -144,6 +150,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                 "headers": normalize_headers(target_source) + build_auth_headers(target_source),
                 "path_param_exprs": path_param_exprs,
                 "query_param_exprs": query_param_exprs,
+                "request_entity": target_request_entity_name,  # Entity to send in request body
             }
             write_targets.append(target_config)
 

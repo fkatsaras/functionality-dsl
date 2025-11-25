@@ -314,6 +314,58 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
             pass
 
     # =========================================================================
+    # 3.5. COLLECT COMPUTED ENTITIES FOR WRITE TARGET REQUEST CHAINS
+    # =========================================================================
+    # For write targets with request entities, collect all computed entities
+    # in the transformation chain from request_entity to the target's request entity.
+    # This ensures intermediate transformations are computed before writing.
+    #
+    # Example: POST /cart/add with AddToCartRequest
+    #   - Write target: AddToCartAPI expects AddToCartAPIRequest
+    #   - Must compute: FilteredProductForCart, AddToCartAPIRequest
+    # =========================================================================
+    for tgt in write_targets:
+        target_request_schema = get_request_schema(tgt)
+        if target_request_schema and target_request_schema.get("type") == "entity":
+            target_request_entity = target_request_schema["entity"]
+
+            # Recursively collect all computed entities in the chain
+            def collect_write_chain_entities(entity, visited=None):
+                """Collect computed entities needed to produce the target request entity."""
+                if visited is None:
+                    visited = set()
+
+                if entity.name in visited:
+                    return
+                visited.add(entity.name)
+
+                # Check if this entity has computed attributes
+                has_computed = False
+                for attr in getattr(entity, "attributes", []):
+                    if hasattr(attr, "expr") and attr.expr:
+                        has_computed = True
+                        if entity not in computed_entities:
+                            computed_entities.append(entity)
+                        break
+
+                # Follow parent edges (inheritance)
+                for parent in getattr(entity, "parents", []) or []:
+                    collect_write_chain_entities(parent, visited)
+
+                # Follow expression dependencies if this entity has computed attributes
+                if has_computed:
+                    for attr in getattr(entity, "attributes", []):
+                        if hasattr(attr, "expr") and attr.expr:
+                            referenced_entities = dep_graph._extract_entity_refs_from_expr(attr.expr)
+                            for ref_entity in referenced_entities:
+                                collect_write_chain_entities(ref_entity, visited)
+
+            try:
+                collect_write_chain_entities(target_request_entity)
+            except Exception:
+                pass
+
+    # =========================================================================
     # 4. RESOLVE READS FROM WRITE TARGET PARAMETER EXPRESSIONS (AST-based)
     # =========================================================================
     # For WRITE/READ_WRITE flows: If write targets have parameter expressions

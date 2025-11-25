@@ -302,70 +302,74 @@ async def write_to_targets(context: Dict[str, Any], request_body: Dict[str, Any]
     http_client = get_http_client()
     last_response = None
 
-    for target_config in _WRITE_TARGETS:
-        target_name = target_config["name"]
-        base_url = target_config["url"]
-        method = target_config["method"]
-        headers = resolve_headers(target_config.get("headers", []))
+{%- for target_config in write_targets %}
+    # Write Target {{ loop.index }}: {{ target_config.name }}
+    target_name = "{{ target_config.name }}"
+    base_url = "{{ target_config.url }}"
+    method = "{{ target_config.method }}"
+    headers = resolve_headers({{ target_config.headers | tojson }})
 
-        # Evaluate URL parameters and build URL
-        url = evaluate_url_parameters(
-            base_url=base_url,
-            path_param_exprs=target_config.get("path_param_exprs", {}),
-            query_param_exprs=target_config.get("query_param_exprs", {}),
-            context=context,
-            safe_globals=safe_globals,
-            logger=logger,
-            source_name=target_name
+    # Evaluate URL parameters and build URL
+    url = evaluate_url_parameters(
+        base_url=base_url,
+        path_param_exprs={{ target_config.path_param_exprs | tojson }},
+        query_param_exprs={{ target_config.query_param_exprs | tojson }},
+        context=context,
+        safe_globals=safe_globals,
+        logger=logger,
+        source_name=target_name
+    )
+
+    # Get the entity to send to this target
+    {% if target_config.get("request_entity") %}
+    payload = context.get("{{ target_config.request_entity }}", request_body)
+    logger.debug(f"[WRITE] - Using entity {{ target_config.request_entity }} for request body")
+    {% elif request_entity %}
+    payload = context.get("{{ request_entity.name }}", request_body)
+    {% else %}
+    payload = request_body
+    {% endif %}
+
+    log_write_request(logger, method, url, payload)
+
+    try:
+        # Prepare request with appropriate content type
+        request_content_type = headers.get("Content-Type", "application/json")
+        request_body_bytes, request_headers = ContentTypeHandler.prepare_external_request(
+            payload, request_content_type
         )
+        headers.update(request_headers)
 
-        {% if request_entity %}
-        # Get the transformed entity from context (terminal entity)
-        payload = context.get("{{ request_entity.name }}", request_body)
-        {% else %}
-        # No request entity - send raw request body
-        payload = request_body
-        {% endif %}
+        response = await http_client.request(method, url, headers=headers, content=request_body_bytes)
 
-        log_write_request(logger, method, url, payload)
-
-        try:
-            # Prepare request with appropriate content type
-            request_content_type = headers.get("Content-Type", "application/json")
-            request_body, request_headers = ContentTypeHandler.prepare_external_request(
-                payload, request_content_type
-            )
-            headers.update(request_headers)
-
-            response = await http_client.request(method, url, headers=headers, content=request_body)
-
-            if response.status_code >= 400:
-                log_write_error(logger, target_name, response.status_code, response.text[:500])
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"External target {target_name} returned {response.status_code}"
-                )
-
-            # Parse response based on Content-Type
-            response_content_type = response.headers.get("content-type", "application/json")
-            try:
-                last_response = await ContentTypeHandler.parse_external_response(
-                    response.content, response_content_type
-                )
-                log_write_success(logger, target_name, last_response if isinstance(last_response, dict) else f"<{type(last_response).__name__}>")
-            except:
-                last_response = {"status": "success"}
-                logger.info(f"[WRITE] ✓ Success (no parseable response)")
-
-        except HTTPException:
-            raise
-        except Exception as write_error:
-            logger.error(f"[WRITE] - Unexpected error writing to {target_name}: {write_error}", exc_info=True)
+        if response.status_code >= 400:
+            log_write_error(logger, target_name, response.status_code, response.text[:500])
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to write to external target: {target_name}"
+                detail=f"External target {target_name} returned {response.status_code}"
             )
 
+        # Parse response based on Content-Type
+        response_content_type = response.headers.get("content-type", "application/json")
+        try:
+            last_response = await ContentTypeHandler.parse_external_response(
+                response.content, response_content_type
+            )
+            log_write_success(logger, target_name, last_response if isinstance(last_response, dict) else f"<{type(last_response).__name__}>")
+        except:
+            last_response = {"status": "success"}
+            logger.info(f"[WRITE] ✓ Success (no parseable response)")
+
+    except HTTPException:
+        raise
+    except Exception as write_error:
+        logger.error(f"[WRITE] - Unexpected error writing to {target_name}: {write_error}", exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to write to external target: {target_name}"
+        )
+
+{% endfor %}
     return last_response or {}
 {% endif %}
 
