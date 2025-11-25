@@ -12,7 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 security = HTTPBearer()
 {% endif %}
 
-from app.services import {{ endpoint.name | lower }}_service
+from app.services.{{ endpoint.name | lower }}_service import service
 from app.core.content_handler import ContentTypeHandler
 
 
@@ -127,7 +127,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             )
 
         # Execute flow (with request body)
-        return await {{ endpoint.name | lower }}_service.execute_flow(
+        return await service.execute_flow(
             request_body=request_body,
             path_params=path_params,
             query_params=query_params,
@@ -135,7 +135,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
         )
         {% else %}
         # Execute flow (no request body)
-        return await {{ endpoint.name | lower }}_service.execute_flow(
+        return await service.execute_flow(
             path_params=path_params,
             query_params=query_params,
             headers=headers

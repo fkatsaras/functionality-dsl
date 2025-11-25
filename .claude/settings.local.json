@@ -101,7 +101,14 @@
       "Bash(timeout 15 ../../venv_WIN/Scripts/fdsl.exe generate:*)",
       "Bash(timeout 20 ../../venv_WIN/Scripts/fdsl.exe generate:*)",
       "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/8080 && echo \"\"\"\"GET / HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\"\"\"\" >&3 && cat <&3')",
-      "Bash(read:*)"
+      "Bash(read:*)",
+      "Bash(for file in examples/user-management/test_oop_gen/app/services/*.py)",
+      "Bash(do echo \"Checking $file...\")",
+      "Bash(exit 1)",
+      "Bash(for file in app/services/*.py)",
+      "Bash(do echo \"Compiling $file...\")",
+      "Bash(for file in app/services/*.py app/api/routers/*.py)",
+      "Bash(do ../../../venv_WIN/Scripts/python.exe -m py_compile \"$file\")"
     ],
     "deny": [],
     "ask": []
