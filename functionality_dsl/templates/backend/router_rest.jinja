@@ -36,8 +36,8 @@ router = APIRouter(
 {# Determine strict response model based on actual entity and type #}
 {% if response_entity %}
   {% if response_type == 'array' %}
-    {# Array of entities - use List[EntityModel] #}
-    {% set response_model = 'List[' ~ response_entity.name ~ ']' %}
+    {# Array type - service unwraps single-attribute wrappers, so use List[Any] #}
+    {% set response_model = 'List[Any]' %}
   {% elif response_type == 'string' %}
     {# Primitive string - service unwraps, validate as str #}
     {% set response_model = 'str' %}

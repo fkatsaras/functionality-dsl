@@ -435,6 +435,20 @@ class {{ endpoint.name }}Service(BaseService):
         if headers:
             endpoint_params.update(headers)
 
+        {% if endpoint.query_params_typed %}
+        # Apply default values for missing query parameters
+        {% for qparam in endpoint.query_params_typed %}
+        {% if qparam.default_expr %}
+        if "{{ qparam.name }}" not in endpoint_params or endpoint_params["{{ qparam.name }}"] is None:
+            try:
+                endpoint_params["{{ qparam.name }}"] = {{ qparam.default_expr }}
+                self.logger.debug(f"[PARAM] - Applied default for {{ qparam.name }}: {endpoint_params['{{ qparam.name }}']}")
+            except Exception as e:
+                self.logger.warning(f"[PARAM] - Could not apply default for {{ qparam.name }}: {e}")
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+
         # Add endpoint parameter object to context
         context["{{ endpoint.name }}"] = endpoint_params
         self.logger.debug(f"[CONTEXT] - Created endpoint parameter object {{ endpoint.name }} with keys: {list(endpoint_params.keys())}")

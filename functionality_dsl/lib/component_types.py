@@ -471,6 +471,36 @@ class ActionFormComponent(_BaseComponent):
 
 
 @register_component
+class QueryFormComponent(_BaseComponent):
+    """
+    QueryForm component for GET requests with query parameters.
+    Unlike ActionForm which uses request body, QueryForm builds URL query parameters.
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, fields=None, submitLabel=None):
+        super().__init__(parent, name, None)
+
+        self.endpoint = endpoint                  # the EndpointREST node
+        self.fields = fields or []
+        self.submitLabel = submitLabel
+
+        if self.endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+
+    def to_props(self):
+        """
+        Build frontend props for QueryForm.
+        Returns endpoint path and fields for building query parameters.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+
+        return {
+            "endpointPath": path,
+            "fields": [str(f) for f in (self.fields or [])],
+            "submitLabel": self.submitLabel or "Submit",
+        }
+
+
+@register_component
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>

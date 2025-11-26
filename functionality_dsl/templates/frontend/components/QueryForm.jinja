@@ -1,0 +1,9 @@
+{# components/QueryForm.jinja #}
+{# Component for GET requests with query parameters #}
+{%- set raw_url = props.get('endpointPath') or '' -%}
+<QueryForm
+    name="{{ common.name }}"
+    url={`{{ raw_url }}`}
+    fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
+    submitLabel="{{ props.get('submitLabel') or 'Submit' }}"
+/>

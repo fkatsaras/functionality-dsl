@@ -212,8 +212,22 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     path_params = extract_path_params(route_path)  # Just names for backward compatibility
 
     # NEW: Extract path parameters WITH type information
-    from ..utils.paths import get_path_params_from_block
+    from ..utils.paths import get_path_params_from_block, get_query_params_from_block
     path_params_typed = get_path_params_from_block(endpoint)
+
+    # Extract query parameters WITH type information and default expressions
+    from ...lib.compiler.expr_compiler import compile_expr_to_python
+    query_params_typed = []
+    for qparam in get_query_params_from_block(endpoint):
+        qp_info = {
+            "name": qparam["name"],
+            "type": qparam["type"],
+            "required": qparam["required"],
+        }
+        # Compile default expression if present
+        if qparam.get("expr"):
+            qp_info["default_expr"] = compile_expr_to_python(qparam["expr"])
+        query_params_typed.append(qp_info)
 
     endpoint_auth = getattr(endpoint, "auth", None)
     auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
@@ -253,6 +267,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             "summary": getattr(endpoint, "summary", None),
             "path_params": path_params,  # Backward compatibility (just names)
             "path_params_typed": path_params_typed,  # WITH type information
+            "query_params_typed": query_params_typed,  # Query params with defaults
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },

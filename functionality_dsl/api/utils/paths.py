@@ -42,7 +42,7 @@ def get_path_params_from_block(endpoint) -> list[dict]:
 def get_query_params_from_block(endpoint) -> list[dict]:
     """
     Extract query parameters from endpoint's parameters block.
-    Returns list of dicts with: name, type, required, constraints
+    Returns list of dicts with: name, type, required, constraints, default_expr
     """
     parameters = getattr(endpoint, "parameters", None)
     if not parameters:
@@ -61,7 +61,8 @@ def get_query_params_from_block(endpoint) -> list[dict]:
         param_info = {
             "name": getattr(param, "name", ""),
             "type": getattr(param, "type", None),
-            "required": not getattr(getattr(param, "type", None), "nullable", False)
+            "required": not getattr(getattr(param, "type", None), "nullable", False),
+            "expr": getattr(param, "expr", None)  # Default value expression
         }
         result.append(param_info)
 
