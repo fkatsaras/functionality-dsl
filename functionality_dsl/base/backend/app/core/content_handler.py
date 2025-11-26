@@ -75,6 +75,159 @@ class ContentTypeHandler:
         return content_type in text_types
 
     @staticmethod
+    async def _parse_multipart(body: bytes, content_type: str) -> Dict[str, Any]:
+        """
+        Parse multipart/form-data body into a dictionary.
+
+        Args:
+            body: Raw request body bytes
+            content_type: Full Content-Type header (includes boundary)
+
+        Returns:
+            Dictionary with field names as keys and field values (str or bytes)
+
+        Raises:
+            ValueError: If parsing fails
+        """
+        # Extract boundary from content-type header
+        if 'boundary=' not in content_type:
+            raise ValueError("multipart/form-data missing boundary parameter")
+
+        boundary = content_type.split('boundary=')[1].strip()
+        if boundary.startswith('"') and boundary.endswith('"'):
+            boundary = boundary[1:-1]
+
+        # Convert boundary to bytes
+        boundary_bytes = f'--{boundary}'.encode('utf-8')
+        end_boundary_bytes = f'--{boundary}--'.encode('utf-8')
+
+        # Split body by boundary
+        parts = body.split(boundary_bytes)
+
+        result = {}
+
+        for part in parts:
+            if not part or part == b'\r\n' or part.startswith(b'--'):
+                continue
+
+            # Parse headers and content
+            try:
+                # Split headers from content (separated by \r\n\r\n)
+                if b'\r\n\r\n' not in part:
+                    continue
+
+                headers_section, content = part.split(b'\r\n\r\n', 1)
+
+                # Remove trailing \r\n from content
+                content = content.rstrip(b'\r\n')
+
+                # Parse Content-Disposition header
+                headers_str = headers_section.decode('utf-8', errors='ignore')
+                field_name = None
+                filename = None
+
+                for line in headers_str.split('\r\n'):
+                    if line.lower().startswith('content-disposition:'):
+                        # Extract field name and filename
+                        import re
+                        name_match = re.search(r'name="([^"]+)"', line)
+                        if name_match:
+                            field_name = name_match.group(1)
+
+                        filename_match = re.search(r'filename="([^"]+)"', line)
+                        if filename_match:
+                            filename = filename_match.group(1)
+
+                if not field_name:
+                    logger.warning("Multipart part missing field name, skipping")
+                    continue
+
+                # If this is a file upload, store as bytes
+                if filename:
+                    result[field_name] = content
+                    result['filename'] = filename  # Store filename separately
+                    logger.debug(f"[MULTIPART] Parsed file field '{field_name}': {filename} ({len(content)} bytes)")
+                else:
+                    # Text field - decode to string
+                    try:
+                        result[field_name] = content.decode('utf-8')
+                        logger.debug(f"[MULTIPART] Parsed text field '{field_name}': {result[field_name][:50]}...")
+                    except UnicodeDecodeError:
+                        # If decode fails, store as bytes
+                        result[field_name] = content
+                        logger.debug(f"[MULTIPART] Parsed binary field '{field_name}' ({len(content)} bytes)")
+
+            except Exception as parse_error:
+                logger.warning(f"Failed to parse multipart part: {parse_error}")
+                continue
+
+        if not result:
+            raise ValueError("No valid fields found in multipart/form-data")
+
+        logger.info(f"[MULTIPART] Parsed {len(result)} field(s): {list(result.keys())}")
+        return result
+
+    @staticmethod
+    def _build_multipart(data: Dict[str, Any]) -> tuple[bytes, Dict[str, str]]:
+        """
+        Build multipart/form-data request body from dictionary.
+
+        Args:
+            data: Dictionary with field names as keys and values (str or bytes)
+
+        Returns:
+            Tuple of (request_body_bytes, headers_dict with Content-Type including boundary)
+
+        Raises:
+            ValueError: If building fails
+        """
+        import secrets
+
+        # Generate random boundary
+        boundary = f"----FormBoundary{secrets.token_hex(16)}"
+        boundary_bytes = boundary.encode('utf-8')
+
+        # Build multipart body
+        parts = []
+
+        for field_name, value in data.items():
+            if field_name == 'filename':
+                # Skip filename metadata field
+                continue
+
+            # Start part with boundary
+            part = b'--' + boundary_bytes + b'\r\n'
+
+            # Add Content-Disposition header
+            if isinstance(value, bytes):
+                # Binary file field
+                filename = data.get('filename', 'file')
+                part += f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode('utf-8')
+                part += b'Content-Type: application/octet-stream\r\n\r\n'
+                part += value
+            else:
+                # Text field
+                part += f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'.encode('utf-8')
+                if isinstance(value, str):
+                    part += value.encode('utf-8')
+                else:
+                    part += str(value).encode('utf-8')
+
+            part += b'\r\n'
+            parts.append(part)
+
+        # Add final boundary
+        body = b''.join(parts) + b'--' + boundary_bytes + b'--\r\n'
+
+        # Set Content-Type header with boundary
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}"
+        }
+
+        logger.debug(f"[MULTIPART] Built multipart body with {len(data)} fields ({len(body)} bytes)")
+        return body, headers
+
+    @staticmethod
     async def parse_request(
         request_body: bytes,
         content_type: str
@@ -109,10 +262,9 @@ class ContentTypeHandler:
                 return xmltodict.parse(xml_str)
 
             elif content_type_normalized == ContentType.FORM_DATA:
-                # For form data, return raw bytes - FastAPI handles multipart parsing
-                # Service layer can use FormData entity if needed
-                logger.warning("Form data should be handled by FastAPI's Form() parameter")
-                return request_body
+                # Parse multipart/form-data into a dictionary
+                logger.debug("Parsing multipart/form-data request body")
+                return await ContentTypeHandler._parse_multipart(request_body, content_type)
 
             elif ContentTypeHandler.is_binary(content_type_normalized):
                 # Binary data - return as bytes
@@ -205,13 +357,13 @@ class ContentTypeHandler:
         Raises:
             ValueError: If preparation fails
         """
-        headers = {"Content-Type": content_type}
-
         try:
             if content_type == ContentType.JSON:
+                headers = {"Content-Type": content_type}
                 body_bytes = json.dumps(data).encode('utf-8')
 
             elif content_type == ContentType.TEXT:
+                headers = {"Content-Type": content_type}
                 # Handle wrapper entities (single-attribute dict wrapping primitives)
                 if isinstance(data, dict) and len(data) == 1:
                     # Unwrap the primitive value from wrapper entity
@@ -225,6 +377,7 @@ class ContentTypeHandler:
                     body_bytes = str(data).encode('utf-8')
 
             elif content_type == ContentType.XML:
+                headers = {"Content-Type": content_type}
                 if not XML_AVAILABLE:
                     raise ValueError("XML support requires 'xmltodict' package")
                 if isinstance(data, dict):
@@ -233,7 +386,12 @@ class ContentTypeHandler:
                 else:
                     raise ValueError("XML serialization requires dict data")
 
+            elif content_type.startswith(ContentType.FORM_DATA):
+                # Build multipart/form-data request
+                return ContentTypeHandler._build_multipart(data)
+
             elif ContentTypeHandler.is_binary(content_type):
+                headers = {"Content-Type": content_type}
                 if isinstance(data, bytes):
                     body_bytes = data
                 elif isinstance(data, str):
@@ -244,8 +402,8 @@ class ContentTypeHandler:
 
             else:
                 # Default to JSON
+                headers = {"Content-Type": ContentType.JSON}
                 body_bytes = json.dumps(data).encode('utf-8')
-                headers["Content-Type"] = ContentType.JSON
 
             return body_bytes, headers
 

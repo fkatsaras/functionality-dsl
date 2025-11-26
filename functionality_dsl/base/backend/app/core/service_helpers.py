@@ -16,6 +16,34 @@ from urllib.parse import urlencode
 from fastapi import HTTPException
 
 
+def _sanitize_for_logging(data: Any, max_bytes_preview: int = 100) -> Any:
+    """
+    Sanitize data for JSON logging by converting binary data to safe representations.
+
+    Args:
+        data: Data to sanitize (can be dict, list, bytes, or primitive)
+        max_bytes_preview: Maximum number of bytes to show in preview
+
+    Returns:
+        Sanitized data safe for JSON serialization
+    """
+    if isinstance(data, bytes):
+        # Binary data - show metadata instead of raw bytes
+        size = len(data)
+        preview = data[:max_bytes_preview].hex() if size > 0 else ""
+        return {
+            "_type": "binary",
+            "size_bytes": size,
+            "preview_hex": preview + ("..." if size > max_bytes_preview else "")
+        }
+    elif isinstance(data, dict):
+        return {k: _sanitize_for_logging(v, max_bytes_preview) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_sanitize_for_logging(item, max_bytes_preview) for item in data]
+    else:
+        return data
+
+
 def log_incoming_request(
     logger: logging.Logger,
     path_params: Dict[str, str] = None,
@@ -32,8 +60,10 @@ def log_incoming_request(
         incoming_data["body"] = request_body
 
     if incoming_data:
-        incoming_preview = json.dumps(incoming_data, indent=2)[:400]
-        if len(json.dumps(incoming_data)) > 400:
+        # Sanitize data to handle binary content
+        sanitized_data = _sanitize_for_logging(incoming_data)
+        incoming_preview = json.dumps(sanitized_data, indent=2)[:400]
+        if len(json.dumps(sanitized_data)) > 400:
             incoming_preview += "\n  ... (truncated)"
         logger.info(f"[REQUEST] ← Incoming request:\n{incoming_preview}")
     else:
@@ -42,8 +72,9 @@ def log_incoming_request(
 
 def log_outgoing_response(logger: logging.Logger, response_data: Any) -> None:
     """Log outgoing response data in a structured format."""
-    response_preview = json.dumps(response_data, indent=2)[:400]
-    if len(json.dumps(response_data)) > 400:
+    sanitized_data = _sanitize_for_logging(response_data)
+    response_preview = json.dumps(sanitized_data, indent=2)[:400]
+    if len(json.dumps(sanitized_data)) > 400:
         response_preview += "\n  ... (truncated)"
     logger.info(f"[RESPONSE] → Outgoing response:\n{response_preview}")
 
@@ -60,8 +91,9 @@ def log_fetch_request(logger: logging.Logger, method: str, url: str, entity_name
 
 def log_fetch_success(logger: logging.Logger, entity_name: str, payload: Any) -> None:
     """Log successful fetch from external source."""
-    payload_preview = json.dumps(payload, indent=2)[:300]
-    if len(json.dumps(payload)) > 300:
+    sanitized_payload = _sanitize_for_logging(payload)
+    payload_preview = json.dumps(sanitized_payload, indent=2)[:300]
+    if len(json.dumps(sanitized_payload)) > 300:
         payload_preview += "\n  ... (truncated)"
     logger.info(f"[FETCH] ✓ Received data from {entity_name}:\n{payload_preview}")
 
@@ -73,16 +105,18 @@ def log_fetch_error(logger: logging.Logger, entity_name: str, status_code: int) 
 
 def log_write_request(logger: logging.Logger, method: str, url: str, payload: Any) -> None:
     """Log write request to external target."""
-    payload_preview = json.dumps(payload, indent=2)[:300]
-    if len(json.dumps(payload)) > 300:
+    sanitized_payload = _sanitize_for_logging(payload)
+    payload_preview = json.dumps(sanitized_payload, indent=2)[:300]
+    if len(json.dumps(sanitized_payload)) > 300:
         payload_preview += "\n  ... (truncated)"
     logger.info(f"[WRITE] → {method} {url}\nPayload:\n{payload_preview}")
 
 
 def log_write_success(logger: logging.Logger, target_name: str, response: Any) -> None:
     """Log successful write to external target."""
-    response_preview = json.dumps(response, indent=2)[:300]
-    if len(json.dumps(response)) > 300:
+    sanitized_response = _sanitize_for_logging(response)
+    response_preview = json.dumps(sanitized_response, indent=2)[:300]
+    if len(json.dumps(sanitized_response)) > 300:
         response_preview += "\n  ... (truncated)"
     logger.info(f"[WRITE] ✓ Response from {target_name}:\n{response_preview}")
 

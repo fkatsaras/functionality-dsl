@@ -61,8 +61,12 @@ Endpoint<REST> UploadFileAPI
     type: object
     entity: FileUploadResult
   errors:
-    - 413: condition: UploadResponse.size > 52428800 message: "File too large (max 50MB)"
-    - 400: condition: not UploadResponse.file_id message: "Upload failed"
+    - 413: 
+      condition: UploadResponse.size > 52428800 
+      message: "File too large (max 50MB)"
+    - 400: 
+      condition: not UploadResponse.file_id 
+      message: "Upload failed"
 end
 
 

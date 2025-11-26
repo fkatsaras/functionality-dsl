@@ -1,6 +1,6 @@
 services:
-  dummy-storage-service:
-    container_name: dummy-storage-service
+  dummy-storage:
+    container_name: dummy-storage
     image: dummy-storage-service
     build:
       context: .

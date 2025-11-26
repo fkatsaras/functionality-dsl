@@ -18,7 +18,12 @@ class {{ ent.name }}(BaseModel):
     {% if attr.field_constraints %}
     {{ attr.name }}: {{ attr.py_type }} = Field({% for key, value in attr.field_constraints.items() %}{{ key }}={{ value }}{% if not loop.last %}, {% endif %}{% endfor %})
     {% else %}
+    {# Add default None for Optional fields to make them truly optional in Pydantic v2 #}
+    {% if attr.py_type.startswith('Optional[') %}
+    {{ attr.name }}: {{ attr.py_type }} = None
+    {% else %}
     {{ attr.name }}: {{ attr.py_type }}
+    {% endif %}
     {% endif %}
     {% endfor %}
 
