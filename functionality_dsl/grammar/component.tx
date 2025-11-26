@@ -13,6 +13,7 @@ Component:
   | LiveChartComponent
   | ActionFormComponent
   | QueryFormComponent
+  | TextFormComponent
   | GaugeComponent
   | InputComponent
   | LiveViewComponent
@@ -132,6 +133,17 @@ QueryFormComponent:
   (
     'endpoint:' endpoint=[EndpointREST]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
+    ('submitLabel:' submitLabel=STRING)?
+  )#
+  'end'
+;
+
+TextFormComponent:
+  'Component' '<' 'TextForm' '>' name=ID
+  (
+    'endpoint:' endpoint=[EndpointREST]
+    ('label:' label=STRING)?
+    ('placeholder:' placeholder=STRING)?
     ('submitLabel:' submitLabel=STRING)?
   )#
   'end'

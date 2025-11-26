@@ -501,6 +501,38 @@ class QueryFormComponent(_BaseComponent):
 
 
 @register_component
+class TextFormComponent(_BaseComponent):
+    """
+    TextForm component for text/plain POST requests.
+    Provides a textarea for plain text input and sends it as text/plain content type.
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, label=None, placeholder=None, submitLabel=None):
+        super().__init__(parent, name, None)
+
+        self.endpoint = endpoint
+        self.label = label
+        self.placeholder = placeholder
+        self.submitLabel = submitLabel
+
+        if self.endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+
+    def to_props(self):
+        """
+        Build frontend props for TextForm.
+        Returns endpoint path and display configuration.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+
+        return {
+            "endpointPath": path,
+            "label": self.label or "Text Input",
+            "placeholder": self.placeholder or "Enter text here...",
+            "submitLabel": self.submitLabel or "Submit",
+        }
+
+
+@register_component
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>

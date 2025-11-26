@@ -1,0 +1,74 @@
+Server FileUploadAPI
+  host: "localhost"
+  port: 8088
+  cors: "http://localhost:3000"
+  loglevel: debug
+end
+
+
+// External file storage service
+Source<REST> FileStorageService
+  url: "http://dummy-storage:9900/upload"
+  method: POST
+  request:
+    multipart/form-data:
+      type: object
+      entity: FileUpload
+  response:
+    type: object
+    entity: UploadResponse
+end
+
+
+// File upload request entity
+Entity FileUpload
+  attributes:
+    - file: binary;
+    - filename: string;
+    - description: string?;
+end
+
+// Upload response from storage service
+Entity UploadResponse
+  attributes:
+    - file_id: string;
+    - url: string;
+    - size: integer;
+    - uploaded_at: string;
+end
+
+// Computed entity - adds validation and metadata
+Entity FileUploadResult(UploadResponse)
+  attributes:
+    - id: string = UploadResponse.file_id;
+    - download_url: string = UploadResponse.url;
+    - file_size: integer = UploadResponse.size;
+    - size_mb: number = round(UploadResponse.size / 1048576.0, 2);
+    - uploaded: string = UploadResponse.uploaded_at;
+    - is_large: boolean = UploadResponse.size > 10485760;
+end
+
+
+// API endpoint that accepts file upload
+Endpoint<REST> UploadFileAPI
+  path: "/api/files/upload"
+  method: POST
+  request:
+    multipart/form-data:
+      type: object
+      entity: FileUpload
+  response:
+    type: object
+    entity: FileUploadResult
+  errors:
+    - 413: condition: UploadResponse.size > 52428800 "File too large (max 50MB)"
+    - 400: condition: not UploadResponse.file_id "Upload failed"
+end
+
+
+// Component to upload files
+Component<ActionForm> FileUploadForm
+  endpoint: UploadFileAPI
+  fields: [file, filename, description]
+  submitLabel: "Upload File"
+end

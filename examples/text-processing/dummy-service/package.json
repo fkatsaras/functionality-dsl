@@ -1,0 +1,12 @@
+{
+  "name": "dummy-text-service",
+  "version": "1.0.0",
+  "description": "Dummy text transformation service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

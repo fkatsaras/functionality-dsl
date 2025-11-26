@@ -1,0 +1,10 @@
+{# components/TextForm.jinja #}
+{# Component for text/plain POST requests #}
+{%- set raw_url = props.get('endpointPath') or '' -%}
+<TextForm
+    name="{{ common.name }}"
+    url={`{{ raw_url }}`}
+    label="{{ props.get('label') or 'Text Input' }}"
+    placeholder="{{ props.get('placeholder') or 'Enter text here...' }}"
+    submitLabel="{{ props.get('submitLabel') or 'Submit' }}"
+/>

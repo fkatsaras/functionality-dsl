@@ -1,0 +1,15 @@
+services:
+  dummy-storage-service:
+    container_name: dummy-storage-service
+    image: dummy-storage-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9900:9900"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true
