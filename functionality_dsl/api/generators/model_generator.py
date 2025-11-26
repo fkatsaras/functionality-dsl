@@ -28,60 +28,11 @@ def generate_domain_models(model, templates_dir, output_dir):
             # Collect imports
             all_imports.update(validator_info["imports"])
 
-            # Check if attribute only references path parameters (uses $ syntax)
-            # These should be excluded from Pydantic body validation
-            # Properly detect ParamAccess nodes in the AST
-            is_path_param_only = False
-            if hasattr(attr, "expr") and attr.expr is not None:
-                def contains_param_access(node, visited=None):
-                    """Recursively check if expression contains ParamAccess ($ syntax)."""
-                    if visited is None:
-                        visited = set()
-                    if node is None or id(node) in visited:
-                        return False
-                    visited.add(id(node))
-
-                    # Check if this node has 'param' attribute (PostfixTail with ParamAccess)
-                    if hasattr(node, 'param') and node.param is not None:
-                        return True
-
-                    # Check if node class name is ParamAccess
-                    if node.__class__.__name__ == 'ParamAccess':
-                        return True
-
-                    # Recursively check all child nodes
-                    for attr_name in dir(node):
-                        if attr_name.startswith('_') or attr_name == 'parent':
-                            continue
-                        try:
-                            child = getattr(node, attr_name, None)
-                            if child is None:
-                                continue
-                            # Check single child
-                            if hasattr(child, '__dict__'):
-                                if contains_param_access(child, visited):
-                                    return True
-                            # Check list of children
-                            elif isinstance(child, list):
-                                for item in child:
-                                    if hasattr(item, '__dict__') and contains_param_access(item, visited):
-                                        return True
-                        except:
-                            continue
-
-                    return False
-
-                try:
-                    is_path_param_only = contains_param_access(attr.expr)
-                except Exception as e:
-                    pass  # If detection fails, include the field (safe default)
-
             # Build attribute config
             attr_config = {
                 "name": attr.name,
                 "py_type": map_to_python_type(attr),
                 "field_constraints": validator_info["field_constraints"],
-                "is_path_param_only": is_path_param_only,  # Mark for exclusion from body validation
             }
 
             if hasattr(attr, "expr") and attr.expr is not None:

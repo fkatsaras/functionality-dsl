@@ -15,6 +15,11 @@ security = HTTPBearer()
 from app.services.{{ endpoint.name | lower }}_service import service
 from app.core.content_handler import ContentTypeHandler
 
+{# Import response entity Pydantic model for strict typing #}
+{% if response_entity %}
+from app.domain.models import {{ response_entity.name }}
+{% endif %}
+
 
 logger = logging.getLogger("fdsl.router.{{ endpoint.name }}")
 
@@ -28,13 +33,36 @@ router = APIRouter(
 {% set pparams_typed = endpoint.path_params_typed or [] %}
 {% set http_method = flow.http_method %}
 
-{# Determine response model based on response type #}
-{% if response_type == 'array' %}
-{% set response_model = 'List[Any]' %}
-{% elif response_type in ('string', 'integer', 'number', 'boolean') %}
-{% set response_model = 'Any' %}
+{# Determine strict response model based on actual entity and type #}
+{% if response_entity %}
+  {% if response_type == 'array' %}
+    {# Array of entities - use List[EntityModel] #}
+    {% set response_model = 'List[' ~ response_entity.name ~ ']' %}
+  {% elif response_type == 'string' %}
+    {# Primitive string - service unwraps, validate as str #}
+    {% set response_model = 'str' %}
+  {% elif response_type == 'integer' %}
+    {# Primitive integer - service unwraps, validate as int #}
+    {% set response_model = 'int' %}
+  {% elif response_type == 'number' %}
+    {# Primitive number - service unwraps, validate as float #}
+    {% set response_model = 'float' %}
+  {% elif response_type == 'boolean' %}
+    {# Primitive boolean - service unwraps, validate as bool #}
+    {% set response_model = 'bool' %}
+  {% else %}
+    {# Object type - use actual Pydantic model #}
+    {% set response_model = response_entity.name %}
+  {% endif %}
 {% else %}
-{% set response_model = 'Dict[str, Any]' %}
+  {# Fallback for endpoints without explicit response entity (legacy) #}
+  {% if response_type == 'array' %}
+  {% set response_model = 'List[Any]' %}
+  {% elif response_type in ('string', 'integer', 'number', 'boolean') %}
+  {% set response_model = 'Any' %}
+  {% else %}
+  {% set response_model = 'Dict[str, Any]' %}
+  {% endif %}
 {% endif %}
 
 {# Helper macro to convert FDSL types to Python types #}

@@ -15,12 +15,10 @@ class {{ ent.name }}(BaseModel):
     """Generated Pydantic model for {{ ent.name }}."""
 
     {% for attr in ent.attributes %}
-    {% if not attr.is_path_param_only %}
     {% if attr.field_constraints %}
     {{ attr.name }}: {{ attr.py_type }} = Field({% for key, value in attr.field_constraints.items() %}{{ key }}={{ value }}{% if not loop.last %}, {% endif %}{% endfor %})
     {% else %}
     {{ attr.name }}: {{ attr.py_type }}
-    {% endif %}
     {% endif %}
     {% endfor %}
 

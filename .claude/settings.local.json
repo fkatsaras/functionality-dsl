@@ -108,7 +108,8 @@
       "Bash(for file in app/services/*.py)",
       "Bash(do echo \"Compiling $file...\")",
       "Bash(for file in app/services/*.py app/api/routers/*.py)",
-      "Bash(do ../../../venv_WIN/Scripts/python.exe -m py_compile \"$file\")"
+      "Bash(do ../../../venv_WIN/Scripts/python.exe -m py_compile \"$file\")",
+      "Bash(for file in app/api/routers/*.py app/services/*.py)"
     ],
     "deny": [],
     "ask": []

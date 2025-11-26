@@ -145,8 +145,8 @@ end
 
 Entity ToggleResponse
   attributes:
-    - ok: string;
-    - state: boolean;
+    - ok: boolean;
+    - ac_state: boolean;
 end
 
 
