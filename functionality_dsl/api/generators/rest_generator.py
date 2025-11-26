@@ -140,8 +140,28 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             # Get the request entity that this target expects
             target_request_schema = get_request_schema(target_source)
             target_request_entity_name = None
-            if target_request_schema and target_request_schema.get("type") == "entity":
-                target_request_entity_name = target_request_schema["entity"].name
+            target_content_type = "application/json"
+            target_request_type = "object"
+            target_is_primitive = False
+
+            if target_request_schema:
+                if target_request_schema.get("type") == "entity":
+                    target_request_entity_name = target_request_schema["entity"].name
+                target_content_type = target_request_schema.get("content_type", "application/json")
+                target_request_type = target_request_schema.get("request_type", "object")
+                target_is_primitive = target_request_type in {"string", "integer", "number", "boolean"}
+
+            # Get the response entity that this target returns
+            target_response_schema = get_response_schema(target_source)
+            target_response_entity_name = None
+            target_response_type = "object"
+            target_response_is_primitive = False
+
+            if target_response_schema:
+                if target_response_schema.get("type") == "entity":
+                    target_response_entity_name = target_response_schema["entity"].name
+                target_response_type = target_response_schema.get("response_type", "object")
+                target_response_is_primitive = target_response_type in {"string", "integer", "number", "boolean"}
 
             target_config = {
                 "name": target_source.name,
@@ -151,6 +171,12 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                 "path_param_exprs": path_param_exprs,
                 "query_param_exprs": query_param_exprs,
                 "request_entity": target_request_entity_name,  # Entity to send in request body
+                "content_type": target_content_type,  # Content type for request
+                "request_type": target_request_type,  # Primitive type (string, integer, etc.)
+                "is_primitive": target_is_primitive,  # Whether request is a primitive type
+                "response_entity": target_response_entity_name,  # Entity returned in response
+                "response_type": target_response_type,  # Response primitive type
+                "response_is_primitive": target_response_is_primitive,  # Whether response is a primitive type
             }
             write_targets.append(target_config)
 
@@ -271,6 +297,18 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },
+
+        # Request/Response metadata (content types and primitive types)
+        "request_metadata": {
+            "content_type": request_schema.get("content_type", "application/json") if request_schema else "application/json",
+            "request_type": request_schema.get("request_type", "object") if request_schema else "object",
+            "is_primitive": request_schema.get("request_type") in {"string", "integer", "number", "boolean"} if request_schema else False,
+        } if request_schema else None,
+        "response_metadata": {
+            "content_type": response_schema.get("content_type", "application/json") if response_schema else "application/json",
+            "response_type": response_schema.get("response_type", "object") if response_schema else "object",
+            "is_primitive": response_schema.get("response_type") in {"string", "integer", "number", "boolean"} if response_schema else False,
+        } if response_schema else None,
 
         # Entities
         "entity": primary_entity,

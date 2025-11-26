@@ -9,6 +9,7 @@
     </div>
 
     <div class="card-body">
+        <slot /> <!--  default slot-->
         <slot name="children" />
     </div>
 

@@ -4,7 +4,7 @@
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from fastapi import HTTPException
 
@@ -128,9 +128,21 @@ class {{ endpoint.name }}Service(BaseService):
         {% endif %}
 
     {% if request_entity %}
-    def validate_request_body(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_request_body(self, request_body: Union[Dict[str, Any], str, int, float, bool]) -> Dict[str, Any]:
         """Validate request body against Pydantic schema."""
         from app.domain.models import {{ request_entity.name }}
+        {% if request_metadata and request_metadata.is_primitive %}
+        # Handle primitive type wrapping for non-JSON content types
+        from app.core.primitive_wrapper import wrap_primitive_for_entity
+
+        if not isinstance(request_body, dict):
+            self.logger.debug(f"[WRAP] Wrapping primitive {{ request_metadata.request_type }} value into {{ request_entity.name }}")
+            request_body = wrap_primitive_for_entity(
+                request_body,
+                {{ request_entity.name }},
+                "{{ request_metadata.request_type }}"
+            )
+        {% endif %}
         return validate_body_helper(request_body, {{ request_entity.name }}, self.logger)
     {% endif %}
 
@@ -339,8 +351,8 @@ class {{ endpoint.name }}Service(BaseService):
         log_write_request(self.logger, method, url, payload)
 
         try:
-            # Prepare request with appropriate content type
-            request_content_type = headers.get("Content-Type", "application/json")
+            # Prepare request with appropriate content type (from target config)
+            request_content_type = "{{ target_config.content_type }}"
             request_body_bytes, request_headers = ContentTypeHandler.prepare_external_request(
                 payload, request_content_type
             )
@@ -361,6 +373,20 @@ class {{ endpoint.name }}Service(BaseService):
                 last_response = await ContentTypeHandler.parse_external_response(
                     response.content, response_content_type
                 )
+
+                {% if target_config.get("response_entity") and target_config.get("response_is_primitive") %}
+                # Wrap primitive response into entity
+                if not isinstance(last_response, dict):
+                    from app.core.primitive_wrapper import wrap_primitive_for_entity
+                    from app.domain.models import {{ target_config.response_entity }}
+                    self.logger.debug(f"[WRAP] Wrapping primitive response into {{ target_config.response_entity }}")
+                    last_response = wrap_primitive_for_entity(
+                        last_response,
+                        {{ target_config.response_entity }},
+                        "{{ target_config.response_type }}"
+                    )
+                {% endif %}
+
                 log_write_success(self.logger, target_name, last_response if isinstance(last_response, dict) else f"<{type(last_response).__name__}>")
             except:
                 last_response = {"status": "success"}
@@ -438,10 +464,10 @@ class {{ endpoint.name }}Service(BaseService):
         {% if endpoint.query_params_typed %}
         # Apply default values for missing query parameters
         {% for qparam in endpoint.query_params_typed %}
-        {% if qparam.default_expr %}
+        {% if qparam.get("default_expr") %}
         if "{{ qparam.name }}" not in endpoint_params or endpoint_params["{{ qparam.name }}"] is None:
             try:
-                endpoint_params["{{ qparam.name }}"] = {{ qparam.default_expr }}
+                endpoint_params["{{ qparam.name }}"] = {{ qparam.get("default_expr") }}
                 self.logger.debug(f"[PARAM] - Applied default for {{ qparam.name }}: {endpoint_params['{{ qparam.name }}']}")
             except Exception as e:
                 self.logger.warning(f"[PARAM] - Could not apply default for {{ qparam.name }}: {e}")

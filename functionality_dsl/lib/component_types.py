@@ -533,6 +533,40 @@ class TextFormComponent(_BaseComponent):
 
 
 @register_component
+class FileUploadFormComponent(_BaseComponent):
+    """
+    FileUploadForm component for multipart/form-data POST requests.
+    Provides a file input with drag-and-drop and upload progress.
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, label=None, accept=None, maxSize=None, submitLabel=None):
+        super().__init__(parent, name, None)
+
+        self.endpoint = endpoint
+        self.label = label
+        self.accept = accept
+        self.maxSize = maxSize
+        self.submitLabel = submitLabel
+
+        if self.endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+
+    def to_props(self):
+        """
+        Build frontend props for FileUploadForm.
+        Returns endpoint path, file constraints, and display configuration.
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+
+        return {
+            "endpointPath": path,
+            "label": self.label or "Upload File",
+            "accept": self.accept or "*",
+            "maxSize": self.maxSize or 52428800,  # 50MB default
+            "submitLabel": self.submitLabel or "Upload",
+        }
+
+
+@register_component
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>

@@ -1,0 +1,11 @@
+{# components/FileUploadForm.jinja #}
+{# Component for multipart/form-data POST requests #}
+{%- set raw_url = props.get('endpointPath') or '' -%}
+<FileUploadForm
+    name="{{ common.name }}"
+    url={`{{ raw_url }}`}
+    label="{{ props.get('label') or 'Upload File' }}"
+    accept="{{ props.get('accept') or '*' }}"
+    maxSize={{ props.get('maxSize') or 52428800 }}
+    submitLabel="{{ props.get('submitLabel') or 'Upload' }}"
+/>

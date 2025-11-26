@@ -212,6 +212,13 @@ class ContentTypeHandler:
                 body_bytes = json.dumps(data).encode('utf-8')
 
             elif content_type == ContentType.TEXT:
+                # Handle wrapper entities (single-attribute dict wrapping primitives)
+                if isinstance(data, dict) and len(data) == 1:
+                    # Unwrap the primitive value from wrapper entity
+                    from app.core.primitive_wrapper import unwrap_primitive_from_entity
+                    data = unwrap_primitive_from_entity(data, "string")
+                    logger.debug("[UNWRAP] Unwrapped text/plain value from wrapper entity")
+
                 if isinstance(data, str):
                     body_bytes = data.encode('utf-8')
                 else:

@@ -61,14 +61,16 @@ Endpoint<REST> UploadFileAPI
     type: object
     entity: FileUploadResult
   errors:
-    - 413: condition: UploadResponse.size > 52428800 "File too large (max 50MB)"
-    - 400: condition: not UploadResponse.file_id "Upload failed"
+    - 413: condition: UploadResponse.size > 52428800 message: "File too large (max 50MB)"
+    - 400: condition: not UploadResponse.file_id message: "Upload failed"
 end
 
 
 // Component to upload files
-Component<ActionForm> FileUploadForm
+Component<FileUploadForm> FileUploadFormUI
   endpoint: UploadFileAPI
-  fields: [file, filename, description]
+  label: "File Upload"
+  accept: "*"
+  maxSize: 52428800
   submitLabel: "Upload File"
 end

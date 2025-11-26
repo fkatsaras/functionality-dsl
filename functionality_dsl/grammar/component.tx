@@ -14,6 +14,7 @@ Component:
   | ActionFormComponent
   | QueryFormComponent
   | TextFormComponent
+  | FileUploadFormComponent
   | GaugeComponent
   | InputComponent
   | LiveViewComponent
@@ -144,6 +145,18 @@ TextFormComponent:
     'endpoint:' endpoint=[EndpointREST]
     ('label:' label=STRING)?
     ('placeholder:' placeholder=STRING)?
+    ('submitLabel:' submitLabel=STRING)?
+  )#
+  'end'
+;
+
+FileUploadFormComponent:
+  'Component' '<' 'FileUploadForm' '>' name=ID
+  (
+    'endpoint:' endpoint=[EndpointREST]
+    ('label:' label=STRING)?
+    ('accept:' accept=STRING)?
+    ('maxSize:' maxSize=INT)?
     ('submitLabel:' submitLabel=STRING)?
   )#
   'end'

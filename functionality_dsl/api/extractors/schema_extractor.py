@@ -4,7 +4,7 @@
 def get_request_schema(endpoint):
     """
     Extract request schema from endpoint.
-    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None}
+    Returns dict with: {type: 'entity'|'inline', entity: Entity|None, inline_spec: dict|None, request_type: str, content_type: str}
     """
     request = getattr(endpoint, "request", None)
     if not request:
@@ -14,6 +14,9 @@ def get_request_schema(endpoint):
     if not schema:
         return None
 
+    # Extract the request type (string, number, integer, boolean, array, object)
+    request_type = getattr(request, "type", "object")  # Default to object if not specified
+
     # Check if it's an entity reference
     entity = getattr(schema, "entity", None)
     if entity:
@@ -21,7 +24,8 @@ def get_request_schema(endpoint):
             "type": "entity",
             "entity": entity,
             "inline_spec": None,
-            "content_type": getattr(request, "content_type", "application/json")
+            "content_type": getattr(request, "content_type", "application/json"),
+            "request_type": request_type
         }
 
     # Check if it's an inline type
@@ -31,7 +35,8 @@ def get_request_schema(endpoint):
             "type": "inline",
             "entity": None,
             "inline_spec": parse_inline_type(inline_type),
-            "content_type": getattr(request, "content_type", "application/json")
+            "content_type": getattr(request, "content_type", "application/json"),
+            "request_type": request_type
         }
 
     return None
