@@ -75,7 +75,22 @@ router = APIRouter(
 {%- endif -%}
 {%- endmacro %}
 
-@router.{{ http_method }}("", response_model={{ response_model }})
+@router.{{ http_method }}(
+    "",
+    response_model={{ response_model }}{% if errors %},
+    responses={
+        {% for error in errors %}
+        {{ error.status_code }}: {
+            "description": "{{ error.message }}",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "{{ error.message }}"}
+                }
+            }
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    }{% endif %}
+)
 async def {{ flow.type }}_{{ endpoint.name | lower }}(
     request: Request{% for p in pparams_typed %},
     {{ p.name }}: {{ python_type(p.type) }}{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
