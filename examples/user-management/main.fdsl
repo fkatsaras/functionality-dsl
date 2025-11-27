@@ -271,9 +271,6 @@ Endpoint<REST> UserDeleteEndpoint
         UsersListWrapper.users,
         u -> u["id"] == UserDeleteEndpoint.userId)
       message: "User doesnt exist"
-    - 500:
-      condition: not UsersListWrapper.users
-      message: "No more users left"
 end
 
 // ============================================================
