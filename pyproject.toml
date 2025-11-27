@@ -19,6 +19,7 @@ dependencies = [
     "plantuml",
     "networkx",
     "bs4",
+    "graphviz",
 ]
 
 [project.scripts]

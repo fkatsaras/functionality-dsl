@@ -1,4 +1,9 @@
 <script lang="ts">
+    import Badge from "$lib/primitives/Badge.svelte";
+    import { createEventDispatcher } from "svelte";
+
+    const dispatch = createEventDispatcher();
+
     let {
         file = $bindable(null),
         accept = "*",
@@ -49,12 +54,15 @@
 
     function processFile(selectedFile: File) {
         error = null;
+        dispatch("error", null);
 
         // Validate file size
         if (selectedFile.size > maxSize) {
             error = `File too large. Max size: ${(maxSize / 1048576).toFixed(0)}MB`;
             return;
         }
+
+        dispatch("error", null);
 
         // Simulate upload progress
         isUploading = true;
@@ -77,6 +85,8 @@
         if (fileInputElement) {
             fileInputElement.value = "";
         }
+
+        dispatch("error", null);
     }
 
     function formatFileSize(bytes: number): string {
@@ -143,15 +153,16 @@
     </div>
 
     {#if error}
-        <div class="error-message">{error}</div>
+        <Badge variant="error" class="mt-2">{error}</Badge>
     {/if}
+
 </div>
 
 <style>
     .file-input-container {
         width: 100%;
     }
-    
+
     .drop-zone {
         padding: 2rem;
         border: 2px dashed var(--edge-soft);
@@ -164,27 +175,23 @@
         align-items: center;
         justify-content: center;
     }
-    
-    /* Hover */
+
     .drop-zone:hover {
         border-color: var(--edge-light);
         background: color-mix(in srgb, var(--surface) 90%, var(--edge-soft));
     }
-    
-    /* Dragging (accent glow, no “blue-text”) */
+
     .drop-zone.dragging {
         border-color: var(--accent);
         background: color-mix(in srgb, var(--accent) 20%, var(--surface));
         box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
     }
-    
-    /* Has file */
+
     .drop-zone.has-file {
         border-style: solid;
         border-color: var(--edge-light);
     }
-    
-    /* Empty state */
+
     .empty-state {
         display: flex;
         flex-direction: column;
@@ -193,33 +200,32 @@
         color: var(--text-muted);
         opacity: 0.7;
     }
-    
+
     .upload-icon {
         font-size: 2rem;
     }
-    
+
     .placeholder-text {
         font-size: 0.875rem;
         text-align: center;
     }
-    
-    /* File info */
+
     .file-info {
         display: flex;
         align-items: center;
         gap: 1rem;
         width: 100%;
     }
-    
+
     .file-icon {
         font-size: 2rem;
     }
-    
+
     .file-details {
         flex: 1;
         min-width: 0;
     }
-    
+
     .file-name {
         font-weight: 500;
         color: var(--text);
@@ -227,15 +233,14 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-    
+
     .file-size {
         font-size: 0.75rem;
         color: var(--text-muted);
         opacity: 0.7;
         margin-top: 0.25rem;
     }
-    
-    /* Clear button (fixed to use your reds) */
+
     .clear-button {
         padding: 0.5rem;
         border: none;
@@ -244,31 +249,29 @@
         font-size: 1rem;
         line-height: 1;
         transition: all 0.15s ease;
-    
+
         background: var(--red-tint);
         color: var(--red-text);
     }
-    
+
     .clear-button:hover {
         background: var(--red-text);
         color: var(--surface);
     }
-    
-    /* Upload progress */
+
     .upload-progress {
         width: 100%;
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
     }
-    
+
     .progress-text {
         text-align: center;
         font-size: 0.875rem;
         color: var(--text);
     }
-    
-    /* Progress bar container */
+
     .progress-bar-container {
         width: 100%;
         height: 8px;
@@ -276,28 +279,17 @@
         border-radius: 4px;
         overflow: hidden;
     }
-    
-    /* Progress bar itself (accent gradient) */
+
     .progress-bar {
         height: 100%;
         transition: width 0.3s ease;
         border-radius: 4px;
-    
+
         background: linear-gradient(
             90deg,
             var(--accent),
             var(--accent-secondary, #b57cff)
         );
     }
-    
-    /* Error message (use your red palette, not external vars) */
-    .error-message {
-        margin-top: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        background: color-mix(in srgb, var(--red-text) 20%, transparent);
-        color: var(--red-text);
-        border-radius: 4px;
-        font-size: 0.875rem;
-    }
-    
+
 </style>

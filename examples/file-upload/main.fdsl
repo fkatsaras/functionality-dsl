@@ -6,26 +6,33 @@ Server FileUploadAPI
 end
 
 
-// External file storage service
+// File upload request entity (received from client)
+Entity FileUpload
+  attributes:
+    - file: binary;
+    - filename: string;
+    - description: string?;
+end
+
+// Compressed file to send to storage (transformation entity)
+Entity CompressedFileUpload(FileUpload)
+  attributes:
+    - file: binary = binary_compress_gzip(FileUpload.file);
+    - filename: string = FileUpload.filename + ".gz";
+    - description: string = FileUpload.description if FileUpload.description else "";
+end
+
+// External file storage service - receives COMPRESSED file
 Source<REST> FileStorageService
   url: "http://dummy-storage:9900/upload"
   method: POST
   request:
     multipart/form-data:
       type: object
-      entity: FileUpload
+      entity: CompressedFileUpload
   response:
     type: object
     entity: UploadResponse
-end
-
-
-// File upload request entity
-Entity FileUpload
-  attributes:
-    - file: binary;
-    - filename: string;
-    - description: string?;
 end
 
 // Upload response from storage service
@@ -37,15 +44,18 @@ Entity UploadResponse
     - uploaded_at: string;
 end
 
-// Computed entity - adds validation and metadata
-Entity FileUploadResult(UploadResponse)
+// Computed entity - adds compression stats and metadata
+Entity FileUploadResult(UploadResponse, FileUpload)
   attributes:
     - id: string = UploadResponse.file_id;
     - download_url: string = UploadResponse.url;
-    - file_size: integer = UploadResponse.size;
+    - original_size: integer = binary_size(FileUpload.file);
+    - compressed_size: integer = UploadResponse.size;
+    - compression_ratio: number = round((1.0 - (UploadResponse.size / binary_size(FileUpload.file))) * 100.0, 2);
     - size_mb: number = round(UploadResponse.size / 1048576.0, 2);
     - uploaded: string = UploadResponse.uploaded_at;
     - is_large: boolean = UploadResponse.size > 10485760;
+    - compressed_filename: string = CompressedFileUpload.filename;
 end
 
 

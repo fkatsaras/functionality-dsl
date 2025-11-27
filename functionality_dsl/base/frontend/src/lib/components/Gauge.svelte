@@ -89,7 +89,7 @@
     const derivedAngle = $derived(-90 + pct * 180);
 
     const derivedArcColor = $derived(
-      pct >= 0.9 ? "var(--danger)" :
+      pct >= 0.9 ? "var(--red-text)" :
       pct >= 0.6 ? "var(--warning)" :
       "var(--accent)"
     );

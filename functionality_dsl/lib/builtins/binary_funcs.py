@@ -1,6 +1,9 @@
 """Binary and image processing functions for FDSL."""
 
 import base64
+import gzip
+import zlib
+import bz2
 import io
 from typing import Any, Dict
 
@@ -253,6 +256,141 @@ def image_rotate(data: bytes, degrees: float) -> bytes:
         raise ValueError(f"Failed to rotate image: {e}")
 
 
+# Compression functions
+def binary_compress_gzip(data: bytes, level: int = 9) -> bytes:
+    """
+    Compress binary data using gzip compression.
+
+    Args:
+        data: Binary data to compress
+        level: Compression level (0-9, where 9 is maximum compression)
+
+    Returns:
+        Compressed binary data
+
+    Example:
+        compressed = binary_compress_gzip(file_data)
+        # Original: 157 bytes -> Compressed: 78 bytes
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_compress_gzip requires bytes or bytearray")
+    if not isinstance(level, int) or level < 0 or level > 9:
+        raise ValueError("level must be an integer between 0 and 9")
+
+    return gzip.compress(data, compresslevel=level)
+
+
+def binary_decompress_gzip(data: bytes) -> bytes:
+    """
+    Decompress gzip-compressed binary data.
+
+    Args:
+        data: Gzip-compressed binary data
+
+    Returns:
+        Decompressed binary data
+
+    Example:
+        original = binary_decompress_gzip(compressed_data)
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_decompress_gzip requires bytes or bytearray")
+
+    try:
+        return gzip.decompress(data)
+    except Exception as e:
+        raise ValueError(f"Failed to decompress gzip data: {e}")
+
+
+def binary_compress_zlib(data: bytes, level: int = 9) -> bytes:
+    """
+    Compress binary data using zlib compression (faster than gzip).
+
+    Args:
+        data: Binary data to compress
+        level: Compression level (0-9, where 9 is maximum compression)
+
+    Returns:
+        Compressed binary data
+
+    Example:
+        compressed = binary_compress_zlib(file_data)
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_compress_zlib requires bytes or bytearray")
+    if not isinstance(level, int) or level < 0 or level > 9:
+        raise ValueError("level must be an integer between 0 and 9")
+
+    return zlib.compress(data, level=level)
+
+
+def binary_decompress_zlib(data: bytes) -> bytes:
+    """
+    Decompress zlib-compressed binary data.
+
+    Args:
+        data: Zlib-compressed binary data
+
+    Returns:
+        Decompressed binary data
+
+    Example:
+        original = binary_decompress_zlib(compressed_data)
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_decompress_zlib requires bytes or bytearray")
+
+    try:
+        return zlib.decompress(data)
+    except Exception as e:
+        raise ValueError(f"Failed to decompress zlib data: {e}")
+
+
+def binary_compress_bz2(data: bytes, level: int = 9) -> bytes:
+    """
+    Compress binary data using bz2 compression (best compression ratio).
+
+    Args:
+        data: Binary data to compress
+        level: Compression level (1-9, where 9 is maximum compression)
+
+    Returns:
+        Compressed binary data
+
+    Example:
+        compressed = binary_compress_bz2(file_data)
+        # Typically achieves better compression than gzip
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_compress_bz2 requires bytes or bytearray")
+    if not isinstance(level, int) or level < 1 or level > 9:
+        raise ValueError("level must be an integer between 1 and 9")
+
+    return bz2.compress(data, compresslevel=level)
+
+
+def binary_decompress_bz2(data: bytes) -> bytes:
+    """
+    Decompress bz2-compressed binary data.
+
+    Args:
+        data: Bz2-compressed binary data
+
+    Returns:
+        Decompressed binary data
+
+    Example:
+        original = binary_decompress_bz2(compressed_data)
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("binary_decompress_bz2 requires bytes or bytearray")
+
+    try:
+        return bz2.decompress(data)
+    except Exception as e:
+        raise ValueError(f"Failed to decompress bz2 data: {e}")
+
+
 # Export functions for FDSL registry
 # Format: "function_name": (function_reference, (min_args, max_args))
 DSL_BINARY_FUNCS = {
@@ -260,6 +398,14 @@ DSL_BINARY_FUNCS = {
     "binary_size":           (binary_size,           (1, 1)),
     "binary_encode_base64":  (binary_encode_base64,  (1, 1)),
     "binary_decode_base64":  (binary_decode_base64,  (1, 1)),
+
+    # Compression (with optional compression level)
+    "binary_compress_gzip":    (binary_compress_gzip,    (1, 2)),
+    "binary_decompress_gzip":  (binary_decompress_gzip,  (1, 1)),
+    "binary_compress_zlib":    (binary_compress_zlib,    (1, 2)),
+    "binary_decompress_zlib":  (binary_decompress_zlib,  (1, 1)),
+    "binary_compress_bz2":     (binary_compress_bz2,     (1, 2)),
+    "binary_decompress_bz2":   (binary_decompress_bz2,   (1, 1)),
 
     # Image processing
     "image_dimensions":  (image_dimensions,  (1, 1)),

@@ -5,6 +5,8 @@
     import Badge from "$lib/primitives/Badge.svelte";
     import Spinner from "$lib/primitives/icons/Spinner.svelte";
     import JSONResult from "$lib/primitives/JSONResult.svelte";
+    import CheckIcon from "../primitives/icons/CheckIcon.svelte";
+    import ErrorIcon from "../primitives/icons/ErrorIcon.svelte";
 
     const {
         name = "FileUploadForm",
@@ -14,6 +16,10 @@
         maxSize = 52428800,
         submitLabel = "Upload"
     } = $props();
+
+    let childError: string | null = null;
+    let ok: boolean = false;
+
 
     let file = $state<File | null>(null);
     let busy = $state(false);
@@ -60,18 +66,27 @@
 
 <Card>
     <svelte:fragment slot="header">
-        <div class="font-approachmono text-xl">
+        <div class="font-approachmono text-xl flex items-center gap-2">
             {label}
+        
+            {#if ok}
+                <CheckIcon class="text-[var(--green-text)]" size={20} />
+            {/if}
+        
+            {#if childError}
+                <ErrorIcon class="text-[var(--edge-light)]" size={20} />
+            {/if}
         </div>
     </svelte:fragment>
 
     <svelte:fragment slot="children">
-        <div class="file-upload-form">
+        <div class="file-upload-form font-mono">
             <FileInput
                 bind:file
                 {accept}
                 {maxSize}
                 placeholder="Drop a file here or click to browse"
+                on:error={(e) => childError = e.detail}
             />
 
             {#if error}
