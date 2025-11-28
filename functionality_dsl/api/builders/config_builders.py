@@ -22,7 +22,7 @@ def build_rest_input_config(entity, source, all_source_names):
     response_type = response_schema.get("response_type", "object") if response_schema else "object"
 
     # Wrapper only if: 1 attribute AND response is not an object
-    is_wrapper = (len(attributes) == 1) and (response_type in ['array', 'string', 'number', 'integer', 'boolean'])
+    is_wrapper = (len(attributes) == 1) and (response_type in ['array', 'string', 'number', 'integer', 'boolean', 'binary'])
 
     # Build attribute expressions
     attribute_configs = []
@@ -31,17 +31,20 @@ def build_rest_input_config(entity, source, all_source_names):
             # Compile the expression
             expr_code = compile_expr_to_python(attr.expr)
         else:
-            # Wrapper entity: assign raw response (array/primitive) to the single attribute
-            if is_wrapper:
-                expr_code = source.name
-            else:
-                # Multi-attribute entity: extract specific field from response object
-                expr_code = f"dsl_funcs['get']({source.name}, '{attr.name}', None)"
+            # For schema-only entities (no expressions), extract field from source
+            # Both wrapper and non-wrapper entities use the same pattern now:
+            # - Wrapper entities: after wrapping, PDFDownloadService becomes {"file": bytes}
+            # - Non-wrapper entities: PDFDownloadService is already {"field1": val1, "field2": val2, ...}
+            # In both cases, we extract the attribute by name
+            expr_code = f"dsl_funcs['get']({source.name}, '{attr.name}', None)"
 
         attribute_configs.append({
             "name": attr.name,
             "pyexpr": expr_code
         })
+
+    # Get wrapper attribute name if this is a wrapper entity
+    wrapper_attr_name = attributes[0].name if is_wrapper and len(attributes) > 0 else None
 
     # Build parameter expressions (path and query)
     path_param_exprs = {}
@@ -77,6 +80,9 @@ def build_rest_input_config(entity, source, all_source_names):
         "path_params": extract_path_params(source.url),
         "path_param_exprs": path_param_exprs,
         "query_param_exprs": query_param_exprs,
+        "response_type": response_type,  # For wrapping/unwrapping
+        "wrapper_attr_name": wrapper_attr_name,  # For wrapping primitives
+        "is_wrapper": is_wrapper,  # Boolean flag for easier template logic
     }
 
 

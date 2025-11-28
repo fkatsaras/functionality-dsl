@@ -27,6 +27,7 @@ from app.core.service_helpers import (
     validate_request_body as validate_body_helper,
     evaluate_url_parameters,
 )
+from app.core.rest_wrapper import RESTMessageWrapper
 
 
 # ============================================================================
@@ -71,6 +72,9 @@ class {{ endpoint.name }}Service(BaseService):
                 ],
                 "path_param_exprs": {{ source.path_param_exprs | tojson }},
                 "query_param_exprs": {{ source.query_param_exprs | tojson }},
+                "response_type": "{{ source.response_type }}",
+                "wrapper_attr_name": {{ source.wrapper_attr_name | tojson }},
+                "is_wrapper": {{ "True" if source.is_wrapper else "False" }},
             },
         {%- endfor %}
         ]
@@ -195,16 +199,28 @@ class {{ endpoint.name }}Service(BaseService):
                 self.logger.debug(f"[FETCH] - {entity_name} payload type: {type(raw_payload)}, content-type: {content_type}")
                 log_fetch_success(self.logger, entity_name, raw_payload if isinstance(raw_payload, dict) else f"<{type(raw_payload).__name__}>")
 
-                # Store raw payload by alias
+                # Wrap primitive responses for internal processing
+                response_type = source_config.get("response_type", "object")
+                wrapper_attr_name = source_config.get("wrapper_attr_name")
+
+                if RESTMessageWrapper.should_wrap(response_type) and wrapper_attr_name:
+                    # Wrap the primitive value into a dict
+                    wrapped_payload = RESTMessageWrapper.wrap(raw_payload, wrapper_attr_name)
+                    self.logger.debug(f"[WRAPPER] Wrapped {response_type} response: <{type(raw_payload).__name__}> -> dict with key '{wrapper_attr_name}'")
+                else:
+                    # Object type or no wrapping needed - use as-is
+                    wrapped_payload = raw_payload
+
+                # Store wrapped payload by alias
                 has_path_params = source_alias in context and isinstance(context[source_alias], dict) and context[source_alias]
 
                 if has_path_params:
-                    if isinstance(raw_payload, dict):
-                        context[source_alias].update(raw_payload)
+                    if isinstance(wrapped_payload, dict):
+                        context[source_alias].update(wrapped_payload)
                     else:
-                        context[source_alias]["_response"] = raw_payload
+                        context[source_alias]["_response"] = wrapped_payload
                 else:
-                    context[source_alias] = raw_payload
+                    context[source_alias] = wrapped_payload
 
                 # Transform the data by evaluating attribute expressions
                 transformed_data = transform_entity_data(
