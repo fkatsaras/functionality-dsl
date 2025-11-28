@@ -15,7 +15,48 @@ end
 // ENTITIES
 // ========================================
 
-// Sales data that will be used to generate the report
+// Individual product with sales data
+Entity Product
+  attributes:
+    - name: string;
+    - sales: number;
+    - quantity: integer;
+    - category: string;
+end
+
+// Raw product list from external API
+Entity ProductListRaw
+  attributes:
+    - products: array<Product>;
+end
+
+// Processed product sales with filtering and aggregation
+Entity ProductSalesProcessed(ProductListRaw)
+  attributes:
+    // Filter products with sales > 1000
+    - qualifyingProducts: array = filter(ProductListRaw.products, p -> get(p, "sales", 0) > 1000);
+
+    // Sort by sales descending (sortBy sorts ascending by default, so we reverse)
+    - sortedProducts: array = reverse(sortBy(qualifyingProducts, p -> get(p, "sales", 0)));
+
+    // Get top 5 products only
+    - top5Products: array = take(sortedProducts, 5);
+
+    // Calculate total sales from all qualifying products
+    - totalFromTop: number = sum(map(qualifyingProducts, p -> get(p, "sales", 0)));
+
+    // Calculate average sales of qualifying products
+    - avgTopSales: number = round(totalFromTop / len(qualifyingProducts), 2) if len(qualifyingProducts) > 0 else 0;
+
+    // Count metrics
+    - totalProducts: integer = len(ProductListRaw.products);
+    - qualifyingCount: integer = len(qualifyingProducts);
+
+    // Get the #1 product name
+    - topProductName: string = get(get(top5Products, 0, {}), "name", "N/A");
+end
+
+// Sales summary data for PDF generation
 Entity SalesData
   attributes:
     - period: string;
@@ -23,12 +64,37 @@ Entity SalesData
     - totalOrders: integer;
     - topProduct: string;
     - revenue: number;
+    - topProducts: array;
 end
 
-// Wrapper for sales data input
+// Enhanced sales data with product analytics
+Entity EnrichedSalesData(ProductSalesProcessed)
+  attributes:
+    - period: string = GenerateEnrichedReport.period if GenerateEnrichedReport.period else "Q4 2024";
+    - totalSales: number = ProductSalesProcessed.totalFromTop;
+    - totalOrders: integer = ProductSalesProcessed.qualifyingCount;
+    - topProduct: string = ProductSalesProcessed.topProductName;
+    - revenue: number = ProductSalesProcessed.totalFromTop;
+    - topProducts: array = ProductSalesProcessed.top5Products;
+end
+
+// Wrapper for sales data (to match PDF service expectations)
 Entity SalesDataWrapper
   attributes:
     - data: object<SalesData>;
+end
+
+// Wrapper for enriched data (converts EnrichedSalesData to expected format)
+Entity EnrichedSalesDataWrapper(EnrichedSalesData)
+  attributes:
+    - data: object = {
+        "period": EnrichedSalesData.period if EnrichedSalesData.period else "Q4 2024",
+        "totalSales": EnrichedSalesData.totalSales,
+        "totalOrders": EnrichedSalesData.totalOrders,
+        "topProduct": EnrichedSalesData.topProduct,
+        "revenue": EnrichedSalesData.revenue,
+        "topProducts": EnrichedSalesData.topProducts
+      };
 end
 
 // PDF binary response wrapper
@@ -58,17 +124,29 @@ Entity ReportInfo(ReportMetadata)
 end
 
 // ========================================
-// SOURCES (External PDF Service)
+// SOURCES (External APIs)
 // ========================================
+
+// Fetch product sales data from external API
+Source<REST> ProductSalesAPI
+  url: "http://dummy-sales-api:9001/products"
+  method: GET
+  response:
+    application/json:
+      type: object
+      entity: ProductListRaw
+end
 
 // Generate PDF from sales data
 Source<REST> PDFGeneratorService
   url: "http://dummy-pdf-service:9000/generate-report"
   method: POST
   request:
+    application/json:
       type: object
       entity: SalesDataWrapper
   response:
+    application/json:
       type: object
       entity: ReportMetadata
 end
@@ -90,20 +168,39 @@ end
 // ENDPOINTS (Your API)
 // ========================================
 
-// Generate a sales report PDF
+// Generate a sales report PDF (original - manual data input)
 Endpoint<REST> GenerateReport
   path: "/api/reports/generate"
   method: POST
   request:
+    application/json:
       type: object
       entity: SalesDataWrapper
   response:
+    application/json:
       type: object
       entity: ReportInfo
   summary: "Generate a sales report PDF from sales data"
   errors:
     - 400: condition: not get(SalesDataWrapper, "data", {}) message: "Sales data is required"
     - 400: condition: get(get(SalesDataWrapper, "data", {}), "totalSales", 0) < 0 message: "Total sales cannot be negative"
+end
+
+// Generate enriched report - fetches from products API and processes
+Endpoint<REST> GenerateEnrichedReport
+  path: "/api/reports/generate-enriched"
+  method: POST
+  parameters:
+    query:
+      - period: string?;
+  response:
+    application/json:
+      type: object
+      entity: ReportInfo
+  summary: "Generate an enriched sales report by fetching and processing product data"
+  errors:
+    - 400: condition: len(ProductSalesProcessed.qualifyingProducts) == 0 message: "No products with sales > 1000 found"
+    - 400: condition: ProductSalesProcessed.totalFromTop < 5000 message: "Total sales too low to generate report (minimum $5000)"
 end
 
 // Download a generated PDF report

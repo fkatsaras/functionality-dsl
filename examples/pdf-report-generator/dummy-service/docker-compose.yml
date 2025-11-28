@@ -10,6 +10,17 @@ services:
     networks:
       - thesis_fdsl_net
 
+  dummy-sales-api:
+    container_name: dummy-sales-api
+    image: dummy-sales-api
+    build:
+      context: ../dummy-sales-api
+      dockerfile: Dockerfile
+    ports:
+      - "9001:9001"
+    networks:
+      - thesis_fdsl_net
+
 networks:
   thesis_fdsl_net:
     external: true
