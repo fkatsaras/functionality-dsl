@@ -1,0 +1,15 @@
+services:
+  dummy-pdf-service:
+    container_name: dummy-pdf-service
+    image: dummy-pdf-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true

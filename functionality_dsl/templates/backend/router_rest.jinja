@@ -6,6 +6,9 @@ import logging
 from typing import Any, Dict, Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Query, Header, Path
+{% if response_type == 'binary' %}
+from fastapi.responses import Response
+{% endif %}
 {% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -35,7 +38,11 @@ router = APIRouter(
 
 {# Determine strict response model based on actual entity and type #}
 {% if response_entity %}
-  {% if response_type == 'array' %}
+  {% if response_type == 'binary' %}
+    {# Binary type - return Response object, not Pydantic model #}
+    {% set response_model = 'None' %}
+    {% set response_class = 'Response' %}
+  {% elif response_type == 'array' %}
     {# Array type - service unwraps single-attribute wrappers, so use List[Any] #}
     {% set response_model = 'List[Any]' %}
   {% elif response_type == 'string' %}
@@ -76,8 +83,9 @@ router = APIRouter(
 {%- endmacro %}
 
 @router.{{ http_method }}(
-    "",
-    response_model={{ response_model }}{% if errors %},
+    "",{% if response_type == 'binary' %}
+    response_class={{ response_class }}{% else %}
+    response_model={{ response_model }}{% endif %}{% if errors %},
     responses={
         {% for error in errors %}
         {{ error.status_code }}: {
@@ -170,19 +178,40 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             )
 
         # Execute flow (with request body)
+        {% if response_type == 'binary' %}
+        result = await service.execute_flow(
+            request_body=request_body,
+            path_params=path_params,
+            query_params=query_params,
+            headers=headers
+        )
+        # Wrap binary response in Response object with proper media type
+        return Response(content=result, media_type="{{ response_metadata.content_type if response_metadata else 'application/octet-stream' }}")
+        {% else %}
         return await service.execute_flow(
             request_body=request_body,
             path_params=path_params,
             query_params=query_params,
             headers=headers
         )
+        {% endif %}
         {% else %}
         # Execute flow (no request body)
+        {% if response_type == 'binary' %}
+        result = await service.execute_flow(
+            path_params=path_params,
+            query_params=query_params,
+            headers=headers
+        )
+        # Wrap binary response in Response object with proper media type
+        return Response(content=result, media_type="{{ response_metadata.content_type if response_metadata else 'application/octet-stream' }}")
+        {% else %}
         return await service.execute_flow(
             path_params=path_params,
             query_params=query_params,
             headers=headers
         )
+        {% endif %}
         {% endif %}
 
     except HTTPException:

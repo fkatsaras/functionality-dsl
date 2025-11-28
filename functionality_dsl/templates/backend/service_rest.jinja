@@ -432,7 +432,7 @@ class {{ endpoint.name }}Service(BaseService):
         query_params: Dict[str, Any] = None,
         headers: Dict[str, str] = None,
         request_body: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+    ) -> {% if response_type == 'binary' %}bytes{% else %}Dict[str, Any]{% endif %}:
         """
         Main service function to execute the complete data flow.
 
@@ -566,14 +566,14 @@ class {{ endpoint.name }}Service(BaseService):
         self.logger.debug(f"[RESULT] - Entity: {final_entity_name}, Attributes: {list(final_attributes.keys()) if isinstance(final_attributes, dict) else type(final_attributes)}")
 
         # Unwrap response based on type
-        {% if response_type in ('string', 'number', 'integer', 'boolean', 'array') %}
+        {% if response_type in ('string', 'number', 'integer', 'boolean', 'array', 'binary') %}
         # Response type is {{ response_type }} - unwrap the single attribute
         if final_attributes and isinstance(final_attributes, dict):
             attribute_values = list(final_attributes.values())
             if attribute_values:
                 unwrapped = attribute_values[0]
                 self.logger.debug(f"[UNWRAP] - Unwrapped {{ response_type }} response")
-                log_outgoing_response(self.logger, unwrapped)
+                log_outgoing_response(self.logger, unwrapped if not isinstance(unwrapped, bytes) else f"<bytes: {len(unwrapped)} bytes>")
                 return unwrapped
         self.logger.warning(f"[UNWRAP] - No attributes found for {{ response_type }} response, returning empty")
         self.logger.info("[RESPONSE] → Empty response")

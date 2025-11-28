@@ -1,0 +1,128 @@
+// ========================================
+// PDF Report Generator Example
+// ========================================
+// Demonstrates application/pdf content type handling
+// Use case: Generate sales reports as PDF documents
+
+Server PDFReportAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+  loglevel: debug
+end
+
+// ========================================
+// ENTITIES
+// ========================================
+
+// Sales data that will be used to generate the report
+Entity SalesData
+  attributes:
+    - period: string;
+    - totalSales: number;
+    - totalOrders: integer;
+    - topProduct: string;
+    - revenue: number;
+end
+
+// Wrapper for sales data input
+Entity SalesDataWrapper
+  attributes:
+    - data: object<SalesData>;
+end
+
+// PDF binary response wrapper
+Entity PDFBinary
+  attributes:
+    - file: binary;
+end
+
+// Report metadata that comes back from the service
+Entity ReportMetadata
+  attributes:
+    - reportId: string;
+    - generatedAt: string;
+    - fileSize: integer;
+    - filename: string;
+end
+
+// Enhanced response with computed fields
+Entity ReportInfo(ReportMetadata)
+  attributes:
+    - reportId: string = ReportMetadata.reportId;
+    - generatedAt: string = ReportMetadata.generatedAt;
+    - fileSize: integer = ReportMetadata.fileSize;
+    - filename: string = ReportMetadata.filename;
+    - fileSizeKB: number = round(ReportMetadata.fileSize / 1024.0, 2);
+    - downloadUrl: string = "/api/reports/" + ReportMetadata.reportId + "/download";
+end
+
+// ========================================
+// SOURCES (External PDF Service)
+// ========================================
+
+// Generate PDF from sales data
+Source<REST> PDFGeneratorService
+  url: "http://dummy-pdf-service:9000/generate-report"
+  method: POST
+  request:
+      type: object
+      entity: SalesDataWrapper
+  response:
+      type: object
+      entity: ReportMetadata
+end
+
+// Download generated PDF
+Source<REST> PDFDownloadService
+  url: "http://dummy-pdf-service:9000/download/{reportId}"
+  method: GET
+  parameters:
+    path:
+      - reportId: string = GetReport.reportId;
+  response:
+    application/pdf:
+      type: binary
+      entity: PDFBinary
+end
+
+// ========================================
+// ENDPOINTS (Your API)
+// ========================================
+
+// Generate a sales report PDF
+Endpoint<REST> GenerateReport
+  path: "/api/reports/generate"
+  method: POST
+  request:
+      type: object
+      entity: SalesDataWrapper
+  response:
+      type: object
+      entity: ReportInfo
+  summary: "Generate a sales report PDF from sales data"
+  errors:
+    - 400: condition: not get(SalesDataWrapper, "data", {}) message: "Sales data is required"
+    - 400: condition: get(get(SalesDataWrapper, "data", {}), "totalSales", 0) < 0 message: "Total sales cannot be negative"
+end
+
+// Download a generated PDF report
+Endpoint<REST> GetReport
+  path: "/api/reports/{reportId}/download"
+  method: GET
+  parameters:
+    path:
+      - reportId: string;
+  response:
+    application/pdf:
+      type: binary
+      entity: PDFBinary
+  summary: "Download a generated PDF report by ID"
+  errors:
+    // - 404: 
+    //   condition: binary_size(PDFBinary.file) == 0
+    //   message: "Report not found"
+    - 400: 
+      condition: len(GetReport.reportId) < 5
+      message: "Invalid report ID format"
+end

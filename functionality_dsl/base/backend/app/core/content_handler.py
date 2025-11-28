@@ -31,7 +31,11 @@ class ContentType(str, Enum):
     JSON = "application/json"
     TEXT = "text/plain"
     XML = "application/xml"
+    HTML = "text/html"
     FORM_DATA = "multipart/form-data"
+    FORM_URLENCODED = "application/x-www-form-urlencoded"
+    PDF = "application/pdf"
+    ZIP = "application/zip"
     PNG = "image/png"
     JPEG = "image/jpeg"
     OCTET_STREAM = "application/octet-stream"
@@ -55,6 +59,8 @@ class ContentTypeHandler:
     def is_binary(content_type: str) -> bool:
         """Check if content type is binary."""
         binary_types = {
+            ContentType.PDF,
+            ContentType.ZIP,
             ContentType.PNG,
             ContentType.JPEG,
             ContentType.OCTET_STREAM,
@@ -71,6 +77,7 @@ class ContentTypeHandler:
             ContentType.JSON,
             ContentType.TEXT,
             ContentType.XML,
+            ContentType.HTML,
         }
         return content_type in text_types
 
