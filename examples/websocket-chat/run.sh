@@ -11,7 +11,7 @@ if command -v python3 &> /dev/null; then
     pip3 install websockets 2>/dev/null || true
 
     echo "WebSocket echo server running on ws://localhost:8765"
-    echo "It will echo back any message you send (with auth support)."
+    echo "It will echo back any message you send"
     python3 ws_auth_echo.py
 else
     echo "Error: Python 3 is required but not found."

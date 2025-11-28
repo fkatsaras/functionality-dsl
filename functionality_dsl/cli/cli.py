@@ -314,7 +314,8 @@ def visualize_cmd(context, grammar_path, engine):
 @cli.command("visualize-model", help="Visualize an FDSL model (not the metamodel).")
 @click.pass_context
 @click.argument("model_path")
-def visualize_model_cmd(context, model_path):
+@click.option("--output", "-o", "output_dir", default="docs", help="Output directory for PNG/DOT files (default: docs)")
+def visualize_model_cmd(context, model_path, output_dir):
     """
     Build a GraphViz diagram of the *model instance*:
     - Servers
@@ -329,6 +330,10 @@ def visualize_model_cmd(context, model_path):
 
         dot = Digraph(comment="FDSL Model")
         dot.attr(rankdir="LR", fontsize="10", fontname="Arial")
+        # Improve graph layout to show all connections clearly
+        dot.attr(nodesep="0.5", ranksep="1.0")
+        # Make edge labels more visible
+        dot.attr('edge', fontsize="9")
 
         # -------------------------------
         # Servers
@@ -372,7 +377,9 @@ def visualize_model_cmd(context, model_path):
             dot.node(
                 f"entity_{e.name}",
                 label=node_label,  # Use label parameter explicitly
-                shape="record", fillcolor="#c8e6c9", style="filled"
+                shape="box", fillcolor="#c8e6c9", style="filled,rounded",
+                fontcolor="black",  # Ensure text is visible on green background
+                fontsize="10"  # Explicit font size for readability
             )
 
             # Inheritance - use 'parents' not 'super' (entities can have multiple parents)
@@ -591,9 +598,12 @@ def visualize_model_cmd(context, model_path):
         # -------------------------------
         # Output
         # -------------------------------
-        out_path = Path("docs").resolve()
-        out_path.mkdir(exist_ok=True)
-        file_base = out_path / "model_diagram"
+        out_path = Path(output_dir).resolve()
+        out_path.mkdir(exist_ok=True, parents=True)
+
+        # Create filename based on the input model file
+        model_name = Path(model_path).stem  # Get filename without extension
+        file_base = out_path / f"{model_name}_diagram"
 
         png_file = Path(f"{file_base}.png")
         dot_file = Path(f"{file_base}.dot")

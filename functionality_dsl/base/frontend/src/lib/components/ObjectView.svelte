@@ -9,12 +9,13 @@
     import Spinner from "$lib/primitives/icons/Spinner.svelte";
     import Button from "$lib/primitives/Button.svelte";
 
-    import { buildUrlWithParams } from "$lib/utils/paramBuilder";
+    import { buildUrlWithParams, buildQueryString } from "$lib/utils/paramBuilder";
 
     const props = $props<{
         name?: string;
         endpoint?: string;
         pathParams?: string[];
+        queryParams?: string[];
         fields?: string[];
         label?: string;
     }>();
@@ -27,13 +28,20 @@
     let loading = $state(false);
     let error: string | null = $state(null);
 
-    // initialize path params when they change
+    // initialize path and query params when they change
     $effect(() => {
+        const init: Record<string, string> = {};
         if (props.pathParams?.length) {
-            const init: Record<string, string> = {};
             for (const p of props.pathParams) {
                 init[p] = "";
             }
+        }
+        if (props.queryParams?.length) {
+            for (const p of props.queryParams) {
+                init[p] = "";
+            }
+        }
+        if (Object.keys(init).length > 0) {
             paramValues = init;
         }
     });
@@ -41,10 +49,21 @@
     function buildUrl() {
         if (!props.endpoint) return "";
 
+        let baseUrl = props.endpoint;
+
+        // Handle path parameters
         if (props.pathParams?.length) {
-            return buildUrlWithParams(props.endpoint, paramValues);
+            baseUrl = buildUrlWithParams(props.endpoint, paramValues);
+            if (!baseUrl) return ""; // Missing required path params
         }
 
+        // Handle query parameters
+        if (props.queryParams?.length) {
+            const queryString = buildQueryString(paramValues);
+            return queryString ? `${baseUrl}?${queryString}` : "";
+        }
+
+        // Fallback to ID-based behavior (legacy)
         if (!id.trim()) return "";
         return `${props.endpoint}/${encodeURIComponent(id.trim())}`;
     }
@@ -52,7 +71,7 @@
     async function fetchData() {
         const url = buildUrl();
         if (!url) {
-            error = props.pathParams?.length
+            error = props.pathParams?.length || props.queryParams?.length
                 ? "Please fill in all parameters."
                 : "Please enter an ID.";
             data = null;
@@ -93,25 +112,38 @@
 
     <svelte:fragment slot="children">
 
-        {#if props.pathParams?.length}
+        {#if props.pathParams?.length || props.queryParams?.length}
             <div class="flex gap-2 mb-4">
-                {#each props.pathParams as param}
-                    <Input
-                        bind:value={paramValues[param]}
-                        placeholder={param}
-                        class="font-approachmono"
-                        on:keydown={(e: KeyboardEvent) => e.key === "Enter" && fetchData()}
-                    />
-                {/each}
+                {#if props.pathParams?.length}
+                    {#each props.pathParams as param}
+                        <Input
+                            bind:value={paramValues[param]}
+                            placeholder={param}
+                            class="font-approachmono"
+                            on:keydown={(e: KeyboardEvent) => e.key === "Enter" && fetchData()}
+                        />
+                    {/each}
+                {/if}
+
+                {#if props.queryParams?.length}
+                    {#each props.queryParams as param}
+                        <Input
+                            bind:value={paramValues[param]}
+                            placeholder={param}
+                            class="font-approachmono"
+                            on:keydown={(e: KeyboardEvent) => e.key === "Enter" && fetchData()}
+                        />
+                    {/each}
+                {/if}
 
                 <Button
                     on:click={fetchData}
-                    disabled={loading || props.pathParams.some((p: string) => !paramValues[p])}
+                    disabled={loading || [...(props.pathParams || []), ...(props.queryParams || [])].some((p: string) => !paramValues[p])}
                 >
                     {#if loading}
                         <Spinner size={16} />
                     {:else}
-                        Get
+                        View
                     {/if}
                 </Button>
             </div>

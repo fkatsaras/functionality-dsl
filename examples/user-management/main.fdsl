@@ -5,9 +5,6 @@ Server UserManagement
   loglevel: debug
 end
 
-// ============================================================
-// DATABASE SCHEMAS (What the DB returns/accepts)
-// ============================================================
 
 Entity UserSchema
   attributes:
@@ -28,9 +25,6 @@ Entity DeleteResponseSchema
     - message: string;
 end
 
-// ============================================================
-// REQUEST SCHEMAS (API Input Validation)
-// ============================================================
 
 Entity RegisterRequest
   attributes:
@@ -57,9 +51,6 @@ Entity UpdateUserRequest
     - password: string(6..)?;
 end
 
-// ============================================================
-// BUSINESS LOGIC ENTITIES (Transformations)
-// ============================================================
 
 // Login: Find matching user by credentials
 Entity LoginMatch(LoginRequest, UsersListWrapper)
@@ -106,10 +97,7 @@ Entity DeleteResponse(DeleteResponseSchema)
     - message: string = DeleteResponseSchema.message;
 end
 
-// ============================================================
 // SOURCES (Database Operations)
-// ============================================================
-
 // READ: Get all users
 Source<REST> ReadUsers
   url: "http://dummydb:9000/db/users"
@@ -131,7 +119,7 @@ Source<REST> CreateUser
     entity: UserSchema
 end
 
-// UPDATE: Modify user by ID
+// PATCH: Modify user by ID
 Source<REST> UpdateUser
   url: "http://dummydb:9000/db/users/{userId}"
   method: PATCH
@@ -173,10 +161,7 @@ Source<REST> DeleteUser
     entity: DeleteResponseSchema
 end
 
-// ============================================================
 // API ENDPOINTS
-// ============================================================
-
 // List all users
 Endpoint<REST> ListUsers
   path: "/api/users"
@@ -205,7 +190,7 @@ Endpoint<REST> Register
       message: "Username or Password already registered."
 end
 
-// Login (validates credentials in FDSL layer)
+// Login (validates credentials)
 Endpoint<REST> Login
   path: "/api/auth/login"
   method: POST
@@ -273,10 +258,7 @@ Endpoint<REST> UserDeleteEndpoint
       message: "User doesnt exist"
 end
 
-// ============================================================
 // UI COMPONENTS
-// ============================================================
-
 Component<Table> UsersTable
   endpoint: ListUsers
   columns:

@@ -273,6 +273,82 @@ count-lines: ## Count lines of code in the project
 	@find functionality_dsl -name "*.py" | xargs wc -l | tail -1
 	@find examples -name "*.fdsl" | xargs wc -l | tail -1
 
+.PHONY: count-generated
+count-generated: ## Count lines of code in generated app (usage: make count-generated APP=path/to/generated/app)
+	@if [ -z "$(APP)" ]; then \
+		echo "$(RED)Error: APP path not specified$(NC)"; \
+		echo "Usage: make count-generated APP=generated/rest-basics"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(APP)" ]; then \
+		echo "$(RED)Error: Directory $(APP) does not exist$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Counting lines in generated app: $(APP)$(NC)"
+	@echo ""
+	@echo "$(YELLOW)=== Backend (Python) ===$(NC)"
+	@find "$(APP)" -name "*.py" -not -path "*/venv*" -not -path "*/__pycache__/*" | xargs wc -l 2>/dev/null | tail -1 || echo "  No Python files found"
+	@echo ""
+	@echo "$(YELLOW)Backend breakdown:$(NC)"
+	@if [ -d "$(APP)/app/api/routers" ]; then \
+		echo -n "  Routers:       "; \
+		find "$(APP)/app/api/routers" -name "*.py" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo "0"; \
+	fi
+	@if [ -d "$(APP)/app/services" ]; then \
+		echo -n "  Services:      "; \
+		find "$(APP)/app/services" -name "*.py" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo "0"; \
+	fi
+	@if [ -d "$(APP)/app/domain" ]; then \
+		echo -n "  Models:        "; \
+		find "$(APP)/app/domain" -name "*.py" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo "0"; \
+	fi
+	@if [ -d "$(APP)/app/core" ]; then \
+		echo -n "  Core:          "; \
+		find "$(APP)/app/core" -name "*.py" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo "0"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)=== Frontend (Svelte/TypeScript) ===$(NC)"
+	@if [ -d "$(APP)/frontend" ]; then \
+		SVELTE_COUNT=$$(find "$(APP)/frontend/src" -name "*.svelte" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo 0); \
+		TS_COUNT=$$(find "$(APP)/frontend/src" -name "*.ts" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo 0); \
+		TOTAL_FE=$$((SVELTE_COUNT + TS_COUNT)); \
+		if [ $$TOTAL_FE -gt 0 ]; then \
+			echo "  Svelte:        $$SVELTE_COUNT"; \
+			echo "  TypeScript:    $$TS_COUNT"; \
+			echo "  Total:         $$TOTAL_FE"; \
+		else \
+			echo "  No frontend files found"; \
+		fi \
+	else \
+		echo "  No frontend generated"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)=== Infrastructure ===$(NC)"
+	@if [ -f "$(APP)/Dockerfile" ]; then \
+		echo -n "  Dockerfile:    "; \
+		wc -l < "$(APP)/Dockerfile"; \
+	fi
+	@if [ -f "$(APP)/docker-compose.yml" ]; then \
+		echo -n "  Compose:       "; \
+		wc -l < "$(APP)/docker-compose.yml"; \
+	fi
+	@if [ -f "$(APP)/pyproject.toml" ]; then \
+		echo -n "  Pyproject:     "; \
+		wc -l < "$(APP)/pyproject.toml"; \
+	fi
+	@echo ""
+	@echo "$(GREEN)=== Total Generated Code ===$(NC)"
+	@TOTAL=0; \
+	PY=$$(find "$(APP)" -name "*.py" -not -path "*/venv*" -not -path "*/__pycache__/*" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo 0); \
+	SVELTE=$$(find "$(APP)/frontend/src" -name "*.svelte" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo 0); \
+	TS=$$(find "$(APP)/frontend/src" -name "*.ts" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}' || echo 0); \
+	DOCKER=$$(wc -l < "$(APP)/Dockerfile" 2>/dev/null || echo 0); \
+	COMPOSE=$$(wc -l < "$(APP)/docker-compose.yml" 2>/dev/null || echo 0); \
+	PYPROJECT=$$(wc -l < "$(APP)/pyproject.toml" 2>/dev/null || echo 0); \
+	TOTAL=$$((PY + SVELTE + TS + DOCKER + COMPOSE + PYPROJECT)); \
+	echo "  Total lines:   $$TOTAL"
+	@echo ""
+
 .PHONY: show-structure
 show-structure: ## Show project directory structure
 	@echo "$(BLUE)Project Structure:$(NC)"

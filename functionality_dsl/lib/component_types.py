@@ -72,6 +72,34 @@ class _BaseComponent:
         # Find all {paramName} patterns
         return re.findall(r'\{(\w+)\}', path)
 
+    def _extract_query_params(self) -> list:
+        """Extract query parameter names from endpoint parameters."""
+        if not self.endpoint:
+            return []
+
+        # Check if endpoint has parameters.query_params
+        params = getattr(self.endpoint, "parameters", None)
+        if not params:
+            return []
+
+        query_params_block = getattr(params, "query_params", None)
+        if not query_params_block:
+            return []
+
+        # QueryParamsBlock has a 'params' list
+        query_params = getattr(query_params_block, "params", None)
+        if not query_params:
+            return []
+
+        # Extract parameter names from query parameters list
+        param_names = []
+        for param in query_params:
+            # Each param has a 'name' attribute
+            if hasattr(param, "name"):
+                param_names.append(param.name)
+
+        return param_names
+
     def to_props(self):
         return {}
 
@@ -731,7 +759,7 @@ class ObjectViewComponent(_BaseComponent):
     def to_props(self):
         """
         Simplified props for the new ObjectView.svelte.
-        Now includes pathParams to support endpoints with path parameters.
+        Now includes pathParams and queryParams to support endpoints with parameters.
         """
         # Use the endpoint path if declared, else default to /api/{endpoint_name}
         path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
@@ -739,6 +767,7 @@ class ObjectViewComponent(_BaseComponent):
         return {
             "endpoint": path,
             "pathParams": self._extract_path_params(),
+            "queryParams": self._extract_query_params(),
             "fields": self.fields,
             "label": self.label or self.endpoint.name,
         }

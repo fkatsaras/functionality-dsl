@@ -181,11 +181,10 @@ async def duplex(ws: WebSocket):
                         continue
                 {% endif %}
 
-                if row is not None and bus_out:
-                    await bus_out.publish(row)
-                    logger.debug(f"[CLIENT] - Published to outbound bus")
-                    if ws_service.has_external_targets():
-                        await ws_service.forward_to_targets(row, inbound_entity)
+                # For duplex endpoints: inbound chain results should NOT be published to client
+                # They are only forwarded to external targets
+                if row is not None and ws_service.has_external_targets():
+                    await ws_service.forward_to_targets(row, inbound_entity)
             except HTTPException as http_error:
                 logger.error(f"[VALIDATION] - Validation failed: {http_error.detail}")
                 error_response = {

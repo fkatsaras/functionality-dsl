@@ -7,9 +7,6 @@ docker ps -a --format '{{.Names}}' | grep -E 'backend|frontend' | xargs -r docke
 echo "* Removing backend/frontend images..."
 docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'backend|frontend' | xargs -r docker rmi -f
 
-echo "* Deleting generated/ folder..."
-rm -rf /mnt/c/Users/FotisKatsaras/Desktop/Personal/AUTh/DIPLOMATIKI/functionality-dsl/generated
-
 # Remove dummy DB container and image
 echo "* Removing dummy container/image..."
 docker ps -a --format '{{.Names}}' | grep 'dummy' | xargs -r docker rm -f
