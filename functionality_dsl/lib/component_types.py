@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import json
 
 # Single source of truth: name -> class
 COMPONENT_TYPES = OrderedDict()
@@ -802,4 +803,60 @@ class CameraComponent(_BaseComponent):
         return {
             "wsUrl": self._endpoint_path(""),
             "label": self.label,
+        }
+    
+@register_component
+class DownloadFormComponent(_BaseComponent):
+    """
+    <Component<DownloadForm> ...>
+      endpoint: <Endpoint<REST>>
+      filename: optional string
+      buttonText: optional string
+      params: optional list of param names (ID list)
+      autoDownload: optional bool
+      showPreview: optional bool
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        endpoint=None,
+        filename=None,
+        buttonText=None,
+        params=None,
+        autoDownload=None,
+        showPreview=None,
+    ):
+        super().__init__(parent, name, None)
+
+        self.endpoint = endpoint
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+
+        # Unwrap parameter list: ["startDate","endDate"]
+        if hasattr(params, "items"):
+            params = params.items
+        elif params is None:
+            params = []
+        self.params = [_strip_quotes(p) for p in params]
+
+        self.filename = _strip_quotes(filename)
+        self.buttonText = _strip_quotes(buttonText)
+        self.autoDownload = bool(autoDownload) if autoDownload is not None else False
+        self.showPreview = bool(showPreview) if showPreview is not None else False
+
+    def to_props(self):
+        """
+        Produces props for DownloadForm.svelte
+        """
+        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+
+        return {
+            "endpointPath": path,
+            "filename": self.filename or "download.bin",
+            "buttonText": self.buttonText or "Download",
+            "paramsJson": json.dumps({p: "" for p in self.params}),
+            "autoDownload": self.autoDownload,
+            "showPreview": self.showPreview,
         }

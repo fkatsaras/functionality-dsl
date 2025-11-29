@@ -21,6 +21,7 @@ Component:
   | ToggleComponent
   | ObjectViewComponent
   | CameraComponent
+  | DownloadFormComponent
 ;
 
 // Column definition with type specification
@@ -200,3 +201,17 @@ CameraComponent:
   )*
   'end'
 ;
+
+DownloadFormComponent:
+  'Component' '<' 'DownloadForm' '>' name=ID
+  (
+    'endpoint:' endpoint=[EndpointREST]
+    ('filename:' filename=STRING)?
+    ('buttonText:' buttonText=STRING)?
+    ('params:' '[' params+=ID (',' params+=ID)* ']')?
+    ('autoDownload:' autoDownload=BOOL)?
+    ('showPreview:' showPreview=BOOL)?
+  )#
+  'end'
+;
+

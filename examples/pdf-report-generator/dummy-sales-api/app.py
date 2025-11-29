@@ -17,31 +17,24 @@ app.add_middleware(
 )
 
 
-@app.get("/products")
-async def get_products():
-    """Return mock product sales data with variety of sales values"""
+@app.get("/sales")
+async def get_sales():
+    """Return mock sales data matching the FDSL Sale entity schema"""
 
-    products = [
-        # High performers (sales > 1000)
-        {"name": "Premium Laptop", "sales": 5250.50, "quantity": 15, "category": "electronics"},
-        {"name": "Wireless Headphones", "sales": 3890.00, "quantity": 85, "category": "electronics"},
-        {"name": "Smart Watch", "sales": 2750.25, "quantity": 42, "category": "electronics"},
-        {"name": "Designer Jacket", "sales": 1890.00, "quantity": 18, "category": "clothing"},
-        {"name": "Office Chair Pro", "sales": 1650.75, "quantity": 22, "category": "furniture"},
-        {"name": "Coffee Machine Deluxe", "sales": 1420.00, "quantity": 28, "category": "appliances"},
-        {"name": "Running Shoes Elite", "sales": 1280.50, "quantity": 35, "category": "clothing"},
-        {"name": "Gaming Mouse", "sales": 1150.00, "quantity": 95, "category": "electronics"},
-
-        # Mid-range (sales < 1000, won't be included)
-        {"name": "USB Cable", "sales": 890.00, "quantity": 450, "category": "electronics"},
-        {"name": "T-Shirt Basic", "sales": 750.00, "quantity": 125, "category": "clothing"},
-        {"name": "Coffee Mug", "sales": 420.50, "quantity": 210, "category": "kitchenware"},
-        {"name": "Pen Set", "sales": 285.00, "quantity": 95, "category": "office"},
-        {"name": "Phone Case", "sales": 190.00, "quantity": 38, "category": "electronics"},
-        {"name": "Notebook", "sales": 125.50, "quantity": 85, "category": "office"},
+    sales = [
+        {"id": "S001", "product": "Premium Laptop", "amount": 5250.50, "quantity": 15, "date": "2024-01-15"},
+        {"id": "S002", "product": "Wireless Headphones", "amount": 3890.00, "quantity": 85, "date": "2024-01-16"},
+        {"id": "S003", "product": "Smart Watch", "amount": 2750.25, "quantity": 42, "date": "2024-01-17"},
+        {"id": "S004", "product": "Designer Jacket", "amount": 1890.00, "quantity": 18, "date": "2024-01-18"},
+        {"id": "S005", "product": "Office Chair Pro", "amount": 1650.75, "quantity": 22, "date": "2024-01-19"},
+        {"id": "S006", "product": "Coffee Machine", "amount": 1420.00, "quantity": 28, "date": "2024-01-20"},
+        {"id": "S007", "product": "Running Shoes", "amount": 1280.50, "quantity": 35, "date": "2024-01-21"},
+        {"id": "S008", "product": "Gaming Mouse", "amount": 1150.00, "quantity": 95, "date": "2024-01-22"},
+        {"id": "S009", "product": "USB Cable", "amount": 890.00, "quantity": 450, "date": "2024-01-23"},
+        {"id": "S010", "product": "T-Shirt", "amount": 750.00, "quantity": 125, "date": "2024-01-24"},
     ]
 
-    return {"products": products}
+    return sales
 
 
 @app.get("/health")

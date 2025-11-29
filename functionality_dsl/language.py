@@ -160,6 +160,44 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
                 yield alias, attr_name, n
 
 
+def _collect_bare_vars(expr, loop_vars: set[str] | None = None):
+    """
+    Collect bare variable references (Var nodes that are NOT part of PostfixExpr).
+    These are truly bare identifiers without attribute access.
+    PostfixExpr with base.var (like Entity.attr) should NOT be caught here.
+    """
+    lvs = loop_vars or set()
+    constants = {"None", "null", "True", "False", "true", "false"}
+
+    # Collect all Var nodes that are part of PostfixExpr (these are OK - they have attribute access)
+    postfix_base_vars = set()
+    for n in _walk(expr):
+        if n.__class__.__name__ == "PostfixExpr":
+            base = getattr(n, "base", None)
+            if base and getattr(base, "var", None) is not None:
+                var_name = _as_id_str(base.var)
+                if var_name:
+                    postfix_base_vars.add(id(base.var))  # Track by object ID
+
+    # Now collect bare Var nodes that are NOT part of PostfixExpr
+    for n in _walk(expr):
+        nname = n.__class__.__name__
+
+        if nname == "Var":
+            var_name = getattr(n, "name", None)
+            # Skip if:
+            # - It's a loop var
+            # - It's a reserved word
+            # - It's a constant
+            # - It's part of a PostfixExpr (Entity.attr syntax)
+            if (var_name and
+                var_name not in lvs and
+                var_name not in RESERVED and
+                var_name not in constants and
+                id(n) not in postfix_base_vars):
+                yield var_name, n
+
+
 def _collect_calls(expr):
     """Collect function calls from an expression."""
     for n in _walk(expr):
@@ -415,8 +453,12 @@ def _validate_computed_attrs(model, metamodel=None):
         if ent.name in schema_entities and has_schema_only_attrs and not has_computed_attrs:
             continue
 
+        # Build a list of attributes in order for self-reference validation
+        entity_attrs = getattr(ent, "attributes", []) or []
+        attr_order = {a.name: idx for idx, a in enumerate(entity_attrs)}
+
         # If entity is NOT in schema_entities or has mixed attrs, validate all have expressions
-        for a in getattr(ent, "attributes", []) or []:
+        for attr_idx, a in enumerate(entity_attrs):
             expr = getattr(a, "expr", None)
 
             if expr is None:
@@ -429,12 +471,49 @@ def _validate_computed_attrs(model, metamodel=None):
 
             loop_vars = _loop_var_names(expr)
 
+            # Validate bare variable references first
+            # --------------------------------------------------------------
+            # Bare variables that match entity/source/endpoint names should use explicit syntax
+            all_known_names = set(target_attrs.keys())  # All entity names
+            # Add endpoint and source names
+            for endpoint in get_model_internal_rest_endpoints(model):
+                all_known_names.add(endpoint.name)
+            for endpoint in get_model_internal_ws_endpoints(model):
+                all_known_names.add(endpoint.name)
+            for source in get_children_of_type("SourceREST", model):
+                all_known_names.add(source.name)
+            for source in get_children_of_type("SourceWS", model):
+                all_known_names.add(source.name)
+
+            # Check if any bare variables match entity attribute names
+            entity_attr_names = attr_order.keys()  # Attributes of current entity
+
+            for var_name, node in _collect_bare_vars(expr, loop_vars):
+                # If it matches an attribute name of the current entity, require explicit syntax
+                if var_name in entity_attr_names:
+                    raise TextXSemanticError(
+                        f"Bare identifier '{var_name}' is ambiguous. "
+                        f"Use explicit syntax '{ent.name}.{var_name}' to reference entity attributes. "
+                        f"Entity attributes must always be referenced with the entity name prefix.",
+                        **get_location(node)
+                    )
+
+                # If it matches a known entity/source/endpoint name but used as bare variable, warn
+                if var_name in all_known_names:
+                    raise TextXSemanticError(
+                        f"Bare identifier '{var_name}' matches a known entity/source/endpoint name. "
+                        f"If you meant to reference this entity, use explicit syntax like '{var_name}.attribute'. "
+                        f"If this is intentional, it will be looked up in the runtime context.",
+                        **get_location(node)
+                    )
+
             # Validate references in computed expressions
             # --------------------------------------------------------------
             # Entities can reference:
             # - Parent entities
             # - Other entities (for composition)
             # - APIEndpoints/Sources (via context, using $ for path params)
+            # - Same entity's earlier attributes (forward-only references)
 
             for alias, attr, node in _collect_refs(expr, loop_vars):
                 if alias is None or alias in loop_vars:
@@ -444,6 +523,27 @@ def _validate_computed_attrs(model, metamodel=None):
                 # This is allowed for APIEndpoints and Sources in context
                 if attr and attr.startswith("$"):
                     # Skip validation - will be checked at runtime
+                    continue
+
+                # Self-reference: Check that attribute only references EARLIER attributes
+                if alias == ent.name:
+                    if attr and attr != "__jsonpath__":
+                        # Check if the referenced attribute exists
+                        if attr not in attr_order:
+                            raise TextXSemanticError(
+                                f"Attribute '{a.name}' references '{ent.name}.{attr}' which does not exist on entity '{ent.name}'.",
+                                **get_location(node),
+                            )
+                        # Check that it's referencing an earlier attribute (forward-only)
+                        ref_idx = attr_order[attr]
+                        if ref_idx >= attr_idx:
+                            raise TextXSemanticError(
+                                f"Attribute '{a.name}' references '{ent.name}.{attr}'. "
+                                f"Entity attributes can only reference EARLIER attributes in the same entity (forward-only references). "
+                                f"Attribute '{attr}' is defined at position {ref_idx + 1}, but '{a.name}' is at position {attr_idx + 1}. "
+                                f"Move '{attr}' before '{a.name}' to fix this.",
+                                **get_location(node),
+                            )
                     continue
 
                 # Allow references to parent entities (and validate attr existence)

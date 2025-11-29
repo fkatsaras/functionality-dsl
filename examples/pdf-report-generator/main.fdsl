@@ -2,7 +2,7 @@
 // PDF Report Generator Example
 // ========================================
 // Demonstrates application/pdf content type handling
-// Use case: Generate sales reports as PDF documents
+// View sales data in a table and export to PDF
 
 Server PDFReportAPI
   host: "localhost"
@@ -15,211 +15,95 @@ end
 // ENTITIES
 // ========================================
 
-// Individual product with sales data
-Entity Product
+// Individual sale record
+Entity Sale
   attributes:
-    - name: string;
-    - sales: number;
+    - id: string;
+    - product: string;
+    - amount: number;
     - quantity: integer;
-    - category: string;
+    - date: string;
 end
 
-// Raw product list from external API
-Entity ProductListRaw
+// Raw sales list from external API
+Entity SalesListRaw
   attributes:
-    - products: array<Product>;
+    - sales: array<Sale>;
 end
 
-// Processed product sales with filtering and aggregation
-Entity ProductSalesProcessed(ProductListRaw)
+// Processed sales with calculations
+Entity SalesProcessed(SalesListRaw)
   attributes:
-    // Filter products with sales > 1000
-    - qualifyingProducts: array = filter(ProductListRaw.products, p -> get(p, "sales", 0) > 1000);
-
-    // Sort by sales descending (sortBy sorts ascending by default, so we reverse)
-    - sortedProducts: array = reverse(sortBy(qualifyingProducts, p -> get(p, "sales", 0)));
-
-    // Get top 5 products only
-    - top5Products: array = take(sortedProducts, 5);
-
-    // Calculate total sales from all qualifying products
-    - totalFromTop: number = sum(map(qualifyingProducts, p -> get(p, "sales", 0)));
-
-    // Calculate average sales of qualifying products
-    - avgTopSales: number = round(totalFromTop / len(qualifyingProducts), 2) if len(qualifyingProducts) > 0 else 0;
-
-    // Count metrics
-    - totalProducts: integer = len(ProductListRaw.products);
-    - qualifyingCount: integer = len(qualifyingProducts);
-
-    // Get the #1 product name
-    - topProductName: string = get(get(top5Products, 0, {}), "name", "N/A");
+    - sales: array = SalesListRaw.sales;
+    - totalAmount: number = sum(map(SalesListRaw.sales, s -> s["amount"]));
+    - totalQuantity: integer = sum(map(SalesListRaw.sales, s -> s["quantity"]));
+    - count: integer = len(SalesListRaw.sales);
+    - avgAmount: number = round(SalesProcessed.totalAmount / SalesProcessed.count, 2) if SalesProcessed.count > 0 else 0;
 end
 
-// Sales summary data for PDF generation
-Entity SalesData
+// PDF export entity - converts sales data to PDF binary
+Entity SalesPDF(SalesProcessed)
   attributes:
-    - period: string;
-    - totalSales: number;
-    - totalOrders: integer;
-    - topProduct: string;
-    - revenue: number;
-    - topProducts: array;
-end
-
-// Enhanced sales data with product analytics
-Entity EnrichedSalesData(ProductSalesProcessed)
-  attributes:
-    - period: string = GenerateEnrichedReport.period if GenerateEnrichedReport.period else "Q4 2024";
-    - totalSales: number = ProductSalesProcessed.totalFromTop;
-    - totalOrders: integer = ProductSalesProcessed.qualifyingCount;
-    - topProduct: string = ProductSalesProcessed.topProductName;
-    - revenue: number = ProductSalesProcessed.totalFromTop;
-    - topProducts: array = ProductSalesProcessed.top5Products;
-end
-
-// Wrapper for sales data (to match PDF service expectations)
-Entity SalesDataWrapper
-  attributes:
-    - data: object<SalesData>;
-end
-
-// Wrapper for enriched data (converts EnrichedSalesData to expected format)
-Entity EnrichedSalesDataWrapper(EnrichedSalesData)
-  attributes:
-    - data: object = {
-        "period": EnrichedSalesData.period if EnrichedSalesData.period else "Q4 2024",
-        "totalSales": EnrichedSalesData.totalSales,
-        "totalOrders": EnrichedSalesData.totalOrders,
-        "topProduct": EnrichedSalesData.topProduct,
-        "revenue": EnrichedSalesData.revenue,
-        "topProducts": EnrichedSalesData.topProducts
-      };
-end
-
-// PDF binary response wrapper
-Entity PDFBinary
-  attributes:
-    - file: binary;
-end
-
-// Report metadata that comes back from the service
-Entity ReportMetadata
-  attributes:
-    - reportId: string;
-    - generatedAt: string;
-    - fileSize: integer;
-    - filename: string;
-end
-
-// Enhanced response with computed fields
-Entity ReportInfo(ReportMetadata)
-  attributes:
-    - reportId: string = ReportMetadata.reportId;
-    - generatedAt: string = ReportMetadata.generatedAt;
-    - fileSize: integer = ReportMetadata.fileSize;
-    - filename: string = ReportMetadata.filename;
-    - fileSizeKB: number = round(ReportMetadata.fileSize / 1024.0, 2);
-    - downloadUrl: string = "/api/reports/" + ReportMetadata.reportId + "/download";
+    - file: binary = toPdf(SalesProcessed.sales, "Sales Report", "table");
 end
 
 // ========================================
 // SOURCES (External APIs)
 // ========================================
 
-// Fetch product sales data from external API
-Source<REST> ProductSalesAPI
-  url: "http://dummy-sales-api:9001/products"
+// Fetch sales data from external API
+Source<REST> SalesAPI
+  url: "http://dummy-sales-api:9001/sales"
   method: GET
   response:
     application/json:
-      type: object
-      entity: ProductListRaw
-end
-
-// Generate PDF from sales data
-Source<REST> PDFGeneratorService
-  url: "http://dummy-pdf-service:9000/generate-report"
-  method: POST
-  request:
-    application/json:
-      type: object
-      entity: SalesDataWrapper
-  response:
-    application/json:
-      type: object
-      entity: ReportMetadata
-end
-
-// Download generated PDF
-Source<REST> PDFDownloadService
-  url: "http://dummy-pdf-service:9000/download/{reportId}"
-  method: GET
-  parameters:
-    path:
-      - reportId: string = GetReport.reportId;
-  response:
-    application/pdf:
-      type: binary
-      entity: PDFBinary
+      type: array
+      entity: SalesListRaw
 end
 
 // ========================================
 // ENDPOINTS (Your API)
 // ========================================
 
-// Generate a sales report PDF (original - manual data input)
-Endpoint<REST> GenerateReport
-  path: "/api/reports/generate"
-  method: POST
-  request:
-    application/json:
-      type: object
-      entity: SalesDataWrapper
-  response:
-    application/json:
-      type: object
-      entity: ReportInfo
-  summary: "Generate a sales report PDF from sales data"
-  errors:
-    - 400: condition: not get(SalesDataWrapper, "data", {}) message: "Sales data is required"
-    - 400: condition: get(get(SalesDataWrapper, "data", {}), "totalSales", 0) < 0 message: "Total sales cannot be negative"
-end
-
-// Generate enriched report - fetches from products API and processes
-Endpoint<REST> GenerateEnrichedReport
-  path: "/api/reports/generate-enriched"
-  method: POST
-  parameters:
-    query:
-      - period: string?;
-  response:
-    application/json:
-      type: object
-      entity: ReportInfo
-  summary: "Generate an enriched sales report by fetching and processing product data"
-  errors:
-    - 400: condition: len(ProductSalesProcessed.qualifyingProducts) == 0 message: "No products with sales > 1000 found"
-    - 400: condition: ProductSalesProcessed.totalFromTop < 5000 message: "Total sales too low to generate report (minimum $5000)"
-end
-
-// Download a generated PDF report
-Endpoint<REST> GetReport
-  path: "/api/reports/{reportId}/download"
+// View sales data (for table display)
+Endpoint<REST> GetSales
+  path: "/api/sales"
   method: GET
-  parameters:
-    path:
-      - reportId: string;
+  response:
+    application/json:
+      type: object
+      entity: SalesProcessed
+  summary: "View sales data with calculations"
+end
+
+// Export sales to PDF
+Endpoint<REST> ExportSalesPDF
+  path: "/api/sales/export"
+  method: GET
   response:
     application/pdf:
       type: binary
-      entity: PDFBinary
-  summary: "Download a generated PDF report by ID"
+      entity: SalesPDF
+  summary: "Export sales data as PDF report"
   errors:
-    // - 404: 
-    //   condition: binary_size(PDFBinary.file) == 0
-    //   message: "Report not found"
-    - 400: 
-      condition: len(GetReport.reportId) < 5
-      message: "Invalid report ID format"
+    - 400: condition: SalesProcessed.count == 0 message: "No sales data to export"
+end
+
+// UI
+Component<Table> SalesTable
+  endpoint: GetSales
+  columns:
+    - "id": string
+    - "product": string
+    - "amount": number
+    - "quantity": integer
+    - "date": string
+end
+
+// PDF download button
+Component<DownloadForm> ExportSalesButton
+  endpoint: ExportSalesPDF
+  filename: "sales-report.pdf"
+  buttonText: "Export PDF"
+  showPreview: true
 end

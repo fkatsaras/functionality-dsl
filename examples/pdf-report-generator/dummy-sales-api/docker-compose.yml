@@ -1,20 +1,8 @@
 services:
-  dummy-pdf-service:
-    container_name: dummy-pdf-service
-    image: dummy-pdf-service
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "9000:9000"
-    networks:
-      - thesis_fdsl_net
-
   dummy-sales-api:
     container_name: dummy-sales-api
     image: dummy-sales-api
     build:
-      context: ../dummy-sales-api
       dockerfile: Dockerfile
     ports:
       - "9001:9001"

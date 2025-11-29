@@ -13,6 +13,7 @@ dependencies = [
   "websockets>=11,<13",
   "xmltodict>=0.13.0",
   "Pillow>=10.0.0",
+  "reportlab",
 ]
 
 [project.optional-dependencies]

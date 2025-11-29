@@ -1,0 +1,14 @@
+{# components/DownloadForm.jinja #}
+{# Component for REST endpoints that return binary files (PDF, CSV, etc.) #}
+
+{%- set raw_url = props.get('endpointPath') or '' -%}
+
+<DownloadForm
+    name="{{ common.name }}"
+    endpoint={`{{ raw_url }}`}
+    filename="{{ props.get('filename') or 'download.bin' }}"
+    buttonText="{{ props.get('buttonText') or 'Download' }}"
+    showPreview={{ 'true' if props.get('showPreview') else 'false' }}
+    autoDownload={{ 'true' if props.get('autoDownload') else 'false' }}
+    params={{ "{" }}{{ props.get('paramsJson') or '{}' }}{{ "}" }}
+/>

@@ -10,6 +10,7 @@ from .geo_funcs import DSL_GEO_FUNCS as GEO_FUNCS
 from .window_funcs import DSL_WINDOW_FUNCS as WINDOW_FUNCS
 from .url_funcs import DSL_URL_FUNCS as URL_FUNCS
 from .binary_funcs import DSL_BINARY_FUNCS as BINARY_FUNCS
+from .pdf_funcs import DSL_PDF_FUNCS as PDF_FUNCS
 
 DSL_FUNCTIONS = {}
 for group in [
@@ -25,6 +26,7 @@ for group in [
     WINDOW_FUNCS,
     URL_FUNCS,
     BINARY_FUNCS,
+    PDF_FUNCS,
 ]:
     DSL_FUNCTIONS.update(group)
 
