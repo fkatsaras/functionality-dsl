@@ -1,57 +1,13 @@
 {
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Functionality DSL",
   "scopeName": "source.fdsl",
   "patterns": [
-    {
-      "include": "#comments"
-    },
-    {
-      "include": "#strings"
-    },
-    {
-      "include": "#numbers"
-    },
-    {
-      "include": "#content-types"
-    },
-    {
-      "include": "#block-declarations"
-    },
-    {
-      "include": "#component-kind"
-    },
-    {
-      "include": "#source-kind"
-    },
-    {
-      "include": "#validators"
-    },
-    {
-      "include": "#keywords"
-    },
-    {
-      "include": "#types"
-    },
-    {
-      "include": "#http-verbs"
-    },
-    {
-      "include": "#literals"
-    },
-    {
-      "include": "#operators"
-    },
-    {
-      "include": "#builtin-functions"
-    },
-    {
-      "include": "#identifiers"
-    },
-    {
-      "include": "#angles"
-    },
-    {
-      "include": "#props-keys"
-    }
+    {"include": "#comments"},
+    {"include": "#block-headers"},
+    {"include": "#property-definitions"},
+    {"include": "#attribute-definitions"},
+    {"include": "#expressions"}
   ],
   "repository": {
     "comments": {
@@ -62,8 +18,66 @@
         }
       ]
     },
-    "strings": {
+    "block-headers": {
       "patterns": [
+        {
+          "name": "meta.block.server.fdsl",
+          "match": "^\\s*(Server|Entity|Source|Endpoint|Component)\\s*(<(REST|WS|Table|LiveTable|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView|Camera|DownloadForm)>)?\\s*([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {"name": "storage.type.class.fdsl"},
+            "2": {"name": "meta.generic.fdsl"},
+            "3": {"name": "entity.name.type.kind.fdsl"},
+            "4": {"name": "entity.name.class.fdsl"}
+          }
+        },
+        {
+          "name": "keyword.control.end.fdsl",
+          "match": "^\\s*(end)\\b"
+        }
+      ]
+    },
+    "property-definitions": {
+      "patterns": [
+        {
+          "name": "meta.property.fdsl",
+          "begin": "^\\s*(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|path|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media|filename|buttonText|showPreview|application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|image/png|image/jpeg)\\s*(:)",
+          "beginCaptures": {
+            "1": {"name": "entity.name.tag.property.fdsl"},
+            "2": {"name": "punctuation.separator.key-value.fdsl"}
+          },
+          "end": "$",
+          "patterns": [
+            {"include": "#property-values"}
+          ]
+        }
+      ]
+    },
+    "property-values": {
+      "patterns": [
+        {
+          "name": "constant.language.http-method.fdsl",
+          "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b"
+        },
+        {
+          "name": "constant.language.log-level.fdsl",
+          "match": "\\b(debug|info|warn|error)\\b"
+        },
+        {
+          "name": "constant.language.mime-type.fdsl",
+          "match": "\\b(application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|text/xml|image/png|image/jpeg|image/gif|image/svg\\+xml|video/mp4|audio/mpeg|multipart/form-data)\\b"
+        },
+        {
+          "name": "storage.type.primitive.fdsl",
+          "match": "\\b(string|integer|number|boolean|array|object|binary)\\b"
+        },
+        {
+          "name": "constant.numeric.fdsl",
+          "match": "\\b\\d+(\\.\\d+)?\\b"
+        },
+        {
+          "name": "constant.language.boolean.fdsl",
+          "match": "\\b(true|false)\\b"
+        },
         {
           "name": "string.quoted.double.fdsl",
           "begin": "\"",
@@ -74,139 +88,152 @@
               "match": "\\\\."
             },
             {
-              "name": "constant.other.placeholder.fdsl",
+              "name": "variable.other.placeholder.fdsl",
               "match": "\\{[^}]+\\}"
             }
+          ]
+        },
+        {
+          "name": "entity.name.type.entity-ref.fdsl",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "variable.other.readwrite.fdsl",
+          "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "attribute-definitions": {
+      "patterns": [
+        {
+          "name": "meta.attribute.fdsl",
+          "begin": "^\\s*(-)\\s*([a-z_][A-Za-z0-9_]*)\\s*(:)\\s*([a-z][a-z0-9_]*)?(<[^>]+>)?(\\([^)]+\\))?(\\?\\.\\.|\\.\\.|\\.)?",
+          "beginCaptures": {
+            "1": {"name": "punctuation.definition.list.fdsl"},
+            "2": {"name": "variable.other.property.attribute.fdsl"},
+            "3": {"name": "punctuation.separator.key-value.fdsl"},
+            "4": {"name": "storage.type.primitive.fdsl"},
+            "5": {"name": "support.type.format.fdsl"},
+            "6": {"name": "meta.range.fdsl"},
+            "7": {"name": "keyword.operator.range.fdsl"}
+          },
+          "end": "(;)|$",
+          "endCaptures": {
+            "1": {"name": "punctuation.terminator.statement.fdsl"}
+          },
+          "patterns": [
+            {"include": "#type-annotations"},
+            {"include": "#expressions"}
           ]
         }
       ]
     },
-    "numbers": {
-      "patterns": [
-        {
-          "name": "constant.numeric.float.fdsl",
-          "match": "\\b\\d+\\.\\d+\\b"
-        },
-        {
-          "name": "constant.numeric.int.fdsl",
-          "match": "\\b\\d+\\b"
-        }
-      ]
-    },
-    "content-types": {
-      "patterns": [
-        {
-          "name": "constant.language.mime-type.fdsl",
-          "match": "\\b(application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|text/xml|image/png|image/jpeg|image/gif|image/svg\\+xml|video/mp4|audio/mpeg|multipart/form-data)\\b"
-        }
-      ]
-    },
-    "block-declarations": {
-      "patterns": [
-        {
-          "name": "storage.type.class.fdsl",
-          "match": "\\b(Server|Entity|Source|Endpoint|Component)\\b"
-        }
-      ]
-    },
-    "component-kind": {
-      "patterns": [
-        {
-          "name": "support.class.componentkind.fdsl",
-          "match": "(?<=Component<)(Table|LiveTable|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView|Camera)(?=>)"
-        }
-      ]
-    },
-    "source-kind": {
-      "patterns": [
-        {
-          "name": "support.type.sourcekind.fdsl",
-          "match": "(?<=(Source|Endpoint)<)(REST|WS)(?=>)"
-        }
-      ]
-    },
-    "validators": {
-      "patterns": [
-        {
-          "name": "entity.name.function.decorator.fdsl",
-          "match": "@(email|url|pattern|minLength|maxLength|length|startsWith|endsWith|trim|min|max|gt|lt|gte|lte|positive|negative|range|minItems|maxItems|unique|each|required|optional|oneOf|in|validate|message)\\b"
-        },
-        {
-          "name": "entity.name.function.decorator.fdsl",
-          "match": "@[A-Za-z_][A-Za-z0-9_]*"
-        }
-      ]
-    },
-    "keywords": {
-      "patterns": [
-        {
-          "name": "keyword.control.block.fdsl",
-          "match": "\\b(end)\\b"
-        },
-        {
-          "name": "keyword.control.import.fdsl",
-          "match": "\\b(import)\\b"
-        },
-        {
-          "name": "variable.parameter.property.fdsl",
-          "match": "\\b(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media)\\b"
-        },
-        {
-          "name": "keyword.control.conditional.fdsl",
-          "match": "\\b(if|then|else)\\b"
-        },
-        {
-          "name": "keyword.operator.logical.fdsl",
-          "match": "\\b(and|or|not)\\b"
-        }
-      ]
-    },
-    "types": {
+    "type-annotations": {
       "patterns": [
         {
           "name": "storage.type.primitive.fdsl",
-          "match": "\\b(string|integer|number|boolean|array|object)\\b"
+          "match": "\\b(string|integer|number|boolean|array|object|binary)\\b"
         },
         {
           "name": "support.type.format.fdsl",
-          "match": "\\b(email|uri|uuid_str|date|time|datetime|hostname|ipv4|ipv6|byte|binary|password|regex|float|double|int32|int64)\\b"
-        }
-      ]
-    },
-    "http-verbs": {
-      "patterns": [
-        {
-          "name": "constant.language.httpverb.fdsl",
-          "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b"
-        }
-      ]
-    },
-    "literals": {
-      "patterns": [
-        {
-          "name": "constant.language.boolean.fdsl",
-          "match": "\\b(true|false)\\b"
+          "match": "<(email|uri|uuid_str|date|time|datetime|hostname|ipv4|ipv6|byte|password|regex|float|double|int32|int64|image)>",
+          "captures": {
+            "1": {"name": "entity.name.type.format.fdsl"}
+          }
         },
         {
-          "name": "constant.language.null.fdsl",
-          "match": "\\bnull\\b"
+          "name": "entity.name.type.entity-ref.fdsl",
+          "match": "<([A-Z][A-Za-z0-9_]*)>",
+          "captures": {
+            "1": {"name": "entity.name.type.class.fdsl"}
+          }
         },
         {
-          "name": "constant.numeric.http-status.fdsl",
-          "match": "\\b(200|201|204|400|401|403|404|405|409|422|429|500|502|503|504)\\b"
+          "name": "meta.range.fdsl",
+          "match": "\\(([0-9]+)?(\\.\\.)([0-9]+)?\\)",
+          "captures": {
+            "1": {"name": "constant.numeric.fdsl"},
+            "2": {"name": "keyword.operator.range.fdsl"},
+            "3": {"name": "constant.numeric.fdsl"}
+          }
+        },
+        {
+          "name": "keyword.operator.optional.fdsl",
+          "match": "\\?"
         }
       ]
     },
-    "builtin-functions": {
+    "expressions": {
+      "patterns": [
+        {"include": "#expression-assignment"},
+        {"include": "#lambda-expressions"},
+        {"include": "#function-calls"},
+        {"include": "#operators"},
+        {"include": "#literals"},
+        {"include": "#identifiers"}
+      ]
+    },
+    "expression-assignment": {
       "patterns": [
         {
-          "name": "support.function.fdsl",
-          "match": "\\b(abs|addDays|addHours|addMinutes|addSeconds|all|any|avg|ceil|clamp|concat|contains|daysBetween|endswith|entries|enumerate|error|filter|find|float|floor|formatDate|fromJson|get|getPath|hasKey|int|join|jsonParse|jsonStringify|keys|len|lower|map|max|mean|median|merge|min|now|omit|parseDate|pick|range|replace|round|split|startswith|stddev|str|subtractHours|sum|time|toBool|toInt|toJson|toNumber|toString|today|trim|upper|values|variance)\\b"
+          "name": "meta.expression.assignment.fdsl",
+          "match": "(=)(?!=)",
+          "captures": {
+            "1": {"name": "keyword.operator.assignment.fdsl"}
+          }
+        }
+      ]
+    },
+    "lambda-expressions": {
+      "patterns": [
+        {
+          "name": "meta.function.arrow.single.fdsl",
+          "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(=>)",
+          "captures": {
+            "1": {"name": "variable.parameter.function.fdsl"},
+            "2": {"name": "storage.type.function.arrow.fdsl"}
+          }
+        },
+        {
+          "name": "meta.function.arrow.tuple.fdsl",
+          "begin": "(\\()([^)]*)(\\))\\s*(=>)",
+          "beginCaptures": {
+            "1": {"name": "punctuation.definition.parameters.begin.fdsl"},
+            "2": {"patterns": [{"name": "variable.parameter.function.fdsl", "match": "[a-z_][A-Za-z0-9_]*"}]},
+            "3": {"name": "punctuation.definition.parameters.end.fdsl"},
+            "4": {"name": "storage.type.function.arrow.fdsl"}
+          },
+          "end": "(?=[,;\\)\\]])",
+          "patterns": [
+            {"include": "#expressions"}
+          ]
+        }
+      ]
+    },
+    "function-calls": {
+      "patterns": [
+        {
+          "name": "meta.function-call.builtin.fdsl",
+          "match": "\\b(abs|addDays|addHours|addMinutes|addSeconds|all|any|avg|avgIf|base64Decode|base64Encode|bearing|between|bottomN|boundingBox|buildUrl|camelCase|capitalize|ceil|chunk|clamp|coalesce|compare|concat|contains|correlation|countIf|cumulative|daysBetween|deltaTime|distance|distinctCount|downsample|drop|endswith|entries|enumerate|error|exponentialAvg|extract|filter|find|flatten|float|floor|formatDate|fromJson|get|getPath|groupBy|hasKey|icontains|ifNull|inBoundingBox|inRadius|int|interpolate|isEmpty|isNull|join|joinPath|jsonParse|jsonStringify|keys|len|lower|map|match|max|maxIf|md5|mean|median|merge|midpoint|min|minIf|mode|movingAvg|notNull|now|omit|oneOf|outliers|padLeft|padRight|parseDate|parseQueryString|parseUrl|partition|percentile|pick|quantile|range|rate|reduce|replace|require|reverse|round|sample|sha1|sha256|slugify|snakeCase|sortBy|split|startswith|stddev|str|subtractHours|sum|sumIf|take|time|timeGroupBy|timeWindow|title|toBool|toFloat|toInt|toJson|toNumber|toPdf|toString|today|topN|trim|truncate|tumblingWindow|unique|uniqueBy|upper|urlDecode|urlEncode|validate|values|variance|window|zscore|zip)\\s*(?=\\()",
+          "captures": {
+            "1": {"name": "entity.name.function.builtin.fdsl"}
+          }
+        },
+        {
+          "name": "meta.function-call.binary.fdsl",
+          "match": "\\b(binary_compress_bz2|binary_compress_gzip|binary_compress_zlib|binary_decode_base64|binary_decompress_bz2|binary_decompress_gzip|binary_decompress_zlib|binary_encode_base64|binary_size|image_dimensions|image_grayscale|image_invert|image_resize|image_rotate)\\s*(?=\\()",
+          "captures": {
+            "1": {"name": "entity.name.function.binary.fdsl"}
+          }
         }
       ]
     },
     "operators": {
       "patterns": [
+        {
+          "name": "keyword.operator.logical.fdsl",
+          "match": "\\b(and|or|not)\\b"
+        },
         {
           "name": "keyword.operator.comparison.fdsl",
           "match": "(==|!=|>=|<=|>|<)"
@@ -224,74 +251,102 @@
           "match": "\\.\\."
         },
         {
-          "name": "storage.type.function.arrow.fdsl",
-          "match": "=>"
-        },
-        {
-          "name": "keyword.operator.assignment.fdsl",
-          "match": "="
-        },
-        {
-          "name": "punctuation.separator.keyvalue.fdsl",
-          "match": ":"
+          "name": "keyword.control.conditional.fdsl",
+          "match": "\\b(if|then|else)\\b"
         },
         {
           "name": "punctuation.separator.comma.fdsl",
           "match": ","
         },
         {
+          "name": "punctuation.separator.colon.fdsl",
+          "match": ":"
+        },
+        {
           "name": "punctuation.terminator.statement.fdsl",
           "match": ";"
-        },
-        {
-          "name": "punctuation.separator.dash.fdsl",
-          "match": "^\\s*-"
         }
       ]
     },
-    "angles": {
+    "literals": {
       "patterns": [
         {
-          "name": "punctuation.definition.generic.begin.fdsl",
-          "match": "<"
+          "name": "constant.numeric.http-status.fdsl",
+          "match": "\\b(200|201|204|400|401|403|404|405|409|422|429|500|502|503|504)\\b"
         },
         {
-          "name": "punctuation.definition.generic.end.fdsl",
-          "match": ">"
-        }
-      ]
-    },
-    "props-keys": {
-      "patterns": [
+          "name": "constant.numeric.float.fdsl",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
         {
-          "name": "meta.mapping.key.fdsl",
-          "begin": "^(\\s*)(-\\s*)?([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
-          "beginCaptures": {
-            "3": {
-              "name": "variable.other.property.fdsl"
+          "name": "constant.numeric.integer.fdsl",
+          "match": "\\b\\d+\\b"
+        },
+        {
+          "name": "constant.language.boolean.fdsl",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.fdsl",
+          "match": "\\b(null|None)\\b"
+        },
+        {
+          "name": "string.quoted.double.fdsl",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fdsl",
+              "match": "\\\\."
             },
-            "4": {
-              "name": "punctuation.separator.keyvalue.fdsl"
+            {
+              "name": "variable.other.placeholder.fdsl",
+              "match": "\\{[^}]+\\}"
             }
-          },
-          "end": "(?=$)",
-          "patterns": []
+          ]
+        },
+        {
+          "name": "meta.structure.dictionary.fdsl",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {"include": "#expressions"}
+          ]
+        },
+        {
+          "name": "meta.structure.array.fdsl",
+          "begin": "\\[",
+          "end": "\\]",
+          "patterns": [
+            {"include": "#expressions"}
+          ]
         }
       ]
     },
     "identifiers": {
       "patterns": [
         {
-          "name": "variable.other.property.fdsl",
-          "match": "(?<=\\.)([A-Za-z_][A-Za-z0-9_]*)"
+          "name": "entity.name.function.decorator.fdsl",
+          "match": "@[A-Za-z_][A-Za-z0-9_]*"
         },
         {
-          "name": "entity.name.type.class.fdsl",
-          "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+          "name": "variable.other.member.fdsl",
+          "match": "(?<=\\.)([a-z_][A-Za-z0-9_]*)"
+        },
+        {
+          "name": "variable.other.member.subscript.fdsl",
+          "match": "(?<=\\[)\"([a-z_][A-Za-z0-9_]*)\"(?=\\])",
+          "captures": {
+            "1": {"name": "string.quoted.double.property.fdsl"}
+          }
+        },
+        {
+          "name": "entity.name.type.entity-ref.fdsl",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
         },
         {
           "name": "variable.other.readwrite.fdsl",
-          "match": "\\b([a-z_][A-Za-z0-9_]*)\\b"
+          "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
         }
       ]
     }

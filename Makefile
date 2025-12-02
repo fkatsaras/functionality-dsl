@@ -361,6 +361,35 @@ install-dev: ## Install development dependencies
 	@echo "$(GREEN)Dev dependencies installed!$(NC)"
 
 # ==============================================================================
+# Syntax Highlighting
+# ==============================================================================
+
+.PHONY: syntax-build
+syntax-build: ## Build VS Code syntax highlighting extension
+	@echo "$(BLUE)Building syntax highlighting extension...$(NC)"
+	cd functionality_dsl/syntax && npx @vscode/vsce package
+	@echo "$(GREEN)Extension built successfully!$(NC)"
+	@echo "Install with: make syntax-install"
+
+.PHONY: syntax-install
+syntax-install: ## Install syntax highlighting extension to VS Code
+	@echo "$(BLUE)Installing syntax highlighting extension...$(NC)"
+	@VSIX=$$(ls -t functionality_dsl/syntax/*.vsix 2>/dev/null | head -n1); \
+	if [ -z "$$VSIX" ]; then \
+		echo "$(RED)Error: No .vsix file found. Run 'make syntax-build' first$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "Installing $$VSIX..."; \
+	code --install-extension "$$VSIX" --force || echo "$(YELLOW)Note: 'code' command not found. Install manually from VS Code Extensions view$(NC)"
+	@echo "$(GREEN)Extension installed! Reload VS Code to activate.$(NC)"
+
+.PHONY: syntax-update
+syntax-update: syntax-build syntax-install ## Build and install syntax highlighting (full update)
+
+.PHONY: syntax
+syntax: syntax-update ## Alias for syntax-update
+
+# ==============================================================================
 # Common Workflows
 # ==============================================================================
 
