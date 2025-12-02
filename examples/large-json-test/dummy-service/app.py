@@ -75,7 +75,7 @@ def generate_user_record(index: int, include_metadata: bool = False) -> Dict[str
 
 @app.get("/api/users")
 async def get_users(
-    count: int = Query(default=1000, ge=1, le=10000),
+    count: int = Query(default=1000),
     include_metadata: bool = Query(default=False)
 ):
     """Generate a large array of user records"""
@@ -86,7 +86,7 @@ async def get_users(
 
 
 @app.get("/api/analytics")
-async def get_analytics(days: int = Query(default=30, ge=1, le=365)):
+async def get_analytics(days: int = Query(default=30)):
     """Generate analytics data with daily metrics"""
     print(f"Generating analytics for {days} days")
 
