@@ -153,19 +153,13 @@ Entity AnalyticsSummary(AnalyticsData)
         "daysAnalyzed": len(AnalyticsData.dailyMetrics)
       };
     - averageMetrics: object = {
-        "avgPageViews": round(sum(map(AnalyticsData.dailyMetrics, d => d["pageViews"])) / len(AnalyticsData.dailyMetrics), 2),
-        "avgUniqueVisitors": round(sum(map(AnalyticsData.dailyMetrics, d => d["uniqueVisitors"])) / len(AnalyticsData.dailyMetrics), 2),
-        "avgBounceRate": round(sum(map(AnalyticsData.dailyMetrics, d => d["bounceRate"])) / len(AnalyticsData.dailyMetrics), 4),
-        "avgSessionDuration": round(sum(map(AnalyticsData.dailyMetrics, d => d["avgSessionDuration"])) / len(AnalyticsData.dailyMetrics), 2)
+        "avgPageViews": round(sum(map(AnalyticsData.dailyMetrics, d => d["pageViews"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0,
+        "avgUniqueVisitors": round(sum(map(AnalyticsData.dailyMetrics, d => d["uniqueVisitors"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0,
+        "avgBounceRate": round(sum(map(AnalyticsData.dailyMetrics, d => d["bounceRate"])) / len(AnalyticsData.dailyMetrics), 4) if len(AnalyticsData.dailyMetrics) > 0 else 0,
+        "avgSessionDuration": round(sum(map(AnalyticsData.dailyMetrics, d => d["avgSessionDuration"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0
       };
-    - bestDay: object = sortBy(
-        AnalyticsData.dailyMetrics,
-        d => -d["pageViews"]
-      )[0];
-    - worstDay: object = sortBy(
-        AnalyticsData.dailyMetrics,
-        d => d["bounceRate"]
-      )[-1];
+    - bestDay: object? = sortBy(AnalyticsData.dailyMetrics, d => -d["pageViews"])[0] if len(AnalyticsData.dailyMetrics) > 0 else null;
+    - worstDay: object? = sortBy(AnalyticsData.dailyMetrics, d => d["bounceRate"])[-1] if len(AnalyticsData.dailyMetrics) > 0 else null;
     - dailyTrends: array = map(AnalyticsData.dailyMetrics, d => {
         "date": d["date"],
         "pageViews": d["pageViews"],

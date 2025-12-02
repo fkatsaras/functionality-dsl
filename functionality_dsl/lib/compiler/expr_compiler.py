@@ -49,6 +49,14 @@ def compile_expr_to_python(expr) -> str:
 
         # ---------------- Literals ----------------
         if cls == "Literal":
+            # Check for 'null' keyword literal first (textX stores it directly on the node)
+            if hasattr(node, '__dict__'):
+                node_dict = vars(node)
+                # Check if node matches the 'null' keyword from grammar
+                for k, v in node_dict.items():
+                    if k not in SKIP_KEYS and v == 'null':
+                        return ast.Constant(value=None)
+
             if getattr(node, "STRING", None) is not None:
                 s = node.STRING[1:-1]  # strip quotes
                 low = s.lower()
@@ -330,7 +338,14 @@ def compile_expr_to_python(expr) -> str:
             raise ValueError("Empty Atom")
 
         if cls == "AtomBase":
-            for fld in ("literal", "ref", "call", "var", "ifx", "inner"):
+            # Check for 'null' keyword first (textX stores it as literal string)
+            literal = getattr(node, "literal", None)
+            if literal is not None:
+                if isinstance(literal, str) and literal == "null":
+                    return ast.Constant(value=None)
+                return to_ast(literal)
+
+            for fld in ("ref", "call", "var", "ifx", "inner"):
                 v = getattr(node, fld, None)
                 if v is not None:
                     return to_ast(v)
