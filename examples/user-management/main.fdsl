@@ -57,7 +57,7 @@ Entity LoginMatch(LoginRequest, UsersListWrapper)
   attributes:
     - user: object? = find(
         UsersListWrapper.users,
-        u -> u["username"] == LoginRequest.username and u["password"] == LoginRequest.password
+        u => u["username"] == LoginRequest.username and u["password"] == LoginRequest.password
       );
     - token: string = sha256(get(LoginMatch.user, "username", ""));
 end
@@ -65,7 +65,7 @@ end
 // Update password: Find user by email and prepare update
 Entity PasswordUpdateData(UpdatePasswordRequest, UsersListWrapper)
   attributes:
-    - user: object? = find(UsersListWrapper.users, u -> u["email"] == UpdatePasswordRequest.email);
+    - user: object? = find(UsersListWrapper.users, u => u["email"] == UpdatePasswordRequest.email);
     - userId: integer = get(PasswordUpdateData.user, "id", 0);
     - email: string<email> = UpdatePasswordRequest.email;
     - password: string = UpdatePasswordRequest.newPassword;
@@ -185,7 +185,7 @@ Endpoint<REST> Register
     - 409:
       condition: find(
         UsersListWrapper.users,
-        u -> u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
+        u => u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
       )
       message: "Username or Password already registered."
 end
@@ -254,7 +254,7 @@ Endpoint<REST> UserDeleteEndpoint
     - 404:
       condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.userId)
+        u => u["id"] == UserDeleteEndpoint.userId)
       message: "User doesnt exist"
 end
 

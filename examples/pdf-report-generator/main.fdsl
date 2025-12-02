@@ -35,8 +35,8 @@ end
 Entity SalesProcessed(SalesListRaw)
   attributes:
     - sales: array = SalesListRaw.sales;
-    - totalAmount: number = sum(map(SalesListRaw.sales, s -> s["amount"]));
-    - totalQuantity: integer = sum(map(SalesListRaw.sales, s -> s["quantity"]));
+    - totalAmount: number = sum(map(SalesListRaw.sales, s => s["amount"]));
+    - totalQuantity: integer = sum(map(SalesListRaw.sales, s => s["quantity"]));
     - count: integer = len(SalesListRaw.sales);
     - avgAmount: number = round(SalesProcessed.totalAmount / SalesProcessed.count, 2) if SalesProcessed.count > 0 else 0;
 end
@@ -86,7 +86,9 @@ Endpoint<REST> ExportSalesPDF
       entity: SalesPDF
   summary: "Export sales data as PDF report"
   errors:
-    - 400: condition: SalesProcessed.count == 0 message: "No sales data to export"
+    - 400: 
+    condition: SalesProcessed.count == 0 
+    message: "No sales data to export"
 end
 
 // UI

@@ -70,7 +70,7 @@ Endpoint<REST> Register
     - 409:
       condition: find(
         UsersListWrapper.users,
-        u -> u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
+        u => u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
       )
       message: "Username or Password already registered."
 end

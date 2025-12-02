@@ -105,9 +105,9 @@ end
 Entity TelemetryComputed(TelemetryCombined)
   attributes:
     - t: string = formatDate(TelemetryCombined.ts / 1000, "YYYY-MM-DD HH:mm:ss");
-    - avg_temp: number = avg(map(TelemetryCombined.readings, r -> r["temp"]));
-    - avg_hum:  number = avg(map(TelemetryCombined.readings, r -> r["hum"]));
-    - avg_heat: number = avg(map(TelemetryCombined.readings, r -> r["temp"] + 0.2 * r["hum"]));
+    - avg_temp: number = avg(map(TelemetryCombined.readings, r => r["temp"]));
+    - avg_hum:  number = avg(map(TelemetryCombined.readings, r => r["hum"]));
+    - avg_heat: number = avg(map(TelemetryCombined.readings, r => r["temp"] + 0.2 * r["hum"]));
 end
 
 // =============================================================

@@ -38,7 +38,7 @@ end
 // Step 1: Filter product by name from request
 Entity FilteredProductForCart(ProductListWrapper, AddToCartRequest)
   attributes:
-    - filtered: array = filter(ProductListWrapper["products"], p -> p["name"] == AddToCartRequest["productName"]);
+    - filtered: array = filter(ProductListWrapper["products"], p => p["name"] == AddToCartRequest["productName"]);
 end
 
 // Step 2: Build request to external cart API (enriched with product details)
@@ -57,7 +57,7 @@ Entity AddToCartResponse(Cart)
     - message: string = "Item added to cart";
     - sessionId: string = Cart["sessionId"];
     - itemCount: integer = len(Cart["items"]);
-    - total: number = round(sum(map(Cart["items"], i -> i["price"] * i["quantity"])), 2);
+    - total: number = round(sum(map(Cart["items"], i => i["price"] * i["quantity"])), 2);
     - items: array = Cart["items"];
 end
 

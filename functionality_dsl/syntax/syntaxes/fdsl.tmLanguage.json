@@ -11,6 +11,9 @@
       "include": "#numbers"
     },
     {
+      "include": "#content-types"
+    },
+    {
       "include": "#block-declarations"
     },
     {
@@ -90,6 +93,14 @@
         }
       ]
     },
+    "content-types": {
+      "patterns": [
+        {
+          "name": "constant.language.mime-type.fdsl",
+          "match": "\\b(application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|text/xml|image/png|image/jpeg|image/gif|image/svg\\+xml|video/mp4|audio/mpeg|multipart/form-data)\\b"
+        }
+      ]
+    },
     "block-declarations": {
       "patterns": [
         {
@@ -138,7 +149,7 @@
         },
         {
           "name": "variable.parameter.property.fdsl",
-          "match": "\\b(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel)\\b"
+          "match": "\\b(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media)\\b"
         },
         {
           "name": "keyword.control.conditional.fdsl",
@@ -179,13 +190,17 @@
         {
           "name": "constant.language.null.fdsl",
           "match": "\\bnull\\b"
+        },
+        {
+          "name": "constant.numeric.http-status.fdsl",
+          "match": "\\b(200|201|204|400|401|403|404|405|409|422|429|500|502|503|504)\\b"
         }
       ]
     },
     "builtin-functions": {
       "patterns": [
         {
-          "name": "support.function.builtin.fdsl",
+          "name": "support.function.fdsl",
           "match": "\\b(abs|addDays|addHours|addMinutes|addSeconds|all|any|avg|ceil|clamp|concat|contains|daysBetween|endswith|entries|enumerate|error|filter|find|float|floor|formatDate|fromJson|get|getPath|hasKey|int|join|jsonParse|jsonStringify|keys|len|lower|map|max|mean|median|merge|min|now|omit|parseDate|pick|range|replace|round|split|startswith|stddev|str|subtractHours|sum|time|toBool|toInt|toJson|toNumber|toString|today|trim|upper|values|variance)\\b"
         }
       ]
@@ -198,7 +213,7 @@
         },
         {
           "name": "keyword.operator.arithmetic.fdsl",
-          "match": "(\\+|\\-|\\*|/|%)"
+          "match": "(\\+|\\-|\\*\\*|\\*|//|/|%)"
         },
         {
           "name": "keyword.operator.pipeline.fdsl",
@@ -209,8 +224,8 @@
           "match": "\\.\\."
         },
         {
-          "name": "keyword.operator.arrow.fdsl",
-          "match": "->"
+          "name": "storage.type.function.arrow.fdsl",
+          "match": "=>"
         },
         {
           "name": "keyword.operator.assignment.fdsl",
@@ -266,6 +281,10 @@
     },
     "identifiers": {
       "patterns": [
+        {
+          "name": "variable.other.property.fdsl",
+          "match": "(?<=\\.)([A-Za-z_][A-Za-z0-9_]*)"
+        },
         {
           "name": "entity.name.type.class.fdsl",
           "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"

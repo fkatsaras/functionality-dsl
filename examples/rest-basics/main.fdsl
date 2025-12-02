@@ -22,7 +22,7 @@ end
 
 Entity CoffeeList(CoffeeRawList)
   attributes:
-    - rows: array = map(CoffeeRawList.items, x ->
+    - rows: array = map(CoffeeRawList.items, x =>
         {
           "image": (x["image"] if (x["image"] and len(x["image"] or "") > 10) else "https://via.placeholder.com/150?text=No+Image"),
           "id": x["id"],

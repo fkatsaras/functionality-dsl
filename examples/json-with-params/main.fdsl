@@ -32,7 +32,7 @@ end
 
 Entity RealObjectsRows(RealObjectsWrapper)
   attributes:
-    - rows: array = map(RealObjectsWrapper.items, x ->
+    - rows: array = map(RealObjectsWrapper.items, x =>
         {
           "id": x["id"],
           "name": x["name"],

@@ -30,7 +30,7 @@ MulExpr: left=UnaryExpr (ops+=MulTail)* ;
 MulTail: op=MulOp       right=UnaryExpr ;
 MulOp:   '*' | '/' | '%' ;
 
-// unary binds to lambda or postfix (so '-' won't capture the '-' of '->')
+// unary binds to lambda or postfix (so '-' won't capture the '-' of '=>')
 UnaryExpr:
     unops+=UnaryOp* (lambda_=LambdaExpr | post=PostfixExpr)
 ;
@@ -62,7 +62,7 @@ AtomBase:
 Var: name=ID ;
 
 LambdaExpr:
-    (param=ID | params=TupleParams) '->' body=Expr
+    (param=ID | params=TupleParams) '=>' body=Expr
 ;
 
 TupleParams:

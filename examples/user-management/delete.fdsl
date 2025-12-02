@@ -61,7 +61,7 @@ Endpoint<REST> UserDeleteEndpoint
     - 404:
       condition: not find(
         UsersListWrapper.users,
-        u -> u["id"] == UserDeleteEndpoint.userId)
+        u => u["id"] == UserDeleteEndpoint.userId)
       message: "User doesnt exist"
     - 500:
       condition: not UsersListWrapper.users
