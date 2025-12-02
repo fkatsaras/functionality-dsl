@@ -469,6 +469,7 @@ class {{ endpoint.name }}Service(BaseService):
         context: Dict[str, Any] = {}
 
         # Create endpoint parameter object for expressions (e.g., GetProduct.productId)
+        # Note: Parameters are already type-converted by FastAPI before reaching this service
         endpoint_params = {}
         if path_params:
             endpoint_params.update(path_params)
@@ -476,20 +477,6 @@ class {{ endpoint.name }}Service(BaseService):
             endpoint_params.update(query_params)
         if headers:
             endpoint_params.update(headers)
-
-        {% if endpoint.query_params_typed %}
-        # Apply default values for missing query parameters
-        {% for qparam in endpoint.query_params_typed %}
-        {% if qparam.get("default_expr") %}
-        if "{{ qparam.name }}" not in endpoint_params or endpoint_params["{{ qparam.name }}"] is None:
-            try:
-                endpoint_params["{{ qparam.name }}"] = {{ qparam.get("default_expr") }}
-                self.logger.debug(f"[PARAM] - Applied default for {{ qparam.name }}: {endpoint_params['{{ qparam.name }}']}")
-            except Exception as e:
-                self.logger.warning(f"[PARAM] - Could not apply default for {{ qparam.name }}: {e}")
-        {% endif %}
-        {% endfor %}
-        {% endif %}
 
         # Add endpoint parameter object to context
         context["{{ endpoint.name }}"] = endpoint_params

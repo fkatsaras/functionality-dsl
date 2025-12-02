@@ -1,5 +1,6 @@
 """Pydantic model generation from entities."""
 
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
@@ -35,9 +36,11 @@ def generate_domain_models(model, templates_dir, output_dir):
 
             # Detect self-reference: if the entity name appears in the type annotation
             # Examples: List[Department], Optional[List[Department]], Department
-            if entity.name in py_type:
+            # Use word boundaries to avoid replacing substrings (e.g., "Cart" in "CartItem")
+            pattern = r'\b' + re.escape(entity.name) + r'\b'
+            if re.search(pattern, py_type):
                 # Wrap the entity name in quotes for forward reference
-                py_type = py_type.replace(entity.name, f"'{entity.name}'")
+                py_type = re.sub(pattern, f"'{entity.name}'", py_type)
                 has_self_reference = True
 
             # Build attribute config

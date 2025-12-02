@@ -235,9 +235,8 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     # STEP 7: Extract Path Parameters and Auth
     # =========================================================================
     route_path = get_route_path(endpoint)
-    path_params = extract_path_params(route_path)  # Just names for backward compatibility
 
-    # NEW: Extract path parameters WITH type information
+    # Extract path parameters WITH type information
     from ..utils.paths import get_path_params_from_block, get_query_params_from_block
     path_params_typed = get_path_params_from_block(endpoint)
 
@@ -291,9 +290,8 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             "name": endpoint.name,
             "method": http_method,
             "summary": getattr(endpoint, "summary", None),
-            "path_params": path_params,  # Backward compatibility (just names)
-            "path_params_typed": path_params_typed,  # WITH type information
-            "query_params_typed": query_params_typed,  # Query params with defaults
+            "path_params_typed": path_params_typed,  # Path parameters with type information
+            "query_params_typed": query_params_typed,  # Query parameters with type information and defaults
             "auth": endpoint_auth,
             "auth_headers": auth_headers,
         },
@@ -376,26 +374,3 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
 
     (graph_dir / f"{endpoint.name}.md").write_text(mermaid, encoding="utf-8")
     print(f"[GRAPH] Mermaid diagram exported: {graph_dir / f'{endpoint.name}.md'}")
-
-
-# =============================================================================
-# LEGACY COMPATIBILITY FUNCTIONS
-# =============================================================================
-# Keep old function signatures for backward compatibility during migration
-
-def generate_query_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
-    """
-    Legacy query router generator (deprecated).
-    Now delegates to unified flow-based generator.
-    """
-    print(f"[DEPRECATED] generate_query_router called for {endpoint.name} - using flow-based generator")
-    generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config)
-
-
-def generate_mutation_router(endpoint, request_schema, response_schema, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
-    """
-    Legacy mutation router generator (deprecated).
-    Now delegates to unified flow-based generator.
-    """
-    print(f"[DEPRECATED] generate_mutation_router called for {endpoint.name} - using flow-based generator")
-    generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config)

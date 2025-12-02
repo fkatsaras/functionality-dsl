@@ -32,7 +32,6 @@ router = APIRouter(
 )
 
 
-{% set pparams = endpoint.path_params or [] %}
 {% set pparams_typed = endpoint.path_params_typed or [] %}
 {% set http_method = flow.http_method %}
 
@@ -121,7 +120,8 @@ router = APIRouter(
 )
 async def {{ flow.type }}_{{ endpoint.name | lower }}(
     request: Request{% for p in pparams_typed %},
-    {{ p.name }}: {{ python_type(p.type) }}{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
+    {{ p.name }}: {{ python_type(p.type) }}{% endfor %}{% for q in endpoint.query_params_typed %},
+    {{ q.name }}: {% if q.required %}{{ python_type(q.type) }}{% else %}Optional[{{ python_type(q.type) }}]{% endif %}{% if q.get('default_expr') %} = Query({{ q.default_expr }}){% else %} = Query(None){% endif %}{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
     credentials: HTTPAuthorizationCredentials = Depends(security){% elif endpoint.auth and endpoint.auth.kind == 'api_key' %}{% if endpoint.auth.location == 'header' %},
     {{ endpoint.auth.key | replace('-', '_') | lower }}: Optional[str] = Header(None, alias="{{ endpoint.auth.key }}"){% elif endpoint.auth.location == 'query' %},
     {{ endpoint.auth.key }}: Optional[str] = Query(None){% endif %}{% endif %}
@@ -173,8 +173,14 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             {% endfor %}
         }
 
-        # Extract query params and headers for decorated attributes
-        query_params = dict(request.query_params)
+        # Build query parameters dict from injected parameters (already type-converted by FastAPI)
+        query_params = {
+            {% for q in endpoint.query_params_typed %}
+            "{{ q.name }}": {{ q.name }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        }
+
+        # Extract headers for decorated attributes
         headers = dict(request.headers)
 
         {% if http_method in ('post', 'put', 'patch') %}

@@ -1,7 +1,7 @@
 """
 Dummy service that generates large JSON responses for testing FDSL
 """
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import random
 from datetime import datetime, timedelta
@@ -74,11 +74,10 @@ def generate_user_record(index: int, include_metadata: bool = False) -> Dict[str
 
 
 @app.get("/api/users")
-async def get_users(
-    count: int = Query(default=1000),
-    include_metadata: bool = Query(default=False)
-):
-    """Generate a large array of user records"""
+async def get_users():
+    """Generate a large array of user records (simulates full DB table query)"""
+    count = 5000  # Large dataset
+    include_metadata = True
     print(f"Generating {count} user records (metadata: {include_metadata})")
     users = [generate_user_record(i, include_metadata) for i in range(1, count + 1)]
     print(f"Generated {len(users)} users")
@@ -86,8 +85,9 @@ async def get_users(
 
 
 @app.get("/api/analytics")
-async def get_analytics(days: int = Query(default=30)):
-    """Generate analytics data with daily metrics"""
+async def get_analytics():
+    """Generate analytics data with daily metrics (simulates full DB table query)"""
+    days = 90  # Large dataset - 3 months of data
     print(f"Generating analytics for {days} days")
 
     daily_metrics = []

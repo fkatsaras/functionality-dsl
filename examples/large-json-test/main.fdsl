@@ -9,35 +9,28 @@ Server LargeDataAPI
 end
 
 // ============================================================================
-// EXTERNAL SOURCES
+// EXTERNAL SOURCES (Act like database queries - return large datasets)
 // ============================================================================
 
-// Source that returns a large array of user records
+// Source that returns a large array of user records (all users from DB)
 Source<REST> UsersDataSource
   url: "http://dummy-large-data:9000/api/users"
   method: GET
-  parameters:
-    query:
-      - count: integer = GetUsers.count;
-      - include_metadata: boolean = GetUsers.include_metadata;
   response:
     type: array
     entity: UserRecordsWrapper
 end
 
-// Source that returns analytics data with nested structures
+// Source that returns analytics data with nested structures (all analytics from DB)
 Source<REST> AnalyticsDataSource
   url: "http://dummy-large-data:9000/api/analytics"
   method: GET
-  parameters:
-    query:
-      - days: integer = GetAnalytics.days;
   response:
     type: object
     entity: AnalyticsData
 end
 
-// Source that returns deeply nested organizational data
+// Source that returns deeply nested organizational data (full org tree from DB)
 Source<REST> OrgDataSource
   url: "http://dummy-large-data:9000/api/organization"
   method: GET
@@ -46,9 +39,6 @@ Source<REST> OrgDataSource
     entity: OrganizationData
 end
 
-// ============================================================================
-// SCHEMA ENTITIES (Pure schemas - no expressions)
-// ============================================================================
 
 Entity UserRecord
   attributes:
@@ -129,38 +119,44 @@ Entity UserSummary(UserRecordsWrapper)
   attributes:
     - totalUsers: integer = len(UserRecordsWrapper.items);
     - activeUsers: integer = len(filter(UserRecordsWrapper.items, u => u["isActive"]));
-    - averageAge: number = round(sum(map(UserRecordsWrapper.items, u => u["age"])) / len(UserRecordsWrapper.items), 2);
-    - averageSalary: number = round(sum(map(UserRecordsWrapper.items, u => u["salary"])) / len(UserRecordsWrapper.items), 2);
-    - users: array = map(UserRecordsWrapper.items, u => {
-        "id": u["id"],
-        "name": u["firstName"] + " " + u["lastName"],
-        "email": u["email"],
-        "location": u["city"] + ", " + u["country"],
-        "occupation": u["occupation"],
-        "salary": u["salary"],
-        "age": u["age"],
-        "isActive": u["isActive"]
-      });
+    - averageAge: number = round(sum(map(UserRecordsWrapper.items, u => u["age"])) / len(UserRecordsWrapper.items), 2) if len(UserRecordsWrapper.items) > 0 else 0;
+    - averageSalary: number = round(sum(map(UserRecordsWrapper.items, u => u["salary"])) / len(UserRecordsWrapper.items), 2) if len(UserRecordsWrapper.items) > 0 else 0;
+    - limitedItems: array = take(UserRecordsWrapper.items, GetUsers.limit) if GetUsers.limit else UserRecordsWrapper.items;
+    - users: array = map(
+        UserSummary.limitedItems,
+        u => {
+          "id": u["id"],
+          "name": u["firstName"] + " " + u["lastName"],
+          "email": u["email"],
+          "location": u["city"] + ", " + u["country"],
+          "occupation": u["occupation"],
+          "salary": u["salary"],
+          "age": u["age"],
+          "isActive": u["isActive"],
+          "metadata": u["metadata"] if GetUsers.include_metadata else null
+        }
+      );
     - countries: array = map(UserRecordsWrapper.items, u => u["country"]);
 end
 
 Entity AnalyticsSummary(AnalyticsData)
   attributes:
     - period: string = AnalyticsData.period;
+    - filteredMetrics: array = take(AnalyticsData.dailyMetrics, GetAnalytics.days) if GetAnalytics.days else AnalyticsData.dailyMetrics;
     - overview: object = {
         "totalUsers": AnalyticsData.totalUsers,
         "totalRevenue": AnalyticsData.totalRevenue,
-        "daysAnalyzed": len(AnalyticsData.dailyMetrics)
+        "daysAnalyzed": len(AnalyticsSummary.filteredMetrics)
       };
     - averageMetrics: object = {
-        "avgPageViews": round(sum(map(AnalyticsData.dailyMetrics, d => d["pageViews"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0,
-        "avgUniqueVisitors": round(sum(map(AnalyticsData.dailyMetrics, d => d["uniqueVisitors"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0,
-        "avgBounceRate": round(sum(map(AnalyticsData.dailyMetrics, d => d["bounceRate"])) / len(AnalyticsData.dailyMetrics), 4) if len(AnalyticsData.dailyMetrics) > 0 else 0,
-        "avgSessionDuration": round(sum(map(AnalyticsData.dailyMetrics, d => d["avgSessionDuration"])) / len(AnalyticsData.dailyMetrics), 2) if len(AnalyticsData.dailyMetrics) > 0 else 0
+        "avgPageViews": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["pageViews"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgUniqueVisitors": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["uniqueVisitors"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgBounceRate": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["bounceRate"])) / len(AnalyticsSummary.filteredMetrics), 4) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgSessionDuration": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["avgSessionDuration"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0
       };
-    - bestDay: object? = sortBy(AnalyticsData.dailyMetrics, d => -d["pageViews"])[0] if len(AnalyticsData.dailyMetrics) > 0 else null;
-    - worstDay: object? = sortBy(AnalyticsData.dailyMetrics, d => d["bounceRate"])[-1] if len(AnalyticsData.dailyMetrics) > 0 else null;
-    - dailyTrends: array = map(AnalyticsData.dailyMetrics, d => {
+    - bestDay: object? = sortBy(AnalyticsSummary.filteredMetrics, d => -d["pageViews"])[0] if len(AnalyticsSummary.filteredMetrics) > 0 else null;
+    - worstDay: object? = sortBy(AnalyticsSummary.filteredMetrics, d => d["bounceRate"])[-1] if len(AnalyticsSummary.filteredMetrics) > 0 else null;
+    - dailyTrends: array = map(AnalyticsSummary.filteredMetrics, d => {
         "date": d["date"],
         "pageViews": d["pageViews"],
         "uniqueVisitors": d["uniqueVisitors"],
@@ -185,26 +181,21 @@ Entity OrgSummary(OrganizationData)
       });
 end
 
-// ============================================================================
-// ENDPOINTS
-// ============================================================================
 
+// Fetch all users from DB, then limit and filter in FDSL
 Endpoint<REST> GetUsers
   path: "/api/users"
   method: GET
   parameters:
     query:
-      - count: integer = 1000;
+      - limit: integer?;
       - include_metadata: boolean = false;
   response:
     type: object
     entity: UserSummary
-  errors:
-    - 400: 
-    condition: GetUsers.count < 1 or GetUsers.count > 10000 
-    message: "Count must be between 1 and 10000"
 end
 
+// Fetch all analytics from DB, then filter by days in FDSL
 Endpoint<REST> GetAnalytics
   path: "/api/analytics"
   method: GET
@@ -215,11 +206,12 @@ Endpoint<REST> GetAnalytics
     type: object
     entity: AnalyticsSummary
   errors:
-    - 400: 
-    condition: GetAnalytics.days < 1 or GetAnalytics.days > 365 
-    message: "Days must be between 1 and 365"
+    - 400:
+      condition: GetAnalytics.days < 1 or GetAnalytics.days > 365
+      message: "Days must be between 1 and 365"
 end
 
+// Returns organizational hierarchy with computed budget summaries
 Endpoint<REST> GetOrganization
   path: "/api/organization"
   method: GET
