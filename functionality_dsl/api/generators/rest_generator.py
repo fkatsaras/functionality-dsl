@@ -87,9 +87,9 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
 
         for read_source in flow.read_sources:
             # Find which entity this source provides
-            response_schema = get_response_schema(read_source)
-            if response_schema and response_schema.get("type") == "entity":
-                entity = response_schema["entity"]
+            source_response_schema = get_response_schema(read_source)
+            if source_response_schema and source_response_schema.get("type") == "entity":
+                entity = source_response_schema["entity"]
                 config = build_rest_input_config(entity, read_source, all_source_names)
                 rest_inputs.append(config)
 

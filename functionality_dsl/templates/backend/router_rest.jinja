@@ -84,8 +84,28 @@ router = APIRouter(
 
 @router.{{ http_method }}(
     "",{% if response_type == 'binary' %}
-    response_class={{ response_class }}{% else %}
-    response_model={{ response_model }}{% endif %}{% if errors %},
+    response_class={{ response_class }},
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "{{ response_metadata.content_type if response_metadata else 'application/octet-stream' }}": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            }
+        }{% if errors %},{% endif %}
+        {% for error in errors %}
+        {{ error.status_code }}: {
+            "description": "{{ error.message }}",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "{{ error.message }}"}
+                }
+            }
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    }{% else %}
+    response_model={{ response_model }}{% if errors %},
     responses={
         {% for error in errors %}
         {{ error.status_code }}: {
@@ -97,7 +117,7 @@ router = APIRouter(
             }
         }{% if not loop.last %},{% endif %}
         {% endfor %}
-    }{% endif %}
+    }{% endif %}{% endif %}
 )
 async def {{ flow.type }}_{{ endpoint.name | lower }}(
     request: Request{% for p in pparams_typed %},
