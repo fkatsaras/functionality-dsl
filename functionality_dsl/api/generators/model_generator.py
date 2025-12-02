@@ -17,9 +17,11 @@ def generate_domain_models(model, templates_dir, output_dir):
     from ..extractors import get_all_source_names
     all_source_names = get_all_source_names(model)
     all_imports = set()
+    models_needing_rebuild = set()  # Track models with forward references
 
     for entity in get_entities(model):
         attribute_configs = []
+        has_self_reference = False
 
         for attr in getattr(entity, "attributes", []) or []:
             # Compile validators to Pydantic constraints
@@ -28,10 +30,20 @@ def generate_domain_models(model, templates_dir, output_dir):
             # Collect imports
             all_imports.update(validator_info["imports"])
 
+            # Get python type and check for self-reference
+            py_type = map_to_python_type(attr)
+
+            # Detect self-reference: if the entity name appears in the type annotation
+            # Examples: List[Department], Optional[List[Department]], Department
+            if entity.name in py_type:
+                # Wrap the entity name in quotes for forward reference
+                py_type = py_type.replace(entity.name, f"'{entity.name}'")
+                has_self_reference = True
+
             # Build attribute config
             attr_config = {
                 "name": attr.name,
-                "py_type": map_to_python_type(attr),
+                "py_type": py_type,
                 "field_constraints": validator_info["field_constraints"],
             }
 
@@ -44,6 +56,9 @@ def generate_domain_models(model, templates_dir, output_dir):
                 attr_config["kind"] = "schema"
 
             attribute_configs.append(attr_config)
+
+        if has_self_reference:
+            models_needing_rebuild.add(entity.name)
 
         entities_context.append({
             "name": entity.name,
@@ -63,7 +78,8 @@ def generate_domain_models(model, templates_dir, output_dir):
 
     models_code = template.render(
         entities=entities_context,
-        additional_imports=sorted(list(all_imports))
+        additional_imports=sorted(list(all_imports)),
+        models_needing_rebuild=sorted(list(models_needing_rebuild))
     )
     models_code = format_python_code(models_code)
 

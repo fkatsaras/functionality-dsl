@@ -30,3 +30,10 @@ class {{ ent.name }}(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 {% endfor %}
+
+{% if models_needing_rebuild %}
+# Rebuild models with forward references to resolve self-referencing types
+{% for model_name in models_needing_rebuild %}
+{{ model_name }}.model_rebuild()
+{% endfor %}
+{% endif %}

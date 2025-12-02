@@ -110,7 +110,7 @@ Entity Department
     - name: string;
     - budget: number;
     - employees: array<Employee>;
-    - subDepartments: array?;
+    - subDepartments: array<Department>?;
 end
 
 Entity OrganizationData
