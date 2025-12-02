@@ -1,0 +1,235 @@
+// Large JSON Response Test
+// Tests FDSL handling of substantial JSON payloads with nested structures
+
+Server LargeDataAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================================================
+// EXTERNAL SOURCES
+// ============================================================================
+
+// Source that returns a large array of user records
+Source<REST> UsersDataSource
+  url: "http://dummy-large-data:9000/api/users"
+  method: GET
+  parameters:
+    query:
+      - count: integer = GetUsers.count;
+      - include_metadata: boolean = GetUsers.include_metadata;
+  response:
+    type: array
+    entity: UserRecordsWrapper
+end
+
+// Source that returns analytics data with nested structures
+Source<REST> AnalyticsDataSource
+  url: "http://dummy-large-data:9000/api/analytics"
+  method: GET
+  parameters:
+    query:
+      - days: integer = GetAnalytics.days;
+  response:
+    type: object
+    entity: AnalyticsData
+end
+
+// Source that returns deeply nested organizational data
+Source<REST> OrgDataSource
+  url: "http://dummy-large-data:9000/api/organization"
+  method: GET
+  response:
+    type: object
+    entity: OrganizationData
+end
+
+// ============================================================================
+// SCHEMA ENTITIES (Pure schemas - no expressions)
+// ============================================================================
+
+Entity UserRecord
+  attributes:
+    - id: string;
+    - username: string;
+    - email: string;
+    - firstName: string;
+    - lastName: string;
+    - age: integer;
+    - country: string;
+    - city: string;
+    - occupation: string;
+    - salary: number;
+    - joinDate: string;
+    - isActive: boolean;
+    - tags: array;
+    - metadata: object?;
+end
+
+Entity UserRecordsWrapper
+  attributes:
+    - items: array<UserRecord>;
+end
+
+Entity DailyMetrics
+  attributes:
+    - date: string;
+    - pageViews: integer;
+    - uniqueVisitors: integer;
+    - bounceRate: number;
+    - avgSessionDuration: number;
+    - topPages: array;
+    - deviceBreakdown: object;
+end
+
+Entity AnalyticsData
+  attributes:
+    - period: string;
+    - totalUsers: integer;
+    - totalRevenue: number;
+    - dailyMetrics: array<DailyMetrics>;
+    - topProducts: array;
+    - conversionRates: object;
+end
+
+Entity Employee
+  attributes:
+    - id: string;
+    - name: string;
+    - role: string;
+    - department: string;
+    - salary: number;
+    - projects: array;
+end
+
+Entity Department
+  attributes:
+    - id: string;
+    - name: string;
+    - budget: number;
+    - employees: array<Employee>;
+    - subDepartments: array?;
+end
+
+Entity OrganizationData
+  attributes:
+    - companyName: string;
+    - totalEmployees: integer;
+    - departments: array<Department>;
+    - locations: array;
+end
+
+// ============================================================================
+// TRANSFORMATION ENTITIES (With computed attributes)
+// ============================================================================
+
+Entity UserSummary(UserRecordsWrapper)
+  attributes:
+    - totalUsers: integer = len(UserRecordsWrapper.items);
+    - activeUsers: integer = len(filter(UserRecordsWrapper.items, u => u["isActive"]));
+    - averageAge: number = round(sum(map(UserRecordsWrapper.items, u => u["age"])) / len(UserRecordsWrapper.items), 2);
+    - averageSalary: number = round(sum(map(UserRecordsWrapper.items, u => u["salary"])) / len(UserRecordsWrapper.items), 2);
+    - users: array = map(UserRecordsWrapper.items, u => {
+        "id": u["id"],
+        "name": u["firstName"] + " " + u["lastName"],
+        "email": u["email"],
+        "location": u["city"] + ", " + u["country"],
+        "occupation": u["occupation"],
+        "salary": u["salary"],
+        "age": u["age"],
+        "isActive": u["isActive"]
+      });
+    - countries: array = map(UserRecordsWrapper.items, u => u["country"]);
+end
+
+Entity AnalyticsSummary(AnalyticsData)
+  attributes:
+    - period: string = AnalyticsData.period;
+    - overview: object = {
+        "totalUsers": AnalyticsData.totalUsers,
+        "totalRevenue": AnalyticsData.totalRevenue,
+        "daysAnalyzed": len(AnalyticsData.dailyMetrics)
+      };
+    - averageMetrics: object = {
+        "avgPageViews": round(sum(map(AnalyticsData.dailyMetrics, d => d["pageViews"])) / len(AnalyticsData.dailyMetrics), 2),
+        "avgUniqueVisitors": round(sum(map(AnalyticsData.dailyMetrics, d => d["uniqueVisitors"])) / len(AnalyticsData.dailyMetrics), 2),
+        "avgBounceRate": round(sum(map(AnalyticsData.dailyMetrics, d => d["bounceRate"])) / len(AnalyticsData.dailyMetrics), 4),
+        "avgSessionDuration": round(sum(map(AnalyticsData.dailyMetrics, d => d["avgSessionDuration"])) / len(AnalyticsData.dailyMetrics), 2)
+      };
+    - bestDay: object = sortBy(
+        AnalyticsData.dailyMetrics,
+        d => -d["pageViews"]
+      )[0];
+    - worstDay: object = sortBy(
+        AnalyticsData.dailyMetrics,
+        d => d["bounceRate"]
+      )[-1];
+    - dailyTrends: array = map(AnalyticsData.dailyMetrics, d => {
+        "date": d["date"],
+        "pageViews": d["pageViews"],
+        "uniqueVisitors": d["uniqueVisitors"],
+        "bounceRate": d["bounceRate"]
+      });
+end
+
+Entity OrgSummary(OrganizationData)
+  attributes:
+    - companyName: string = OrganizationData.companyName;
+    - totalEmployees: integer = OrganizationData.totalEmployees;
+    - departmentCount: integer = len(OrganizationData.departments);
+    - totalBudget: number = sum(map(OrganizationData.departments, d => d["budget"]));
+    - averageBudget: number = round(sum(map(OrganizationData.departments, d => d["budget"])) / len(OrganizationData.departments), 2);
+    - departments: array = map(OrganizationData.departments, dept => {
+        "id": dept["id"],
+        "name": dept["name"],
+        "budget": dept["budget"],
+        "employeeCount": len(dept["employees"]),
+        "avgSalary": round(sum(map(dept["employees"], e => e["salary"])) / len(dept["employees"]), 2) if len(dept["employees"]) > 0 else 0,
+        "hasSubDepartments": dept["subDepartments"] != null and len(dept["subDepartments"]) > 0
+      });
+end
+
+// ============================================================================
+// ENDPOINTS
+// ============================================================================
+
+Endpoint<REST> GetUsers
+  path: "/api/users"
+  method: GET
+  parameters:
+    query:
+      - count: integer = 1000;
+      - include_metadata: boolean = false;
+  response:
+    type: object
+    entity: UserSummary
+  errors:
+    - 400: 
+    condition: GetUsers.count < 1 or GetUsers.count > 10000 
+    message: "Count must be between 1 and 10000"
+end
+
+Endpoint<REST> GetAnalytics
+  path: "/api/analytics"
+  method: GET
+  parameters:
+    query:
+      - days: integer = 30;
+  response:
+    type: object
+    entity: AnalyticsSummary
+  errors:
+    - 400: 
+    condition: GetAnalytics.days < 1 or GetAnalytics.days > 365 
+    message: "Days must be between 1 and 365"
+end
+
+Endpoint<REST> GetOrganization
+  path: "/api/organization"
+  method: GET
+  response:
+    type: object
+    entity: OrgSummary
+end
