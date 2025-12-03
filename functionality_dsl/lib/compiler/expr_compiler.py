@@ -21,16 +21,23 @@ def _assert_safe_ast(tree: ast.AST):
 
 # ---------------- Compiler ----------------
 
-def compile_expr_to_python(expr) -> str:
+def compile_expr_to_python(expr, validate_context=None) -> str:
     """
     Compile DSL expression to Python code using AST nodes.
 
     Simplified model: All entity/source references become direct variable names.
     The runtime provides a flat namespace where all entities are available by name.
+
+    Args:
+        expr: DSL expression node to compile
+        validate_context: Optional dict of valid identifiers for semantic validation.
+                         If provided, validates all Name nodes exist in context.
+                         Format: {'entity_name': True, 'source_name': True, ...}
     """
 
     SKIP_KEYS = {"parent", "parent_ref", "parent_obj", "model", "_tx_fqn", "_tx_position"}
     loop_vars: set[str] = set()  # Track variables introduced by lambdas
+    validation_errors = []  # Collect validation errors
 
     def to_ast(node) -> ast.AST:
         """Convert DSL node to Python AST node"""
@@ -371,8 +378,92 @@ def compile_expr_to_python(expr) -> str:
     # Validate safety
     _assert_safe_ast(expr_node)
 
+    # Semantic validation: Check all identifiers are defined
+    if validate_context is not None:
+        _validate_identifiers(expr_node, validate_context, loop_vars, validation_errors)
+        if validation_errors:
+            # Raise the first error (they're all location-aware)
+            raise validation_errors[0]
+
     # Convert AST to Python code string
     py_code = ast.unparse(expr_node.body)
 
     print(py_code)
     return py_code
+
+
+def _validate_identifiers(expr_node: ast.Expression, valid_context: dict, loop_vars: set[str], errors: list):
+    """
+    Validate that all Name nodes in the compiled AST are defined in the available context.
+
+    Args:
+        expr_node: Compiled Python AST Expression node
+        valid_context: Dict of valid identifiers (entities, sources, endpoints, builtins)
+        loop_vars: Set of lambda parameter names (locally scoped variables)
+        errors: List to collect validation errors (ValueError instances)
+    """
+    # Reserved Python constants that are always valid
+    PYTHON_CONSTANTS = {'None', 'True', 'False'}
+
+    # Special runtime context keys that are always available
+    RUNTIME_CONTEXT = {'dsl_funcs'}  # Function registry is always available
+
+    # Walk the AST and check all Name nodes
+    for node in ast.walk(expr_node):
+        if isinstance(node, ast.Name):
+            name = node.id
+
+            # Skip if it's a valid identifier
+            if (name in valid_context or
+                name in loop_vars or
+                name in PYTHON_CONSTANTS or
+                name in RUNTIME_CONTEXT):
+                continue
+
+            # Found an undefined identifier
+            # Build a helpful error message with suggestions
+            error_msg = f"Undefined identifier '{name}' in expression."
+
+            # Try to find similar names (simple typo detection)
+            suggestions = _find_similar_names(name, valid_context.keys())
+            if suggestions:
+                error_msg += f" Did you mean: {', '.join(suggestions)}?"
+
+            errors.append(ValueError(error_msg))
+
+
+def _find_similar_names(target: str, candidates: list[str], max_suggestions: int = 3) -> list[str]:
+    """
+    Find similar names using simple edit distance heuristic.
+    Returns up to max_suggestions similar names.
+    """
+    def levenshtein_distance(s1: str, s2: str) -> int:
+        """Calculate edit distance between two strings."""
+        if len(s1) < len(s2):
+            return levenshtein_distance(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                # Cost of insertions, deletions, or substitutions
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    # Calculate distances for all candidates
+    distances = [(name, levenshtein_distance(target.lower(), name.lower())) for name in candidates]
+
+    # Filter to reasonable matches (distance <= 3 or within 30% of target length)
+    threshold = max(3, len(target) * 0.3)
+    similar = [(name, dist) for name, dist in distances if dist <= threshold and dist > 0]
+
+    # Sort by distance and return top suggestions
+    similar.sort(key=lambda x: x[1])
+    return [name for name, _ in similar[:max_suggestions]]

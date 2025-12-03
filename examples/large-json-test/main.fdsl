@@ -119,8 +119,8 @@ Entity UserSummary(UserRecordsWrapper)
   attributes:
     - totalUsers: integer = len(UserRecordsWrapper.items);
     - activeUsers: integer = len(filter(UserRecordsWrapper.items, u => u["isActive"]));
-    - averageAge: number = round(sum(map(UserRecordsWrapper.items, u => u["age"])) / len(UserRecordsWrapper.items), 2) if len(UserRecordsWrapper.items) > 0 else 0;
-    - averageSalary: number = round(sum(map(UserRecordsWrapper.items, u => u["salary"])) / len(UserRecordsWrapper.items), 2) if len(UserRecordsWrapper.items) > 0 else 0;
+    - averageAge: number = round(avg(map(UserRecordsWrapper.items, u => u["age"])), 2) if len(UserRecordsWrapper.items) > 0 else 0;
+    - averageSalary: number = round(avg(map(UserRecordsWrapper.items, u => u["salary"])), 2) if len(UserRecordsWrapper.items) > 0 else 0;
     - limitedItems: array = take(UserRecordsWrapper.items, GetUsers.limit) if GetUsers.limit else UserRecordsWrapper.items;
     - users: array = map(
         UserSummary.limitedItems,
@@ -149,10 +149,10 @@ Entity AnalyticsSummary(AnalyticsData)
         "daysAnalyzed": len(AnalyticsSummary.filteredMetrics)
       };
     - averageMetrics: object = {
-        "avgPageViews": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["pageViews"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
-        "avgUniqueVisitors": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["uniqueVisitors"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
-        "avgBounceRate": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["bounceRate"])) / len(AnalyticsSummary.filteredMetrics), 4) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
-        "avgSessionDuration": round(sum(map(AnalyticsSummary.filteredMetrics, d => d["avgSessionDuration"])) / len(AnalyticsSummary.filteredMetrics), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0
+        "avgPageViews": round(avg(map(AnalyticsSummary.filteredMetrics, d => d["pageViews"])), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgUniqueVisitors": round(avg(map(AnalyticsSummary.filteredMetrics, d => d["uniqueVisitors"])), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgBounceRate": round(avg(map(AnalyticsSummary.filteredMetrics, d => d["bounceRate"])), 4) if len(AnalyticsSummary.filteredMetrics) > 0 else 0,
+        "avgSessionDuration": round(avg(map(AnalyticsSummary.filteredMetrics, d => d["avgSessionDuration"])), 2) if len(AnalyticsSummary.filteredMetrics) > 0 else 0
       };
     - bestDay: object? = sortBy(AnalyticsSummary.filteredMetrics, d => -d["pageViews"])[0] if len(AnalyticsSummary.filteredMetrics) > 0 else null;
     - worstDay: object? = sortBy(AnalyticsSummary.filteredMetrics, d => d["bounceRate"])[-1] if len(AnalyticsSummary.filteredMetrics) > 0 else null;

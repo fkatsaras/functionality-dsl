@@ -211,7 +211,7 @@ def _validate_func(name, argc, node):
     """Validate function call arity and semantic constraints."""
     if name not in DSL_FUNCTION_SIG:
         raise TextXSemanticError(f"Unknown function '{name}'.", **get_location(node))
-    
+
     min_arity, max_arity = DSL_FUNCTION_SIG[name]
     if argc < min_arity or (max_arity is not None and argc > max_arity):
         if max_arity is None:
@@ -224,6 +224,50 @@ def _validate_func(name, argc, node):
             f"Function '{name}' expects {expect} args, got {argc}.",
             **get_location(node),
         )
+
+
+def _build_validation_context(model, current_entity, loop_vars: set[str]) -> dict:
+    """
+    Build a validation context dictionary containing all valid identifiers
+    that can be referenced in expressions.
+
+    Args:
+        model: The FDSL model
+        current_entity: The entity being validated (for parent references)
+        loop_vars: Lambda parameter names (scoped to the expression)
+
+    Returns:
+        Dict mapping identifier names to True (for quick lookup)
+    """
+    context = {}
+
+    # Add all entity names
+    for entity in get_children_of_type("Entity", model):
+        context[entity.name] = True
+
+    # Add all endpoint names (REST + WS)
+    for endpoint in get_children_of_type("EndpointREST", model):
+        context[endpoint.name] = True
+    for endpoint in get_children_of_type("EndpointWS", model):
+        context[endpoint.name] = True
+
+    # Add all source names (REST + WS)
+    for source in get_children_of_type("SourceREST", model):
+        context[source.name] = True
+    for source in get_children_of_type("SourceWS", model):
+        context[source.name] = True
+
+    # Add parent entity names (for inheritance)
+    if current_entity:
+        parents = getattr(current_entity, "parents", []) or []
+        for parent in parents:
+            context[parent.name] = True
+
+    # Add loop variables (lambda parameters)
+    for var in loop_vars:
+        context[var] = True
+
+    return context
 
 
 # ------------------------------------------------------------------------------
@@ -569,9 +613,18 @@ def _validate_computed_attrs(model, metamodel=None):
             for fname, argc, node in _collect_calls(expr):
                 _validate_func(fname, argc, node)
 
-            # Compile expression
+            # Build validation context for semantic checking
+            validation_context = _build_validation_context(model, ent, loop_vars)
+
+            # Compile expression with semantic validation
             try:
-                a._py = compile_expr_to_python(expr)
+                a._py = compile_expr_to_python(expr, validate_context=validation_context)
+            except ValueError as ex:
+                # Semantic validation error (undefined identifier)
+                raise TextXSemanticError(
+                    f"Expression validation error in attribute '{a.name}': {ex}",
+                    **get_location(a)
+                )
             except Exception as ex:
                 raise TextXSemanticError(
                     f"Compile error: {ex}", **get_location(a)
@@ -686,9 +739,18 @@ def _validate_entity_validations(model, metamodel=None):
                             **get_location(node)
                         )
 
-            # Compile validation expression
+            # Build validation context for semantic checking
+            validation_context = _build_validation_context(model, ent, loop_vars)
+
+            # Compile validation expression with semantic validation
             try:
-                val._py = compile_expr_to_python(expr)
+                val._py = compile_expr_to_python(expr, validate_context=validation_context)
+            except ValueError as ex:
+                # Semantic validation error (undefined identifier)
+                raise TextXSemanticError(
+                    f"Entity '{ent.name}' validation #{idx+1} expression error: {ex}",
+                    **get_location(val)
+                )
             except Exception as ex:
                 raise TextXSemanticError(
                     f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",

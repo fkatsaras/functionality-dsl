@@ -325,7 +325,7 @@ DSL_FUNCTIONS = {
     "clamp":  (_clamp,  (3, 3)),
     "round":  (_round,  (1, 2)),
 
-    # Type conversion (more intuitive names)
+    # Type conversion 
     "toNumber": (_toNumber, (1, 1)),
     "toInt":    (_toInt,    (1, 1)),
     "toString": (_toString, (1, 1)),
