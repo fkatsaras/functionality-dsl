@@ -399,6 +399,7 @@ def _validate_identifiers(expr_node: ast.Expression, valid_context: dict, loop_v
     Args:
         expr_node: Compiled Python AST Expression node
         valid_context: Dict of valid identifiers (entities, sources, endpoints, builtins)
+                      Can also include metadata like {'_entity_attrs': {attr_name: position}, '_current_attr_idx': N}
         loop_vars: Set of lambda parameter names (locally scoped variables)
         errors: List to collect validation errors (ValueError instances)
     """
@@ -408,28 +409,64 @@ def _validate_identifiers(expr_node: ast.Expression, valid_context: dict, loop_v
     # Special runtime context keys that are always available
     RUNTIME_CONTEXT = {'dsl_funcs'}  # Function registry is always available
 
+    # Extract metadata for forward-reference checking
+    entity_attrs = valid_context.get('_entity_attrs', {})
+    current_attr_idx = valid_context.get('_current_attr_idx', -1)
+    current_entity_name = valid_context.get('_current_entity_name', None)
+
     # Walk the AST and check all Name nodes
     for node in ast.walk(expr_node):
         if isinstance(node, ast.Name):
             name = node.id
 
-            # Skip if it's a valid identifier
-            if (name in valid_context or
-                name in loop_vars or
+            # Skip loop variables, constants, and runtime context
+            if (name in loop_vars or
                 name in PYTHON_CONSTANTS or
                 name in RUNTIME_CONTEXT):
                 continue
 
-            # Found an undefined identifier
-            # Build a helpful error message with suggestions
-            error_msg = f"Undefined identifier '{name}' in expression."
+            # Skip metadata keys
+            if name.startswith('_'):
+                continue
 
-            # Try to find similar names (simple typo detection)
-            suggestions = _find_similar_names(name, valid_context.keys())
-            if suggestions:
-                error_msg += f" Did you mean: {', '.join(suggestions)}?"
+            # Check if it's a valid identifier
+            if name not in valid_context:
+                # Found an undefined identifier
+                error_msg = f"Undefined identifier '{name}' in expression."
 
-            errors.append(ValueError(error_msg))
+                # Try to find similar names (simple typo detection)
+                candidates = [k for k in valid_context.keys() if not k.startswith('_')]
+                suggestions = _find_similar_names(name, candidates)
+                if suggestions:
+                    error_msg += f" Did you mean: {', '.join(suggestions)}?"
+
+                errors.append(ValueError(error_msg))
+
+        # Check attribute access on Call nodes (.get('attr_name'))
+        # This handles patterns like: SalesProcessed.get('totalAmount')
+        elif isinstance(node, ast.Call):
+            # Check if it's a .get() call on an entity
+            if (isinstance(node.func, ast.Attribute) and
+                node.func.attr == 'get' and
+                isinstance(node.func.value, ast.Name)):
+
+                entity_name = node.func.value.id
+
+                # Check if accessing attributes on the current entity (forward reference check)
+                if entity_name == current_entity_name and len(node.args) > 0:
+                    # Extract the attribute name being accessed
+                    if isinstance(node.args[0], ast.Constant):
+                        attr_name = node.args[0].value
+
+                        # Check if it's a forward reference
+                        if attr_name in entity_attrs:
+                            ref_idx = entity_attrs[attr_name]
+                            if ref_idx >= current_attr_idx:
+                                error_msg = (
+                                    f"Forward reference: references '{entity_name}.{attr_name}' which is defined later. "
+                                    f"Move '{attr_name}' before this attribute."
+                                )
+                                errors.append(ValueError(error_msg))
 
 
 def _find_similar_names(target: str, candidates: list[str], max_suggestions: int = 3) -> list[str]:

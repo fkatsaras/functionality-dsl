@@ -226,7 +226,7 @@ def _validate_func(name, argc, node):
         )
 
 
-def _build_validation_context(model, current_entity, loop_vars: set[str]) -> dict:
+def _build_validation_context(model, current_entity, loop_vars: set[str], current_attr_idx: int = -1) -> dict:
     """
     Build a validation context dictionary containing all valid identifiers
     that can be referenced in expressions.
@@ -235,9 +235,11 @@ def _build_validation_context(model, current_entity, loop_vars: set[str]) -> dic
         model: The FDSL model
         current_entity: The entity being validated (for parent references)
         loop_vars: Lambda parameter names (scoped to the expression)
+        current_attr_idx: Index of the current attribute being validated (for forward-ref checking)
 
     Returns:
         Dict mapping identifier names to True (for quick lookup)
+        Also includes metadata keys prefixed with '_' for validation logic
     """
     context = {}
 
@@ -266,6 +268,16 @@ def _build_validation_context(model, current_entity, loop_vars: set[str]) -> dic
     # Add loop variables (lambda parameters)
     for var in loop_vars:
         context[var] = True
+
+    # Add metadata for forward-reference checking (prefixed with '_')
+    if current_entity:
+        context['_current_entity_name'] = current_entity.name
+        context['_current_attr_idx'] = current_attr_idx
+
+        # Build attribute position map for the current entity
+        entity_attrs = getattr(current_entity, "attributes", []) or []
+        attr_positions = {attr.name: idx for idx, attr in enumerate(entity_attrs)}
+        context['_entity_attrs'] = attr_positions
 
     return context
 
@@ -582,10 +594,8 @@ def _validate_computed_attrs(model, metamodel=None):
                         ref_idx = attr_order[attr]
                         if ref_idx >= attr_idx:
                             raise TextXSemanticError(
-                                f"Attribute '{a.name}' references '{ent.name}.{attr}'. "
-                                f"Entity attributes can only reference EARLIER attributes in the same entity (forward-only references). "
-                                f"Attribute '{attr}' is defined at position {ref_idx + 1}, but '{a.name}' is at position {attr_idx + 1}. "
-                                f"Move '{attr}' before '{a.name}' to fix this.",
+                                f"Forward reference: attribute '{a.name}' references '{ent.name}.{attr}' which is defined later. "
+                                f"Move '{attr}' before '{a.name}'.",
                                 **get_location(node),
                             )
                     continue
@@ -613,8 +623,8 @@ def _validate_computed_attrs(model, metamodel=None):
             for fname, argc, node in _collect_calls(expr):
                 _validate_func(fname, argc, node)
 
-            # Build validation context for semantic checking
-            validation_context = _build_validation_context(model, ent, loop_vars)
+            # Build validation context for semantic checking (including current attribute index)
+            validation_context = _build_validation_context(model, ent, loop_vars, current_attr_idx=attr_idx)
 
             # Compile expression with semantic validation
             try:
