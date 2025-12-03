@@ -315,33 +315,6 @@ def _get_all_entity_attributes(entity):
     return all_attrs
 
 
-def _find_websocket_source_in_hierarchy(entity):
-    """
-    Checks if an entity or any of its parents sources a WebSocket endpoint.
-    Returns the entity that has the WS source, or None if no WS source found.
-    """
-    queue = deque([entity])
-    visited = set()
-
-    while queue:
-        current = queue.popleft()
-        eid = id(current)
-        if eid in visited:
-            continue
-        visited.add(eid)
-
-        # Check if current entity has a WebSocket source
-        src = getattr(current, "source", None)
-        if src is not None and src.__class__.__name__ == "SourceWS":
-            return current
-
-        # Add parents to queue
-        parents = getattr(current, "parents", []) or []
-        queue.extend(parents)
-
-    return None
-
-
 # ------------------------------------------------------------------------------
 # Computed attributes validation
 
@@ -642,134 +615,7 @@ def _validate_computed_attrs(model, metamodel=None):
 
 
 # ------------------------------------------------------------------------------
-# Entity validations semantic checks
-
-def _validate_entity_validations(model, metamodel=None):
-    """
-    Semantic validation for entity validation rules.
-    Ensures validations are well-formed and reference valid attributes.
-    """
-    for ent in get_children_of_type("Entity", model):
-        validations = getattr(ent, "validations", []) or []
-
-        if not validations:
-            continue  # No validations to check
-
-        # 1. Entity with validations must have at least one attribute
-        attrs = getattr(ent, "attributes", []) or []
-        if len(attrs) == 0:
-            raise TextXSemanticError(
-                f"Entity '{ent.name}' defines validations but has no attributes. "
-                f"Validations require attributes to validate.",
-                **get_location(ent)
-            )
-
-        # 2. Entity with validations cannot source WebSocket endpoints
-        ws_entity = _find_websocket_source_in_hierarchy(ent)
-        if ws_entity is not None:
-            if ws_entity.name == ent.name:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' defines validations but sources a WebSocket endpoint. "
-                    f"Validations are only supported for REST-based request/response flows, "
-                    f"not streaming WebSocket connections.",
-                    **get_location(ent)
-                )
-            else:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' defines validations but inherits from '{ws_entity.name}', "
-                    f"which sources a WebSocket endpoint. "
-                    f"Validations are only supported for REST-based request/response flows, "
-                    f"not streaming WebSocket connections.",
-                    **get_location(ent)
-                )
-
-        # Build attribute map for this entity (including inherited)
-        all_attrs = _get_all_entity_attributes(ent)
-        attr_names = {a.name for a in all_attrs}
-
-        # 3. Validate each validation expression
-        for idx, val in enumerate(validations):
-            expr = getattr(val, "expr", None)
-            if expr is None:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' validation #{idx+1} is missing an expression.",
-                    **get_location(val)
-                )
-
-            loop_vars = _loop_var_names(expr)
-
-            # ------------------------------------------------------
-            # Allowed aliases: parents + self + other entities
-            # ------------------------------------------------------
-            parent_list = list(getattr(ent, "parents", []) or [])
-            parent_names = [p.name for p in parent_list]
-            allowed_aliases = set(parent_names)
-            allowed_aliases.add(ent.name)  # allow self reference
-
-            # ------------------------------------------------------
-            # Validate all references in the validation expression
-            # ------------------------------------------------------
-            for alias, attr, node in _collect_refs(expr, loop_vars):
-                if alias is None or alias in loop_vars:
-                    continue
-
-                # Allow self-reference (same entity)
-                if alias == ent.name:
-                    if attr and attr not in attr_names and attr != "__jsonpath__":
-                        raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on entity '{ent.name}'.",
-                            **get_location(node),
-                        )
-                    continue
-
-                # Parent reference (validate attribute existence)
-                if alias in parent_names:
-                    parent_ent = next(p for p in parent_list if p.name == alias)
-                    parent_attr_names = {a.name for a in _get_all_entity_attributes(parent_ent)}
-                    if attr and attr != "__jsonpath__" and attr not in parent_attr_names:
-                        raise TextXSemanticError(
-                            f"'{alias}.{attr}' not found on parent entity '{alias}'.",
-                            **get_location(node),
-                        )
-                    continue
-
-                # Allow references to other entities/sources (validated at generation)
-                pass
-
-            # Validate function calls
-            for fname, argc, node in _collect_calls(expr):
-                _validate_func(fname, argc, node)
-
-                # Special check for require()
-                if fname == "require":
-                    args = getattr(node, "args", []) or []
-                    if len(args) < 1:
-                        raise TextXSemanticError(
-                            f"Entity '{ent.name}' validation: require() needs at least a condition.",
-                            **get_location(node)
-                        )
-
-            # Build validation context for semantic checking
-            validation_context = _build_validation_context(model, ent, loop_vars)
-
-            # Compile validation expression with semantic validation
-            try:
-                val._py = compile_expr_to_python(expr, validate_context=validation_context)
-            except ValueError as ex:
-                # Semantic validation error (undefined identifier)
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' validation #{idx+1} expression error: {ex}",
-                    **get_location(val)
-                )
-            except Exception as ex:
-                raise TextXSemanticError(
-                    f"Entity '{ent.name}' validation #{idx+1} compile error: {ex}",
-                    **get_location(val)
-                )
-
-
-# ------------------------------------------------------------------------------
-# Decorator attribute validations
+# Source parameter validations
 
 def _validate_parameter_expressions(model, metamodel=None):
     """
@@ -1878,16 +1724,6 @@ def _validate_camera_component(comp):
                 )
 
 
-def _backlink_external_targets(model):
-    """
-    Create back-references from entities to their external REST targets.
-    Note: With new design, Sources use request/response schemas instead of entity field.
-    This function is kept for backward compatibility but may not be needed.
-    """
-    # No longer needed since Sources don't have 'entity' field
-    pass
-
-
 def _populate_aggregates(model):
     """Populate aggregated lists on the model for easy access."""
     model.aggregated_servers = list(get_model_servers(model))
@@ -1904,7 +1740,7 @@ def _populate_aggregates(model):
 def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
-    Order matters: unique names -> endpoints -> entities -> components -> aggregates -> validations
+    Order matters: unique names -> endpoints -> entities -> components -> aggregates
 
     Note: Imports are handled in build_model() via _preload_imports() before parsing.
     """
@@ -1915,8 +1751,6 @@ def model_processor(model, metamodel=None):
     verify_entities(model)
     verify_components(model)
     _populate_aggregates(model)
-    _backlink_external_targets(model)
-    _validate_entity_validations(model, metamodel)
 
 
 # ------------------------------------------------------------------------------
