@@ -864,6 +864,38 @@ def _validate_parameter_expressions(model, metamodel=None):
                         **get_location(param_obj)
                     )
 
+        # Compile and validate parameter expressions with semantic validation
+        for param_obj, param_name, expr, param_type in param_exprs:
+            # Build validation context (endpoints + entities)
+            loop_vars = _loop_var_names(expr)
+            validation_context = {}
+
+            # Add all endpoints
+            for endpoint in endpoints_map.values():
+                validation_context[endpoint.name] = True
+
+            # Add all entities
+            for entity_name in entity_names:
+                validation_context[entity_name] = True
+
+            # Add loop vars
+            for var in loop_vars:
+                validation_context[var] = True
+
+            # Compile with semantic validation
+            try:
+                compile_expr_to_python(expr, validate_context=validation_context)
+            except ValueError as ex:
+                raise TextXSemanticError(
+                    f"Source '{source.name}' parameter '{param_name}' expression error: {ex}",
+                    **get_location(param_obj)
+                )
+            except Exception as ex:
+                raise TextXSemanticError(
+                    f"Source '{source.name}' parameter '{param_name}' compile error: {ex}",
+                    **get_location(param_obj)
+                )
+
         # Validate: each URL path param must have a parameter definition
         if path_block:
             defined_path_params = {getattr(p, "name", None) for p in getattr(path_block, "params", []) or []}
@@ -875,6 +907,103 @@ def _validate_parameter_expressions(model, metamodel=None):
                         f"Add: parameters: path: - {url_param}: <type> = <expression>;",
                         **get_location(source)
                     )
+
+
+def _validate_error_event_conditions(model, metamodel=None):
+    """
+    Validate error and event condition expressions in Endpoints.
+
+    Rules:
+    1. Error conditions (REST endpoints) can reference:
+       - Response entity and its attributes
+       - Endpoint parameters (path/query/header)
+    2. Event conditions (WS endpoints) can reference:
+       - Subscribe/publish entities and their attributes
+       - Endpoint state
+    """
+    # Validate REST endpoint error conditions
+    for endpoint in get_children_of_type("EndpointREST", model):
+        errors_block = getattr(endpoint, "errors", None)
+        if not errors_block:
+            continue
+
+        mappings = getattr(errors_block, "mappings", []) or []
+
+        # Build validation context for error conditions
+        validation_context = {}
+
+        # Add endpoint itself (for parameter access)
+        validation_context[endpoint.name] = True
+
+        # Add all entities (response entity can be referenced)
+        for entity in get_children_of_type("Entity", model):
+            validation_context[entity.name] = True
+
+        # Validate each error condition
+        for idx, error_mapping in enumerate(mappings):
+            condition = getattr(error_mapping, "condition", None)
+            if not condition:
+                continue
+
+            loop_vars = _loop_var_names(condition)
+            for var in loop_vars:
+                validation_context[var] = True
+
+            # Compile with semantic validation
+            try:
+                compile_expr_to_python(condition, validate_context=validation_context)
+            except ValueError as ex:
+                raise TextXSemanticError(
+                    f"Endpoint '{endpoint.name}' error condition #{idx+1} expression error: {ex}",
+                    **get_location(error_mapping)
+                )
+            except Exception as ex:
+                raise TextXSemanticError(
+                    f"Endpoint '{endpoint.name}' error condition #{idx+1} compile error: {ex}",
+                    **get_location(error_mapping)
+                )
+
+    # Validate WS endpoint event conditions
+    for endpoint in get_children_of_type("EndpointWS", model):
+        events_block = getattr(endpoint, "events", None)
+        if not events_block:
+            continue
+
+        mappings = getattr(events_block, "mappings", []) or []
+
+        # Build validation context for event conditions
+        validation_context = {}
+
+        # Add endpoint itself
+        validation_context[endpoint.name] = True
+
+        # Add all entities
+        for entity in get_children_of_type("Entity", model):
+            validation_context[entity.name] = True
+
+        # Validate each event condition
+        for idx, event_mapping in enumerate(mappings):
+            condition = getattr(event_mapping, "condition", None)
+            if not condition:
+                continue
+
+            loop_vars = _loop_var_names(condition)
+            for var in loop_vars:
+                validation_context[var] = True
+
+            # Compile with semantic validation
+            try:
+                compile_expr_to_python(condition, validate_context=validation_context)
+            except ValueError as ex:
+                raise TextXSemanticError(
+                    f"Endpoint '{endpoint.name}' event condition #{idx+1} expression error: {ex}",
+                    **get_location(event_mapping)
+                )
+            except Exception as ex:
+                raise TextXSemanticError(
+                    f"Endpoint '{endpoint.name}' event condition #{idx+1} compile error: {ex}",
+                    **get_location(event_mapping)
+                )
 
 
 # ------------------------------------------------------------------------------
@@ -1965,6 +2094,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
     mm.register_model_processor(_validate_parameter_expressions)
+    mm.register_model_processor(_validate_error_event_conditions)
 
     return mm
 
