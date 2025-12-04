@@ -121,7 +121,7 @@ Entity UserSummary(UserRecordsWrapper)
     - activeUsers: integer = len(filter(UserRecordsWrapper.items, u => u["isActive"]));
     - averageAge: number = round(avg(map(UserRecordsWrapper.items, u => u["age"])), 2) if len(UserRecordsWrapper.items) > 0 else 0;
     - averageSalary: number = round(avg(map(UserRecordsWrapper.items, u => u["salary"])), 2) if len(UserRecordsWrapper.items) > 0 else 0;
-    - limitedItems: array = take(UserRecordsWrapper.items, GetUsers.limit) if GetUsers.limit else UserRecordsWrapper.items;
+    - limitedItems: array = UserRecordsWrapper.items[:GetUsers.limit] if GetUsers.limit else UserRecordsWrapper.items;
     - users: array = map(
         UserSummary.limitedItems,
         u => {
@@ -142,7 +142,7 @@ end
 Entity AnalyticsSummary(AnalyticsData)
   attributes:
     - period: string = AnalyticsData.period;
-    - filteredMetrics: array = take(AnalyticsData.dailyMetrics, GetAnalytics.days) if GetAnalytics.days else AnalyticsData.dailyMetrics;
+    - filteredMetrics: array = AnalyticsData.dailyMetrics[:GetAnalytics.days] if GetAnalytics.days else AnalyticsData.dailyMetrics;
     - overview: object = {
         "totalUsers": AnalyticsData.totalUsers,
         "totalRevenue": AnalyticsData.totalRevenue,
