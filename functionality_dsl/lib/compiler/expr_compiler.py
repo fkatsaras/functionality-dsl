@@ -288,13 +288,34 @@ def compile_expr_to_python(expr, validate_context=None) -> str:
                         keywords=[]
                     )
                 elif getattr(t, "index", None) is not None:
-                    # foo[idx] -> subscript access: foo[idx]
-                    idx = to_ast(t.index)
-                    base = ast.Subscript(
-                        value=base,
-                        slice=idx,
-                        ctx=ast.Load()
-                    )
+                    # Handle IndexAccess: can be either index or slice
+                    index_node = t.index
+
+                    # Check if it's a slice (has 'slice' attribute from grammar)
+                    if hasattr(index_node, 'slice') and index_node.slice is not None:
+                        # It's a SliceExpr: arr[start:end:step]
+                        slice_expr = index_node.slice
+
+                        # Extract start, end, step (all optional)
+                        start = to_ast(slice_expr.start) if getattr(slice_expr, 'start', None) else None
+                        end = to_ast(slice_expr.end) if getattr(slice_expr, 'end', None) else None
+                        step = to_ast(slice_expr.step) if getattr(slice_expr, 'step', None) else None
+
+                        # Create Python AST Slice node
+                        slice_ast = ast.Slice(lower=start, upper=end, step=step)
+                        base = ast.Subscript(
+                            value=base,
+                            slice=slice_ast,
+                            ctx=ast.Load()
+                        )
+                    else:
+                        # It's a regular index: arr[idx]
+                        idx = to_ast(index_node)
+                        base = ast.Subscript(
+                            value=base,
+                            slice=idx,
+                            ctx=ast.Load()
+                        )
             return base
 
         if cls == "LambdaExpr":

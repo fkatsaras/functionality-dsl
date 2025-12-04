@@ -1,12 +1,6 @@
 import re
 import json
-from fastapi import HTTPException
 
-def _require(condition, message="Validation failed", status=400):
-    """Raise HTTPException if condition is False."""
-    if not condition:
-        raise HTTPException(status_code=status, detail={"error": message})
-    return True
 
 def _validate_email(email: str):
     """
@@ -160,7 +154,6 @@ def _validate_length(s: str, min_len: int = 0, max_len: int = None) -> bool:
         return length >= min_len
 
 DSL_VALIDATION_FUNCS = {
-    "require":          (_require, (2, 3)),
     "validate_email":   (_validate_email, (1, 1)),
     "validate_url":     (_validate_url, (1, 1)),
     "validate_phone":   (_validate_phone, (1, 1)),

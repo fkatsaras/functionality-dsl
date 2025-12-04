@@ -141,36 +141,6 @@ def _chunk(xs: Iterable, size: int):
     xs_list = list(xs)
     return [xs_list[i:i + size] for i in range(0, len(xs_list), size)]
 
-def _take(xs: Iterable, n: int):
-    """
-    Take first n elements from array.
-
-    Example: take([1, 2, 3, 4, 5], 3) => [1, 2, 3]
-    """
-    if xs is None:
-        raise TypeError("_take() received None")
-    return list(xs)[:n]
-
-def _drop(xs: Iterable, n: int):
-    """
-    Skip first n elements from array.
-
-    Example: drop([1, 2, 3, 4, 5], 2) => [3, 4, 5]
-    """
-    if xs is None:
-        raise TypeError("_drop() received None")
-    return list(xs)[n:]
-
-def _reverse(xs: Iterable):
-    """
-    Reverse array order.
-
-    Example: reverse([1, 2, 3]) => [3, 2, 1]
-    """
-    if xs is None:
-        raise TypeError("_reverse() received None")
-    return list(reversed(xs))
-
 def _concat(*arrays):
     """
     Concatenate multiple arrays into one.
@@ -200,8 +170,5 @@ DSL_COLLECTION_FUNCS = {
     "unique":   (_unique, (1, 1)),
     "uniqueBy": (_uniqueBy, (2, 2)),
     "chunk":    (_chunk, (2, 2)),
-    "take":     (_take, (2, 2)),
-    "drop":     (_drop, (2, 2)),
-    "reverse":  (_reverse, (1, 1)),
     "concat":   (_concat, (1, None)),
 }

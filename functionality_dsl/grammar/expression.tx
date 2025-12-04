@@ -49,7 +49,12 @@ PostfixTail:
 
 MemberAccess: '.' name=ID ;
 ParamAccess:  '$' name=ID ;  // Changed from @ to $ to avoid conflict with validators
-IndexAccess:  '[' index=Expr ']' ;
+IndexAccess:  '[' (slice=SliceExpr | index=Expr) ']' ;
+
+// Python-style slicing: arr[start:end:step]
+SliceExpr:
+    (start=Expr)? ':' (end=Expr)? (':' (step=Expr)?)?
+;
 
 // -------- atoms --------
 AtomBase:

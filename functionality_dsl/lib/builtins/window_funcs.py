@@ -63,50 +63,6 @@ def _distinctCount(xs: Iterable, field: str = None) -> int:
 
     return len(seen)
 
-def _topN(xs: Iterable, n: int, key_fn: Callable = None):
-    """
-    Get top N elements (largest values).
-    If key_fn provided, sorts by that key.
-
-    Example: topN([1, 5, 3, 9, 2], 3) => [9, 5, 3]
-    Example: topN(products, 3, p -> p["price"]) => 3 most expensive products
-    """
-    if xs is None:
-        raise TypeError("_topN() received None")
-    if n < 0:
-        raise ValueError("topN() n must be non-negative")
-
-    xs_list = list(xs)
-
-    if key_fn is not None:
-        sorted_xs = sorted(xs_list, key=key_fn, reverse=True)
-    else:
-        sorted_xs = sorted(xs_list, reverse=True)
-
-    return sorted_xs[:n]
-
-def _bottomN(xs: Iterable, n: int, key_fn: Callable = None):
-    """
-    Get bottom N elements (smallest values).
-    If key_fn provided, sorts by that key.
-
-    Example: bottomN([1, 5, 3, 9, 2], 3) => [1, 2, 3]
-    Example: bottomN(products, 3, p -> p["price"]) => 3 cheapest products
-    """
-    if xs is None:
-        raise TypeError("_bottomN() received None")
-    if n < 0:
-        raise ValueError("bottomN() n must be non-negative")
-
-    xs_list = list(xs)
-
-    if key_fn is not None:
-        sorted_xs = sorted(xs_list, key=key_fn)
-    else:
-        sorted_xs = sorted(xs_list)
-
-    return sorted_xs[:n]
-
 def _sample(xs: Iterable, n: int):
     """
     Randomly sample n elements from array (without replacement).
@@ -151,8 +107,6 @@ DSL_WINDOW_FUNCS = {
     "window":          (_window, (2, 3)),
     "tumblingWindow":  (_tumblingWindow, (2, 2)),
     "distinctCount":   (_distinctCount, (1, 2)),
-    "topN":            (_topN, (2, 3)),
-    "bottomN":         (_bottomN, (2, 3)),
     "sample":          (_sample, (2, 2)),
     "partition":       (_partition, (2, 2)),
 }
