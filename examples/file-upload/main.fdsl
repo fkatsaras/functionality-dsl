@@ -45,7 +45,7 @@ Entity UploadResponse
 end
 
 // Computed entity - adds compression stats and metadata
-Entity FileUploadResult(UploadResponse, FileUpload)
+Entity FileUploadResult(UploadResponse, FileUpload, CompressedFileUpload)
   attributes:
     - id: string = UploadResponse.file_id;
     - download_url: string = UploadResponse.url;

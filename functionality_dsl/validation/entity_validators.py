@@ -339,9 +339,18 @@ def _validate_computed_attrs(model, metamodel=None):
                         )
                     continue
 
-                # Allow references to other entities (will be validated at generation time)
-                # This includes APIEndpoints, Sources, and other Entities
+                # Check if referencing another entity
                 if alias in target_attrs:
+                    # RULE: All entity references in attributes MUST be declared as parents
+                    parent_names = {p.name for p in parents}
+
+                    if alias not in parent_names:
+                        all_parents = sorted(parent_names | {alias})
+                        raise TextXSemanticError(
+                            f"Entity '{ent.name}' references '{alias}' but it's not a parent. "
+                            f"Add to parents: Entity {ent.name}({', '.join(all_parents)})",
+                            **get_location(node),
+                        )
                     continue
 
                 # If it's not in target_attrs, it might be an APIEndpoint or Source
