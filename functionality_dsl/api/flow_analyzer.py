@@ -207,6 +207,10 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
         else:  # POST, PUT, PATCH, DELETE
             response_write_targets.append(src)
 
+    print(f"[DEBUG] Endpoint '{endpoint.name}': response_sources={len(response_sources)}, response_read={len(response_read_sources)}, response_write={len(response_write_targets)}")
+    if response_write_targets:
+        print(f"[DEBUG]   Response write targets: {[s.name for s in response_write_targets]}")
+
     # Track computed entities in the response dependency chain
     # ONLY follow parent/expression edges, NOT arbitrary ancestors
     if response_entity:
@@ -444,9 +448,8 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                         break
 
                 # Find read sources for this entity
-                # Use GLOBAL graph (endpoint=None) because the endpoint subgraph
-                # doesn't include error-condition entities yet
-                deps = dep_graph.get_source_dependencies(ent.name, endpoint=None)
+                # Use endpoint-specific graph to avoid adding unrelated sources
+                deps = dep_graph.get_source_dependencies(ent.name, endpoint)
                 for src in deps["read_sources"]:
                     method = getattr(src, "method", "GET").upper()
                     if method in {"GET", "HEAD", "OPTIONS"}:
@@ -457,10 +460,12 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                             write_targets.append(src)
 
                 # Find write targets that depend on this entity (via parameters)
-                # Use GLOBAL graph (endpoint=None) for same reason
-                targets = dep_graph.get_target_dependencies(ent.name, endpoint=None)
+                # Use endpoint-specific graph to avoid adding unrelated write targets
+                targets = dep_graph.get_target_dependencies(ent.name, endpoint)
+                print(f"[DEBUG] Error condition entity '{ent.name}' in endpoint '{endpoint.name}': found {len(targets)} write targets: {[t.name for t in targets]}")
                 for tgt in targets:
                     if not any(t.name == tgt.name for t in write_targets):
+                        print(f"[DEBUG] Adding write target '{tgt.name}' from error condition")
                         write_targets.append(tgt)
 
     # =========================================================================
@@ -488,13 +493,17 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
 
     # Add response write targets if no request entity (DELETE/PUT without body)
     # OR if they're already in write_targets (confirms they're used by request flow)
-    if request_entity is None:
+    # IMPORTANT: Don't add for GET/HEAD/OPTIONS methods (they never write)
+    print(f"[DEBUG-MERGE] Endpoint '{endpoint.name}': request_entity={request_entity is not None}, http_method={http_method}, response_write_targets={len(response_write_targets)}")
+    if request_entity is None and http_method not in {"GET", "HEAD", "OPTIONS"}:
         # No request entity: Add all response write targets
         # (e.g., DELETE endpoints that validate then delete)
+        print(f"[DEBUG-MERGE]   Adding {len(response_write_targets)} response write targets")
         for src in response_write_targets:
             if not any(t.name == src.name for t in write_targets):
                 write_targets.append(src)
     else:
+        print(f"[DEBUG-MERGE]   Skipping response write targets (GET/HEAD/OPTIONS or has request entity)")
         # Has request entity: Only add if already in write_targets from request flow
         # This prevents adding unrelated sources just because they provide the response entity
         pass
@@ -519,6 +528,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     for tgt in write_targets:
         params = getattr(tgt, "parameters", None)
         is_compatible = True
+        print(f"[DEBUG-FILTER] Checking write target '{tgt.name}' for endpoint '{endpoint.name}'")
 
         if params:
             # Check path parameters
@@ -564,13 +574,18 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                         break
 
         if is_compatible:
+            print(f"[DEBUG-FILTER]   KEPT '{tgt.name}'")
             filtered_write_targets.append(tgt)
+        else:
+            print(f"[DEBUG-FILTER]   REMOVED '{tgt.name}' (incompatible)")
 
     write_targets = filtered_write_targets
 
     # Deduplicate
     read_sources = list({s.name: s for s in read_sources}.values())
     write_targets = list({t.name: t for t in write_targets}.values())
+
+    print(f"[DEBUG] Final for '{endpoint.name}': read_sources={len(read_sources)}, write_targets={len(write_targets)} {[t.name for t in write_targets]}")
 
     # =========================================================================
     # 7. FINAL CLASSIFICATION

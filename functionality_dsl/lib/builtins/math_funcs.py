@@ -290,6 +290,125 @@ def _maxIf(xs, condition):
         raise ValueError("maxIf() matched no values")
     return max(filtered)
 
+def _sqrt(x) -> float:
+    """
+    Calculate square root.
+
+    Example: sqrt(16) => 4.0
+    """
+    if x < 0:
+        raise ValueError("sqrt() requires non-negative number")
+    return math.sqrt(x)
+
+def _pow(base, exponent) -> float:
+    """
+    Calculate base raised to exponent power.
+
+    Example: pow(2, 3) => 8.0
+    """
+    return math.pow(base, exponent)
+
+def _cos(x) -> float:
+    """
+    Calculate cosine (input in radians).
+
+    Example: cos(0) => 1.0
+    """
+    return math.cos(x)
+
+def _sin(x) -> float:
+    """
+    Calculate sine (input in radians).
+
+    Example: sin(0) => 0.0
+    """
+    return math.sin(x)
+
+def _tan(x) -> float:
+    """
+    Calculate tangent (input in radians).
+
+    Example: tan(0) => 0.0
+    """
+    return math.tan(x)
+
+def _acos(x) -> float:
+    """
+    Calculate arc cosine (returns radians).
+
+    Example: acos(1) => 0.0
+    """
+    return math.acos(x)
+
+def _asin(x) -> float:
+    """
+    Calculate arc sine (returns radians).
+
+    Example: asin(0) => 0.0
+    """
+    return math.asin(x)
+
+def _atan(x) -> float:
+    """
+    Calculate arc tangent (returns radians).
+
+    Example: atan(0) => 0.0
+    """
+    return math.atan(x)
+
+def _atan2(y, x) -> float:
+    """
+    Calculate arc tangent of y/x (returns radians).
+    Properly handles quadrants.
+
+    Example: atan2(1, 1) => 0.7853981633974483
+    """
+    return math.atan2(y, x)
+
+def _radians(degrees) -> float:
+    """
+    Convert degrees to radians.
+
+    Example: radians(180) => 3.141592653589793
+    """
+    return math.radians(degrees)
+
+def _degrees(radians) -> float:
+    """
+    Convert radians to degrees.
+
+    Example: degrees(3.14159) => 180.0
+    """
+    return math.degrees(radians)
+
+def _log(x, base=math.e) -> float:
+    """
+    Calculate logarithm of x to given base (default is natural log).
+
+    Example: log(10, 10) => 1.0
+    """
+    if x <= 0:
+        raise ValueError("log() requires positive number")
+    return math.log(x, base)
+
+def _log10(x) -> float:
+    """
+    Calculate base-10 logarithm.
+
+    Example: log10(100) => 2.0
+    """
+    if x <= 0:
+        raise ValueError("log10() requires positive number")
+    return math.log10(x)
+
+def _exp(x) -> float:
+    """
+    Calculate e raised to power x.
+
+    Example: exp(1) => 2.718281828459045
+    """
+    return math.exp(x)
+
 DSL_FUNCTIONS = {
     # Legacy names
     "avg":   (_avg, (1, 1)),
@@ -325,9 +444,27 @@ DSL_FUNCTIONS = {
     "clamp":  (_clamp,  (3, 3)),
     "round":  (_round,  (1, 2)),
 
-    # Type conversion 
+    # Type conversion
     "toNumber": (_toNumber, (1, 1)),
     "toInt":    (_toInt,    (1, 1)),
     "toString": (_toString, (1, 1)),
     "toBool":   (_toBool,   (1, 1)),
+
+    # Trigonometric functions
+    "sqrt":    (_sqrt,    (1, 1)),
+    "pow":     (_pow,     (2, 2)),
+    "cos":     (_cos,     (1, 1)),
+    "sin":     (_sin,     (1, 1)),
+    "tan":     (_tan,     (1, 1)),
+    "acos":    (_acos,    (1, 1)),
+    "asin":    (_asin,    (1, 1)),
+    "atan":    (_atan,    (1, 1)),
+    "atan2":   (_atan2,   (2, 2)),
+    "radians": (_radians, (1, 1)),
+    "degrees": (_degrees, (1, 1)),
+
+    # Logarithmic and exponential
+    "log":     (_log,     (1, 2)),
+    "log10":   (_log10,   (1, 1)),
+    "exp":     (_exp,     (1, 1)),
 }

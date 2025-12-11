@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  dummy-delivery-db:
+    container_name: dummy-delivery-db
+    image: dummy-delivery-db
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9700:9700"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true
