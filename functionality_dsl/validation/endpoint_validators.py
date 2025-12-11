@@ -483,3 +483,51 @@ def _validate_ws_endpoint_entities(model, endpoint, ent_subscribe, ent_publish):
     # PUBLISH entity: Clients send TO server (inbound to server)
     # Can be pure schema - client is the data source (like REST request)
     # No validation needed
+
+
+def _validate_http_method_constraints(model, metamodel=None):
+    """
+    Validate HTTP method constraints for REST endpoints.
+
+    Rules (following REST principles):
+    1. GET/HEAD/OPTIONS endpoints MUST be read-only (no write targets)
+       - These are safe, idempotent operations by HTTP spec
+       - Cannot modify server state
+       - Cannot have Sources with POST/PUT/PATCH/DELETE methods
+
+    2. POST/PUT/PATCH/DELETE endpoints CAN write (mutations)
+       - May be WRITE-only (create/update without fetching)
+       - May be READ_WRITE (need to fetch data first, e.g., update password by email)
+
+    This validation ensures generated code follows REST semantics and prevents
+    accidental violations of HTTP method contracts.
+    """
+    from ..api.flow_analyzer import analyze_endpoint_flow
+
+    # Safe HTTP methods that MUST NOT write
+    SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+    for endpoint in get_children_of_type("EndpointREST", model):
+        method = endpoint.method.upper() if hasattr(endpoint, "method") else "GET"
+
+        # Analyze endpoint flow to detect write targets
+        try:
+            flow = analyze_endpoint_flow(endpoint, model)
+        except Exception as e:
+            # Flow analysis might fail for other reasons, skip HTTP validation
+            continue
+
+        # Validate safe methods are read-only
+        if method in SAFE_METHODS:
+            if flow.write_targets:
+                write_target_names = [t.name for t in flow.write_targets]
+                raise TextXSemanticError(
+                    f"Endpoint '{endpoint.name}' uses HTTP method {method} which MUST be read-only, "
+                    f"but has write targets: {write_target_names}.\n\n"
+                    f"HTTP {method} endpoints cannot modify server state (REST principle).\n"
+                    f"Write targets are Sources with methods: POST, PUT, PATCH, DELETE.\n\n"
+                    **get_location(endpoint)
+                )
+
+        # For POST/PUT/PATCH/DELETE, both READ_WRITE and WRITE are valid
+        # No additional validation needed - flow analyzer handles this correctly

@@ -27,6 +27,7 @@ from functionality_dsl.validation.entity_validators import (
 from functionality_dsl.validation.endpoint_validators import (
     _validate_parameter_expressions,
     _validate_error_event_conditions,
+    _validate_http_method_constraints,
     verify_path_params,
     verify_unique_endpoint_paths,
     verify_endpoints,
@@ -51,6 +52,7 @@ __all__ = [
     # Endpoint validators
     "_validate_parameter_expressions",
     "_validate_error_event_conditions",
+    "_validate_http_method_constraints",
     "verify_path_params",
     "verify_unique_endpoint_paths",
     "verify_endpoints",

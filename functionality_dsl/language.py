@@ -24,6 +24,7 @@ from functionality_dsl.validation import (
     _validate_computed_attrs,
     _validate_parameter_expressions,
     _validate_error_event_conditions,
+    _validate_http_method_constraints,
     verify_unique_endpoint_paths,
     verify_endpoints,
     verify_path_params,
@@ -333,6 +334,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(_validate_computed_attrs)
     mm.register_model_processor(_validate_parameter_expressions)
     mm.register_model_processor(_validate_error_event_conditions)
+    mm.register_model_processor(_validate_http_method_constraints)
 
     return mm
 

@@ -264,7 +264,7 @@ Entity DeliveriesComputed(DeliveriesWrapper)
 end
 
 // Driver location with active delivery info
-Entity DriverLocationsComputed(DriverLocationsWrapper, DeliveriesWrapper)
+Entity DriverLocationsComputed(DriverLocationsWrapper)
   attributes:
     - drivers: array = map(DriverLocationsWrapper.locations, loc => {
         "driverId": loc["driverId"],

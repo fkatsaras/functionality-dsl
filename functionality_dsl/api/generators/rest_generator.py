@@ -181,45 +181,22 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             write_targets.append(target_config)
 
     # =========================================================================
-    # STEP 5: Build Computation Chain (entities needed BEFORE write)
+    # STEP 5 & 6: Build Computation Chains using Flow Strategy Pattern
     # =========================================================================
-    compiled_chain = []
+    # Use strategy pattern to handle different flow types cleanly
+    from .flow_strategies import create_flow_strategy
 
-    # For READ flows: Build response entity chain (no writes)
-    if flow.flow_type == EndpointFlowType.READ:
-        if response_entity:
-            compiled_chain = build_entity_chain(response_entity, model, all_source_names, context="ctx")
+    strategy = create_flow_strategy(endpoint, model, flow, all_source_names)
 
-    # For WRITE/READ_WRITE flows: Build computed entities referenced in write target parameters
-    # These must be computed BEFORE we can evaluate write target parameters!
-    elif flow.flow_type in {EndpointFlowType.WRITE, EndpointFlowType.READ_WRITE}:
-        # For WRITE-only flows (no reads), skip pre-write computation
-        # All transformations happen AFTER the write response is received
-        if flow.flow_type == EndpointFlowType.WRITE:
-            # WRITE-only: No pre-write computation needed
-            # Response transformation happens in response_chain
-            pass
-        else:
-            # READ_WRITE: Compute entities needed for write target parameters
-            if flow.computed_entities:
-                # Build chains for all computed entities (excluding response entity)
-                for computed_entity in flow.computed_entities:
-                    if computed_entity != response_entity:  # Response comes AFTER write
-                        entity_chain = build_entity_chain(computed_entity, model, all_source_names, context="ctx")
-                        compiled_chain.extend(entity_chain)
+    # Build pre-write computation chain (flow-specific)
+    compiled_chain = strategy.build_computation_chain()
 
-            # Also include request entity if it has computed attributes
-            if request_entity:
-                request_chain = build_entity_chain(request_entity, model, all_source_names, context="ctx")
-                # Only add if not already in compiled_chain
-                for step in request_chain:
-                    if not any(s.get("name") == step.get("name") for s in compiled_chain):
-                        compiled_chain.append(step)
+    # Build post-write response chain (flow-specific)
+    response_chain = strategy.build_response_chain()
 
     # =========================================================================
-    # STEP 6: Build Response Transformation Chain (for mutations with response)
+    # STEP 6b: Identify Response Source Entity (for mutations)
     # =========================================================================
-    response_chain = []
     response_source_entity = None
 
     if response_entity and write_targets:
