@@ -613,10 +613,30 @@ def _validate_rest_endpoint_entities(model):
 
 
 # ------------------------------------------------------------------------------
+# Cyclic entity inheritance validation
+
+def _validate_entity_inheritance_cycles(model):
+    """
+    Validate that entity parent relationships don't form cycles.
+    Uses the existing cycle detection from entity_graph.py.
+    """
+    from functionality_dsl.api.graph.entity_graph import get_all_ancestors
+
+    for entity in get_children_of_type("Entity", model):
+        try:
+            # This will raise TextXSemanticError if a cycle is detected
+            get_all_ancestors(entity, model)
+        except TextXSemanticError:
+            # Re-raise to fail validation
+            raise
+
+
+# ------------------------------------------------------------------------------
 # Main entity validation entry point
 
 def verify_entities(model):
     """Entity-specific cross-model validation."""
+    _validate_entity_inheritance_cycles(model)
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
