@@ -179,17 +179,24 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # =========================================================================
     # 2. RESOLVE ALL SOURCES FOR RESPONSE ENTITY
     # =========================================================================
-    # Get all sources that interact with the response entity, then classify by HTTP method:
-    # - GET/HEAD/OPTIONS → READ source
-    # - POST/PUT/PATCH/DELETE → WRITE target
+    # Get sources that interact with the response entity, classified by operation type:
+    # - READ sources (GET/HEAD/OPTIONS): Provide data via "provides" edges
+    # - WRITE sources (POST/PUT/PATCH/DELETE): Return mutation results via "mutation_response" edges
     #
     # Example: DELETE /api/users/{id} returns DeleteResponse from DeleteUser source
     #   → DeleteUser (DELETE method) is a WRITE target, not a READ source
     # =========================================================================
-    response_sources = []
+    response_read_sources = []
+    response_write_targets = []
     if response_entity is not None:
-        src_deps = dep_graph.get_source_dependencies(response_entity.name, endpoint)
-        response_sources = src_deps["read_sources"]  # All sources that provide this entity
+        # Get READ sources (GET/HEAD/OPTIONS) that provide data
+        # Don't use endpoint filtering yet - we'll filter by parameter compatibility later
+        src_deps = dep_graph.get_source_dependencies(response_entity.name, None)
+        response_read_sources = src_deps["read_sources"]
+
+        # Get WRITE sources (POST/PUT/PATCH/DELETE) that return mutation results
+        # Don't use endpoint filtering yet - we'll filter by parameter compatibility later
+        response_write_targets = dep_graph.get_mutation_response_sources(response_entity.name, None)
 
         # Track computed attributes for transformation chain
         for attr in getattr(response_entity, "attributes", []):
@@ -197,17 +204,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                 computed_entities.append(response_entity)
                 break
 
-    # Classify response sources by HTTP method
-    response_read_sources = []
-    response_write_targets = []
-    for src in response_sources:
-        method = getattr(src, "method", "GET").upper()
-        if method in {"GET", "HEAD", "OPTIONS"}:
-            response_read_sources.append(src)
-        else:  # POST, PUT, PATCH, DELETE
-            response_write_targets.append(src)
-
-    print(f"[DEBUG] Endpoint '{endpoint.name}': response_sources={len(response_sources)}, response_read={len(response_read_sources)}, response_write={len(response_write_targets)}")
+    print(f"[DEBUG] Endpoint '{endpoint.name}': response_read={len(response_read_sources)}, response_write={len(response_write_targets)}")
     if response_write_targets:
         print(f"[DEBUG]   Response write targets: {[s.name for s in response_write_targets]}")
 
@@ -289,6 +286,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
             method = getattr(src, "method", "GET").upper()
             if method in {"GET", "HEAD", "OPTIONS"}:
                 if not any(s.name == src.name for s in read_sources):
+                    print(f"[DEBUG-SEC3] Adding read source '{src.name}' from request entity deps")
                     read_sources.append(src)
             else:  # POST, PUT, PATCH, DELETE
                 if not any(t.name == src.name for t in write_targets):
@@ -448,7 +446,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                         break
 
                 # Find read sources for this entity
-                # Use endpoint-specific graph to avoid adding unrelated sources
+                # Use endpoint-specific graph to only include sources in this endpoint's flow
                 deps = dep_graph.get_source_dependencies(ent.name, endpoint)
                 for src in deps["read_sources"]:
                     method = getattr(src, "method", "GET").upper()
@@ -460,7 +458,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                             write_targets.append(src)
 
                 # Find write targets that depend on this entity (via parameters)
-                # Use endpoint-specific graph to avoid adding unrelated write targets
+                # Use endpoint-specific graph to only include targets in this endpoint's flow
                 targets = dep_graph.get_target_dependencies(ent.name, endpoint)
                 print(f"[DEBUG] Error condition entity '{ent.name}' in endpoint '{endpoint.name}': found {len(targets)} write targets: {[t.name for t in targets]}")
                 for tgt in targets:
@@ -511,7 +509,110 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     # Add response read sources (avoid duplicates with existing reads)
     for src in response_read_sources:
         if not any(s.name == src.name for s in read_sources):
+            print(f"[DEBUG-MERGE-READS] Adding response read source: {src.name}")
             read_sources.append(src)
+
+    # =========================================================================
+    # FILTER READ SOURCES BY PARAMETER EXPRESSION COMPATIBILITY
+    # =========================================================================
+    # Remove read sources whose parameter expressions reference entities/endpoints
+    # that aren't available in this endpoint's context.
+    #
+    # Example: CreateDelivery endpoint
+    #   - DeliveryByIdDB source: param = GetDelivery.deliveryId (INVALID - wrong endpoint)
+    #   → Remove DeliveryByIdDB
+    #
+    # IMPORTANT: If the response entity is provided by a write target's response,
+    # we DON'T need to fetch it separately via a GET source!
+    # =========================================================================
+    filtered_read_sources = []
+
+    # First, check if any write target already provides the response entity (or an ancestor)
+    # Use existing get_all_ancestors utility to check the full parent chain
+    from ..api.graph.entity_graph import get_all_ancestors
+
+    response_provided_by_write = False
+    entities_provided_by_write = set()  # Track ALL entities provided by write targets
+
+    if response_entity and write_targets:
+        # Get all ancestors of the response entity
+        response_ancestors = get_all_ancestors(response_entity, model)
+        response_ancestor_names = {response_entity.name} | {anc.name for anc in response_ancestors}
+
+        for tgt in write_targets:
+            target_response_schema = get_response_schema(tgt)
+            if target_response_schema and target_response_schema.get("type") == "entity":
+                target_response_entity = target_response_schema["entity"]
+                entities_provided_by_write.add(target_response_entity.name)
+
+                # Check if write target provides response entity or any of its ancestors
+                if target_response_entity.name in response_ancestor_names:
+                    response_provided_by_write = True
+                    print(f"[DEBUG-READ-FILTER] Write target '{tgt.name}' provides '{target_response_entity.name}' which is in response entity '{response_entity.name}' ancestor chain - will skip redundant read sources")
+                    break
+
+    for src in read_sources:
+        # Skip read sources that provide entities already available from write targets
+        if response_provided_by_write:
+            source_response_schema = get_response_schema(src)
+            if source_response_schema and source_response_schema.get("type") == "entity":
+                source_entity = source_response_schema["entity"]
+                # Check if this read source provides an entity that's already provided by a write target
+                if source_entity.name in entities_provided_by_write:
+                    print(f"[DEBUG-READ-FILTER] Skipping read source '{src.name}' - entity '{source_entity.name}' already provided by write target")
+                    continue
+
+        # Check parameter compatibility
+        params = getattr(src, "parameters", None)
+        is_compatible = True
+        print(f"[DEBUG-READ-FILTER] Checking read source '{src.name}' for endpoint '{endpoint.name}'")
+
+        if params:
+            # Check path parameters
+            if hasattr(params, "path_params") and params.path_params:
+                for param in getattr(params.path_params, "params", []):
+                    if hasattr(param, "expr") and param.expr:
+                        # Extract entity/endpoint references from parameter expression
+                        param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                        for ent in param_entities:
+                            # Check if expression references this endpoint's parameters
+                            if ent.name == endpoint.name:
+                                # Valid: references current endpoint (e.g., CreateDelivery.deliveryId)
+                                # But check if endpoint actually has this parameter!
+                                continue
+
+                            # Check if this entity is available (computed entity or from another read source)
+                            entity_available = ent in computed_entities
+                            if not entity_available:
+                                is_compatible = False
+                                print(f"[DEBUG-READ-FILTER]   Parameter references unavailable entity '{ent.name}'")
+                                break
+                    if not is_compatible:
+                        break
+
+            # Check query parameters
+            if is_compatible and hasattr(params, "query_params") and params.query_params:
+                for param in getattr(params.query_params, "params", []):
+                    if hasattr(param, "expr") and param.expr:
+                        param_entities = _extract_entity_refs_from_expr(param.expr, model)
+                        for ent in param_entities:
+                            if ent.name == endpoint.name:
+                                continue
+                            entity_available = ent in computed_entities
+                            if not entity_available:
+                                is_compatible = False
+                                print(f"[DEBUG-READ-FILTER]   Parameter references unavailable entity '{ent.name}'")
+                                break
+                    if not is_compatible:
+                        break
+
+        if is_compatible:
+            print(f"[DEBUG-READ-FILTER]   KEPT '{src.name}'")
+            filtered_read_sources.append(src)
+        else:
+            print(f"[DEBUG-READ-FILTER]   REMOVED '{src.name}' (incompatible parameters)")
+
+    read_sources = filtered_read_sources
 
     # =========================================================================
     # FILTER WRITE TARGETS BY PARAMETER EXPRESSION COMPATIBILITY
@@ -585,7 +686,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
     read_sources = list({s.name: s for s in read_sources}.values())
     write_targets = list({t.name: t for t in write_targets}.values())
 
-    print(f"[DEBUG] Final for '{endpoint.name}': read_sources={len(read_sources)}, write_targets={len(write_targets)} {[t.name for t in write_targets]}")
+    print(f"[DEBUG] Final for '{endpoint.name}': read_sources={len(read_sources)} {[s.name for s in read_sources]}, write_targets={len(write_targets)} {[t.name for t in write_targets]}")
 
     # =========================================================================
     # 7. FINAL CLASSIFICATION

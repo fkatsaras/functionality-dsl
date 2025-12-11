@@ -119,7 +119,8 @@
       "Bash(wsl bash -c \"cd /mnt/c/ffile/functionality-dsl/docs && dot -Tpng model_diagram.dot -o model_diagram.png && ls -lh model_diagram.png\")",
       "Bash(make generate:*)",
       "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/8090 && echo -e \"\"\"\"GET /api/ws/deliveries HTTP/1.1\\r\\nHost: localhost\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\\r\\nSec-WebSocket-Version: 13\\r\\n\\r\\n\"\"\"\" >&3 && cat <&3')",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(jq:*)"
     ],
     "deny": [],
     "ask": []

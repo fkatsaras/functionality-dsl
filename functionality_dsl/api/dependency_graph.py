@@ -122,14 +122,22 @@ class DependencyGraph:
             source_node = f"Source:{source.name}"
 
             # Response: Source provides entity as response
-            # All methods can return response entities (GET for reads, POST/DELETE for write results)
+            # Distinguish between READ (provides data) and WRITE (mutation response) edge types
             response_schema = get_response_schema(source)
             if response_schema and response_schema.get("type") == "entity":
                 entity = response_schema["entity"]
+                method = getattr(source, "method", "GET").upper()
+
+                # Different edge types for READ vs WRITE operations
+                if method in {"GET", "HEAD", "OPTIONS"}:
+                    edge_type = "provides"  # READ: source provides data
+                else:
+                    edge_type = "mutation_response"  # WRITE: source returns mutation result
+
                 self.graph.add_edge(
                     source_node,
                     entity.name,
-                    type="provides"
+                    type=edge_type
                 )
 
             # Request: Source consumes entity (for mutations)
@@ -504,9 +512,10 @@ class DependencyGraph:
         # Edge types we follow during BACKWARD traversal (from node to predecessors)
         # These edges represent "is provided by" or "inherits from" relationships
         backward_edges = {
-            "provides",      # Source -> Entity (entity provided by source)
-            "parent",        # Parent -> Child (inheritance - traverse UP to parents only)
-            "expression"     # Entity -> Entity (dependency in computed attributes)
+            "provides",           # Source -> Entity (entity provided by READ source - GET/HEAD/OPTIONS)
+            "mutation_response",  # Source -> Entity (entity returned by WRITE source - POST/PUT/PATCH/DELETE)
+            "parent",             # Parent -> Child (inheritance - traverse UP to parents only)
+            "expression"          # Entity -> Entity (dependency in computed attributes)
         }
 
         while stack:
@@ -707,6 +716,53 @@ class DependencyGraph:
                             write_targets.append(source_obj)
 
         return write_targets
+
+    def get_mutation_response_sources(self, entity_name: str, endpoint: str = None) -> List:
+        """
+        Get all sources that return this entity as a mutation response.
+        These are POST/PUT/PATCH/DELETE operations that return data after mutation.
+
+        Different from get_source_dependencies which returns READ sources (GET/HEAD/OPTIONS).
+        Different from get_target_dependencies which returns sources that CONSUME entities.
+
+        Returns:
+            List of source objects that return this entity as mutation response
+        """
+        graph = self.graph if endpoint is None else self.get_endpoint_subgraph(endpoint)
+
+        if entity_name not in graph:
+            return []
+
+        mutation_sources = []
+        visited_entities = set()
+
+        def collect_mutation_sources(ent_name):
+            """
+            Recursively collect mutation response sources by following parent edges only.
+            Does NOT use nx.ancestors() to avoid including sources from other endpoints.
+            """
+            if ent_name in visited_entities or ent_name not in graph:
+                return
+            visited_entities.add(ent_name)
+
+            # Check direct predecessors for mutation_response edges
+            for predecessor in graph.predecessors(ent_name):
+                if graph.nodes[predecessor].get("type") == "source":
+                    edge_data = graph.get_edge_data(predecessor, ent_name)
+                    if edge_data and edge_data.get("type") == "mutation_response":
+                        source_obj = graph.nodes[predecessor]["obj"]
+                        if source_obj not in mutation_sources:
+                            mutation_sources.append(source_obj)
+
+            # Follow parent edges to check parent entities
+            for predecessor in graph.predecessors(ent_name):
+                edge_data = graph.get_edge_data(predecessor, ent_name)
+                if edge_data and edge_data.get("type") == "parent":
+                    if graph.nodes[predecessor].get("type") == "entity":
+                        collect_mutation_sources(predecessor)
+
+        collect_mutation_sources(entity_name)
+        return mutation_sources
 
 
     def export_endpoint_mermaid(self, endpoint, endpoint_flow=None) -> str:
