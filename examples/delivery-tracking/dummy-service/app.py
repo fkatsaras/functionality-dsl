@@ -2,12 +2,14 @@
 Dummy Delivery Database Service
 Simulates a database for storing deliveries and driver locations
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import time
 import uuid
+import asyncio
+import json
 
 app = FastAPI(title="Dummy Delivery DB")
 
@@ -160,6 +162,61 @@ def update_driver_location(driver_id: str, location: LocationUpdate):
         driver_locations_db[driver_id]["timestamp"] = now
 
     return driver_locations_db[driver_id]
+
+
+# ============== WebSocket Endpoints ==============
+
+# Connection managers for WebSocket clients
+deliveries_connections: List[WebSocket] = []
+drivers_connections: List[WebSocket] = []
+
+
+@app.websocket("/ws/deliveries")
+async def websocket_deliveries(websocket: WebSocket):
+    """WebSocket endpoint for live delivery updates"""
+    await websocket.accept()
+    deliveries_connections.append(websocket)
+    print(f"[WS] Client connected to /ws/deliveries (total: {len(deliveries_connections)})")
+
+    try:
+        while True:
+            # Send current deliveries state every 2 seconds
+            data = {
+                "deliveries": list(deliveries_db.values())
+            }
+            await websocket.send_json(data)
+            await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        deliveries_connections.remove(websocket)
+        print(f"[WS] Client disconnected from /ws/deliveries (total: {len(deliveries_connections)})")
+    except Exception as e:
+        print(f"[WS] Error in /ws/deliveries: {e}")
+        if websocket in deliveries_connections:
+            deliveries_connections.remove(websocket)
+
+
+@app.websocket("/ws/drivers")
+async def websocket_drivers(websocket: WebSocket):
+    """WebSocket endpoint for live driver location updates"""
+    await websocket.accept()
+    drivers_connections.append(websocket)
+    print(f"[WS] Client connected to /ws/drivers (total: {len(drivers_connections)})")
+
+    try:
+        while True:
+            # Send current driver locations every 2 seconds
+            data = {
+                "locations": list(driver_locations_db.values())
+            }
+            await websocket.send_json(data)
+            await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        drivers_connections.remove(websocket)
+        print(f"[WS] Client disconnected from /ws/drivers (total: {len(drivers_connections)})")
+    except Exception as e:
+        print(f"[WS] Error in /ws/drivers: {e}")
+        if websocket in drivers_connections:
+            drivers_connections.remove(websocket)
 
 
 # ============== Seed Data ==============

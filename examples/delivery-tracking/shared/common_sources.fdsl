@@ -1,0 +1,74 @@
+// ============================================
+// Shared/Reusable Source Definitions
+// ============================================
+// These sources are reused across REST flows only
+// WebSocket sources are defined in their respective flow files
+
+// Get single delivery by ID (used by delivery_details flow)
+Source<REST> DeliveryByIdDB
+  url: "http://dummy-delivery-db:9700/api/deliveries/{deliveryId}"
+  method: GET
+  parameters:
+    path:
+      - deliveryId: string = GetDelivery.deliveryId;
+  response:
+    type: object
+    entity: DeliveryRaw
+end
+
+// Create new delivery (used by delivery_create flow)
+Source<REST> CreateDeliveryDB
+  url: "http://dummy-delivery-db:9700/api/deliveries"
+  method: POST
+  request:
+    type: object
+    entity: NewDeliveryRequest
+  response:
+    type: object
+    entity: DeliveryRaw
+end
+
+// Update delivery status (used by delivery_update flow)
+Source<REST> UpdateStatusDB
+  url: "http://dummy-delivery-db:9700/api/deliveries/{deliveryId}/status"
+  method: PUT
+  parameters:
+    path:
+      - deliveryId: string = UpdateDeliveryStatus.deliveryId;
+  request:
+    type: object
+    entity: StatusUpdateRequest
+  response:
+    type: object
+    entity: DeliveryRaw
+end
+
+// Assign driver to delivery (used by driver_assign flow)
+Source<REST> AssignDriverDB
+  url: "http://dummy-delivery-db:9700/api/deliveries/{deliveryId}/assign"
+  method: PUT
+  parameters:
+    path:
+      - deliveryId: string = AssignDriver.deliveryId;
+  request:
+    type: object
+    entity: DriverAssignRequest
+  response:
+    type: object
+    entity: DeliveryRaw
+end
+
+// Update driver location (used by driver_location_update flow)
+Source<REST> UpdateDriverLocationDB
+  url: "http://dummy-delivery-db:9700/api/drivers/{driverId}/location"
+  method: PUT
+  parameters:
+    path:
+      - driverId: string = UpdateDriverLocation.driverId;
+  request:
+    type: object
+    entity: LocationUpdate
+  response:
+    type: object
+    entity: DriverLocationRaw
+end

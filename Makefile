@@ -273,6 +273,30 @@ count-lines: ## Count lines of code in the project
 	@find functionality_dsl -name "*.py" | xargs wc -l | tail -1
 	@find examples -name "*.fdsl" | xargs wc -l | tail -1
 
+.PHONY: count-fdsl
+count-fdsl: ## Count FDSL lines in example (usage: make count-fdsl EXAMPLE=rest-basics)
+	@if [ -z "$(EXAMPLE)" ]; then \
+		echo "$(RED)Error: EXAMPLE not specified$(NC)"; \
+		echo "Usage: make count-fdsl EXAMPLE=rest-basics"; \
+		echo "       make count-fdsl EXAMPLE=delivery-tracking"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(EXAMPLES_DIR)/$(EXAMPLE)" ]; then \
+		echo "$(RED)Error: Example '$(EXAMPLE)' not found$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Counting FDSL lines in $(EXAMPLE) (excluding comments)...$(NC)"
+	@echo ""
+	@TOTAL=0; \
+	for file in $$(find $(EXAMPLES_DIR)/$(EXAMPLE) -name "*.fdsl"); do \
+		COUNT=$$(grep -v '^\s*//' "$$file" | grep -v '^\s*$$' | wc -l | tr -d ' '); \
+		FILENAME=$$(basename "$$file"); \
+		printf "  %-30s %s\n" "$$FILENAME:" "$$COUNT"; \
+		TOTAL=$$((TOTAL + COUNT)); \
+	done; \
+	echo ""; \
+	echo "$(GREEN)Total FDSL lines (minus comments): $$TOTAL$(NC)"
+
 .PHONY: count-generated
 count-generated: ## Count lines of code in generated app (usage: make count-generated APP=path/to/generated/app)
 	@if [ -z "$(APP)" ]; then \

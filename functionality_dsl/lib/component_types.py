@@ -804,7 +804,46 @@ class CameraComponent(_BaseComponent):
             "wsUrl": self._endpoint_path(""),
             "label": self.label,
         }
-    
+
+@register_component
+class LiveMetricsComponent(_BaseComponent):
+    """
+    <Component<LiveMetrics> ...>
+      endpoint: <Endpoint<WS>>
+      metrics: ["totalDeliveries", "activeDeliveries", ...]
+      label: optional string label
+
+    Displays real-time metrics from a WebSocket endpoint.
+    Metrics can be simple keys or nested paths (e.g., "stats.total").
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, metrics=None, label=None):
+        super().__init__(parent, name, endpoint)
+
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+
+        # Validate: LiveMetrics only works with WebSocket endpoints
+        if endpoint.__class__.__name__ != "EndpointWS":
+            raise ValueError(f"Component '{name}': LiveMetrics component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+
+        # Parse metrics list - strip quotes from each metric key
+        self.metrics = [_strip_quotes(m) for m in (metrics or [])]
+        self.label = _strip_quotes(label) or ""
+
+        if not self.metrics:
+            raise ValueError(f"Component '{name}': 'metrics:' list cannot be empty.")
+
+    def to_props(self):
+        """
+        Props for LiveMetrics.svelte component.
+        Provides the WebSocket URL and list of metric keys to display.
+        """
+        return {
+            "streamPath": self._endpoint_path(""),
+            "metrics": self.metrics,
+            "name": self.label or self.endpoint.name,
+        }
+
 @register_component
 class DownloadFormComponent(_BaseComponent):
     """

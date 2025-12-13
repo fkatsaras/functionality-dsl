@@ -60,21 +60,19 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     )
 
     # Build outbound chain (outgoing messages to clients)
-    compiled_chain_outbound = build_outbound_chain(
+    # This now also returns ws_inputs from entities in the outbound chain
+    compiled_chain_outbound, ws_inputs_from_outbound = build_outbound_chain(
         entity_out, model, endpoint.name, all_source_names
     )
 
-    # Check if entity_out depends on external WS sources
-    # These sources feed data that gets transformed and sent to clients
-    ws_inputs_from_publish = []
-    if entity_out:
-        # Build the chain for entity_out to find its WS source dependencies
-        _, ws_inputs_from_publish, _ = build_inbound_chain(
-            entity_out, model, all_source_names
-        )
+    print(f"    ws_inputs_from_subscribe: {len(ws_inputs_from_subscribe)}")
+    print(f"    ws_inputs_from_outbound: {len(ws_inputs_from_outbound)}")
+    for ws_input in ws_inputs_from_outbound:
+        print(f"      - {ws_input.get('entity')} from {ws_input.get('url')}")
 
-    # Combine WS inputs from both directions
-    ws_inputs = ws_inputs_from_subscribe + ws_inputs_from_publish
+    # Combine WS inputs from both subscribe (inbound) and outbound chains
+    ws_inputs = ws_inputs_from_subscribe + ws_inputs_from_outbound
+    print(f"    total ws_inputs: {len(ws_inputs)}")
 
     # Find external targets for inbound messages (using terminal entity from inbound chain)
     external_targets = build_ws_external_targets(terminal_in, model) if terminal_in else []

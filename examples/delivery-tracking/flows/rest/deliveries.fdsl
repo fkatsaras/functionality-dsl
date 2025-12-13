@@ -1,0 +1,171 @@
+// ============================================
+// FLOW: Deliveries (REST)
+// ============================================
+// All REST endpoints for delivery operations:
+// - List all deliveries with statistics
+// - Get single delivery details
+// - Create new delivery
+// - Update delivery status
+// - Assign driver to delivery
+
+// Source: Get all deliveries from DB
+Source<REST> DeliveriesDB
+  url: "http://dummy-delivery-db:9700/api/deliveries"
+  method: GET
+  response:
+    type: object
+    entity: DeliveriesWrapper
+end
+
+// Wrapper entity for array response
+Entity DeliveriesWrapper
+  attributes:
+    - deliveries: array;
+end
+
+// Transform: Add computed fields (distance, ETA, statistics) for list view
+Entity DeliveriesComputed(DeliveriesWrapper)
+  attributes:
+    - deliveries: array = map(DeliveriesWrapper.deliveries, d => {
+        "id": d["id"],
+        "orderId": d["orderId"],
+        "customerName": d["customerName"],
+        "status": d["status"],
+        "driverName": get(d, "driverName", "Unassigned"),
+        "distanceKm": round(
+          111.0 * sqrt(
+            pow(d["deliveryLat"] - d["pickupLat"], 2) +
+            pow((d["deliveryLon"] - d["pickupLon"]) * cos(d["pickupLat"] * 3.14159 / 180.0), 2)
+          ), 2
+        ),
+        "estimatedMinutes": round(
+          (111.0 * sqrt(
+            pow(d["deliveryLat"] - d["pickupLat"], 2) +
+            pow((d["deliveryLon"] - d["pickupLon"]) * cos(d["pickupLat"] * 3.14159 / 180.0), 2)
+          )) / 30.0 * 60.0, 0
+        ),
+        "createdAt": formatDate(d["createdAt"] / 1000, "YYYY-MM-DD HH:mm:ss")
+      });
+    - totalDeliveries: integer = len(DeliveriesWrapper.deliveries);
+    - activeDeliveries: integer = len(filter(DeliveriesWrapper.deliveries, d => d["status"] != "delivered" and d["status"] != "cancelled"));
+    - pendingDeliveries: integer = len(filter(DeliveriesWrapper.deliveries, d => d["status"] == "pending"));
+end
+
+// Transform: Calculate distance for single delivery
+Entity DeliveryWithDistance(DeliveryRaw)
+  attributes:
+    - id: string = DeliveryRaw.id;
+    - orderId: string = DeliveryRaw.orderId;
+    - customerId: string = DeliveryRaw.customerId;
+    - customerName: string = DeliveryRaw.customerName;
+    - pickupAddress: string = DeliveryRaw.pickupAddress;
+    - deliveryAddress: string = DeliveryRaw.deliveryAddress;
+    - pickupLat: number = DeliveryRaw.pickupLat;
+    - pickupLon: number = DeliveryRaw.pickupLon;
+    - deliveryLat: number = DeliveryRaw.deliveryLat;
+    - deliveryLon: number = DeliveryRaw.deliveryLon;
+    - status: string = DeliveryRaw.status;
+    - driverId: string = get(DeliveryRaw, "driverId", "");
+    - driverName: string = get(DeliveryRaw, "driverName", "");
+    - createdAt: integer = DeliveryRaw.createdAt;
+    - updatedAt: integer = DeliveryRaw.updatedAt;
+    - distanceKm: number = round(
+        111.0 * sqrt(
+          pow(DeliveryRaw.deliveryLat - DeliveryRaw.pickupLat, 2) +
+          pow((DeliveryRaw.deliveryLon - DeliveryRaw.pickupLon) * cos(DeliveryRaw.pickupLat * 3.14159 / 180.0), 2)
+        ), 2
+      );
+end
+
+// Transform: Add ETA calculation for detail view
+Entity DeliveryWithETA(DeliveryWithDistance)
+  attributes:
+    - id: string = DeliveryWithDistance.id;
+    - orderId: string = DeliveryWithDistance.orderId;
+    - customerId: string = DeliveryWithDistance.customerId;
+    - customerName: string = DeliveryWithDistance.customerName;
+    - pickupAddress: string = DeliveryWithDistance.pickupAddress;
+    - deliveryAddress: string = DeliveryWithDistance.deliveryAddress;
+    - status: string = DeliveryWithDistance.status;
+    - driverId: string = DeliveryWithDistance.driverId;
+    - driverName: string = DeliveryWithDistance.driverName;
+    - distanceKm: number = DeliveryWithDistance.distanceKm;
+    - estimatedMinutes: integer = round(DeliveryWithDistance.distanceKm / 30.0 * 60.0, 0);
+    - createdAtFormatted: string = formatDate(DeliveryWithDistance.createdAt / 1000, "YYYY-MM-DD HH:mm:ss");
+    - updatedAtFormatted: string = formatDate(DeliveryWithDistance.updatedAt / 1000, "YYYY-MM-DD HH:mm:ss");
+end
+
+// ============================================
+// REST Endpoints
+// ============================================
+
+// List all deliveries with statistics
+Endpoint<REST> ListDeliveries
+  path: "/api/deliveries"
+  method: GET
+  response:
+    type: object
+    entity: DeliveriesComputed
+end
+
+// Get single delivery with ETA calculation
+Endpoint<REST> GetDelivery
+  path: "/api/deliveries/{deliveryId}"
+  method: GET
+  parameters:
+    path:
+      - deliveryId: string
+  response:
+    type: object
+    entity: DeliveryWithETA
+  errors:
+    - 404:
+      condition: not DeliveryWithETA.id
+      message: "Delivery not found"
+end
+
+// Create new delivery
+Endpoint<REST> CreateDelivery
+  path: "/api/deliveries"
+  method: POST
+  request:
+    type: object
+    entity: NewDeliveryRequest
+  response:
+    type: object
+    entity: DeliveryWithETA
+end
+
+// Update delivery status
+Endpoint<REST> UpdateDeliveryStatus
+  path: "/api/deliveries/{deliveryId}/status"
+  method: PUT
+  parameters:
+    path:
+      - deliveryId: string
+  request:
+    type: object
+    entity: StatusUpdateRequest
+  response:
+    type: object
+    entity: DeliveryWithETA
+  errors:
+    - 400:
+      condition: StatusUpdateRequest.status != "pending" and StatusUpdateRequest.status != "assigned" and StatusUpdateRequest.status != "picked_up" and StatusUpdateRequest.status != "in_transit" and StatusUpdateRequest.status != "delivered" and StatusUpdateRequest.status != "cancelled"
+      message: "Invalid status"
+end
+
+// Assign driver to delivery
+Endpoint<REST> AssignDriver
+  path: "/api/deliveries/{deliveryId}/assign"
+  method: PUT
+  parameters:
+    path:
+      - deliveryId: string
+  request:
+    type: object
+    entity: DriverAssignRequest
+  response:
+    type: object
+    entity: DeliveryWithETA
+end

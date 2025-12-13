@@ -1,0 +1,54 @@
+// =============================================================
+//                  DELIVERY TRACKING COMPONENTS
+// =============================================================
+// Frontend UI components for the delivery tracking system
+
+// Live Delivery Statistics Dashboard
+Component<LiveMetrics> DeliveryStats
+  endpoint: LiveDeliveries
+  metrics: ["totalDeliveries", "activeDeliveries", "pendingDeliveries"]
+  label: "Delivery Statistics"
+end
+
+// Live Driver Statistics Dashboard
+Component<LiveMetrics> DriverStats
+  endpoint: LiveDrivers
+  metrics: ["totalDrivers", "activeDrivers"]
+  label: "Driver Statistics"
+end
+
+// Deliveries Table (REST)
+Component<Table> DeliveriesTable
+  endpoint: ListDeliveries
+  columns:
+    - "orderId": string
+    - "customerName": string
+    - "status": string
+    - "driverName": string
+    - "distanceKm": number
+    - "estimatedMinutes": integer
+    - "createdAt": string
+end
+
+// Live Delivery Updates Table (WebSocket)
+Component<LiveTable> LiveDeliveryTable
+  endpoint: LiveDeliveries
+  arrayField: "deliveries"
+  keyField: "id"
+  columns:
+    - "orderId": string
+    - "customerName": string
+    - "status": string
+    - "driverName": string
+    - "distanceKm": number
+    - "estimatedMinutes": integer
+  label: "Live Delivery Updates"
+  maxRows: 20
+end
+
+// Single Delivery Details Viewer
+Component<ObjectView> DeliveryDetails
+  endpoint: GetDelivery
+  fields: ["orderId", "customerName", "pickupAddress", "deliveryAddress", "status", "driverName", "distanceKm", "estimatedMinutes", "createdAtFormatted", "updatedAtFormatted"]
+  label: "Delivery Details"
+end

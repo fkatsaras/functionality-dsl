@@ -1,0 +1,54 @@
+// ============================================
+// FLOW: Live Deliveries (WebSocket)
+// ============================================
+// Real-time delivery updates stream
+
+// WebSocket source for live delivery updates
+Source<WS> LiveDeliveriesWS
+  channel: "ws://dummy-delivery-db:9700/ws/deliveries"
+  subscribe:
+    type: object
+    entity: LiveDeliveriesData
+end
+
+// WebSocket-specific wrapper entity
+Entity LiveDeliveriesData
+  attributes:
+    - deliveries: array;
+end
+
+// Transform: Add computed fields for WebSocket feed
+Entity LiveDeliveriesComputed(LiveDeliveriesData)
+  attributes:
+    - deliveries: array = map(LiveDeliveriesData.deliveries, d => {
+        "id": d["id"],
+        "orderId": d["orderId"],
+        "customerName": d["customerName"],
+        "status": d["status"],
+        "driverName": get(d, "driverName", "Unassigned"),
+        "distanceKm": round(
+          111.0 * sqrt(
+            pow(d["deliveryLat"] - d["pickupLat"], 2) +
+            pow((d["deliveryLon"] - d["pickupLon"]) * cos(d["pickupLat"] * 3.14159 / 180.0), 2)
+          ), 2
+        ),
+        "estimatedMinutes": round(
+          (111.0 * sqrt(
+            pow(d["deliveryLat"] - d["pickupLat"], 2) +
+            pow((d["deliveryLon"] - d["pickupLon"]) * cos(d["pickupLat"] * 3.14159 / 180.0), 2)
+          )) / 30.0 * 60.0, 0
+        ),
+        "createdAt": formatDate(d["createdAt"] / 1000, "YYYY-MM-DD HH:mm:ss")
+      });
+    - totalDeliveries: integer = len(LiveDeliveriesData.deliveries);
+    - activeDeliveries: integer = len(filter(LiveDeliveriesData.deliveries, d => d["status"] != "delivered" and d["status"] != "cancelled"));
+    - pendingDeliveries: integer = len(filter(LiveDeliveriesData.deliveries, d => d["status"] == "pending"));
+end
+
+// WebSocket Endpoint
+Endpoint<WS> LiveDeliveries
+  channel: "/api/ws/deliveries"
+  subscribe:
+    type: object
+    entity: LiveDeliveriesComputed
+end

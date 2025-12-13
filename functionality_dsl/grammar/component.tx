@@ -18,6 +18,7 @@ Component:
   | GaugeComponent
   | InputComponent
   | LiveViewComponent
+  | LiveMetricsComponent
   | ToggleComponent
   | ObjectViewComponent
   | CameraComponent
@@ -212,6 +213,15 @@ DownloadFormComponent:
     ('autoDownload:' autoDownload=BOOL)?
     ('showPreview:' showPreview=BOOL)?
   )#
+  'end'
+;
+
+LiveMetricsComponent:
+  'Component' '<' 'LiveMetrics' '>' name=ID
+  'endpoint' ':' endpoint=[EndpointWS]
+  'metrics:' '[' metrics+=STRING (',' metrics+=STRING)* ']'
+  ( ('label:' label=STRING)
+  )*
   'end'
 ;
 

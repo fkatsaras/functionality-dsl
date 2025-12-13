@@ -198,11 +198,14 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
 
     Includes all ancestor entities (even those without expressions)
     so their data is available in the eval context.
+
+    Returns: (compiled_chain, ws_inputs)
     """
     if not entity_out:
-        return []
+        return [], []
 
     compiled_chain = []
+    ws_inputs = []
 
     # Find terminal entity (the one that gets sent out)
     terminal = _find_ws_terminal_entity(entity_out, model)
@@ -211,6 +214,14 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
     for entity in chain_entities:
         # Find if this entity has a source
         source, source_type = find_source_for_entity(entity, model)
+        print(f"  [build_outbound_chain] Entity {entity.name}: source={source.name if source else None}, type={source_type}")
+
+        # External WebSocket source (subscribe = data flowing FROM external source TO us)
+        if source and source_type == "WS":
+            print(f"    [WS] Found WS source! Building config...")
+            config = build_ws_input_config(entity, source, all_source_names)
+            print(f"    [WS] Config: {config.get('entity')} from {config.get('url')}")
+            ws_inputs.append(config)
 
         attribute_configs = []
 
@@ -231,7 +242,14 @@ def build_outbound_chain(entity_out, model, endpoint_name, all_source_names):
             "attrs": attribute_configs,
         })
 
-    return compiled_chain
+    # Deduplicate ws_inputs by (endpoint, url)
+    unique_inputs = {}
+    for ws_input in ws_inputs:
+        key = (ws_input["endpoint"], ws_input["url"])
+        if key not in unique_inputs:
+            unique_inputs[key] = ws_input
+
+    return compiled_chain, list(unique_inputs.values())
 
 
 def build_sync_config(entity_in, model):

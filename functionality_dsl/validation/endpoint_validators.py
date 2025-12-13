@@ -400,9 +400,13 @@ def _validate_ws_endpoint_entities(model, endpoint, ent_subscribe, ent_publish):
     Note: WebSocket direction semantics (from CLIENT perspective):
     - Endpoint SUBSCRIBE = clients subscribe (receive FROM server) = outbound from server → must be sourced/computed
     - Endpoint PUBLISH = clients publish (send TO server) = inbound to server → can be pure schema (client is source)
+
+    Important: WebSocket wrapper entities should NOT be shared with REST sources to avoid
+    ambiguity in source resolution.
     """
-    # Build map of entities provided by Source<WS>
+    # Build map of entities provided by Source<WS> and Source<REST>
     ws_source_entities = set()
+    rest_source_entities = set()
 
     for source in get_children_of_type("SourceWS", model):
         # Check subscribe message (data FROM external source)
@@ -422,6 +426,44 @@ def _validate_ws_endpoint_entities(model, endpoint, ent_subscribe, ent_publish):
                 entity = getattr(message, "entity", None)
                 if entity:
                     ws_source_entities.add(entity.name)
+
+    # Build map of entities provided by REST sources
+    for source in get_children_of_type("SourceREST", model):
+        # Check response entity
+        response = getattr(source, "response", None)
+        if response:
+            schema = getattr(response, "schema", None)
+            if schema:
+                entity = getattr(schema, "entity", None)
+                if entity:
+                    rest_source_entities.add(entity.name)
+
+    # Check for entities shared between REST and WS sources (potential ambiguity)
+    shared_entities = ws_source_entities & rest_source_entities
+    print(f"[VALIDATION] WS sources provide: {ws_source_entities}")
+    print(f"[VALIDATION] REST sources provide: {rest_source_entities}")
+    print(f"[VALIDATION] Shared: {shared_entities}")
+    if shared_entities and ent_subscribe:
+        # Check if subscribe entity or any of its parents is shared
+        queue = deque([ent_subscribe])
+        visited = set()
+        while queue:
+            current = queue.popleft()
+            eid = id(current)
+            if eid in visited:
+                continue
+            visited.add(eid)
+
+            if current.name in shared_entities:
+                raise TextXSemanticError(
+                    f"Entity '{current.name}' is provided by both REST and WebSocket sources. "
+                    f"Use separate wrapper entities for REST/WS to avoid ambiguity (e.g., 'Live{current.name}' for WebSocket).",
+                    **get_location(endpoint)
+                )
+
+            # Check parents
+            parents = getattr(current, "parents", []) or []
+            queue.extend(parents)
 
     # Helper: Check if entity or any of its parents is sourced from WS
     def is_ws_sourced_or_computed(entity):
