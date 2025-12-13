@@ -46,9 +46,20 @@ Component<LiveTable> LiveDeliveryTable
   maxRows: 20
 end
 
-// Single Delivery Details Viewer
-Component<ObjectView> DeliveryDetails
-  endpoint: GetDelivery
-  fields: ["orderId", "customerName", "pickupAddress", "deliveryAddress", "status", "driverName", "distanceKm", "estimatedMinutes", "createdAtFormatted", "updatedAtFormatted"]
-  label: "Delivery Details"
+// Live Map showing Warehouse, Deliveries, and Drivers
+Component<Map> DeliveryMap
+  endpoint: LiveDeliveries
+  warehouseLat: 37.7749
+  warehouseLon: -122.4194
+  deliveriesKey: "deliveries"
+  label: "Delivery Map"
+  width: 1200
+  height: 700
+end
+
+// Form to Create New Delivery
+Component<ActionForm> CreateDeliveryForm
+  endpoint: CreateDelivery
+  fields: [orderId, customerId, customerName, pickupAddress, deliveryAddress, pickupLat, pickupLon, deliveryLat, deliveryLon]
+  submitLabel: "Create Delivery"
 end

@@ -845,6 +845,59 @@ class LiveMetricsComponent(_BaseComponent):
         }
 
 @register_component
+class MapComponent(_BaseComponent):
+    """
+    <Component<Map> ...>
+      endpoint: <Endpoint<WS>>
+      warehouseLat: float
+      warehouseLon: float
+      deliveriesKey: optional string (key in WS message containing deliveries array)
+      driversKey: optional string (key in WS message containing drivers array)
+      label: optional string label
+      width: optional int (map width in pixels)
+      height: optional int (map height in pixels)
+
+    Displays a real-time map showing warehouse, deliveries, and drivers.
+    """
+    def __init__(self, parent=None, name=None, endpoint=None, warehouseLat=None, warehouseLon=None,
+                 deliveriesKey=None, driversKey=None, label=None, width=None, height=None):
+        super().__init__(parent, name, endpoint)
+
+        if endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+
+        # Validate: Map only works with WebSocket endpoints
+        if endpoint.__class__.__name__ != "EndpointWS":
+            raise ValueError(f"Component '{name}': Map component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+
+        if warehouseLat is None or warehouseLon is None:
+            raise ValueError(f"Component '{name}': 'warehouseLat:' and 'warehouseLon:' are required.")
+
+        self.warehouseLat = float(warehouseLat)
+        self.warehouseLon = float(warehouseLon)
+        self.deliveriesKey = _strip_quotes(deliveriesKey) if deliveriesKey else None
+        self.driversKey = _strip_quotes(driversKey) if driversKey else None
+        self.label = _strip_quotes(label) or ""
+        self.width = int(width) if width is not None else 800
+        self.height = int(height) if height is not None else 600
+
+    def to_props(self):
+        """
+        Props for Map.svelte component.
+        Provides the WebSocket URL, warehouse location, and data keys.
+        """
+        return {
+            "streamPath": self._endpoint_path(""),
+            "warehouseLat": self.warehouseLat,
+            "warehouseLon": self.warehouseLon,
+            "deliveriesKey": self.deliveriesKey,
+            "driversKey": self.driversKey,
+            "name": self.label or self.endpoint.name,
+            "width": self.width,
+            "height": self.height,
+        }
+
+@register_component
 class DownloadFormComponent(_BaseComponent):
     """
     <Component<DownloadForm> ...>

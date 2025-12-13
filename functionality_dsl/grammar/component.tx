@@ -19,6 +19,7 @@ Component:
   | InputComponent
   | LiveViewComponent
   | LiveMetricsComponent
+  | MapComponent
   | ToggleComponent
   | ObjectViewComponent
   | CameraComponent
@@ -222,6 +223,21 @@ LiveMetricsComponent:
   'metrics:' '[' metrics+=STRING (',' metrics+=STRING)* ']'
   ( ('label:' label=STRING)
   )*
+  'end'
+;
+
+MapComponent:
+  'Component' '<' 'Map' '>' name=ID
+  'endpoint' ':' endpoint=[EndpointWS]
+  'warehouseLat:' warehouseLat=FLOAT
+  'warehouseLon:' warehouseLon=FLOAT
+  (
+    ('deliveriesKey:' deliveriesKey=STRING)?
+    ('driversKey:' driversKey=STRING)?
+    ('label:' label=STRING)?
+    ('width:' width=INT)?
+    ('height:' height=INT)?
+  )#
   'end'
 ;
 

@@ -107,6 +107,12 @@ body {
     transform: scale(1.02);
 }
 
+/* Full-width card that breaks out of grid constraints */
+.card-fullwidth {
+    grid-column: 1 / -1;
+    max-width: 100%;
+}
+
 /* Card Header */
 .card-header {
     padding: 1rem 1.25rem;

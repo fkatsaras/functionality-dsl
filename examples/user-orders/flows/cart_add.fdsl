@@ -33,6 +33,10 @@ Endpoint<REST> AddToCart
   response:
     type: object
     entity: AddToCartResponse
+  errors:
+    - 400:
+      condition: len(FilteredProductForCart["filtered"]) > 0 and get(FilteredProductForCart["filtered"][0], "stock", 0) <= 0
+      message: "Product is out of stock"
 end
 
 // Step 1: Filter product by name from request
