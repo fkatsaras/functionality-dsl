@@ -73,7 +73,7 @@ Endpoint<REST> GetSales
     application/json:
       type: object
       entity: SalesProcessed
-  summary: "View sales data with calculations"
+  summary: "View sales data"
 end
 
 // Export sales to PDF
@@ -85,10 +85,6 @@ Endpoint<REST> ExportSalesPDF
       type: binary
       entity: SalesPDF
   summary: "Export sales data as PDF report"
-  errors:
-    - 400: 
-    condition: SalesProcessed.count == 0 
-    message: "No sales data to export"
 end
 
 // UI
@@ -107,5 +103,5 @@ Component<DownloadForm> ExportSalesButton
   endpoint: ExportSalesPDF
   filename: "sales-report.pdf"
   buttonText: "Export PDF"
-  showPreview: true
+  showPreview: false
 end

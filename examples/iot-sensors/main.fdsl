@@ -12,15 +12,6 @@ end
 //                     EXTERNAL SERVICES (LIVE)
 // =============================================================
 
-// Device list metadata (static REST)
-Source<REST> DevicesAPI
-  url: "http://dummyiot:9500/api/devices"
-  method: GET
-  response:
-    type: object
-    entity: DeviceList
-end
-
 // --- Individual live sensor WebSocket feeds ---
 Source<WS> Sensor1Feed
   channel: "ws://dummyiot:9601"
@@ -50,14 +41,6 @@ Source<WS> Sensor4Feed
     entity: Sensor4Raw
 end
 
-
-// =============================================================
-//                     DEVICE SNAPSHOT
-// =============================================================
-Entity DeviceList
-  attributes:
-    - devices: array;
-end
 
 // =============================================================
 //                     LIVE TELEMETRY (WS)
