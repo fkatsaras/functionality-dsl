@@ -97,7 +97,7 @@ Entity WeatherCompare(City1Hourly, City2Hourly)
           City1Hourly.hourly["relative_humidity_2m"],
           City2Hourly.hourly["relative_humidity_2m"]
         ),
-        (row) -> {
+        (row) => {
           "time": row[0] + ":00",
           "city1_temp": row[1],
           "city2_temp": row[2],
@@ -123,7 +123,7 @@ Entity WeatherCompareStats(City1HourlyStats, City2HourlyStats)
           City1HourlyStats.hourly["temperature_2m"],
           City2HourlyStats.hourly["temperature_2m"]
         ),
-        (row) -> {
+        (row) => {
           "time": row[0] + ":00",
           "city1_temp": row[1],
           "city2_temp": row[2]
@@ -168,33 +168,4 @@ Endpoint<REST> WeatherStatsAPI
   response:
     type: array
     entity: WeatherStats
-end
-
-// --- Components ------------------------------------------------
-Component<Table> WeatherTable
-  endpoint: WeatherCompareAPI
-  columns:
-    - "time": string<time>
-    - "city1_temp": number
-    - "city2_temp": number
-    - "city1_hum": number
-    - "city2_hum": number
-    - "delta_temp": number
-    - "hotter_city": string
-    - "big_gap": boolean
-    - "city1_is_comfy": boolean
-    - "city2_is_comfy": boolean
-end
-
-Component<Chart> TempComparison
-  endpoint: WeatherStatsAPI
-  seriesLabels: ["City 1", "City 2"]
-  xLabel: string<datetime> "Time"
-  yLabel: number "Temperature (°C)"
-end
-
-Component<QueryForm> WeatherCompareForm
-  endpoint: WeatherCompareAPI
-  fields: [city1, lat1, lon1, city2, lat2, lon2]
-  submitLabel: "Compare Weather"
 end

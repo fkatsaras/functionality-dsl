@@ -215,7 +215,18 @@ def generate(context, model_path, target, out_dir):
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Frontend emitted to: {out_path / 'frontend'}", style="green")
 
     except Exception as e:
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Generate failed with error(s): {e}", style="red")
+        import traceback
+    
+        console.print(
+            f"[{date.today().strftime('%Y-%m-%d')}] Generate failed with error(s): {e}",
+            style="red",
+        )
+
+        tb_lines = traceback.format_exc().splitlines()
+        last_lines = tb_lines[-50:]
+
+        console.print("\n".join(last_lines), style="red")
+
         context.exit(1)
     else:
         context.exit(0)

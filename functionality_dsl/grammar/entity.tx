@@ -93,6 +93,7 @@ PublishBlock:
     (content_type=ContentType ':')?
       'type:' type=AttrType
       'entity:' message=SchemaRef
+      ('onConnect:' onConnect=BOOL)?
 ;
 
 SourceWS:

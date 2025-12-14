@@ -18,22 +18,15 @@ Source<REST> RemoveFromCartAPI
     entity: Cart
 end
 
-// Request entity for RemoveFromCart endpoint (no sessionId - comes from header)
-Entity RemoveFromCartRequest
-  attributes:
-    - productId: string;
-end
-
 // Internal endpoint - what clients call
 Endpoint<REST> RemoveFromCart
-  path: "/cart/remove"
-  method: POST
+  path: "/cart/remove/{productId}"
+  method: DELETE
   parameters:
+    path:
+      - productId: string
     headers:
       - X-Session-ID: string    // Session authentication via header
-  request:
-    type: object
-    entity: RemoveFromCartRequest
   response:
     type: object
     entity: RemoveFromCartResponse

@@ -562,6 +562,47 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                     print(f"[DEBUG-READ-FILTER] Skipping read source '{src.name}' - entity '{source_entity.name}' already provided by write target")
                     continue
 
+        # Check if this read source's provided entity is actually used in the computation chain
+        # This prevents including sources that were picked up through transitive dependencies
+        # but aren't actually referenced by this endpoint's entities
+        source_response_schema = get_response_schema(src)
+        if source_response_schema and source_response_schema.get("type") == "entity":
+            source_entity = source_response_schema["entity"]
+            # Check if source entity is used: either it's in computed_entities, it's referenced
+            # by expressions in computed_entities, OR it's a parent of a computed entity,
+            # OR it's the direct response entity (no transformation)
+            entity_is_used = False
+
+            # If response entity directly matches source entity, always include it
+            # (e.g., ListUsers returns UsersListWrapper directly from ReadUsers)
+            if response_entity and response_entity == source_entity:
+                entity_is_used = True
+            # Check if source entity itself is a computed entity
+            elif source_entity in computed_entities:
+                entity_is_used = True
+            else:
+                # Check if any computed entity references this source entity (in expressions or as parent)
+                for comp_ent in computed_entities:
+                    # Check if source entity is a parent of this computed entity
+                    if hasattr(comp_ent, "parents") and comp_ent.parents:
+                        if source_entity in comp_ent.parents:
+                            entity_is_used = True
+                            break
+
+                    # Check if source entity is referenced in expressions
+                    for attr in getattr(comp_ent, "attributes", []):
+                        if hasattr(attr, "expr") and attr.expr:
+                            referenced_entities = dep_graph._extract_entity_refs_from_expr(attr.expr)
+                            if source_entity in referenced_entities:
+                                entity_is_used = True
+                                break
+                    if entity_is_used:
+                        break
+
+            if not entity_is_used:
+                print(f"[DEBUG-READ-FILTER] Skipping read source '{src.name}' - entity '{source_entity.name}' not used in computation chain")
+                continue
+
         # Check parameter compatibility
         params = getattr(src, "parameters", None)
         is_compatible = True
@@ -642,7 +683,7 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                             # Check if this entity is available (either a computed entity or a read source entity)
                             entity_available = (
                                 ent in computed_entities or
-                                any(src.name == getattr(src, "response", {}).get("entity", {}).name for src in read_sources if hasattr(src, "response"))
+                                any(get_response_schema(src) and get_response_schema(src).get("entity") == ent for src in read_sources)
                             )
 
                             # Also check if expression references endpoint parameters (e.g., UpdateUserById.userId)
@@ -664,13 +705,39 @@ def analyze_endpoint_flow(endpoint, model) -> EndpointFlow:
                         for ent in param_entities:
                             entity_available = (
                                 ent in computed_entities or
-                                any(src.name == getattr(src, "response", {}).get("entity", {}).name for src in read_sources if hasattr(src, "response"))
+                                any(get_response_schema(src) and get_response_schema(src).get("entity") == ent for src in read_sources)
                             )
                             if ent.name == endpoint.name:
                                 entity_available = True
                             if not entity_available:
                                 is_compatible = False
                                 break
+                    if not is_compatible:
+                        break
+
+            # Check header parameters
+            if is_compatible and hasattr(params, "header_params") and params.header_params:
+                from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+                for param in getattr(params.header_params, "params", []):
+                    if hasattr(param, "expr") and param.expr:
+                        # Check if parameter expression references a different endpoint
+                        # by compiling to Python and checking if it starts with an endpoint name
+                        try:
+                            compiled_expr = compile_expr_to_python(param.expr)
+
+                            # Get all endpoint names in the model
+                            from textx import get_children_of_type
+                            all_endpoints = get_children_of_type("EndpointREST", model) + get_children_of_type("EndpointWS", model)
+
+                            # Check if expression references a different endpoint
+                            for other_endpoint in all_endpoints:
+                                if other_endpoint.name != endpoint.name:
+                                    # Check if compiled expression starts with this endpoint's name
+                                    if compiled_expr.startswith(other_endpoint.name + "[") or compiled_expr.startswith(other_endpoint.name + "."):
+                                        is_compatible = False
+                                        break
+                        except:
+                            pass  # If compilation fails, assume compatible
                     if not is_compatible:
                         break
 

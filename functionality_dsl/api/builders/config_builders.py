@@ -221,6 +221,12 @@ def build_ws_external_targets(entity_out, model):
             channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
             message_type = publish_schema.get("message_type", "object")
 
+            # Extract onConnect flag from publish block
+            publish_block = getattr(external_ws, "publish", None)
+            on_connect = False
+            if publish_block:
+                on_connect = getattr(publish_block, "onConnect", False) or False
+
             # Build parameter expressions (headers) - mirror REST approach
             header_param_exprs = {}
 
@@ -242,6 +248,7 @@ def build_ws_external_targets(entity_out, model):
                 "subprotocols": [],  # Removed subprotocols field in new design
                 "protocol": "json",  # Default protocol
                 "message_type": message_type,  # Pass message type for unwrapping logic
+                "onConnect": on_connect,  # Auto-send on connection if true
             })
 
     return external_targets

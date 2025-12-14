@@ -142,7 +142,7 @@ Source<REST> UpdateUserPassword
       - userId: integer = PasswordUpdateData.userId;
   request:
     type: object
-    entity: UpdatePasswordRequest
+    entity: PasswordUpdateData
   response:
     type: object
     entity: UserSchema

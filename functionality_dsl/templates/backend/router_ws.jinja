@@ -79,6 +79,26 @@ async def duplex(ws: WebSocket):
         logger.info(f"[CLIENT] - Starting inbound loop for {rid}")
         chain_inbound, chain_outbound = ws_service.get_compiled_chains()
 
+        {% if external_targets and external_targets[0].get('onConnect', False) %}
+        # Auto-send subscription message on connect (onConnect=true)
+        logger.info(f"[CLIENT] - Auto-sending subscription message (onConnect=true)")
+        try:
+            # Compute subscription message with header params
+            subscription_msg, context = ws_service.compute_entity_chain(
+                {}, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}", header_params, "{{ endpoint.name }}"
+            )
+
+            # Send to external targets
+            for idx in range(len(ws_service._external_targets)):
+                await ws_service.ensure_target_connection(idx, "{{ entity_in.name if entity_in else '' }}")
+                tgt_conn = ws_service._target_connections[idx]
+                if tgt_conn:
+                    await tgt_conn.send(json.dumps(subscription_msg))
+                    logger.info(f"[CLIENT] - Sent subscription: {subscription_msg}")
+        except Exception as ex:
+            logger.error(f"[CLIENT] - Failed to send auto-subscription: {ex}")
+        {% endif %}
+
         while True:
             raw = await ws.receive_text()
             logger.debug(f"[CLIENT] - Received message from {rid}")
