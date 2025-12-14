@@ -3,7 +3,7 @@
 from textx import get_children_of_type
 from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
 
-from ..utils import normalize_headers, build_auth_headers, extract_path_params, get_route_path
+from ..utils import extract_path_params, get_route_path
 from ..graph import calculate_distance_to_ancestor
 
 
@@ -46,9 +46,10 @@ def build_rest_input_config(entity, source, all_source_names):
     # Get wrapper attribute name if this is a wrapper entity
     wrapper_attr_name = attributes[0].name if is_wrapper and len(attributes) > 0 else None
 
-    # Build parameter expressions (path and query)
+    # Build parameter expressions (path, query, and headers)
     path_param_exprs = {}
     query_param_exprs = {}
+    header_param_exprs = {}
 
     params_block = getattr(source, "parameters", None)
     if params_block:
@@ -70,16 +71,26 @@ def build_rest_input_config(entity, source, all_source_names):
                 if param_name and param_expr:
                     query_param_exprs[param_name] = compile_expr_to_python(param_expr)
 
+        # Header parameters
+        header_block = getattr(params_block, "header_params", None)
+        if header_block:
+            for param in getattr(header_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    header_param_exprs[param_name] = compile_expr_to_python(param_expr)
+
     return {
         "entity": entity.name,      # Where to store in ctx
         "alias": source.name,        # How expressions reference it
         "url": source.url,
-        "headers": normalize_headers(source) + build_auth_headers(source),
         "method": (getattr(source, "method", "GET") or "GET").upper(),
+        "headers": [],  # Static headers (legacy, now empty - use header_param_exprs instead)
         "attrs": attribute_configs,
         "path_params": extract_path_params(source.url),
         "path_param_exprs": path_param_exprs,
         "query_param_exprs": query_param_exprs,
+        "header_param_exprs": header_param_exprs,
         "response_type": response_type,  # For wrapping/unwrapping
         "wrapper_attr_name": wrapper_attr_name,  # For wrapping primitives
         "is_wrapper": is_wrapper,  # Boolean flag for easier template logic
@@ -157,12 +168,27 @@ def build_ws_input_config(entity, ws_source, all_source_names):
     # Get content_type from subscribe schema to determine how to handle binary data
     content_type = subscribe_schema.get("content_type", "application/json") if subscribe_schema else "application/json"
 
+    # Build parameter expressions (headers) - mirror REST approach
+    header_param_exprs = {}
+
+    params_block = getattr(ws_source, "parameters", None)
+    if params_block:
+        # Header parameters
+        header_block = getattr(params_block, "header_params", None)
+        if header_block:
+            for param in getattr(header_block, "params", []) or []:
+                param_name = getattr(param, "name", None)
+                param_expr = getattr(param, "expr", None)
+                if param_name and param_expr:
+                    header_param_exprs[param_name] = compile_expr_to_python(param_expr)
+
     return {
         "entity": entity.name,
         "endpoint": ws_source.name,
         "alias": ws_source.name,
         "url": channel_url,
-        "headers": normalize_headers(ws_source) + build_auth_headers(ws_source),
+        "headers": [],  # Static headers (legacy, now empty)
+        "header_param_exprs": header_param_exprs,  # Dynamic header expressions
         "subprotocols": [],  # Removed subprotocols field in new design
         "protocol": "json",  # Default protocol
         "content_type": content_type,  # Pass content type for binary handling
@@ -194,9 +220,25 @@ def build_ws_external_targets(entity_out, model):
             # NEW DESIGN: WebSocket sources use 'channel' instead of 'url'
             channel_url = getattr(external_ws, "channel", None) or getattr(external_ws, "url", None)
             message_type = publish_schema.get("message_type", "object")
+
+            # Build parameter expressions (headers) - mirror REST approach
+            header_param_exprs = {}
+
+            params_block = getattr(external_ws, "parameters", None)
+            if params_block:
+                # Header parameters
+                header_block = getattr(params_block, "header_params", None)
+                if header_block:
+                    for param in getattr(header_block, "params", []) or []:
+                        param_name = getattr(param, "name", None)
+                        param_expr = getattr(param, "expr", None)
+                        if param_name and param_expr:
+                            header_param_exprs[param_name] = compile_expr_to_python(param_expr)
+
             external_targets.append({
                 "url": channel_url,
-                "headers": normalize_headers(external_ws) + build_auth_headers(external_ws),
+                "headers": [],  # Static headers (legacy, now empty)
+                "header_param_exprs": header_param_exprs,  # Dynamic header expressions
                 "subprotocols": [],  # Removed subprotocols field in new design
                 "protocol": "json",  # Default protocol
                 "message_type": message_type,  # Pass message type for unwrapping logic

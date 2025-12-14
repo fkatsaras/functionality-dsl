@@ -12,7 +12,7 @@ independent of HTTP method semantics. Supports real-world REST patterns includin
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from ..utils import format_python_code, build_auth_headers, extract_path_params, get_route_path
+from ..utils import format_python_code, extract_path_params, get_route_path
 from ..builders import (
     build_rest_input_config,
     build_entity_chain,
@@ -112,13 +112,13 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     write_targets = []
 
     if flow.flow_type in {EndpointFlowType.WRITE, EndpointFlowType.READ_WRITE}:
-        from ..utils import normalize_headers
         from ...lib.compiler.expr_compiler import compile_expr_to_python
 
         for target_source in flow.write_targets:
-            # Extract path and query parameter expressions
+            # Extract path, query, and header parameter expressions
             path_param_exprs = {}
             query_param_exprs = {}
+            header_param_exprs = {}
 
             if hasattr(target_source, "parameters") and target_source.parameters:
                 # Path parameters
@@ -136,6 +136,14 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                             if hasattr(param, "expr") and param.expr:
                                 compiled_expr = compile_expr_to_python(param.expr)
                                 query_param_exprs[param.name] = compiled_expr
+
+                # Header parameters
+                if hasattr(target_source.parameters, "header_params") and target_source.parameters.header_params:
+                    if hasattr(target_source.parameters.header_params, "params"):
+                        for param in target_source.parameters.header_params.params:
+                            if hasattr(param, "expr") and param.expr:
+                                compiled_expr = compile_expr_to_python(param.expr)
+                                header_param_exprs[param.name] = compiled_expr
 
             # Get the request entity that this target expects
             target_request_schema = get_request_schema(target_source)
@@ -167,9 +175,10 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
                 "name": target_source.name,
                 "url": target_source.url,
                 "method": getattr(target_source, "method", "POST").upper(),
-                "headers": normalize_headers(target_source) + build_auth_headers(target_source),
+                "headers": [],  # Static headers (legacy, now empty - use header_param_exprs instead)
                 "path_param_exprs": path_param_exprs,
                 "query_param_exprs": query_param_exprs,
+                "header_param_exprs": header_param_exprs,
                 "request_entity": target_request_entity_name,  # Entity to send in request body
                 "content_type": target_content_type,  # Content type for request
                 "request_type": target_request_type,  # Primitive type (string, integer, etc.)
@@ -221,7 +230,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     route_path = get_route_path(endpoint)
 
     # Extract path parameters WITH type information
-    from ..utils.paths import get_path_params_from_block, get_query_params_from_block
+    from ..utils.paths import get_path_params_from_block, get_query_params_from_block, get_header_params_from_block
     path_params_typed = get_path_params_from_block(endpoint)
 
     # Extract query parameters WITH type information and default expressions
@@ -238,8 +247,18 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             qp_info["default_expr"] = compile_expr_to_python(qparam["expr"])
         query_params_typed.append(qp_info)
 
-    endpoint_auth = getattr(endpoint, "auth", None)
-    auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
+    # Extract header parameters WITH type information and default expressions
+    header_params_typed = []
+    for hparam in get_header_params_from_block(endpoint):
+        hp_info = {
+            "name": hparam["name"],
+            "type": hparam["type"],
+            "required": hparam["required"],
+        }
+        # Compile default expression if present
+        if hparam.get("expr"):
+            hp_info["default_expr"] = compile_expr_to_python(hparam["expr"])
+        header_params_typed.append(hp_info)
 
     http_method = flow.http_method.lower()
 
@@ -276,8 +295,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
             "summary": getattr(endpoint, "summary", None),
             "path_params_typed": path_params_typed,  # Path parameters with type information
             "query_params_typed": query_params_typed,  # Query parameters with type information and defaults
-            "auth": endpoint_auth,
-            "auth_headers": auth_headers,
+            "header_params_typed": header_params_typed,  # Header parameters with type information and defaults
         },
 
         # Request/Response metadata (content types and primitive types)

@@ -67,20 +67,6 @@ Endpoint:
   | EndpointWS
 ;
 
-ApiKeyLoc: 'header' | 'query';
-
-AuthBlock:
-    'type:' kind='basic'
-    'username:' username=STRING
-    'password:' password=STRING
-  |  'type:' kind='bearer'
-    'token:' token=STRING
-  |  'type:' kind='api_key'
-    'key:' key=STRING
-    'in:' location=ApiKeyLoc
-    'value:' value=STRING
-;
-
 // ---------- SOURCE (integration) ----------
 SourceREST:
   'Source<' kind='REST' '>' name=ID
@@ -90,8 +76,6 @@ SourceREST:
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
     (response=ResponseBlock)?
-    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?
   )
   'end'
 ;
@@ -115,10 +99,9 @@ SourceWS:
   'Source<' kind='WS' '>' name=ID
   (
     'channel:' url=STRING
+    (parameters=ParametersBlock)?
     (subscribe=SubscribeBlock)?
     (publish=PublishBlock)?
-    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?
   )
   'end'
 ;
@@ -131,6 +114,11 @@ ParamDef:
   '-' name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'?
 ;
 
+// Header parameter definition - allows dashes in names (e.g., X-Session-ID)
+HeaderParamDef:
+  '-' name=/[A-Za-z][A-Za-z0-9\-]*/ ':' type=TypeSpec ('=' expr=Expr)? ';'?
+;
+
 PathParamsBlock:
   'path:' params+=ParamDef*
 ;
@@ -139,10 +127,15 @@ QueryParamsBlock:
   'query:' params+=ParamDef*
 ;
 
+HeaderParamsBlock:
+  'headers:' params+=HeaderParamDef*
+;
+
 ParametersBlock:
   'parameters:'
     (path_params=PathParamsBlock)?
     (query_params=QueryParamsBlock)?
+    (header_params=HeaderParamsBlock)?
 ;
 
 // Content type can be specified, defaults to application/json
@@ -271,7 +264,6 @@ EndpointREST:
     (request=RequestBlock)?
     (response=ResponseBlock)?
     ('summary:' summary=STRING)?
-    ('auth:' auth=AuthBlock)?
     (errors=ErrorsBlock)?
   )
   'end'
@@ -281,9 +273,9 @@ EndpointWS:
   'Endpoint<' kind='WS' '>' name=ID
   (
     'channel:' path=STRING
+    (parameters=ParametersBlock)?
     (publish=PublishBlock)?
     (subscribe=SubscribeBlock)?
-    ('auth:' auth=AuthBlock)?
     ('summary:' summary=STRING)?
     (events=EventsBlock)?
   )
@@ -294,4 +286,3 @@ EndpointWS:
 HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 
 StringList: '[' (items+=STRING (',' items+=STRING)*)? ']' ;
-Header: key=/[A-Za-z][A-Za-z0-9\-]*/ ':' value=STRING ;

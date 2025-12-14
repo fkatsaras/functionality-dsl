@@ -14,12 +14,14 @@ Source<REST> AddToCartAPI
   response:
     type: object
     entity: Cart
+  headers: [X-Session-ID: "{sessionId}"]
 end
 
 // Request entity for AddToCart endpoint
 Entity AddToCartRequest
   attributes:
-    - productName: string;
+    - sessionId: string;
+    - productId: string;
     - quantity: integer;
 end
 
@@ -34,22 +36,26 @@ Endpoint<REST> AddToCart
     type: object
     entity: AddToCartResponse
   errors:
+    - 401:
+      condition: AddToCartRequest["sessionId"] != "session1" and AddToCartRequest["sessionId"] != "session2" and AddToCartRequest["sessionId"] != "session3"
+      message: "Invalid session ID. Valid sessions: session1, session2, session3"
     - 400:
       condition: len(FilteredProductForCart["filtered"]) > 0 and get(FilteredProductForCart["filtered"][0], "stock", 0) <= 0
       message: "Product is out of stock"
 end
 
-// Step 1: Filter product by name from request
+// Step 1: Filter product by ID from request
 Entity FilteredProductForCart(ProductListWrapper, AddToCartRequest)
   attributes:
-    - filtered: array = filter(ProductListWrapper["products"], p => p["name"] == AddToCartRequest["productName"]);
+    - filtered: array = filter(ProductListWrapper["products"], p => p["id"] == AddToCartRequest["productId"]);
 end
 
 // Step 2: Build request to external cart API (enriched with product details)
 Entity AddToCartAPIRequest(FilteredProductForCart, AddToCartRequest)
   attributes:
-    - productId: string = get(FilteredProductForCart["filtered"][0], "id", "") if len(FilteredProductForCart["filtered"]) > 0 else "";
-    - productName: string = AddToCartRequest["productName"];
+    - sessionId: string = AddToCartRequest["sessionId"];
+    - productId: string = AddToCartRequest["productId"];
+    - productName: string = get(FilteredProductForCart["filtered"][0], "name", "") if len(FilteredProductForCart["filtered"]) > 0 else "";
     - price: number = get(FilteredProductForCart["filtered"][0], "price", 0.0) if len(FilteredProductForCart["filtered"]) > 0 else 0.0;
     - quantity: integer = AddToCartRequest["quantity"];
 end
@@ -68,6 +74,6 @@ end
 // UI Component - Form submits as JSON request body
 Component<ActionForm> AddToCartForm
   endpoint: AddToCart
-  fields: [productName, quantity]
+  fields: [sessionId, productId, quantity]
   submitLabel: "Add to Cart"
 end

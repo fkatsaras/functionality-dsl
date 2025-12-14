@@ -3,7 +3,7 @@
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from ..utils import format_python_code, build_auth_headers, get_route_path
+from ..utils import format_python_code, get_route_path
 from ..builders import (
     build_inbound_chain,
     build_outbound_chain,
@@ -81,9 +81,21 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     sync_config_inbound = build_sync_config(entity_in, model)
     sync_config_outbound = build_sync_config(entity_out, model)
 
-    # --- Endpoint-level auth  ---
-    endpoint_auth = getattr(endpoint, "auth", None)
-    auth_headers = build_auth_headers(endpoint) if endpoint_auth else []
+    # --- Extract header parameters ---
+    from ..utils.paths import get_header_params_from_block
+    from ...lib.compiler.expr_compiler import compile_expr_to_python
+
+    header_params_typed = []
+    for hparam in get_header_params_from_block(endpoint):
+        hp_info = {
+            "name": hparam["name"],
+            "type": hparam["type"],
+            "required": hparam["required"],
+        }
+        # Compile default expression if present
+        if hparam.get("expr"):
+            hp_info["default_expr"] = compile_expr_to_python(hparam["expr"])
+        header_params_typed.append(hp_info)
 
     # --- Extract event configurations ---
     events_config = []
@@ -113,8 +125,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "endpoint": {
             "name": endpoint.name,
             "summary": getattr(endpoint, "summary", None),
-            "auth": endpoint_auth,
-            "auth_headers": auth_headers,
+            "header_params_typed": header_params_typed,
         },
         "entity_in": entity_in,
         "entity_out": entity_out,

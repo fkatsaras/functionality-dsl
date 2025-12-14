@@ -37,35 +37,20 @@ async def duplex(ws: WebSocket):
     rid = uuid.uuid4().hex
     set_request_id(rid)
 
-    # Authentication
-    {% if endpoint.auth %}
-    {% if endpoint.auth.kind == 'bearer' %}
-    auth_header = ws.headers.get("authorization")
-    if not auth_header or not auth_header.lower().startswith("bearer "):
-        await ws.close(code=4401)
-        logger.warning(f"[AUTH] - Missing bearer token for {rid}")
-        return
-    {% elif endpoint.auth.kind == 'basic' %}
-    auth_header = ws.headers.get("authorization")
-    if not auth_header or not auth_header.lower().startswith("basic "):
-        await ws.close(code=4401)
-        logger.warning(f"[AUTH] - Missing basic credentials for {rid}")
-        return
-    {% elif endpoint.auth.kind == 'api_key' and endpoint.auth.location == 'header' %}
-    api_key_value = ws.headers.get("{{ endpoint.auth.key }}")
-    if not api_key_value:
-        await ws.close(code=4401)
-        logger.warning(f"[AUTH] - Missing API key header '{{ endpoint.auth.key }}'")
-        return
-    {% elif endpoint.auth.kind == 'api_key' and endpoint.auth.location == 'query' %}
-    from urllib.parse import parse_qs, urlparse
-    qs = parse_qs(urlparse(str(ws.url)).query)
-    if "{{ endpoint.auth.key }}" not in qs:
-        await ws.close(code=4401)
-        logger.warning(f"[AUTH] - Missing API key query param '{{ endpoint.auth.key }}'")
+    # Extract header parameters from WebSocket handshake
+    header_params = {}
+    {% for h in endpoint.header_params_typed %}
+    {{ h.name | replace('-', '_') }} = ws.headers.get("{{ h.name }}")
+    {% if h.required %}
+    if {{ h.name | replace('-', '_') }} is None:
+        await ws.close(code=4400)
+        logger.warning(f"[HANDSHAKE] - Missing required header '{{ h.name }}' for {rid}")
         return
     {% endif %}
-    {% endif %}
+    header_params["{{ h.name }}"] = {{ h.name | replace('-', '_') }}
+    {% endfor %}
+
+    logger.debug(f"[HANDSHAKE] - Extracted header params: {list(header_params.keys())}")
 
     await ws.accept()
     logger.info(f"[CLIENT] - Connected: {rid} (path: {ws.url})")
@@ -155,7 +140,7 @@ async def duplex(ws: WebSocket):
 
             try:
                 row, context = ws_service.compute_entity_chain(
-                    payload, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}"
+                    payload, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}", header_params
                 )
 
                 {% if events %}

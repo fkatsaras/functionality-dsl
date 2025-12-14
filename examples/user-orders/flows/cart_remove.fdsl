@@ -1,0 +1,66 @@
+// ============================================
+// FLOW: Remove from Cart
+// ============================================
+// Private endpoint (session-based) to remove items from shopping cart
+// Uses session ID header to identify the cart
+
+// Helper entity to pass sessionId to headers
+Entity RemoveFromCartContext
+  attributes:
+    - sessionId: string = RemoveFromCart.sessionId;
+    - productId: string = RemoveFromCart.productId;
+end
+
+// External source - Cart service DELETE API
+Source<REST> RemoveFromCartAPI
+  url: "http://host.docker.internal:9002/cart/items/{productId}"
+  method: DELETE
+  parameters:
+    path:
+      - productId: string = RemoveFromCart.productId;
+  response:
+    type: object
+    entity: Cart
+  headers: [X-Session-ID: "{sessionId}"]
+end
+
+// Request entity for RemoveFromCart endpoint
+Entity RemoveFromCartRequest
+  attributes:
+    - sessionId: string;
+    - productId: string;
+end
+
+// Internal endpoint - what clients call
+Endpoint<REST> RemoveFromCart
+  path: "/cart/remove"
+  method: POST
+  request:
+    type: object
+    entity: RemoveFromCartRequest
+  response:
+    type: object
+    entity: RemoveFromCartResponse
+  errors:
+    - 401:
+      condition: RemoveFromCartRequest["sessionId"] != "session1" and RemoveFromCartRequest["sessionId"] != "session2" and RemoveFromCartRequest["sessionId"] != "session3"
+      message: "Invalid session ID. Valid sessions: session1, session2, session3"
+end
+
+// Transform: Build response with cart summary after removal
+Entity RemoveFromCartResponse(Cart)
+  attributes:
+    - success: boolean = "true";
+    - message: string = "Item removed from cart";
+    - sessionId: string = Cart["sessionId"];
+    - itemCount: integer = len(Cart["items"]);
+    - total: number = round(sum(map(Cart["items"], i => i["price"] * i["quantity"])), 2);
+    - items: array = Cart["items"];
+end
+
+// UI Component - Form to remove item by product ID
+Component<ActionForm> RemoveFromCartForm
+  endpoint: RemoveFromCart
+  fields: [sessionId, productId]
+  submitLabel: "Remove from Cart"
+end

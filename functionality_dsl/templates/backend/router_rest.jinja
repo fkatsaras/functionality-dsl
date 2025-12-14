@@ -9,11 +9,6 @@ from fastapi import APIRouter, HTTPException, Request, Query, Header, Path
 {% if response_type == 'binary' %}
 from fastapi.responses import Response
 {% endif %}
-{% if endpoint.auth and endpoint.auth.kind == 'bearer' %}
-from fastapi import Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-security = HTTPBearer()
-{% endif %}
 
 from app.services.{{ endpoint.name | lower }}_service import service
 from app.core.content_handler import ContentTypeHandler
@@ -121,10 +116,8 @@ router = APIRouter(
 async def {{ flow.type }}_{{ endpoint.name | lower }}(
     request: Request{% for p in pparams_typed %},
     {{ p.name }}: {{ python_type(p.type) }}{% endfor %}{% for q in endpoint.query_params_typed %},
-    {{ q.name }}: {% if q.required %}{{ python_type(q.type) }}{% else %}Optional[{{ python_type(q.type) }}]{% endif %}{% if q.get('default_expr') %} = Query({{ q.default_expr }}){% else %} = Query(None){% endif %}{% endfor %}{% if endpoint.auth and endpoint.auth.kind == 'bearer' %},
-    credentials: HTTPAuthorizationCredentials = Depends(security){% elif endpoint.auth and endpoint.auth.kind == 'api_key' %}{% if endpoint.auth.location == 'header' %},
-    {{ endpoint.auth.key | replace('-', '_') | lower }}: Optional[str] = Header(None, alias="{{ endpoint.auth.key }}"){% elif endpoint.auth.location == 'query' %},
-    {{ endpoint.auth.key }}: Optional[str] = Query(None){% endif %}{% endif %}
+    {{ q.name }}: {% if q.required %}{{ python_type(q.type) }}{% else %}Optional[{{ python_type(q.type) }}]{% endif %}{% if q.get('default_expr') %} = Query({{ q.default_expr }}){% else %} = Query(None){% endif %}{% endfor %}{% for h in endpoint.header_params_typed %},
+    {{ h.name | replace('-', '_') }}: {% if h.required %}{{ python_type(h.type) }}{% else %}Optional[{{ python_type(h.type) }}]{% endif %} = Header({% if h.get('default_expr') %}{{ h.default_expr }}{% else %}None{% endif %}, alias="{{ h.name }}"){% endfor %}
 ):
     """
     {{ flow.type.upper() }} endpoint for {{ entity.name }}.
@@ -141,26 +134,6 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
     - Computes {{ compiled_chain | length }} entity transformation(s)
     {% endif %}
     """
-
-    # ========================================================================
-    # AUTHENTICATION
-    # ========================================================================
-    {% if endpoint.auth %}
-    {% if endpoint.auth.kind == 'bearer' %}
-    if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    {% elif endpoint.auth.kind == 'basic' %}
-    # Basic auth validated automatically by FastAPI
-    pass
-    {% elif endpoint.auth.kind == 'api_key' %}
-    # Validate API key
-    {% set api_key_param = endpoint.auth.key | replace('-', '_') | lower %}
-    if not {{ api_key_param }}:
-        raise HTTPException(status_code=401, detail="Missing API key")
-    if {{ api_key_param }} != "{{ endpoint.auth.value }}":
-        raise HTTPException(status_code=403, detail="Invalid API key")
-    {% endif %}
-    {% endif %}
 
     # ========================================================================
     # FORWARD TO SERVICE LAYER
@@ -180,7 +153,14 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             {% endfor %}
         }
 
-        # Extract headers for decorated attributes
+        # Build header parameters dict from injected parameters (already type-converted by FastAPI)
+        header_params = {
+            {% for h in endpoint.header_params_typed %}
+            "{{ h.name }}": {{ h.name | replace('-', '_') }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        }
+
+        # Extract all request headers (for entity access if needed)
         headers = dict(request.headers)
 
         {% if http_method in ('post', 'put', 'patch') %}
@@ -209,6 +189,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             request_body=request_body,
             path_params=path_params,
             query_params=query_params,
+            header_params=header_params,
             headers=headers
         )
         # Wrap binary response in Response object with proper media type
@@ -218,6 +199,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
             request_body=request_body,
             path_params=path_params,
             query_params=query_params,
+            header_params=header_params,
             headers=headers
         )
         {% endif %}
@@ -227,6 +209,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
         result = await service.execute_flow(
             path_params=path_params,
             query_params=query_params,
+            header_params=header_params,
             headers=headers
         )
         # Wrap binary response in Response object with proper media type
@@ -235,6 +218,7 @@ async def {{ flow.type }}_{{ endpoint.name | lower }}(
         return await service.execute_flow(
             path_params=path_params,
             query_params=query_params,
+            header_params=header_params,
             headers=headers
         )
         {% endif %}

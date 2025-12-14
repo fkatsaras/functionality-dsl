@@ -45,10 +45,10 @@ end
 // Protected endpoint - clients must authenticate with bearer token
 Endpoint<WS> ProtectedEcho
   channel: "/api/ws/echo/protected"
+  parameters:
+    headers:
+      - Authorization: string
   subscribe:
     type: object
     entity: EchoProcessed
-  auth:
-    type: bearer
-    token: "required"
 end

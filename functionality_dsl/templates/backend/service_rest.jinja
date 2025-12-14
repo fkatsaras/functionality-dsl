@@ -72,6 +72,7 @@ class {{ endpoint.name }}Service(BaseService):
                 ],
                 "path_param_exprs": {{ source.path_param_exprs | tojson }},
                 "query_param_exprs": {{ source.query_param_exprs | tojson }},
+                "header_param_exprs": {{ source.header_param_exprs | tojson }},
                 "response_type": "{{ source.response_type }}",
                 "wrapper_attr_name": {{ "None" if source.wrapper_attr_name is none else ('"' + source.wrapper_attr_name + '"') }},
                 "is_wrapper": {{ "True" if source.is_wrapper else "False" }},
@@ -174,6 +175,21 @@ class {{ endpoint.name }}Service(BaseService):
 
             try:
                 headers = resolve_headers(source_config.get("headers", []))
+
+                # Evaluate header parameter expressions and add to headers
+                header_param_exprs = source_config.get("header_param_exprs", {})
+                if header_param_exprs:
+                    for header_name, header_expr in header_param_exprs.items():
+                        try:
+                            header_value = eval(header_expr, safe_globals, context)
+                            headers[header_name] = str(header_value)
+                            self.logger.debug(f"[HEADER] - Evaluated {header_name} = {header_value}")
+                        except Exception as e:
+                            self.logger.error(f"[HEADER] - Failed to evaluate header {header_name}: {e}")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Failed to evaluate header parameter {header_name}"
+                            )
 
                 # Inject API key query params if necessary
                 for key, value in source_config.get("headers", []):
@@ -354,6 +370,21 @@ class {{ endpoint.name }}Service(BaseService):
             source_name=target_name
         )
 
+        # Evaluate header parameter expressions and add to headers
+        header_param_exprs = {{ target_config.header_param_exprs | tojson }}
+        if header_param_exprs:
+            for header_name, header_expr in header_param_exprs.items():
+                try:
+                    header_value = eval(header_expr, safe_globals, context)
+                    headers[header_name] = str(header_value)
+                    self.logger.debug(f"[HEADER] - Evaluated {header_name} = {header_value}")
+                except Exception as e:
+                    self.logger.error(f"[HEADER] - Failed to evaluate header {header_name}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to evaluate header parameter {header_name}"
+                    )
+
         # Get the entity to send to this target
         {% if target_config.get("request_entity") %}
         payload = context.get("{{ target_config.request_entity }}", request_body)
@@ -446,6 +477,7 @@ class {{ endpoint.name }}Service(BaseService):
         self,
         path_params: Dict[str, str] = None,
         query_params: Dict[str, Any] = None,
+        header_params: Dict[str, Any] = None,
         headers: Dict[str, str] = None,
         request_body: Dict[str, Any] = None
     ) -> {% if response_type == 'binary' %}bytes{% else %}Dict[str, Any]{% endif %}:
@@ -468,13 +500,16 @@ class {{ endpoint.name }}Service(BaseService):
 
         context: Dict[str, Any] = {}
 
-        # Create endpoint parameter object for expressions (e.g., GetProduct.productId)
+        # Create endpoint parameter object for expressions (e.g., GetProduct.productId, GetProduct["X-API-Key"])
         # Note: Parameters are already type-converted by FastAPI before reaching this service
         endpoint_params = {}
         if path_params:
             endpoint_params.update(path_params)
         if query_params:
             endpoint_params.update(query_params)
+        if header_params:
+            endpoint_params.update(header_params)
+        # Also include raw headers for backward compatibility
         if headers:
             endpoint_params.update(headers)
 

@@ -109,7 +109,7 @@ class {{ endpoint.name }}Service(BaseService):
     # COMPUTATION FUNCTIONS
     # ========================================================================
 
-    def compute_entity_chain(self, payload: Any, sender_id: str, chain: List[Dict], source_name: str, entity_name: str = None) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    def compute_entity_chain(self, payload: Any, sender_id: str, chain: List[Dict], source_name: str, entity_name: str = None, header_params: Dict[str, Any] = None) -> tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Compute entity attributes through chain with flat context.
         Returns: (final_result, full_context)
@@ -120,6 +120,7 @@ class {{ endpoint.name }}Service(BaseService):
             chain: The computation chain
             source_name: Name of the source (endpoint/feed)
             entity_name: Optional entity name for the payload (if different from source_name)
+            header_params: Header parameters from WebSocket handshake
         """
         self.logger.debug(f"[COMPUTE] - Processing payload from {source_name}")
 
@@ -128,6 +129,11 @@ class {{ endpoint.name }}Service(BaseService):
             source_name: payload,
             "__sender": sender_id
         }
+
+        # Add header parameters to context (for expressions like TestWSHeaders.Authorization)
+        if header_params:
+            context[source_name] = {**header_params, **payload} if isinstance(payload, dict) else payload
+            self.logger.debug(f"[COMPUTE] - Added header params to {source_name}: {list(header_params.keys())}")
 
         # For inbound chains, also add the entity name to context
         # This allows expressions to reference OutgoingWrapper.value instead of ChatDup.value

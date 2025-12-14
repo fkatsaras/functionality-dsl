@@ -52,6 +52,13 @@ Entity CartUpdateView(CartUpdateMessage)
     - timestamp: string = CartUpdateMessage["timestamp"];
 end
 
+// UI Component: Metrics showing cart summary
+Component<LiveMetrics> CartMetrics
+  endpoint: CartUpdates
+  metrics: ["itemCount", "total"]
+  label: "Cart Summary"
+end
+
 // UI Component: LiveTable showing cart items with real-time updates
 Component<LiveTable> LiveCartTable
   endpoint: CartUpdates

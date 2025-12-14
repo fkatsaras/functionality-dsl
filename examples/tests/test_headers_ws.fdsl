@@ -1,0 +1,58 @@
+// ============================================
+// TEST: WebSocket Header Parameters (Duplex/Publish-Subscribe)
+// ============================================
+// Tests:
+// 1. WebSocket endpoint accepts headers during handshake (Authorization, X-Session-ID)
+// 2. Required header validation (Authorization must be present)
+// 3. Optional header support (X-Session-ID is optional)
+// 4. Headers accessible in INBOUND transformations (Client → Server)
+//
+// ARCHITECTURAL LIMITATION:
+// Headers cannot be used in OUTBOUND transformations (External Source → Client)
+// because the WS input consumer is shared across all clients and doesn't have
+// access to per-client header_params. This would require per-client connections
+// to external sources, which is not supported in the current design.
+//
+// This test demonstrates the INBOUND flow where headers work correctly.
+
+Server TestWSHeadersAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// --- External WebSocket Echo Server ---
+// Raw message from echo server
+Entity EchoRaw
+  attributes:
+    - message: string;
+end
+
+Source<WS> EchoServer
+  channel: "wss://echo.websocket.org"
+  subscribe:
+    type: object
+    entity: EchoRaw
+end
+
+// --- Transformation entity that enriches echo with header info ---
+Entity AuthenticatedEcho(EchoRaw)
+  attributes:
+    - originalMessage: string = EchoRaw.message;
+    - authenticatedUser: string = TestWSHeaders.Authorization;
+    - sessionId: string = TestWSHeaders["X-Session-ID"] if TestWSHeaders["X-Session-ID"] else "anonymous";
+    - enrichedMessage: string = "[User: " + TestWSHeaders.Authorization + ", Session: " + (TestWSHeaders["X-Session-ID"] if TestWSHeaders["X-Session-ID"] else "anonymous") + "] " + EchoRaw.message;
+end
+
+// --- WebSocket endpoint with header parameters ---
+Endpoint<WS> TestWSHeaders
+  channel: "/api/ws/echo/authenticated"
+  parameters:
+    headers:
+      - Authorization: string           // Required - user identifier/token
+      - X-Session-ID: string?          // Optional - session tracking
+  subscribe:
+    type: object
+    entity: AuthenticatedEcho
+end

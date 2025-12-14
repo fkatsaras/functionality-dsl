@@ -1,0 +1,65 @@
+// ============================================
+// TEST: Header Parameter Forwarding with httpbin
+// ============================================
+// Tests:
+// 1. Endpoint accepts headers from client (X-API-Key, X-Session-ID)
+// 2. Forwards headers to httpbin.org
+// 3. Uses bracket notation for dashed header names
+// 4. Accesses header values in entity transformations
+
+Server TestHeadersAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// --- httpbin response schema ---
+Entity HttpBinResponse
+  attributes:
+    - args: object;
+    - headers: object;
+    - origin: string;
+    - url: string;
+end
+
+// --- External API: httpbin ---
+Source<REST> HttpBinTest
+  url: "https://httpbin.org/get"
+  method: GET
+  parameters:
+    query:
+      - testParam: string = TestHeaders.userId;
+    headers:
+      - X-Forwarded-Session: string = TestHeaders["X-Session-ID"];
+      - X-Forwarded-Key: string = TestHeaders["X-API-Key"];
+  response:
+    type: object
+    entity: HttpBinResponse
+end
+
+// --- Transformation entity ---
+Entity HeaderTestResult(HttpBinResponse)
+  attributes:
+    - receivedHeaders: object = HttpBinResponse.headers;
+    - requestOrigin: string = HttpBinResponse.origin;
+    - requestUrl: string = HttpBinResponse.url;
+    - clientSessionId: string = TestHeaders["X-Session-ID"];
+    - clientApiKey: string = TestHeaders["X-API-Key"];
+    - clientUserId: string = TestHeaders.userId;
+end
+
+// --- Public endpoint ---
+Endpoint<REST> TestHeaders
+  path: "/api/test/headers"
+  method: GET
+  parameters:
+    query:
+      - userId: string
+    headers:
+      - X-API-Key: string
+      - X-Session-ID: string?
+  response:
+    type: object
+    entity: HeaderTestResult
+end

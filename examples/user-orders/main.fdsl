@@ -13,6 +13,7 @@ import shared.common_sources
 import flows.product_catalog
 import flows.product_details
 import flows.cart_add
+import flows.cart_remove
 import flows.cart_updates
 
 Server ShopAPI

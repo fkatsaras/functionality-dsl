@@ -99,24 +99,22 @@ end
 Endpoint<REST> BasicEndpoint
   path: "/api/test/basic"
   method: GET
+  parameters:
+    headers:
+      - Authorization: string
   response:
     type: object
     entity: BasicEntity
-  auth:
-    type: bearer
-    token: "required"
 end
 
 // Protected with API key in header - clients must provide key
 Endpoint<REST> ApiKeyEndpoint
   path: "/api/test/apikey"
   method: GET
+  parameters:
+    headers:
+      - X-API-Key: string
   response:
     type: object
     entity: ApiKeyEntity
-  auth:
-    type: api_key
-    key: "X-API-Key"
-    in: header
-    value: "clientsecret123"
 end
