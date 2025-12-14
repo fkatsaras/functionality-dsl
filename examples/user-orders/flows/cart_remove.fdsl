@@ -4,13 +4,6 @@
 // Private endpoint (session-based) to remove items from shopping cart
 // Uses session ID header to identify the cart
 
-// Helper entity to pass sessionId to headers
-Entity RemoveFromCartContext
-  attributes:
-    - sessionId: string = RemoveFromCart.sessionId;
-    - productId: string = RemoveFromCart.productId;
-end
-
 // External source - Cart service DELETE API
 Source<REST> RemoveFromCartAPI
   url: "http://host.docker.internal:9002/cart/items/{productId}"
@@ -18,16 +11,16 @@ Source<REST> RemoveFromCartAPI
   parameters:
     path:
       - productId: string = RemoveFromCart.productId;
+    headers:
+      - X-Session-ID: string = RemoveFromCart["X-Session-ID"];
   response:
     type: object
     entity: Cart
-  headers: [X-Session-ID: "{sessionId}"]
 end
 
-// Request entity for RemoveFromCart endpoint
+// Request entity for RemoveFromCart endpoint (no sessionId - comes from header)
 Entity RemoveFromCartRequest
   attributes:
-    - sessionId: string;
     - productId: string;
 end
 
@@ -35,6 +28,9 @@ end
 Endpoint<REST> RemoveFromCart
   path: "/cart/remove"
   method: POST
+  parameters:
+    headers:
+      - X-Session-ID: string    // Session authentication via header
   request:
     type: object
     entity: RemoveFromCartRequest
@@ -43,7 +39,7 @@ Endpoint<REST> RemoveFromCart
     entity: RemoveFromCartResponse
   errors:
     - 401:
-      condition: RemoveFromCartRequest["sessionId"] != "session1" and RemoveFromCartRequest["sessionId"] != "session2" and RemoveFromCartRequest["sessionId"] != "session3"
+      condition: RemoveFromCart["X-Session-ID"] != "session1" and RemoveFromCart["X-Session-ID"] != "session2" and RemoveFromCart["X-Session-ID"] != "session3"
       message: "Invalid session ID. Valid sessions: session1, session2, session3"
 end
 
@@ -59,8 +55,9 @@ Entity RemoveFromCartResponse(Cart)
 end
 
 // UI Component - Form to remove item by product ID
+// Note: X-Session-ID header must be provided by client (e.g., via fetch headers)
 Component<ActionForm> RemoveFromCartForm
   endpoint: RemoveFromCart
-  fields: [sessionId, productId]
+  fields: [productId]
   submitLabel: "Remove from Cart"
 end

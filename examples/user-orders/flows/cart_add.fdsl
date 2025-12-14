@@ -8,19 +8,20 @@
 Source<REST> AddToCartAPI
   url: "http://host.docker.internal:9002/cart/add"
   method: POST
+  parameters:
+    headers:
+      - X-Session-ID: string = AddToCart["X-Session-ID"];
   request:
     type: object
     entity: AddToCartAPIRequest
   response:
     type: object
     entity: Cart
-  headers: [X-Session-ID: "{sessionId}"]
 end
 
-// Request entity for AddToCart endpoint
+// Request entity for AddToCart endpoint (no sessionId - comes from header)
 Entity AddToCartRequest
   attributes:
-    - sessionId: string;
     - productId: string;
     - quantity: integer;
 end
@@ -29,6 +30,9 @@ end
 Endpoint<REST> AddToCart
   path: "/cart/add"
   method: POST
+  parameters:
+    headers:
+      - X-Session-ID: string    // Session authentication via header
   request:
     type: object
     entity: AddToCartRequest
@@ -37,8 +41,11 @@ Endpoint<REST> AddToCart
     entity: AddToCartResponse
   errors:
     - 401:
-      condition: AddToCartRequest["sessionId"] != "session1" and AddToCartRequest["sessionId"] != "session2" and AddToCartRequest["sessionId"] != "session3"
+      condition: AddToCart["X-Session-ID"] != "session1" and AddToCart["X-Session-ID"] != "session2" and AddToCart["X-Session-ID"] != "session3"
       message: "Invalid session ID. Valid sessions: session1, session2, session3"
+    - 404:
+      condition: len(FilteredProductForCart["filtered"]) == 0
+      message: "Product not found"
     - 400:
       condition: len(FilteredProductForCart["filtered"]) > 0 and get(FilteredProductForCart["filtered"][0], "stock", 0) <= 0
       message: "Product is out of stock"
@@ -53,7 +60,6 @@ end
 // Step 2: Build request to external cart API (enriched with product details)
 Entity AddToCartAPIRequest(FilteredProductForCart, AddToCartRequest)
   attributes:
-    - sessionId: string = AddToCartRequest["sessionId"];
     - productId: string = AddToCartRequest["productId"];
     - productName: string = get(FilteredProductForCart["filtered"][0], "name", "") if len(FilteredProductForCart["filtered"]) > 0 else "";
     - price: number = get(FilteredProductForCart["filtered"][0], "price", 0.0) if len(FilteredProductForCart["filtered"]) > 0 else 0.0;
@@ -72,8 +78,9 @@ Entity AddToCartResponse(Cart)
 end
 
 // UI Component - Form submits as JSON request body
+// Note: X-Session-ID header must be provided by client (e.g., via fetch headers)
 Component<ActionForm> AddToCartForm
   endpoint: AddToCart
-  fields: [sessionId, productId, quantity]
+  fields: [productId, quantity]
   submitLabel: "Add to Cart"
 end

@@ -101,6 +101,8 @@ app.listen(PORT, () => {
 // ============================================
 // WebSocket Server for Real-Time Cart Updates
 // ============================================
+// PER-SESSION MODE: Clients subscribe with sessionId, receive only THEIR updates
+// This mirrors real-world cart APIs (secure & efficient)
 
 const wss = new WebSocket.Server({ port: WS_PORT });
 const sessions = new Map(); // sessionId -> WebSocket
@@ -112,18 +114,17 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", (message) => {
     try {
-      // Accept plain string as session ID
       const messageStr = message.toString();
 
-      // Try to parse as JSON first (for backwards compatibility)
+      // Parse subscription message (can be plain string or JSON wrapper)
       let receivedSessionId;
       try {
         const data = JSON.parse(messageStr);
-        // Check for wrapper entity format first (e.g., {"value": "session-id"})
+        // Support wrapper entity format: {"value": "session1"}
         receivedSessionId = data.value || data.sessionId || data;
       } catch {
-        // If not JSON, treat as plain string session ID
-        receivedSessionId = messageStr.replace(/^"|"$/g, ''); // Remove quotes if present
+        // Plain string session ID
+        receivedSessionId = messageStr.replace(/^"|"$/g, '');
       }
 
       if (receivedSessionId) {
@@ -132,7 +133,7 @@ wss.on("connection", (ws, req) => {
 
         console.log(`[CART-WS] Session ${sessionId} subscribed`);
 
-        // Send current cart state
+        // Send current cart state immediately
         const cart = getCart(sessionId);
         ws.send(JSON.stringify({
           type: "cart_update",
@@ -144,7 +145,7 @@ wss.on("connection", (ws, req) => {
         }));
       }
     } catch (err) {
-      console.error("[CART-WS] Error parsing message:", err);
+      console.error("[CART-WS] Error parsing subscription message:", err);
     }
   });
 
@@ -160,20 +161,23 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// Helper to broadcast cart updates to subscribed sessions
+// Helper to send cart update to specific subscribed session
 function broadcastCartUpdate(sessionId, cart) {
   const ws = sessions.get(sessionId);
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
+    const message = JSON.stringify({
       type: "cart_update",
       sessionId,
       cart,
       itemCount: cart.items.length,
       total: cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
       timestamp: new Date().toISOString()
-    }));
+    });
+
+    console.log(`[CART-WS] Sending update to session ${sessionId}`);
+    ws.send(message);
   }
 }
 
 console.log(`Cart WebSocket Service running on ws://localhost:${WS_PORT}`);
-console.log(`Send "your-session-id" (plain string) to subscribe`);
+console.log(`PER-SESSION MODE: Clients send sessionId to subscribe to their cart updates`);

@@ -1,20 +1,27 @@
 // ============================================
 // FLOW: Cart Updates (Real-time WebSocket)
 // ============================================
-// Private WebSocket endpoint for real-time cart update notifications
+// Production-realistic WebSocket cart updates with per-session subscription
+// Client authenticates via header, subscribes by sending sessionId, receives only THEIR updates
 
-// External source - Cart WebSocket service
+// External source - Cart WebSocket service (per-session subscription)
 Source<WS> CartUpdatesAPI
   channel: "ws://host.docker.internal:9003"
   subscribe:
-    type: object
+    type: object            // Receive cart updates (already filtered by server)
     entity: CartUpdateMessage
   publish:
-    type: string
-    entity: SessionId
+    type: string             // Send sessionId to subscribe
+    entity: SessionIdInput
 end
 
-// WebSocket cart update message structure
+// Wrapper entity for sending sessionId as subscription message
+Entity SessionIdInput
+  attributes:
+    - value: string;
+end
+
+// WebSocket cart update message structure (from external service)
 Entity CartUpdateMessage
   attributes:
     - type: string;
@@ -25,24 +32,29 @@ Entity CartUpdateMessage
     - timestamp: string;
 end
 
-// Internal endpoint - subscribes to the source with session id, streams cart updates to clients
+// Internal endpoint - duplex WebSocket for cart updates
 Endpoint<WS> CartUpdates
   channel: "/ws/cart"
+  parameters:
+    headers:
+      - X-Session-ID: string   // Authentication: which session this client represents
   publish:
-    type: string
-    entity: SessionId
+    type: string              // Client sends sessionId to subscribe
+    entity: SubscriptionMessage
   subscribe:
-    type: object
+    type: object             // Client receives cart updates
     entity: CartUpdateView
 end
 
-// Client input - just the session ID as a string
-Entity SessionId
+// Transform: Create subscription message from header sessionId
+// This forwards the client's sessionId to the external WebSocket service
+Entity SubscriptionMessage
   attributes:
-    - value: string;
+    - value: string = CartUpdates["X-Session-ID"];
 end
 
-// Transform: Extract cart data with items array
+// Transform: Extract cart data for display
+// No filtering needed - external service already filters by sessionId
 Entity CartUpdateView(CartUpdateMessage)
   attributes:
     - sessionId: string = CartUpdateMessage["sessionId"];
@@ -73,9 +85,5 @@ Component<LiveTable> LiveCartTable
   maxRows: 50
 end
 
-Component<Input> CartSelect
-  endpoint: CartUpdates
-  placeholder: "Enter session ID..."
-  label: "SessionID"
-  submitLabel: "Show"
-end
+// Note: Client provides X-Session-ID header when connecting to WebSocket
+// Example: wscat -c ws://localhost:8000/ws/cart -H "X-Session-ID: session1"
