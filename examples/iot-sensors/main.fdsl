@@ -1,18 +1,11 @@
-// =============================================================
-//                     SERVER CONFIG
-// =============================================================
 Server IoTServer
   host: "localhost"
   port: 8085
   cors: "http://localhost:3000"
 end
 
+// - -------------------------------- Sources ---------------------------
 
-// =============================================================
-//                     EXTERNAL SERVICES (LIVE)
-// =============================================================
-
-// --- Individual live sensor WebSocket feeds ---
 Source<WS> Sensor1Feed
   channel: "ws://dummyiot:9601"
   subscribe:
@@ -41,12 +34,7 @@ Source<WS> Sensor4Feed
     entity: Sensor4Raw
 end
 
-
-// =============================================================
-//                     LIVE TELEMETRY (WS)
-// =============================================================
-
-// Each raw entity normalizes WS frame shape
+// - -------------------------------- Entities ---------------------------
 Entity Sensor1Raw
   attributes:
     - temp: number;
@@ -76,8 +64,6 @@ Entity Sensor4Raw
 end
 
 
-
-// Combine all into unified Telemetry stream
 Entity TelemetryCombined(Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw)
   attributes:
     - readings: array = [Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw];
@@ -93,9 +79,7 @@ Entity TelemetryComputed(TelemetryCombined)
     - avg_heat: number = avg(map(TelemetryCombined.readings, r => r["temp"] + 0.2 * r["hum"]));
 end
 
-// =============================================================
-//                     DUMMY DEVICE TOGGLE
-// =============================================================
+
 
 // External dummy REST service for toggle
 Source<REST> ACToggleExternal
@@ -133,9 +117,8 @@ Entity ToggleResponse
 end
 
 
-// =============================================================
-//                     INTERNAL STREAMS
-// =============================================================
+// - -------------------------------- Endpoint  ---------------------------
+
 Endpoint<WS> TelemetryStream
   channel: "/api/telemetry/live"
   subscribe:
@@ -144,9 +127,8 @@ Endpoint<WS> TelemetryStream
 end
 
 
-// =============================================================
-//                     UI COMPONENTS
-// =============================================================
+// - -------------------------------- Components ---------------------------
+
 
 // Live table of all sensors
 Component<LiveView> TelemetryTable

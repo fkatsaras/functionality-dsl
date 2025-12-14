@@ -11,11 +11,7 @@ Server PDFReportAPI
   loglevel: debug
 end
 
-// ========================================
-// ENTITIES
-// ========================================
 
-// Individual sale record
 Entity Sale
   attributes:
     - id: string;
@@ -25,13 +21,11 @@ Entity Sale
     - date: string;
 end
 
-// Raw sales list from external API
 Entity SalesListRaw
   attributes:
     - sales: array<Sale>;
 end
 
-// Processed sales with calculations
 Entity SalesProcessed(SalesListRaw)
   attributes:
     - sales: array = SalesListRaw.sales;
@@ -47,9 +41,6 @@ Entity SalesPDF(SalesProcessed)
     - file: binary = toPdf(SalesProcessed.sales, "Sales Report", "table");
 end
 
-// ========================================
-// SOURCES (External APIs)
-// ========================================
 
 // Fetch sales data from external API
 Source<REST> SalesAPI
@@ -61,9 +52,6 @@ Source<REST> SalesAPI
       entity: SalesListRaw
 end
 
-// ========================================
-// ENDPOINTS (Your API)
-// ========================================
 
 // View sales data (for table display)
 Endpoint<REST> GetSales
