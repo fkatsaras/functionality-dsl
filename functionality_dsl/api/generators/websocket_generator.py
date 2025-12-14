@@ -120,6 +120,21 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         if attributes:
             wrapper_attr_name = attributes[0].name
 
+    # Determine if per-client transformation is needed
+    # Per-client transformation is ONLY needed when the outbound chain references
+    # endpoint parameters (headers, etc.) in expressions
+    def chain_uses_endpoint_params(compiled_chain, endpoint_name):
+        """Check if any entity in the chain references the endpoint."""
+        for entity in compiled_chain:
+            for attr in entity.get('attrs', []):
+                expr = attr.get('pyexpr', '')
+                # Check if endpoint name appears in expression (e.g., "TestWSHeaders.Authorization")
+                if endpoint_name in expr:
+                    return True
+        return False
+
+    needs_per_client_transform = chain_uses_endpoint_params(compiled_chain_outbound, endpoint.name)
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -142,6 +157,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "sync_config_inbound": sync_config_inbound,
         "sync_config_outbound": sync_config_outbound,
         "events": events_config,
+        "needs_per_client_transform": needs_per_client_transform,
     }
 
     # Setup Jinja2 environment

@@ -23,26 +23,26 @@ Server TestWSHeadersAPI
 end
 
 // --- External WebSocket Echo Server ---
-// Raw message from echo server
-Entity EchoRaw
+// Echo server sends plain text strings, not JSON
+Entity EchoMessageWrapper
   attributes:
-    - message: string;
+    - value: string;
 end
 
 Source<WS> EchoServer
   channel: "wss://echo.websocket.org"
   subscribe:
-    type: object
-    entity: EchoRaw
+    type: string
+    entity: EchoMessageWrapper
 end
 
 // --- Transformation entity that enriches echo with header info ---
-Entity AuthenticatedEcho(EchoRaw)
+Entity AuthenticatedEcho(EchoMessageWrapper)
   attributes:
-    - originalMessage: string = EchoRaw.message;
+    - originalMessage: string = EchoMessageWrapper.value;
     - authenticatedUser: string = TestWSHeaders.Authorization;
-    - sessionId: string = TestWSHeaders["X-Session-ID"] if TestWSHeaders["X-Session-ID"] else "anonymous";
-    - enrichedMessage: string = "[User: " + TestWSHeaders.Authorization + ", Session: " + (TestWSHeaders["X-Session-ID"] if TestWSHeaders["X-Session-ID"] else "anonymous") + "] " + EchoRaw.message;
+    - sessionId: string = get(TestWSHeaders, "X-Session-ID", "anonymous");
+    - enrichedMessage: string = "[User: " + TestWSHeaders.Authorization + ", Session: " + get(TestWSHeaders, "X-Session-ID", "anonymous") + "] " + EchoMessageWrapper.value;
 end
 
 // --- WebSocket endpoint with header parameters ---

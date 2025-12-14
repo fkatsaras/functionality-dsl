@@ -140,7 +140,7 @@ async def duplex(ws: WebSocket):
 
             try:
                 row, context = ws_service.compute_entity_chain(
-                    payload, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}", header_params
+                    payload, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}", header_params, "{{ endpoint.name }}"
                 )
 
                 {% if events %}
@@ -195,10 +195,78 @@ async def duplex(ws: WebSocket):
                 await ws.send_json(error_response)
                 continue
 
-    # Outbound loop: Subscribe to bus and send to client
+    # Outbound loop: Subscribe to bus, compute chain with header params, and send to client
     async def outbound_loop():
         logger.info(f"[CLIENT] - Starting outbound loop for {rid}, subscribed to: {outbound_entity}")
+        chain_inbound, chain_outbound = ws_service.get_compiled_chains()
+
         if bus_out:
+            {% if needs_per_client_transform %}
+            # Per-client transformation needed (outbound chain uses endpoint parameters)
+            # Use raw message format and compute per-client
+            message_queue = asyncio.Queue()
+
+            # Create a custom WebSocket wrapper that intercepts messages and queues them
+            class QueuedWebSocket:
+                def __init__(self, ws, queue):
+                    self._ws = ws
+                    self._queue = queue
+
+                async def send_json(self, data):
+                    """Intercept bus messages and queue them for processing."""
+                    await self._queue.put(data)
+
+                async def send_text(self, data):
+                    """Intercept bus messages and queue them for processing."""
+                    await self._queue.put(data)
+
+                async def send_bytes(self, data):
+                    """Intercept bus messages and queue them for processing."""
+                    await self._queue.put(data)
+
+            # Register queued wrapper with bus
+            queued_ws = QueuedWebSocket(ws, message_queue)
+            await bus_out.add_ws(queued_ws)
+
+            try:
+                logger.info(f"[OUTBOUND] - Registered with bus, waiting for messages (per-client transformation)")
+
+                while True:
+                    # Get raw message from queue
+                    raw_msg = await message_queue.get()
+                    logger.debug(f"[OUTBOUND] - Received raw message from bus")
+
+                    # Extract source name and payload from raw message
+                    source_name = raw_msg.get("source")
+                    entity_name = raw_msg.get("entity")
+                    payload = raw_msg.get("payload")
+
+                    # Compute outbound chain with header_params available in context
+                    try:
+                        {% if compiled_chain_outbound %}
+                        row, context = ws_service.compute_entity_chain(
+                            payload, rid, chain_outbound, source_name, entity_name, header_params, "{{ endpoint.name }}"
+                        )
+                        {% else %}
+                        row = payload
+                        {% endif %}
+                        logger.debug(f"[OUTBOUND] - Computed outbound chain for {rid}")
+
+                        # Send transformed message to this specific client
+                        if row is not None:
+                            await ws.send_json(row)
+                            logger.debug(f"[OUTBOUND] - Sent message to client {rid}")
+                    except Exception as compute_error:
+                        logger.error(f"[OUTBOUND] - Error computing chain for {rid}: {compute_error}", exc_info=True)
+                        # Continue processing other messages even if one fails
+                        continue
+
+            finally:
+                await bus_out.remove_ws(queued_ws)
+                logger.info(f"[CLIENT] - Removed {rid} from bus subscription")
+            {% else %}
+            # Simple passthrough - no header params, no transformation
+            # Use direct bus subscription (original flow)
             await bus_out.add_ws(ws)
             try:
                 while True:
@@ -206,6 +274,7 @@ async def duplex(ws: WebSocket):
             finally:
                 await bus_out.remove_ws(ws)
                 logger.info(f"[CLIENT] - Removed {rid} from bus subscription")
+            {% endif %}
 
     # Run both loops concurrently
     try:

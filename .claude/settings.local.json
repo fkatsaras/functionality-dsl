@@ -121,7 +121,8 @@
       "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/8090 && echo -e \"\"\"\"GET /api/ws/deliveries HTTP/1.1\\r\\nHost: localhost\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\\r\\nSec-WebSocket-Version: 13\\r\\n\\r\\n\"\"\"\" >&3 && cat <&3')",
       "Bash(ls:*)",
       "Bash(jq:*)",
-      "Bash(make count-fdsl:*)"
+      "Bash(make count-fdsl:*)",
+      "Bash(../venv_WIN/Scripts/pip install:*)"
     ],
     "deny": [],
     "ask": []
