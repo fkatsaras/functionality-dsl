@@ -1,23 +1,4 @@
-Server UserManagement
-  host: "localhost"
-  port: 8081
-  cors: "http://localhost:5173"
-  loglevel: debug
-end
-
-// READ: Get all users
-Source<REST> ReadUsers
-  url: "http://dummydb:9000/db/users"
-  method: GET
-  response:
-    type: object
-    entity: UsersListWrapper
-end
-
-Entity UsersListWrapper
-  attributes:
-    - users: array;
-end
+// Login Flow
 
 Entity LoginRequest
   attributes:
@@ -34,14 +15,12 @@ Entity LoginMatch(LoginRequest, UsersListWrapper)
     - token: string = sha256(get(LoginMatch.user, "username", ""));
 end
 
-// Transform responses
 Entity LoginResponse(LoginMatch)
   attributes:
     - token: string = LoginMatch.token;
     - username: string = get(LoginMatch.user, "username", "");
 end
 
-// Login (validates credentials in FDSL layer)
 Endpoint<REST> Login
   path: "/api/auth/login"
   method: POST
@@ -57,3 +36,8 @@ Endpoint<REST> Login
       message: "Invalid username or password"
 end
 
+Component<ActionForm> LoginForm
+  endpoint: Login
+  fields: [username, password]
+  submitLabel: "Login"
+end

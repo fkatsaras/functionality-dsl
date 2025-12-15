@@ -515,7 +515,7 @@ class {{ endpoint.name }}Service(BaseService):
             compiled_condition = compile_safe({{ event.condition | tojson }})
             if eval(compiled_condition, eval_globals, {}):
                 {% if event.close %}
-                self.logger.error("[EVENT] ✗ Event condition triggered: {{ event.condition }}")
+                self.logger.error("[EVENT] X Event condition triggered: {{ event.condition }}")
                 self.logger.error("[EVENT]   Close Code: {{ event.close_code }}, Message: {{ event.message }}, Action: Closing connection")
                 {% else %}
                 self.logger.warning("[EVENT] ⚠ Event condition triggered: {{ event.condition }}")

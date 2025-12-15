@@ -1,0 +1,23 @@
+// Common entity schemas shared across flows
+
+// Base schema - used by all flows
+Entity UserSchema
+  attributes:
+    - id: integer;
+    - username: string;
+    - password: string;
+    - email: string<email>;
+end
+
+// List wrapper - used by login, register, delete flows for validation
+Entity UsersListWrapper
+  attributes:
+    - users: array<UserSchema>;
+end
+
+// Shared response entity - used by both update.fdsl and update_password.fdsl
+Entity UpdateResponse(UserSchema)
+  attributes:
+    - success: boolean = true;
+    - message: string = "User updated successfully";
+end

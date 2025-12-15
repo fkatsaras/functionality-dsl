@@ -1,20 +1,19 @@
-Server UserManagement
-  host: "localhost"
-  port: 8081
-  cors: "http://localhost:5173"
-  loglevel: debug
+// Register User Flow
+
+Entity RegisterRequest
+  attributes:
+    - username: string(3..50);
+    - password: string(6..);
+    - email: string<email>;
 end
 
-// READ: Get all users
-Source<REST> ReadUsers
-  url: "http://dummydb:9000/db/users"
-  method: GET
-  response:
-    type: object
-    entity: UsersListWrapper
+Entity RegisterResponse(UserSchema)
+  attributes:
+    - id: integer = UserSchema.id;
+    - username: string = UserSchema.username;
+    - message: string = "User registered successfully";
 end
 
-// CREATE: Add new user
 Source<REST> CreateUser
   url: "http://dummydb:9000/db/users"
   method: POST
@@ -26,37 +25,6 @@ Source<REST> CreateUser
     entity: UserSchema
 end
 
-Entity UserSchema
-  attributes:
-    - id: integer;
-    - username: string;
-    - password: string;
-    - email: string<email>;
-end
-
-Entity UsersListWrapper
-  attributes:
-    - users: array<UserSchema>;
-end
-
-
-
-Entity RegisterRequest
-  attributes:
-    - username: string(3..50);
-    - password: string(6..);
-    - email: string<email>;
-end
-
-
-Entity RegisterResponse(UserSchema)
-  attributes:
-    - id: integer = UserSchema.id;
-    - username: string = UserSchema.username;
-    - message: string = "User registered successfully";
-end
-
-// Register new user
 Endpoint<REST> Register
   path: "/api/auth/register"
   method: POST
@@ -73,4 +41,10 @@ Endpoint<REST> Register
         u => u["username"] == RegisterRequest.username or u["password"] == RegisterRequest.password
       )
       message: "Username or Password already registered."
+end
+
+Component<ActionForm> RegisterForm
+  endpoint: Register
+  fields: [username, email, password]
+  submitLabel: "Register"
 end

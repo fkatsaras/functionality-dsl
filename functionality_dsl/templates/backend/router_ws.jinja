@@ -178,7 +178,7 @@ async def duplex(ws: WebSocket):
             try:
                 validated = {{ entity_in.name }}(**wrapped_payload)
                 payload = validated.model_dump()
-                logger.debug(f"[VALIDATION] ✓ Message validated against {{ entity_in.name }}")
+                logger.debug(f"[VALIDATION] OK Message validated against {{ entity_in.name }}")
             except ValidationError as validation_error:
                 error_messages = []
                 for error in validation_error.errors():
@@ -187,7 +187,7 @@ async def duplex(ws: WebSocket):
                     error_messages.append(f"{field}: {message}")
 
                 error_summary = "; ".join(error_messages)
-                logger.error(f"[VALIDATION] ✗ Message validation failed: {error_summary}")
+                logger.error(f"[VALIDATION] X Message validation failed: {error_summary}")
 
                 error_response = {
                     "type": "validation_error",

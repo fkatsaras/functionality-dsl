@@ -274,7 +274,7 @@ class {{ endpoint.name }}Service(BaseService):
                 response = await self.http_client.get(f"http://{{ server.host }}:{{ server.port }}{endpoint_path}")
 
                 if response.status_code >= 400:
-                    self.logger.error(f"[DEPENDENCY] ✗ HTTP {response.status_code} from {entity_name}")
+                    self.logger.error(f"[DEPENDENCY] X HTTP {response.status_code} from {entity_name}")
                     raise HTTPException(
                         status_code=502,
                         detail=f"Internal dependency {entity_name} returned {response.status_code}"
@@ -288,7 +288,7 @@ class {{ endpoint.name }}Service(BaseService):
                 else:
                     context[entity_name] = payload
 
-                self.logger.info(f"[DEPENDENCY] ✓ Received {entity_name}")
+                self.logger.info(f"[DEPENDENCY] OK Received {entity_name}")
                 self.logger.debug(f"[CONTEXT] - Stored computed parent {entity_name}")
 
             except HTTPException:
@@ -437,7 +437,7 @@ class {{ endpoint.name }}Service(BaseService):
                 log_write_success(self.logger, target_name, last_response if isinstance(last_response, dict) else f"<{type(last_response).__name__}>")
             except:
                 last_response = {"status": "success"}
-                self.logger.info(f"[WRITE] ✓ Success (no parseable response)")
+                self.logger.info(f"[WRITE] OK Success (no parseable response)")
 
         except HTTPException:
             raise
@@ -461,7 +461,7 @@ class {{ endpoint.name }}Service(BaseService):
             compiled_condition = compile_safe({{ error.condition | tojson }})
             if eval(compiled_condition, eval_globals, {}):
                 error_detail = "{{ error.message }}"
-                self.logger.error("[ERROR] ✗ Error condition triggered: {{ error.condition }}")
+                self.logger.error("[ERROR] X Error condition triggered: {{ error.condition }}")
                 self.logger.error("[ERROR]   Status: {{ error.status_code }}, Message: {{ error.message }}")
                 log_outgoing_error(self.logger, error_detail)
                 raise HTTPException(status_code={{ error.status_code }}, detail=error_detail)

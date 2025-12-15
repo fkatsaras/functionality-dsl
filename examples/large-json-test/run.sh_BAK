@@ -38,14 +38,14 @@ test_endpoint() {
     # Check if response is valid JSON
     if echo "$response" | python -m json.tool > /dev/null 2>&1; then
         size=$(echo "$response" | wc -c)
-        echo -e "${GREEN}✓ Valid JSON${NC}"
+        echo -e "${GREEN}OK Valid JSON${NC}"
         echo "  Size: $(numfmt --to=iec-i --suffix=B $size) ($size bytes)"
         echo "  Time: ${duration}s"
 
         # Check response size expectation
         if [ ! -z "$expected_size" ]; then
             if [ $size -ge $expected_size ]; then
-                echo -e "${GREEN}✓ Size meets expectation (>= $expected_size bytes)${NC}"
+                echo -e "${GREEN}OK Size meets expectation (>= $expected_size bytes)${NC}"
             else
                 echo -e "${RED}✗ Size below expectation (< $expected_size bytes)${NC}"
             fi
@@ -66,7 +66,7 @@ check_service() {
 
     echo -n "Checking $name... "
     if curl -s "$url/health" > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Running${NC}"
+        echo -e "${GREEN}OK Running${NC}"
         return 0
     else
         echo -e "${RED}✗ Not running${NC}"
@@ -78,7 +78,7 @@ echo "Step 1: Checking services"
 echo "=========================================="
 echo -n "Checking Generated API... "
 if curl -s "$BASE_URL/api/users?count=10" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Running${NC}"
+    echo -e "${GREEN}OK Running${NC}"
 else
     echo -e "${RED}✗ Not running${NC}"
     echo -e "${RED}Error: Generated API not running on $BASE_URL${NC}"
@@ -88,7 +88,7 @@ fi
 
 echo -n "Checking Dummy Service... "
 if curl -s "$DUMMY_URL/health" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Running${NC}"
+    echo -e "${GREEN}OK Running${NC}"
 else
     echo -e "${RED}✗ Not running${NC}"
     echo -e "${RED}Error: Dummy service not running on $DUMMY_URL${NC}"
@@ -132,7 +132,7 @@ echo "=========================================="
 echo -e "${BLUE}Testing: Invalid count (too low)${NC}"
 response=$(curl -s "$BASE_URL/api/users?count=0")
 if echo "$response" | grep -q "Count must be between"; then
-    echo -e "${GREEN}✓ Error handling works${NC}"
+    echo -e "${GREEN}OK Error handling works${NC}"
 else
     echo -e "${RED}✗ Error handling failed${NC}"
 fi
@@ -141,7 +141,7 @@ echo ""
 echo -e "${BLUE}Testing: Invalid count (too high)${NC}"
 response=$(curl -s "$BASE_URL/api/users?count=20000")
 if echo "$response" | grep -q "Count must be between"; then
-    echo -e "${GREEN}✓ Error handling works${NC}"
+    echo -e "${GREEN}OK Error handling works${NC}"
 else
     echo -e "${RED}✗ Error handling failed${NC}"
 fi
@@ -165,7 +165,7 @@ assert 'countryCounts' in data, 'Missing countryCounts'
 assert len(data['users']) > 0, 'No users in response'
 print('All computed fields present')
 " 2>&1; then
-    echo -e "${GREEN}✓ All computed fields present${NC}"
+    echo -e "${GREEN}OK All computed fields present${NC}"
 else
     echo -e "${RED}✗ Missing computed fields${NC}"
 fi

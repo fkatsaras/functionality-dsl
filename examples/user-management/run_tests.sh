@@ -26,7 +26,7 @@ REGISTER_RESPONSE=$(curl -s -X POST $BASE_URL/api/auth/register \
   -d '{"username": "testuser", "email": "test@example.com", "password": "testpass123"}')
 echo $REGISTER_RESPONSE | python3 -m json.tool 2>/dev/null
 USER_ID=$(echo $REGISTER_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null)
-echo -e "${GREEN}✓ Created user with ID: $USER_ID${NC}\n"
+echo -e "${GREEN}OK Created user with ID: $USER_ID${NC}\n"
 
 # Test 3: Login with new user
 echo -e "${BOLD}3. POST /api/auth/login - Login${NC}"
@@ -131,5 +131,5 @@ curl -s -X POST $BASE_URL/api/auth/register \
 echo -e "\n"
 
 echo -e "${BOLD}========================================${NC}"
-echo -e "${GREEN}✓ All tests completed!${NC}"
+echo -e "${GREEN}OK All tests completed!${NC}"
 echo -e "${BOLD}========================================${NC}"

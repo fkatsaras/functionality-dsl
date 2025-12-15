@@ -310,7 +310,7 @@ def seed_data():
         "activeDeliveryId": None
     }
 
-    print("✓ Seeded initial data")
+    print("OK Seeded initial data")
 
 
 if __name__ == "__main__":

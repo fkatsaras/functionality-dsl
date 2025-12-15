@@ -1,0 +1,10 @@
+// Common sources shared across flows
+
+// READ: Get all users
+Source<REST> ReadUsers
+  url: "http://dummydb:9000/db/users"
+  method: GET
+  response:
+    type: object
+    entity: UsersListWrapper
+end

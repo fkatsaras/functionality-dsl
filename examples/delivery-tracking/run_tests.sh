@@ -41,7 +41,7 @@ CREATE_RESPONSE=$(curl -s -X POST $BASE_URL/api/deliveries \
   }')
 echo $CREATE_RESPONSE | python3 -m json.tool 2>/dev/null
 DELIVERY_ID=$(echo $CREATE_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null)
-echo -e "${GREEN}✓ Created delivery with ID: $DELIVERY_ID${NC}"
+echo -e "${GREEN}OK Created delivery with ID: $DELIVERY_ID${NC}"
 echo -e "${YELLOW}  Distance: $(echo $CREATE_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('distanceKm', ''))" 2>/dev/null) km${NC}"
 echo -e "${YELLOW}  ETA: $(echo $CREATE_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('estimatedMinutes', ''))" 2>/dev/null) minutes${NC}\n"
 
@@ -175,9 +175,9 @@ VERIFY_RESPONSE=$(curl -s -X POST $BASE_URL/api/deliveries \
 echo $VERIFY_RESPONSE | python3 -m json.tool 2>/dev/null
 DISTANCE=$(echo $VERIFY_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('distanceKm', ''))" 2>/dev/null)
 ETA=$(echo $VERIFY_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin).get('estimatedMinutes', ''))" 2>/dev/null)
-echo -e "${GREEN}✓ Distance calculated: ${DISTANCE} km${NC}"
-echo -e "${GREEN}✓ ETA calculated: ${ETA} minutes (at 30 km/h average speed)${NC}\n"
+echo -e "${GREEN}OK Distance calculated: ${DISTANCE} km${NC}"
+echo -e "${GREEN}OK ETA calculated: ${ETA} minutes (at 30 km/h average speed)${NC}\n"
 
 echo -e "${BOLD}========================================${NC}"
-echo -e "${GREEN}✓ All tests completed!${NC}"
+echo -e "${GREEN}OK All tests completed!${NC}"
 echo -e "${BOLD}========================================${NC}"

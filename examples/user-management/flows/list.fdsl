@@ -1,0 +1,18 @@
+// List Users Flow
+
+Endpoint<REST> ListUsers
+  path: "/api/users"
+  method: GET
+  response:
+    type: object
+    entity: UsersListWrapper
+end
+
+Component<Table> UsersTable
+  endpoint: ListUsers
+  columns:
+    - "id": integer
+    - "username": string
+    - "email": string<email>
+    - "password": string
+end

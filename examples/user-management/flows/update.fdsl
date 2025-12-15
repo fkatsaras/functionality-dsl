@@ -1,18 +1,4 @@
-Server UserManagement2
-  host: "localhost"
-  port: 8082
-  cors: "http://localhost:5174"
-  loglevel: debug
-end
-
-
-Entity UserSchema
-  attributes:
-    - id: integer;
-    - username: string;
-    - password: string;
-    - email: string<email>;
-end
+// Update User by ID Flow
 
 Entity UpdateUserRequest
   attributes:
@@ -20,15 +6,6 @@ Entity UpdateUserRequest
     - password: string(6..)?;
 end
 
-
-Entity UpdateResponse(UserSchema)
-  attributes:
-    - success: boolean = true;
-    - message: string = "User updated successfully";
-end
-
-
-// UPDATE: Modify user by ID (for UpdateUserById endpoint)
 Source<REST> UpdateUser
   url: "http://dummydb:9000/db/users/{userId}"
   method: PATCH
@@ -55,9 +32,7 @@ Endpoint<REST> UpdateUserById
   response:
     type: object
     entity: UpdateResponse
-    
 end
-
 
 Component<ActionForm> UpdateUserForm
   endpoint: UpdateUserById

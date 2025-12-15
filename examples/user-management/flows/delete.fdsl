@@ -1,11 +1,17 @@
-Server UserManagement
-  host: "localhost"
-  port: 8081
-  cors: "http://localhost:5173"
-  loglevel: debug
+// Delete User Flow
+
+Entity DeleteResponseSchema
+  attributes:
+    - ok: boolean;
+    - message: string;
 end
 
-// DELETE: Remove user by ID
+Entity DeleteResponse(DeleteResponseSchema)
+  attributes:
+    - success: boolean = DeleteResponseSchema.ok;
+    - message: string = DeleteResponseSchema.message;
+end
+
 Source<REST> DeleteUser
   url: "http://dummydb:9000/db/users/{userId}"
   method: DELETE
@@ -17,37 +23,6 @@ Source<REST> DeleteUser
     entity: DeleteResponseSchema
 end
 
-// READ: Get all users
-Source<REST> ReadUsers
-  url: "http://dummydb:9000/db/users"
-  method: GET
-  response:
-    type: object
-    entity: UsersListWrapper
-end
-
-Entity UserSchema
-  attributes:
-    - id: integer;
-    - username: string;
-    - password: string;
-    - email: string<email>;
-end
-
-Entity UsersListWrapper
-  attributes:
-    - users: array<UserSchema>;
-end
-
-
-Entity DeleteResponseSchema
-  attributes:
-    - ok: boolean;
-    - message: string;
-end
-
-
-// Delete user by ID
 Endpoint<REST> UserDeleteEndpoint
   path: "/api/users/{userId}"
   method: DELETE
@@ -63,9 +38,6 @@ Endpoint<REST> UserDeleteEndpoint
         UsersListWrapper.users,
         u => u["id"] == UserDeleteEndpoint.userId)
       message: "User doesnt exist"
-    - 500:
-      condition: not UsersListWrapper.users
-      message: "No more users left"
 end
 
 Component<ActionForm> DeleteUserForm

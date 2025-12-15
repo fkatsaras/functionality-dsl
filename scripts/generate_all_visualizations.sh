@@ -43,14 +43,14 @@ for fdsl_file in $(find "$PROJECT_ROOT/examples" -name "main.fdsl" -type f | sor
             # Cleanup DOT files
             rm -f "$OUTPUT_DIR/main_diagram.dot" "$OUTPUT_DIR/main_diagram"
             success=$((success + 1))
-            echo "    ✓ Generated: ${example_name}_diagram.png"
+            echo "    OK Generated: ${example_name}_diagram.png"
         else
             failed=$((failed + 1))
-            echo "    ✗ Failed to convert DOT to PNG"
+            echo "    X Failed to convert DOT to PNG"
         fi
     else
         failed=$((failed + 1))
-        echo "    ✗ Failed to generate DOT file"
+        echo "    X Failed to generate DOT file"
     fi
 
     echo ""
