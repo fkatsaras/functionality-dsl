@@ -42,8 +42,15 @@ Entity TextResult(TransformedText)
     - length: integer = len(TransformedText.content);
     - word_count: integer = len(split(TransformedText.content, " "));
     - is_long: boolean = len(TransformedText.content) > 100;
-    - has_censored_words: boolean = contains(lower(TransformedText.content), "bad") or contains(lower(TransformedText.content), "ugly") or contains(lower(TransformedText.content), "stupid");
+    - has_censored_words: boolean =
+      any(
+        map(
+          ["bad", "ugly", "stupid"],
+          (w) => contains(lower(TransformedText.content), w)
+        )
+      );
 end
+
 
 
 // API endpoint that accepts text and returns transformed result

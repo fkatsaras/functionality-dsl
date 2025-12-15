@@ -15,13 +15,9 @@ Source<WS> EchoWS
   publish:
     type: object
     entity: OutgoingProcessed
-  // auth:
-  //   type: bearer
-  //   token: "secret123"
 end
 
 // OUTBOUND CHAIN (what we send)
-// Wrapper for primitive string from client
 Entity OutgoingWrapper
   attributes:
     - value: string(3..);
@@ -33,7 +29,6 @@ Entity OutgoingProcessed(OutgoingWrapper)
 end
 
 // INBOUND CHAIN (what we receive)
-// Echo service returns the object we sent, which has "text" field
 Entity EchoWrapper
   attributes:
     - text: string;
@@ -44,7 +39,7 @@ Entity EchoProcessed(EchoWrapper)
     - text: string = lower(EchoWrapper.text);
 end
 
-// Internal duplex - handles INBOUND display
+
 Endpoint<WS> ChatDup
   channel: "/api/chat"
   publish:

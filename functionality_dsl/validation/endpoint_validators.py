@@ -527,6 +527,75 @@ def _validate_ws_endpoint_entities(model, endpoint, ent_subscribe, ent_publish):
     # No validation needed
 
 
+def _validate_ws_connection_scoping(model, metamodel=None):
+    """
+    Validate WebSocket connection scoping configuration.
+
+    Rules:
+    1. connection: mode: scoped requires a 'key:' parameter reference
+    2. The key must reference an existing parameter (path/query/header)
+    3. Can only use connection scoping when parameters are declared
+    """
+    for endpoint in get_children_of_type("EndpointWS", model):
+        connection_block = getattr(endpoint, "connection", None)
+        if not connection_block:
+            continue
+
+        mode = getattr(connection_block, "mode", "shared")
+        key_ref = getattr(connection_block, "key", None)
+
+        # Rule 1: scoped mode requires key
+        if mode == "scoped" and not key_ref:
+            raise TextXSemanticError(
+                f"Endpoint<WS> '{endpoint.name}' has connection mode 'scoped' but no 'key:' specified. "
+                f"Add 'key: <category>.<paramName>' (e.g., 'key: headers.X-Session-ID' or 'key: path.userId').",
+                **get_location(connection_block)
+            )
+
+        # Rule 2 & 3: Validate key references existing parameter
+        if key_ref:
+            category = getattr(key_ref, "category", None)
+            param_name = getattr(key_ref, "name", None)
+
+            # Check if endpoint has parameters block
+            params_block = getattr(endpoint, "parameters", None)
+            if not params_block:
+                raise TextXSemanticError(
+                    f"Endpoint<WS> '{endpoint.name}' uses connection key '{category}.{param_name}' "
+                    f"but has no 'parameters:' block. Connection scoping requires parameter declarations.",
+                    **get_location(connection_block)
+                )
+
+            # Check if the referenced parameter exists
+            param_exists = False
+
+            if category == "path":
+                path_block = getattr(params_block, "path_params", None)
+                if path_block:
+                    params = getattr(path_block, "params", []) or []
+                    param_exists = any(getattr(p, "name", None) == param_name for p in params)
+
+            elif category == "query":
+                query_block = getattr(params_block, "query_params", None)
+                if query_block:
+                    params = getattr(query_block, "params", []) or []
+                    param_exists = any(getattr(p, "name", None) == param_name for p in params)
+
+            elif category == "headers":
+                header_block = getattr(params_block, "header_params", None)
+                if header_block:
+                    params = getattr(header_block, "params", []) or []
+                    param_exists = any(getattr(p, "name", None) == param_name for p in params)
+
+            if not param_exists:
+                raise TextXSemanticError(
+                    f"Endpoint<WS> '{endpoint.name}' connection key references '{category}.{param_name}' "
+                    f"but no such parameter is declared. "
+                    f"Add the parameter definition: parameters: {category}: - {param_name}: <type>",
+                    **get_location(connection_block)
+                )
+
+
 def _validate_http_method_constraints(model, metamodel=None):
     """
     Validate HTTP method constraints for REST endpoints.

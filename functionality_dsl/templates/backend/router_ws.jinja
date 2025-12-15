@@ -68,17 +68,71 @@ async def duplex(ws: WebSocket):
     ws_input_bus = bus_in if inbound_entity else bus_out
     await ws_service.ensure_ws_inputs_started(ws_input_bus)
 
-    # Pre-warm external target connections
+    {% if connection_mode == 'scoped' %}
+    # Scoped connection mode: Per-client external connections (created before loops)
+    logger.info(f'[CLIENT] - Using scoped connection mode (key: {{ connection_key.full if connection_key else "unknown" }})')
+    per_client_connections = []  # Track this client's external connections
+
+    # Create per-client external connections BEFORE starting loops
+    import websockets
+
+    for idx, tgt in enumerate(ws_service._external_targets):
+        try:
+            logger.info(f"[CLIENT] - Establishing scoped connection to {tgt['url']} for {rid}")
+            try:
+                client_conn = await websockets.connect(
+                    tgt["url"],
+                    extra_headers=tgt["headers"] or [],
+                    subprotocols=tgt["subprotocols"] or None
+                )
+            except TypeError:
+                client_conn = await websockets.connect(
+                    tgt["url"],
+                    additional_headers=tgt["headers"] or [],
+                    subprotocols=tgt["subprotocols"] or None
+                )
+            per_client_connections.append(client_conn)
+            logger.info(f"[CLIENT] - Successfully connected to {tgt['url']} for {rid}")
+        except Exception as ex:
+            logger.error(f"[CLIENT] - Failed to establish scoped connection to {tgt['url']}: {ex}")
+            per_client_connections.append(None)
+
+    {% if external_targets and external_targets[0].get('onConnect', False) %}
+    # Auto-send subscription message on connect (onConnect=true)
+    logger.info(f"[CLIENT] - Auto-sending subscription message (onConnect=true)")
+    chain_inbound, chain_outbound = ws_service.get_compiled_chains()
+    try:
+        # Compute subscription message with header params
+        subscription_msg, context = ws_service.compute_entity_chain(
+            {}, rid, chain_inbound, "{{ endpoint.name }}", "{{ entity_in.name if entity_in else '' }}", header_params, "{{ endpoint.name }}"
+        )
+
+        # Send to this client's external connections
+        for idx, client_conn in enumerate(per_client_connections):
+            if client_conn:
+                await client_conn.send(json.dumps(subscription_msg))
+                logger.info(f"[CLIENT] - Sent subscription to scoped connection: {subscription_msg}")
+    except Exception as ex:
+        logger.error(f"[CLIENT] - Failed to send auto-subscription: {ex}")
+    {% endif %}
+    {% else %}
+    # Shared connection mode: Pre-warm shared external target connections
     if ws_service.has_external_targets():
         logger.info(f"[CLIENT] - Pre-warming {ws_service.get_external_target_count()} external target(s)")
         for i in range(ws_service.get_external_target_count()):
             asyncio.create_task(ws_service.ensure_target_connection(i, inbound_entity))
+    {% endif %}
 
     # Inbound loop: Client -> Compute inbound chain -> Forward
     async def inbound_loop():
         logger.info(f"[CLIENT] - Starting inbound loop for {rid}")
+        {% if connection_mode == 'scoped' %}
+        # In scoped mode, connections already created - just get chains
         chain_inbound, chain_outbound = ws_service.get_compiled_chains()
-
+        {% else %}
+        # In shared mode, get chains as usual
+        chain_inbound, chain_outbound = ws_service.get_compiled_chains()
+        # Shared mode: Use service-managed shared connections
         {% if external_targets and external_targets[0].get('onConnect', False) %}
         # Auto-send subscription message on connect (onConnect=true)
         logger.info(f"[CLIENT] - Auto-sending subscription message (onConnect=true)")
@@ -97,6 +151,7 @@ async def duplex(ws: WebSocket):
                     logger.info(f"[CLIENT] - Sent subscription: {subscription_msg}")
         except Exception as ex:
             logger.error(f"[CLIENT] - Failed to send auto-subscription: {ex}")
+        {% endif %}
         {% endif %}
 
         while True:
@@ -189,7 +244,19 @@ async def duplex(ws: WebSocket):
                 # For duplex endpoints: inbound chain results should NOT be published to client
                 # They are only forwarded to external targets
                 if row is not None and ws_service.has_external_targets():
+                    {% if connection_mode == 'scoped' %}
+                    # Scoped mode: Forward to this client's external connections
+                    for idx, client_conn in enumerate(per_client_connections):
+                        if client_conn:
+                            try:
+                                await client_conn.send(json.dumps(row))
+                                logger.debug(f"[CLIENT] - Forwarded message to scoped connection {idx}")
+                            except Exception as forward_ex:
+                                logger.error(f"[CLIENT] - Failed to forward to scoped connection {idx}: {forward_ex}")
+                    {% else %}
+                    # Shared mode: Forward to shared external connections
                     await ws_service.forward_to_targets(row, inbound_entity)
+                    {% endif %}
             except HTTPException as http_error:
                 logger.error(f"[VALIDATION] - Validation failed: {http_error.detail}")
                 error_response = {
@@ -220,6 +287,46 @@ async def duplex(ws: WebSocket):
         logger.info(f"[CLIENT] - Starting outbound loop for {rid}, subscribed to: {outbound_entity}")
         chain_inbound, chain_outbound = ws_service.get_compiled_chains()
 
+        {% if connection_mode == 'scoped' %}
+        # Scoped mode: Read from per-client external connection
+        if per_client_connections:
+            for idx, client_conn in enumerate(per_client_connections):
+                if client_conn:
+                    logger.info(f"[CLIENT] - Starting reader for scoped connection {idx}")
+                    try:
+                        async for raw in client_conn:
+                            logger.debug(f"[CLIENT] - Received from scoped connection {idx}")
+                            try:
+                                payload = json.loads(raw)
+                            except Exception:
+                                payload = raw
+
+                            # Compute outbound chain with header params
+                            {% if compiled_chain_outbound %}
+                            try:
+                                # Get the WS input entity name
+                                inp = ws_service._ws_inputs[idx] if idx < len(ws_service._ws_inputs) else None
+                                entity_name = inp.get("entity") if inp else None
+                                source_name = inp.get("endpoint") if inp else "{{ endpoint.name }}"
+
+                                row, context = ws_service.compute_entity_chain(
+                                    payload, rid, chain_outbound, source_name, entity_name, header_params, "{{ endpoint.name }}"
+                                )
+                                if row is not None:
+                                    await ws.send_json(row)
+                                    logger.debug(f"[CLIENT] - Sent transformed message to client {rid}")
+                            except Exception as compute_error:
+                                logger.error(f"[CLIENT] - Error computing outbound chain: {compute_error}", exc_info=True)
+                            {% else %}
+                            # No transformation - direct forward
+                            await ws.send_json(payload)
+                            logger.debug(f"[CLIENT] - Sent message to client {rid}")
+                            {% endif %}
+                    except Exception as read_error:
+                        logger.error(f"[CLIENT] - Error reading from scoped connection {idx}: {read_error}", exc_info=True)
+                        break
+        {% else %}
+        # Shared mode: Subscribe to bus
         if bus_out:
             {% if needs_per_client_transform %}
             # Per-client transformation needed (outbound chain uses endpoint parameters)
@@ -295,6 +402,7 @@ async def duplex(ws: WebSocket):
                 await bus_out.remove_ws(ws)
                 logger.info(f"[CLIENT] - Removed {rid} from bus subscription")
             {% endif %}
+        {% endif %}
 
     # Run both loops concurrently
     try:
@@ -313,3 +421,14 @@ async def duplex(ws: WebSocket):
     except Exception as e:
         logger.error(f"[CLIENT] - Error in connection {rid}: {e}", exc_info=True)
         raise
+    {% if connection_mode == 'scoped' %}
+    finally:
+        # Cleanup: Close per-client external connections
+        for idx, client_conn in enumerate(per_client_connections):
+            if client_conn:
+                try:
+                    await client_conn.close()
+                    logger.info(f"[CLIENT] - Closed scoped connection {idx} for {rid}")
+                except Exception as close_ex:
+                    logger.error(f"[CLIENT] - Error closing scoped connection {idx}: {close_ex}")
+    {% endif %}

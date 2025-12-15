@@ -139,6 +139,22 @@ ParametersBlock:
     (header_params=HeaderParamsBlock)?
 ;
 
+// WebSocket connection scoping configuration
+ConnectionBlock:
+  'connection:'
+    'mode:' mode=ConnectionMode
+    ('key:' key=ParamRef)?
+;
+
+ConnectionMode: 'shared' | 'scoped' ;
+
+// Parameter reference for connection key (e.g., path.sessionId, query.region, headers["X-Session-ID"])
+ParamRef:
+  category=ParamCategory ('.' name=ID | '[' name=STRING ']')
+;
+
+ParamCategory: 'path' | 'query' | 'headers' ;
+
 // Content type can be specified, defaults to application/json
 ContentType:
     'application/json'
@@ -275,6 +291,7 @@ EndpointWS:
   (
     'channel:' path=STRING
     (parameters=ParametersBlock)?
+    (connection=ConnectionBlock)?
     (publish=PublishBlock)?
     (subscribe=SubscribeBlock)?
     ('summary:' summary=STRING)?

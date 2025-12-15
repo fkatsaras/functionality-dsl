@@ -40,12 +40,15 @@ Endpoint<WS> CartUpdates
   parameters:
     headers:
       - X-Session-ID: string   // Authentication: which session this client represents
+  connection:
+    mode: scoped
+    key: headers["X-Session-ID"]
   publish:
     type: string
     entity: SessionIdInput
   subscribe:
-    type: object             
-    entity: CartUpdateView 
+    type: object
+    entity: CartUpdateView
 end
 
 // Transform: Extract cart data for display

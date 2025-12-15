@@ -27,12 +27,25 @@ class {{ endpoint.name }}Service(BaseService):
     Generated WebSocket service for {{ endpoint.name }}.
 
     Manages bidirectional WebSocket communication with external sources and clients.
+    {% if connection_mode == 'scoped' %}
+    Connection mode: SCOPED - External connections are managed per-client in the router.
+    {% else %}
+    Connection mode: SHARED - External connections are shared across all clients (managed by service).
+    {% endif %}
     """
 
     def __init__(self):
         """Initialize WebSocket service with configuration and connection state."""
         # Initialize base service (logger, http_client)
         super().__init__("ws.{{ endpoint.name }}")
+
+        {% if connection_mode == 'scoped' %}
+        # Scoped connection mode: External connections managed per-client in router
+        self._connection_mode = "scoped"
+        {% else %}
+        # Shared connection mode: External connections managed by service
+        self._connection_mode = "shared"
+        {% endif %}
 
         # Configuration
         self._external_targets = [
@@ -207,7 +220,16 @@ class {{ endpoint.name }}Service(BaseService):
     # ========================================================================
 
     async def ensure_target_connection(self, idx: int, inbound_entity_name: str):
-        """Ensure connection to external target is established."""
+        """Ensure connection to external target is established.
+
+        Note: In scoped connection mode, this method is a no-op as connections
+        are managed per-client in the router.
+        """
+        {% if connection_mode == 'scoped' %}
+        # Scoped mode: Connections managed per-client in router, not here
+        return
+        {% else %}
+        # Shared mode: Manage shared connection
         if idx >= len(self._external_targets):
             return
 
@@ -242,6 +264,7 @@ class {{ endpoint.name }}Service(BaseService):
                     self._target_reader_started[idx] = True
             except Exception as ex:
                 self.logger.error(f"[TARGET] - Failed to connect to {tgt['url']}: {ex}", exc_info=True)
+        {% endif %}
 
 
     async def start_target_reader(self, idx: int, inbound_entity_name: str, wsbus):
@@ -250,7 +273,15 @@ class {{ endpoint.name }}Service(BaseService):
         ARCHITECTURAL NOTE: We publish raw/untransformed messages here because the
         outbound chain computation happens per-client in the router's outbound_loop,
         where header_params are available for use in entity transformations.
+
+        Note: In scoped connection mode, this method is not used as readers are
+        created per-client in the router.
         """
+        {% if connection_mode == 'scoped' %}
+        # Scoped mode: Readers managed per-client in router, not here
+        return
+        {% else %}
+        # Shared mode: Manage shared reader
         tgt = self._external_targets[idx]
         self.logger.info(f"[TARGET_READER] - Starting reader for target {idx}: {tgt['url']}")
 
@@ -306,10 +337,19 @@ class {{ endpoint.name }}Service(BaseService):
                 self.logger.error(f"[TARGET_READER] - Reader failed for {tgt['url']}: {ex}", exc_info=True)
                 self._target_connections[idx] = None
                 await asyncio.sleep(2)
+        {% endif %}
 
 
     async def forward_to_targets(self, row: Dict[str, Any], inbound_entity_name: str):
-        """Forward message to all external targets."""
+        """Forward message to all external targets.
+
+        Note: In scoped connection mode, forwarding is handled per-client in the router.
+        """
+        {% if connection_mode == 'scoped' %}
+        # Scoped mode: Forwarding handled per-client in router, not here
+        return
+        {% else %}
+        # Shared mode: Forward to shared connections
         self.logger.info(f"[FORWARD] - Forwarding to {len(self._external_targets)} target(s)")
 
         for idx, tgt in enumerate(self._external_targets):
@@ -331,6 +371,7 @@ class {{ endpoint.name }}Service(BaseService):
                 except Exception as ex:
                     self.logger.error(f"[FORWARD] - Failed to send to {tgt['url']}: {ex}", exc_info=True)
                     self._target_connections[idx] = None
+        {% endif %}
 
 
     # ========================================================================

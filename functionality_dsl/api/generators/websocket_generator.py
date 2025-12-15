@@ -135,6 +135,27 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
 
     needs_per_client_transform = chain_uses_endpoint_params(compiled_chain_outbound, endpoint.name)
 
+    # Detect connection scoping mode
+    connection_block = getattr(endpoint, "connection", None)
+    connection_mode = "shared"  # default
+    connection_key = None
+
+    if connection_block:
+        mode = getattr(connection_block, "mode", "shared")
+        connection_mode = mode
+
+        if mode == "scoped":
+            # Extract connection key information
+            key_ref = getattr(connection_block, "key", None)
+            if key_ref:
+                category = getattr(key_ref, "category", None)
+                param_name = getattr(key_ref, "name", None)
+                connection_key = {
+                    "category": category,
+                    "name": param_name,
+                    "full": f"{category}[\"{param_name}\"]" if "-" in param_name else f"{category}.{param_name}"
+                }
+
     # Prepare template context
     template_context = {
         "endpoint": {
@@ -158,6 +179,8 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
         "sync_config_outbound": sync_config_outbound,
         "events": events_config,
         "needs_per_client_transform": needs_per_client_transform,
+        "connection_mode": connection_mode,
+        "connection_key": connection_key,
     }
 
     # Setup Jinja2 environment
