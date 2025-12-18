@@ -38,6 +38,11 @@ from functionality_dsl.validation.component_validators import (
     verify_components,
 )
 
+from functionality_dsl.validation.exposure_validators import (
+    _validate_exposure_blocks,
+    _validate_crud_blocks,
+)
+
 __all__ = [
     # Expression validators
     "_loop_var_names",
@@ -60,4 +65,7 @@ __all__ = [
     "verify_endpoints",
     # Component validators
     "verify_components",
+    # Exposure validators (NEW SYNTAX)
+    "_validate_exposure_blocks",
+    "_validate_crud_blocks",
 ]

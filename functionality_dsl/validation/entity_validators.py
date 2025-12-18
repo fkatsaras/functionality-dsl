@@ -169,6 +169,14 @@ def _validate_computed_attrs(model, metamodel=None):
             message = getattr(publish, "message", None)
             collect_schema_entities(message, schema_entities)
 
+    # NEW SYNTAX: Entities with source bindings (entity-centric exposure)
+    # These are also schema entities when used with CRUD operations
+    for ent in get_children_of_type("Entity", model):
+        source = getattr(ent, "source", None)
+        if source:
+            # Entity is bound to a source, so it's a schema entity
+            schema_entities.add(ent.name)
+
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is
     def collect_nested_schema_entities(entity_name, collected, visited=None):

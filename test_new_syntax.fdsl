@@ -1,0 +1,22 @@
+Server TestAPI
+  host: "localhost"
+  port: 8080
+end
+
+Entity User
+  attributes:
+    - id: string;
+    - email: string;
+    - name: string;
+  source: UserDB
+  expose:
+    rest: "/api/users"
+    operations: [list, read, create]
+    id_field: "id"
+end
+
+Source<REST> UserDB
+  base_url: "http://user-service:9000/users"
+  crud: standard
+    entity: User
+end

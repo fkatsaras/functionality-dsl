@@ -50,7 +50,44 @@ Entity:
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
+  ('source:' source=[Source])?
+  (expose=ExposeBlock)?
   'end'
+;
+
+// ---------- EXPOSE BLOCK (Entity API Exposure) ----------
+ExposeBlock:
+  'expose:'
+    (rest=RestExpose | websocket=WsExpose)
+    'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
+    ('id_field:' id_field=STRING)?
+    (path_params=ExposePathParamsBlock)?
+    (readonly_fields=ReadonlyFieldsBlock)?
+;
+
+RestExpose:
+  'rest:' path=STRING
+;
+
+WsExpose:
+  'websocket:' channel=STRING
+;
+
+Operation:
+  'list' | 'read' | 'create' | 'update' | 'patch' | 'delete' | 'subscribe' | 'publish'
+;
+
+// Path params for expose block (explicit mapping)
+ExposePathParam:
+  '-' name=ID ':' type=TypeSpec '->' target=Expr ';'?
+;
+
+ExposePathParamsBlock:
+  'path_params:' params+=ExposePathParam+
+;
+
+ReadonlyFieldsBlock:
+  'readonly_fields:' '[' fields+=STRING (',' fields+=STRING)* ']'
 ;
 
 // Entity sources / targets -------------------
@@ -71,13 +108,44 @@ Endpoint:
 SourceREST:
   'Source<' kind='REST' '>' name=ID
   (
-    'url:' url=STRING
+    ('url:' url=STRING
     'method:' method=HttpVerb
     (parameters=ParametersBlock)?
     (request=RequestBlock)?
-    (response=ResponseBlock)?
+    (response=ResponseBlock)?)
+    |
+    ('base_url:' base_url=STRING
+    (crud=CrudBlock)?)
   )
   'end'
+;
+
+// ---------- CRUD BLOCK (Source CRUD Operations) ----------
+CrudBlock:
+  'crud:'
+    (standard='standard' (entity_ref='entity:' entity=[Entity])?
+    |
+    operations=CrudOperations)
+;
+
+CrudOperations:
+  (list=CrudOp)?
+  (read=CrudOp)?
+  (create=CrudOp)?
+  (update=CrudOp)?
+  (delete=CrudOp)?
+;
+
+CrudOp:
+  name=CrudOpName ':'
+    'method:' method=HttpVerb
+    'path:' path=STRING
+    (request=RequestBlock)?
+    (response=ResponseBlock)?
+;
+
+CrudOpName:
+  'list' | 'read' | 'create' | 'update' | 'delete'
 ;
 
 // Subscribe/Publish blocks for WebSocket (similar to Request/Response)

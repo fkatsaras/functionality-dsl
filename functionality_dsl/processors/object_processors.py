@@ -90,17 +90,33 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 def external_rest_endpoint_obj_processor(ep):
     """
     SourceREST validation:
-    - Default method to GET if omitted
-    - Must have absolute url (http/https)
+    - OLD SYNTAX: Must have absolute url (http/https), default method to GET
+    - NEW SYNTAX (CRUD): Must have base_url, can omit method/url
     - Mutation methods (POST/PUT/PATCH) should have request entity
     """
+    # Check if this is new CRUD-based syntax
+    base_url = getattr(ep, "base_url", None)
+    crud = getattr(ep, "crud", None)
+
+    if base_url:
+        # NEW SYNTAX: CRUD-based Source
+        if not (base_url.startswith("http://") or base_url.startswith("https://")):
+            raise TextXSemanticError(
+                f"Source<REST> '{ep.name}' base_url must start with http:// or https://.",
+                **get_location(ep),
+            )
+        # CRUD sources don't need method/url/request/response validation here
+        # That will be handled by CRUD block validation
+        return
+
+    # OLD SYNTAX: Traditional Source with url/method
     if not getattr(ep, "method", None):
         ep.method = "GET"
 
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
-            f"Source<REST> '{ep.name}' must define a 'url:'.",
+            f"Source<REST> '{ep.name}' must define either 'url:' or 'base_url:'.",
             **get_location(ep),
         )
     if not (url.startswith("http://") or url.startswith("https://")):
