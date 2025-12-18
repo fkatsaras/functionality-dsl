@@ -96,11 +96,11 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if exposure_map:
         print(f"  Found {len(exposure_map)} exposed entities")
 
-        # Generate source clients for CRUD-based sources
+        # Generate source clients for operations-based sources
         print("\n  [4.1] Generating source clients...")
         sources = get_children_of_type("SourceREST", model)
         for source in sources:
-            if hasattr(source, "crud") and source.crud:
+            if hasattr(source, "operations") and source.operations:
                 generate_source_client(source, model, templates_dir, out_dir)
 
         # Generate entity services

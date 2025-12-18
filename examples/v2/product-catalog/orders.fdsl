@@ -66,10 +66,10 @@ end
 
 Source<REST> OrderDB
   base_url: "http://dummy-order-service:9001/orders"
-  crud: standard
+  operations: [list, read, create, update, delete]
 end
 
 Source<REST> UserDB
   base_url: "http://dummy-user-service:9002/users"
-  crud: standard
+  operations: [list, read]
 end

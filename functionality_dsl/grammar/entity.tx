@@ -115,36 +115,36 @@ SourceREST:
     (response=ResponseBlock)?)
     |
     ('base_url:' base_url=STRING
-    (crud=CrudBlock)?)
+    (operations=OperationsBlock)?)
   )
   'end'
 ;
 
-// ---------- CRUD BLOCK (Source CRUD Operations) ----------
-CrudBlock:
-  'crud:'
-    (standard='standard' (entity_ref='entity:' entity=[Entity])?
+// ---------- OPERATIONS BLOCK (Source Operations) ----------
+OperationsBlock:
+  'operations:'
+    ('[' simple_ops+=Operation (',' simple_ops+=Operation)* ']'
     |
-    operations=CrudOperations)
+    ops=SourceOperations)
 ;
 
-CrudOperations:
-  (list=CrudOp)?
-  (read=CrudOp)?
-  (create=CrudOp)?
-  (update=CrudOp)?
-  (delete=CrudOp)?
+SourceOperations:
+  (list=SourceOp)?
+  (read=SourceOp)?
+  (create=SourceOp)?
+  (update=SourceOp)?
+  (delete=SourceOp)?
 ;
 
-CrudOp:
-  name=CrudOpName ':'
+SourceOp:
+  name=SourceOpName ':'
     'method:' method=HttpVerb
     'path:' path=STRING
     (request=RequestBlock)?
     (response=ResponseBlock)?
 ;
 
-CrudOpName:
+SourceOpName:
   'list' | 'read' | 'create' | 'update' | 'delete'
 ;
 

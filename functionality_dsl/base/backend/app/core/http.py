@@ -32,6 +32,7 @@ async def lifespan_http_client() -> AsyncIterator[httpx.AsyncClient]:
     async with httpx.AsyncClient(
         timeout=DEFAULT_TIMEOUT,
         transport=RetryTransport(),
+        follow_redirects=True,
     ) as client:
         _client = client
         yield client  # closed automatically on exit

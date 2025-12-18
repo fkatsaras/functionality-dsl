@@ -89,10 +89,21 @@ def generate_domain_models(model, templates_dir, output_dir):
         entity = config["entity"]
         operations = config["operations"]
         readonly_fields = config.get("readonly_fields", [])
+        id_field = config.get("id_field")
+
+        # Add id_field to readonly_fields if not already there
+        if id_field and id_field not in readonly_fields:
+            readonly_fields = list(readonly_fields) + [id_field]
 
         # Only generate schemas for operations that need them
         if "create" in operations or "update" in operations:
             writable_attrs = get_writable_attributes(entity, readonly_fields)
+
+            # If entity has no writable attrs (all computed), try getting from parent
+            if not writable_attrs and hasattr(entity, "parents") and entity.parents:
+                # Use attributes from first parent entity
+                parent_entity = entity.parents[0]
+                writable_attrs = get_writable_attributes(parent_entity, readonly_fields)
 
             # Build attribute configs for writable attributes
             writable_attr_configs = []

@@ -10,42 +10,54 @@ from functionality_dsl.api.crud_helpers import generate_standard_crud_config
 
 def generate_source_client(source, model, templates_dir, out_dir):
     """
-    Generate HTTP client class for a CRUD-based Source.
+    Generate HTTP client class for an operations-based Source.
 
     Args:
-        source: SourceREST object with crud block
+        source: SourceREST object with operations block
         model: FDSL model
         templates_dir: Templates directory path
         out_dir: Output directory path
     """
-    # Only generate for CRUD-based sources (NEW SYNTAX)
-    crud = getattr(source, "crud", None)
+    # Only generate for operations-based sources (NEW SYNTAX)
+    operations_block = getattr(source, "operations", None)
     base_url = getattr(source, "base_url", None)
 
-    if not crud or not base_url:
+    if not operations_block or not base_url:
         # Old syntax source - skip
         return
 
     print(f"  Generating source client for {source.name}")
 
-    # Check if standard CRUD
-    standard = getattr(crud, "standard", None)
+    # Check operation type
+    simple_ops = getattr(operations_block, "simple_ops", None)
+    explicit_ops = getattr(operations_block, "ops", None)
 
-    if standard:
-        # Generate all standard CRUD operations
-        crud_config = generate_standard_crud_config(base_url, source.name)
-        operations = crud_config.keys()
-    else:
-        # Explicit CRUD operations
-        ops_block = getattr(crud, "operations", None)
-        if not ops_block:
-            return
+    if simple_ops:
+        # Simple operations list: operations: [read, list]
+        # Infer standard REST patterns for each operation
+        crud_config = {}
+        operations = []
+        for op in simple_ops:
+            op_name = str(op)  # Convert to string
+            operations.append(op_name)
 
-        # Collect defined operations
+            # Infer standard HTTP method and path for each operation
+            if op_name == "list":
+                crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
+            elif op_name == "read":
+                crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+            elif op_name == "create":
+                crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
+            elif op_name == "update":
+                crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+            elif op_name == "delete":
+                crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+    elif explicit_ops:
+        # Explicit operations with custom method/path
         crud_config = {}
         operations = []
         for op_name in ['list', 'read', 'create', 'update', 'delete']:
-            op = getattr(ops_block, op_name, None)
+            op = getattr(explicit_ops, op_name, None)
             if op:
                 operations.append(op_name)
                 method = getattr(op, "method", "GET").upper()
@@ -55,6 +67,8 @@ def generate_source_client(source, model, templates_dir, out_dir):
                     "path": path,
                     "url": f"{base_url}{path}",
                 }
+    else:
+        return
 
     # Build operation method configs
     operation_methods = []

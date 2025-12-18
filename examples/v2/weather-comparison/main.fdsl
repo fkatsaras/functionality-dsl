@@ -100,22 +100,10 @@ end
 
 Source<REST> MeteoThessAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
-  crud:
-    read:
-      method: GET
-      path: ""
-      response:
-        type: object
-        entity: ThessWeather
+  operations: [read]
 end
 
 Source<REST> MeteoLondonAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
-  crud:
-    read:
-      method: GET
-      path: ""
-      response:
-        type: object
-        entity: LondonWeather
+  operations: [read]
 end
