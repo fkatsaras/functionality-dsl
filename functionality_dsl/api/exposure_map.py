@@ -18,7 +18,7 @@ def build_exposure_map(model):
             "ws_channel": "/ws/channel" or None,
             "operations": ["list", "read", ...],
             "source": Source object,
-            "id_field": "id" or inferred field name,
+            "id_field": field name (REQUIRED, no inference),
             "path_params": [param objects],
             "readonly_fields": ["field1", ...],
         },
@@ -56,11 +56,8 @@ def build_exposure_map(model):
         # Get operations list
         operations = getattr(expose, "operations", []) or []
 
-        # Get id_field (or infer it)
+        # Get id_field (REQUIRED - no inference)
         id_field = getattr(expose, "id_field", None)
-        if not id_field:
-            attrs = getattr(entity, "attributes", []) or []
-            id_field = infer_id_field(entity.name, attrs)
 
         # Get path_params
         path_params_block = getattr(expose, "path_params", None)
@@ -112,39 +109,6 @@ def _find_source_in_parents(parents):
         # Add parent's parents to queue
         parent_parents = getattr(parent, "parents", []) or []
         queue.extend(parent_parents)
-
-    return None
-
-
-def infer_id_field(entity_name, attributes):
-    """
-    Infer the ID field from entity attributes.
-    Rules:
-    1. Look for attribute named 'id'
-    2. Look for attribute named '{entityName}Id' (camelCase)
-    3. Look for first string/integer attribute
-    """
-    if not attributes:
-        return None
-
-    # Rule 1: Look for 'id'
-    for attr in attributes:
-        if attr.name == "id":
-            return attr.name
-
-    # Rule 2: Look for '{entityName}Id'
-    expected_id = f"{entity_name[0].lower()}{entity_name[1:]}Id"  # camelCase
-    for attr in attributes:
-        if attr.name == expected_id:
-            return attr.name
-
-    # Rule 3: First string/integer attribute
-    for attr in attributes:
-        type_spec = getattr(attr, "type", None)
-        if type_spec:
-            base_type = getattr(type_spec, "baseType", None)
-            if base_type in ["string", "integer"]:
-                return attr.name
 
     return None
 

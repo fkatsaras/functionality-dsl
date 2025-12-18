@@ -1,0 +1,121 @@
+// Weather Comparison API - NEW SYNTAX (Entity-Centric with Read-Only)
+// Demonstrates: Read-only entity exposure for live weather data comparison
+
+Server WeatherAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================
+// Base Schema Entities (from external weather APIs)
+// ============================================
+
+// Raw weather data from Thessaloniki (schema-only, from external API)
+Entity ThessWeather
+  attributes:
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - hourly: object;
+  source: MeteoThessAPI
+end
+
+// Raw weather data from London (schema-only, from external API)
+Entity LondonWeather
+  attributes:
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - hourly: object;
+  source: MeteoLondonAPI
+end
+
+// ============================================
+// Transformation Entities (with computed comparisons)
+// ============================================
+
+// Merges weather from both cities into row-by-row comparison
+Entity WeatherComparison(ThessWeather, LondonWeather)
+  attributes:
+    - thessaloniki_city: string = "Thessaloniki";
+    - london_city: string = "London";
+    - comparison_rows: array = map(
+        zip(
+          ThessWeather.hourly["time"],
+          ThessWeather.hourly["temperature_2m"],
+          LondonWeather.hourly["temperature_2m"],
+          ThessWeather.hourly["relative_humidity_2m"],
+          LondonWeather.hourly["relative_humidity_2m"]
+        ),
+        row => {
+          "time": row[0],
+          "thess_temp": row[1],
+          "london_temp": row[2],
+          "thess_humidity": row[3],
+          "london_humidity": row[4],
+          "temp_delta": abs(row[1] - row[2]),
+          "hotter_city": ("Thessaloniki" if row[1] > row[2] else "London"),
+          "significant_difference": (abs(row[1] - row[2]) >= 5),
+          "thess_comfortable": ((abs(row[1] - 22) < 3) and (row[3] >= 30) and (row[3] <= 60)),
+          "london_comfortable": ((abs(row[2] - 22) < 3) and (row[4] >= 30) and (row[4] <= 60))
+        }
+      );
+    - summary: object = {
+        "total_hours": len(ThessWeather.hourly["time"]),
+        "thess_avg_temp": round(sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]), 1),
+        "london_avg_temp": round(sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"]), 1),
+        "avg_temp_difference": round(abs(
+          sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]) -
+          sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"])
+        ), 1)
+      };
+  expose:
+    rest: "/api/weather/compare"
+    operations: [read]
+    id_field: "thessaloniki_city"
+end
+
+// Simplified stats for charting
+Entity WeatherStats(WeatherComparison)
+  attributes:
+    - chart_data: array = map(WeatherComparison.comparison_rows, row =>
+        {
+          "time": row["time"],
+          "thess_temp": row["thess_temp"],
+          "london_temp": row["london_temp"]
+        }
+      );
+    - summary: object = WeatherComparison.summary;
+  expose:
+    rest: "/api/weather/stats"
+    operations: [list]
+    id_field: "summary"
+end
+
+// ============================================
+// External Weather API Sources (Read-Only CRUD)
+// ============================================
+
+Source<REST> MeteoThessAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
+  crud:
+    read:
+      method: GET
+      path: ""
+      response:
+        type: object
+        entity: ThessWeather
+end
+
+Source<REST> MeteoLondonAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
+  crud:
+    read:
+      method: GET
+      path: ""
+      response:
+        type: object
+        entity: LondonWeather
+end
