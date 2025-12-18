@@ -37,3 +37,29 @@ class {{ ent.name }}(BaseModel):
 {{ model_name }}.model_rebuild()
 {% endfor %}
 {% endif %}
+
+{% if crud_schemas %}
+# ========================================================================
+# CRUD SCHEMAS (Generated from entity exposure configuration)
+# ========================================================================
+
+{% for schema in crud_schemas %}
+class {{ schema.name }}(BaseModel):
+    """{{ schema.operation | capitalize }} schema for {{ schema.base_entity }}."""
+
+    {% for attr in schema.attributes %}
+    {% if attr.field_constraints %}
+    {{ attr.name }}: {{ attr.py_type }} = Field({% for key, value in attr.field_constraints.items() %}{{ key }}={{ value }}{% if not loop.last %}, {% endif %}{% endfor %})
+    {% else %}
+    {% if attr.py_type.startswith('Optional[') %}
+    {{ attr.name }}: {{ attr.py_type }} = None
+    {% else %}
+    {{ attr.name }}: {{ attr.py_type }}
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+
+    model_config = ConfigDict(extra="forbid")
+
+{% endfor %}
+{% endif %}

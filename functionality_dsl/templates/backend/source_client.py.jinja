@@ -1,0 +1,93 @@
+# ========================================================================
+# AUTO-GENERATED SOURCE CLIENT: {{ source_name }}
+# Generated from CRUD-based source configuration
+# ========================================================================
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from app.core.http_client import http_client
+
+
+logger = logging.getLogger("fdsl.source.{{ source_name }}")
+
+
+class {{ source_name }}Source:
+    """HTTP client for {{ source_name }} CRUD operations"""
+
+    def __init__(self):
+        self.base_url = "{{ base_url }}"
+
+{% for op in operations %}
+    {%- if op.name == "list" %}
+    async def list(self) -> List[Dict[str, Any]]:
+        """List all items from {{ source_name }}"""
+        logger.debug(f"Fetching list from {self.base_url}{{ op.path }}")
+
+        response = await http_client.request(
+            method="{{ op.method }}",
+            url=f"{self.base_url}{{ op.path }}"
+        )
+
+        return response
+
+    {%- elif op.name == "read" %}
+    async def read(self, id: str) -> Optional[Dict[str, Any]]:
+        """Get a single item by ID from {{ source_name }}"""
+        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
+        logger.debug(f"Fetching item from {url}")
+
+        try:
+            response = await http_client.request(
+                method="{{ op.method }}",
+                url=url
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Failed to fetch item: {e}")
+            return None
+
+    {%- elif op.name == "create" %}
+    async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new item in {{ source_name }}"""
+        logger.debug(f"Creating item at {self.base_url}{{ op.path }}")
+
+        response = await http_client.request(
+            method="{{ op.method }}",
+            url=f"{self.base_url}{{ op.path }}",
+            json=data
+        )
+
+        return response
+
+    {%- elif op.name == "update" %}
+    async def update(self, id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update an existing item in {{ source_name }}"""
+        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
+        logger.debug(f"Updating item at {url}")
+
+        try:
+            response = await http_client.request(
+                method="{{ op.method }}",
+                url=url,
+                json=data
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Failed to update item: {e}")
+            return None
+
+    {%- elif op.name == "delete" %}
+    async def delete(self, id: str) -> None:
+        """Delete an item from {{ source_name }}"""
+        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
+        logger.debug(f"Deleting item at {url}")
+
+        await http_client.request(
+            method="{{ op.method }}",
+            url=url
+        )
+
+    {%- endif %}
+
+{% endfor %}

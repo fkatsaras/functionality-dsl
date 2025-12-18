@@ -68,7 +68,7 @@ def _validate_rest_expose(entity, expose, rest, source):
         )
 
     # Check that operations are valid for REST
-    rest_ops = {'list', 'read', 'create', 'update', 'patch', 'delete'}
+    rest_ops = {'list', 'read', 'create', 'update', 'delete'}
     for op in operations:
         if op not in rest_ops:
             raise TextXSemanticError(
@@ -78,7 +78,7 @@ def _validate_rest_expose(entity, expose, rest, source):
             )
 
     # Validate id_field for item operations
-    item_ops = {'read', 'update', 'patch', 'delete'}
+    item_ops = {'read', 'update', 'delete'}
     if any(op in operations for op in item_ops):
         id_field = getattr(expose, "id_field", None)
         if id_field:

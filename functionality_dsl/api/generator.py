@@ -27,8 +27,13 @@ from .generators import (
     generate_websocket_router,
     generate_domain_models,
     scaffold_backend_from_model,
+    generate_entity_router,
+    generate_entity_service,
+    generate_source_client,
 )
 from .generators.rest_generator import generate_rest_endpoint
+from .exposure_map import build_exposure_map
+from textx import get_children_of_type
 
 
 def render_domain_files(model, templates_dir: Path, out_dir: Path):
@@ -83,6 +88,32 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         generate_websocket_router(
             endpoint, model, all_source_names, templates_dir, out_dir
         )
+
+    # NEW SYNTAX: Generate entity-based routers, services, and source clients
+    print("\n[PHASE 4] Generating entity-based API (NEW SYNTAX)...")
+    exposure_map = build_exposure_map(model)
+
+    if exposure_map:
+        print(f"  Found {len(exposure_map)} exposed entities")
+
+        # Generate source clients for CRUD-based sources
+        print("\n  [4.1] Generating source clients...")
+        sources = get_children_of_type("SourceREST", model)
+        for source in sources:
+            if hasattr(source, "crud") and source.crud:
+                generate_source_client(source, model, templates_dir, out_dir)
+
+        # Generate entity services
+        print("\n  [4.2] Generating entity services...")
+        for entity_name, config in exposure_map.items():
+            generate_entity_service(entity_name, config, model, templates_dir, out_dir)
+
+        # Generate entity routers
+        print("\n  [4.3] Generating entity routers...")
+        for entity_name, config in exposure_map.items():
+            generate_entity_router(entity_name, config, model, templates_dir, out_dir)
+    else:
+        print("  No exposed entities found (using old syntax)")
 
     print("\n" + "="*70)
     print("  CODE GENERATION COMPLETE")

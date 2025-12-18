@@ -9,7 +9,6 @@ OPERATION_HTTP_METHOD = {
     "read": "GET",
     "create": "POST",
     "update": "PUT",
-    "patch": "PATCH",
     "delete": "DELETE",
 }
 
@@ -20,7 +19,6 @@ OPERATION_PATH_SUFFIX = {
     "read": "/{id}",
     "create": "",
     "update": "/{id}",
-    "patch": "/{id}",
     "delete": "/{id}",
 }
 
@@ -30,15 +28,14 @@ OPERATION_STATUS_CODE = {
     "read": 200,
     "create": 201,
     "update": 200,
-    "patch": 200,
     "delete": 204,
 }
 
 # Operations that require ID parameter
-ITEM_OPERATIONS = {"read", "update", "patch", "delete"}
+ITEM_OPERATIONS = {"read", "update", "delete"}
 
 # Operations that accept request body
-REQUEST_BODY_OPERATIONS = {"create", "update", "patch"}
+REQUEST_BODY_OPERATIONS = {"create", "update"}
 
 
 def get_operation_http_method(operation):
@@ -119,14 +116,11 @@ def derive_request_schema_name(entity_name, operation):
     Examples:
     - create -> UserCreate
     - update -> UserUpdate
-    - patch -> UserPatch
     """
     if operation == "create":
         return f"{entity_name}Create"
     elif operation == "update":
         return f"{entity_name}Update"
-    elif operation == "patch":
-        return f"{entity_name}Patch"
     return entity_name
 
 

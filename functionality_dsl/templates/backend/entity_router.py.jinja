@@ -1,0 +1,67 @@
+# ========================================================================
+# AUTO-GENERATED ENTITY ROUTER: {{ entity_name }}
+# Generated from entity-centric exposure configuration
+# ========================================================================
+
+import logging
+from typing import List
+
+from fastapi import APIRouter, HTTPException, Depends
+
+from app.domain.models import {{ entity_name }}
+{%- for op in operations %}
+{%- if op.has_request_body %}, {{ op.request_model }}{% endif %}
+{%- endfor %}
+from app.services.{{ entity_name | lower }}_service import {{ service_name }}
+
+
+logger = logging.getLogger("fdsl.router.{{ entity_name }}")
+
+router = APIRouter(
+    prefix="{{ rest_path }}",
+    tags=["{{ entity_name }}"]
+)
+
+
+{% for op in operations %}
+@router.{{ op.method | lower }}(
+    "{{ op.path_suffix }}",
+    response_model={{ op.response_model }},
+    status_code={{ op.status_code }}
+)
+async def {{ op.function_name }}(
+    {%- if op.is_item_op %}
+    {{ op.id_field }}: str,
+    {%- endif %}
+    {%- if op.has_request_body %}
+    data: {{ op.request_model }},
+    {%- endif %}
+    service: {{ service_name }} = Depends()
+) -> {{ op.response_model }}:
+    """{{ op.type | capitalize }} {{ entity_name }}"""
+    logger.debug(f"{{ op.type | upper }} {{ entity_name }}: {{ '{' }}{% if op.is_item_op %}{{ op.id_field }}={{ '{{ ' }}{{ op.id_field }}{{ ' }}' }}{% endif %}{{ '}' }}")
+
+    {%- if op.type == "list" %}
+    return await service.list_{{ entity_name | lower }}()
+
+    {%- elif op.type == "read" %}
+    result = await service.get_{{ entity_name | lower }}({{ op.id_field }})
+    if not result:
+        raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
+    return result
+
+    {%- elif op.type == "create" %}
+    return await service.create_{{ entity_name | lower }}(data)
+
+    {%- elif op.type == "update" %}
+    result = await service.update_{{ entity_name | lower }}({{ op.id_field }}, data)
+    if not result:
+        raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
+    return result
+
+    {%- elif op.type == "delete" %}
+    await service.delete_{{ entity_name | lower }}({{ op.id_field }})
+    {%- endif %}
+
+
+{% endfor %}

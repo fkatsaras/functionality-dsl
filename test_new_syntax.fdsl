@@ -11,8 +11,9 @@ Entity User
   source: UserDB
   expose:
     rest: "/api/users"
-    operations: [list, read, create]
+    operations: [list, read, create, update, delete]
     id_field: "id"
+    readonly_fields: ["id"]
 end
 
 Source<REST> UserDB

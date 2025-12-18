@@ -74,7 +74,7 @@ WsExpose:
 ;
 
 Operation:
-  'list' | 'read' | 'create' | 'update' | 'patch' | 'delete' | 'subscribe' | 'publish'
+  'list' | 'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)

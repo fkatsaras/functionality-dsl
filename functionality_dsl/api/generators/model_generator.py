@@ -10,6 +10,8 @@ from ..extractors import (
     compile_validators_to_pydantic,
 )
 from ..utils import format_python_code
+from ..exposure_map import build_exposure_map
+from ..crud_helpers import get_writable_attributes
 
 
 def generate_domain_models(model, templates_dir, output_dir):
@@ -79,8 +81,50 @@ def generate_domain_models(model, templates_dir, output_dir):
     )
     template = env.get_template("models.jinja")
 
+    # Generate CRUD schemas for exposed entities (NEW SYNTAX)
+    crud_schemas = []
+    exposure_map = build_exposure_map(model)
+
+    for entity_name, config in exposure_map.items():
+        entity = config["entity"]
+        operations = config["operations"]
+        readonly_fields = config.get("readonly_fields", [])
+
+        # Only generate schemas for operations that need them
+        if "create" in operations or "update" in operations:
+            writable_attrs = get_writable_attributes(entity, readonly_fields)
+
+            # Build attribute configs for writable attributes
+            writable_attr_configs = []
+            for attr in writable_attrs:
+                validator_info = compile_validators_to_pydantic(attr, all_source_names)
+                all_imports.update(validator_info["imports"])
+
+                writable_attr_configs.append({
+                    "name": attr.name,
+                    "py_type": map_to_python_type(attr),
+                    "field_constraints": validator_info["field_constraints"],
+                })
+
+            if "create" in operations:
+                crud_schemas.append({
+                    "name": f"{entity_name}Create",
+                    "base_entity": entity_name,
+                    "operation": "create",
+                    "attributes": writable_attr_configs,
+                })
+
+            if "update" in operations:
+                crud_schemas.append({
+                    "name": f"{entity_name}Update",
+                    "base_entity": entity_name,
+                    "operation": "update",
+                    "attributes": writable_attr_configs,
+                })
+
     models_code = template.render(
         entities=entities_context,
+        crud_schemas=crud_schemas,
         additional_imports=sorted(list(all_imports)),
         models_needing_rebuild=sorted(list(models_needing_rebuild))
     )
