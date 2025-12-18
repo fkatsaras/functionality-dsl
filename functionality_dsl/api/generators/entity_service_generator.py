@@ -27,15 +27,27 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
 
     # Check if entity has computed attributes (transformation entity)
     has_computed_attrs = False
+    computed_attrs = []
     attributes = getattr(entity, "attributes", []) or []
+
     for attr in attributes:
-        if getattr(attr, "expr", None) is not None:
+        expr = getattr(attr, "expr", None)
+        if expr is not None:
             has_computed_attrs = True
-            break
+            # Compile the expression to Python code
+            from functionality_dsl.lib.compiler.expr_compiler import compile_expr_to_python
+            compiled_expr = compile_expr_to_python(expr)
+            computed_attrs.append({
+                "name": attr.name,
+                "expr": compiled_expr
+            })
 
     # Check if entity has parent entities
     parents = getattr(entity, "parents", []) or []
     has_parents = len(parents) > 0
+
+    # Get parent entity names for fetching source data
+    parent_names = [p.name for p in parents]
 
     # Build operation list
     operation_methods = []
@@ -60,7 +72,8 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         id_field=id_field,
         has_computed_attrs=has_computed_attrs,
         has_parents=has_parents,
-        parents=[p.name for p in parents],
+        parents=parent_names,
+        computed_attrs=computed_attrs,
     )
 
     # Write to file

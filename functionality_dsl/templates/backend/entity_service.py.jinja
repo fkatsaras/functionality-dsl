@@ -9,7 +9,8 @@ from typing import Optional, List
 from app.domain.models import {{ entity_name }}
 from app.sources.{{ source_name | lower }}_source import {{ source_name }}Source
 {% if has_computed_attrs %}
-from app.core.safe_eval import safe_eval, get_dsl_funcs
+from app.core.service_helpers import transform_entity_data
+from app.core.runtime.safe_eval import compile_safe, safe_globals
 {% endif %}
 
 
@@ -22,6 +23,33 @@ class {{ entity_name }}Service:
     def __init__(self):
         self.source = {{ source_name }}Source()
 
+{% if has_computed_attrs %}
+    def _transform_entity(self, raw_data: dict) -> dict:
+        """Transform raw source data to {{ entity_name }} using computed attributes."""
+        context = {}
+
+        # Add parent entity data to context
+        {% for parent in parents %}
+        context["{{ parent }}"] = raw_data
+        {% endfor %}
+
+        # Transform entity data
+        transformed = transform_entity_data(
+            entity_name="{{ entity_name }}",
+            attributes=[
+                {% for attr in computed_attrs %}
+                {"name": "{{ attr.name }}", "expr": """{{ attr.expr }}"""},
+                {% endfor %}
+            ],
+            context=context,
+            safe_globals=safe_globals,
+            compile_safe_fn=compile_safe,
+            logger=logger
+        )
+
+        return transformed
+
+{% endif %}
 {% for op in operations %}
     {%- if op.operation == "list" %}
     async def list_{{ entity_name | lower }}(self) -> List[{{ entity_name }}]:
@@ -32,9 +60,9 @@ class {{ entity_name }}Service:
         raw_data = await self.source.list()
 
         {% if has_computed_attrs %}
-        # TODO: Transform entities if needed
-        # For now, return raw data
-        return [{{ entity_name }}(**item) for item in raw_data]
+        # Transform each item
+        transformed_items = [self._transform_entity(item) for item in raw_data]
+        return [{{ entity_name }}(**item) for item in transformed_items]
         {% else %}
         return [{{ entity_name }}(**item) for item in raw_data]
         {% endif %}
@@ -51,9 +79,9 @@ class {{ entity_name }}Service:
             return None
 
         {% if has_computed_attrs %}
-        # TODO: Compute entity attributes if needed
-        # For now, return raw data
-        return {{ entity_name }}(**raw_data)
+        # Transform entity
+        transformed = self._transform_entity(raw_data)
+        return {{ entity_name }}(**transformed)
         {% else %}
         return {{ entity_name }}(**raw_data)
         {% endif %}
@@ -66,7 +94,13 @@ class {{ entity_name }}Service:
         # Call source create operation
         created = await self.source.create(data.dict())
 
+        {% if has_computed_attrs %}
+        # Transform created entity
+        transformed = self._transform_entity(created)
+        return {{ entity_name }}(**transformed)
+        {% else %}
         return {{ entity_name }}(**created)
+        {% endif %}
 
     {%- elif op.operation == "update" %}
     async def update_{{ entity_name | lower }}(self, {{ id_field }}: str, data) -> Optional[{{ entity_name }}]:
@@ -79,7 +113,13 @@ class {{ entity_name }}Service:
         if not updated:
             return None
 
+        {% if has_computed_attrs %}
+        # Transform updated entity
+        transformed = self._transform_entity(updated)
+        return {{ entity_name }}(**transformed)
+        {% else %}
         return {{ entity_name }}(**updated)
+        {% endif %}
 
     {%- elif op.operation == "delete" %}
     async def delete_{{ entity_name | lower }}(self, {{ id_field }}: str) -> None:

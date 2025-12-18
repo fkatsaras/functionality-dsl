@@ -16,9 +16,9 @@ orders_db = {
         "id": "ord-1",
         "userId": "user-1",
         "items": [
-            {"productId": "prod-1", "productName": "Laptop", "quantity": 1, "price": 999.99}
+            {"productId": "prod-1", "productName": "Laptop", "quantity": 1, "price": 999.99},
+            {"productId": "prod-3", "productName": "Mouse", "quantity": 2, "price": 25.00}
         ],
-        "total": 999.99,
         "status": "pending",
         "createdAt": "2025-12-15T10:00:00Z"
     },
@@ -28,7 +28,6 @@ orders_db = {
         "items": [
             {"productId": "prod-2", "productName": "Desk Chair", "quantity": 2, "price": 249.99}
         ],
-        "total": 499.98,
         "status": "shipped",
         "createdAt": "2025-12-16T14:30:00Z"
     }
@@ -38,14 +37,12 @@ class Order(BaseModel):
     id: str
     userId: str
     items: list
-    total: float
     status: str
     createdAt: str
 
 class OrderCreate(BaseModel):
     userId: str
     items: list
-    total: float
     status: str
 
 @app.get("/")
