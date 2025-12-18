@@ -6,6 +6,36 @@ Validates expose blocks and CRUD configurations.
 from textx import get_children_of_type, get_location, TextXSemanticError
 
 
+def _find_source_in_parents(parents):
+    """
+    Recursively find a source by traversing parent entities.
+    Returns the first source found in the parent chain.
+    """
+    from collections import deque
+
+    queue = deque(parents)
+    visited = set()
+
+    while queue:
+        parent = queue.popleft()
+        parent_id = id(parent)
+
+        if parent_id in visited:
+            continue
+        visited.add(parent_id)
+
+        # Check if this parent has a source
+        source = getattr(parent, "source", None)
+        if source:
+            return source
+
+        # Add parent's parents to queue
+        parent_parents = getattr(parent, "parents", []) or []
+        queue.extend(parent_parents)
+
+    return None
+
+
 def _validate_exposure_blocks(model, metamodel=None):
     """
     Validate entity exposure blocks:
@@ -23,12 +53,18 @@ def _validate_exposure_blocks(model, metamodel=None):
         if not expose:
             continue
 
-        # Entity with expose must have a source
+        # Entity with expose must have a source (direct or inherited from parents)
         source = getattr(entity, "source", None)
+        parents = getattr(entity, "parents", []) or []
+
+        # For transformation entities, find source in parent chain
+        if not source and parents:
+            source = _find_source_in_parents(parents)
+
         if not source:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' has 'expose' block but no 'source:' binding. "
-                f"Exposed entities must be bound to a Source.",
+                f"Exposed entities must be bound to a Source (directly or through parent entities).",
                 **get_location(entity),
             )
 

@@ -6,7 +6,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.core.http_client import http_client
+from app.core.http import get_http_client
 
 
 logger = logging.getLogger("fdsl.source.{{ source_name }}")
@@ -24,12 +24,13 @@ class {{ source_name }}Source:
         """List all items from {{ source_name }}"""
         logger.debug(f"Fetching list from {self.base_url}{{ op.path }}")
 
-        response = await http_client.request(
+        client = get_http_client()
+        response = await client.request(
             method="{{ op.method }}",
             url=f"{self.base_url}{{ op.path }}"
         )
-
-        return response
+        response.raise_for_status()
+        return response.json()
 
     {%- elif op.name == "read" %}
     async def read(self, id: str) -> Optional[Dict[str, Any]]:
@@ -38,11 +39,13 @@ class {{ source_name }}Source:
         logger.debug(f"Fetching item from {url}")
 
         try:
-            response = await http_client.request(
+            client = get_http_client()
+            response = await client.request(
                 method="{{ op.method }}",
                 url=url
             )
-            return response
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             logger.error(f"Failed to fetch item: {e}")
             return None
@@ -52,13 +55,14 @@ class {{ source_name }}Source:
         """Create a new item in {{ source_name }}"""
         logger.debug(f"Creating item at {self.base_url}{{ op.path }}")
 
-        response = await http_client.request(
+        client = get_http_client()
+        response = await client.request(
             method="{{ op.method }}",
             url=f"{self.base_url}{{ op.path }}",
             json=data
         )
-
-        return response
+        response.raise_for_status()
+        return response.json()
 
     {%- elif op.name == "update" %}
     async def update(self, id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -67,12 +71,14 @@ class {{ source_name }}Source:
         logger.debug(f"Updating item at {url}")
 
         try:
-            response = await http_client.request(
+            client = get_http_client()
+            response = await client.request(
                 method="{{ op.method }}",
                 url=url,
                 json=data
             )
-            return response
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             logger.error(f"Failed to update item: {e}")
             return None
@@ -83,10 +89,12 @@ class {{ source_name }}Source:
         url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
         logger.debug(f"Deleting item at {url}")
 
-        await http_client.request(
+        client = get_http_client()
+        response = await client.request(
             method="{{ op.method }}",
             url=url
         )
+        response.raise_for_status()
 
     {%- endif %}
 

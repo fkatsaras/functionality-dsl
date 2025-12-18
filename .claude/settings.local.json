@@ -123,7 +123,8 @@
       "Bash(jq:*)",
       "Bash(make count-fdsl:*)",
       "Bash(../venv_WIN/Scripts/pip install:*)",
-      "Bash(timeout 5 bash -c 'wscat -c ws://localhost:8000/ws/cart -H \"\"X-Session-ID: session1\"\" 2>&1 | head -20')"
+      "Bash(timeout 5 bash -c 'wscat -c ws://localhost:8000/ws/cart -H \"\"X-Session-ID: session1\"\" 2>&1 | head -20')",
+      "Bash(../../../venv_WIN/Scripts/fdsl.exe generate main.fdsl --out generated)"
     ],
     "deny": [],
     "ask": []

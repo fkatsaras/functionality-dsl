@@ -1,0 +1,31 @@
+// Product Catalog API - Entity-Centric Example (v2)
+
+Server ProductAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// Product entity with CRUD exposure
+Entity Product
+  attributes:
+    - id: string;
+    - name: string;
+    - price: number;
+    - category: string;
+    - inStock: boolean;
+  source: ProductDB
+  expose:
+    rest: "/api/products"
+    operations: [list, read, create, update, delete]
+    id_field: "id"
+    readonly_fields: ["id"]
+end
+
+// External product database source
+Source<REST> ProductDB
+  base_url: "http://dummy-product-service:9000/products"
+  crud: standard
+  entity: Product
+end

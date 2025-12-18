@@ -33,9 +33,16 @@ def build_exposure_map(model):
         if not expose:
             continue
 
+        # Get direct source or find source through parents
         source = getattr(entity, "source", None)
+        parents = getattr(entity, "parents", []) or []
+
+        # For transformation entities, find source from parent chain
+        if not source and parents:
+            source = _find_source_in_parents(parents)
+
         if not source:
-            # Validation should have caught this, but be defensive
+            # No source found (validation should catch this)
             continue
 
         # Extract REST configuration
@@ -72,9 +79,41 @@ def build_exposure_map(model):
             "id_field": id_field,
             "path_params": path_params,
             "readonly_fields": readonly_fields,
+            "is_transformation": len(parents) > 0,  # Has parent entities
+            "parents": parents,
         }
 
     return exposure_map
+
+
+def _find_source_in_parents(parents):
+    """
+    Recursively find a source by traversing parent entities.
+    Returns the first source found in the parent chain.
+    """
+    from collections import deque
+
+    queue = deque(parents)
+    visited = set()
+
+    while queue:
+        parent = queue.popleft()
+        parent_id = id(parent)
+
+        if parent_id in visited:
+            continue
+        visited.add(parent_id)
+
+        # Check if this parent has a source
+        source = getattr(parent, "source", None)
+        if source:
+            return source
+
+        # Add parent's parents to queue
+        parent_parents = getattr(parent, "parents", []) or []
+        queue.extend(parent_parents)
+
+    return None
 
 
 def infer_id_field(entity_name, attributes):

@@ -26,7 +26,9 @@ router = APIRouter(
 {% for op in operations %}
 @router.{{ op.method | lower }}(
     "{{ op.path_suffix }}",
+    {%- if op.type != "delete" %}
     response_model={{ op.response_model }},
+    {%- endif %}
     status_code={{ op.status_code }}
 )
 async def {{ op.function_name }}(
@@ -37,9 +39,13 @@ async def {{ op.function_name }}(
     data: {{ op.request_model }},
     {%- endif %}
     service: {{ service_name }} = Depends()
-) -> {{ op.response_model }}:
+){%- if op.type != "delete" %} -> {{ op.response_model }}{% endif %}:
     """{{ op.type | capitalize }} {{ entity_name }}"""
-    logger.debug(f"{{ op.type | upper }} {{ entity_name }}: {{ '{' }}{% if op.is_item_op %}{{ op.id_field }}={{ '{{ ' }}{{ op.id_field }}{{ ' }}' }}{% endif %}{{ '}' }}")
+    {%- if op.is_item_op %}
+    logger.debug(f"{{ op.type | upper }} {{ entity_name }}: {{ op.id_field }}={{ '{{ ' }}{{ op.id_field }}{{ ' }}' }}")
+    {%- else %}
+    logger.debug(f"{{ op.type | upper }} {{ entity_name }}")
+    {%- endif %}
 
     {%- if op.type == "list" %}
     return await service.list_{{ entity_name | lower }}()

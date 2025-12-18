@@ -1,0 +1,40 @@
+services:
+  dummy-product-service:
+    container_name: dummy-product-service
+    image: dummy-product-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_FILE: dummy_products.py
+        PORT: 9000
+    ports:
+      - "9000:9000"
+    networks:
+      - thesis_fdsl_net
+
+  dummy-order-service:
+    container_name: dummy-order-service
+    image: dummy-order-service
+    build:
+      context: .
+      dockerfile: Dockerfile.orders
+    ports:
+      - "9001:9001"
+    networks:
+      - thesis_fdsl_net
+
+  dummy-user-service:
+    container_name: dummy-user-service
+    image: dummy-user-service
+    build:
+      context: .
+      dockerfile: Dockerfile.users
+    ports:
+      - "9002:9002"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true
