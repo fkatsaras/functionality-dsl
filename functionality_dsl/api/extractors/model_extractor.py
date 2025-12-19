@@ -36,8 +36,24 @@ def find_source_for_entity(entity, model):
     In the new design, entities don't have source: fields.
     Instead, Sources have response: blocks that reference entities.
     Also checks inline types like array<Entity> in response schemas.
+
+    LEGACY: Also checks for direct source: attribute on entities (old syntax).
     """
     from .schema_extractor import get_response_schema
+
+    # LEGACY: Check if entity has direct source: attribute (old syntax)
+    entity_source = getattr(entity, "source", None)
+    if entity_source:
+        # Determine source type
+        source_type = None
+        if hasattr(entity_source, "__class__"):
+            class_name = entity_source.__class__.__name__
+            if "REST" in class_name:
+                source_type = "REST"
+            elif "WS" in class_name:
+                source_type = "WS"
+        if source_type:
+            return (entity_source, source_type)
 
     # Check REST sources
     for source in get_children_of_type("SourceREST", model):

@@ -7,7 +7,19 @@ import logging
 from typing import Optional, List
 
 from app.domain.models import {{ entity_name }}
+{% if source_name and not has_multiple_parent_sources %}
 from app.sources.{{ source_name | lower }}_source import {{ source_name }}Source
+{% endif %}
+{% if has_multiple_parent_sources %}
+{%- for ps in parent_sources %}
+from app.sources.{{ ps.source_name | lower }}_source import {{ ps.source_class }}
+{%- endfor %}
+{% endif %}
+{% if has_parent_services %}
+{%- for ps in parent_services %}
+from app.services.{{ ps.name | lower }}_service import {{ ps.service_class }}
+{%- endfor %}
+{% endif %}
 {% if has_computed_attrs %}
 from app.core.service_helpers import transform_entity_data
 from app.core.runtime.safe_eval import compile_safe, safe_globals
@@ -21,17 +33,45 @@ class {{ entity_name }}Service:
     """Service layer for {{ entity_name }} CRUD operations"""
 
     def __init__(self):
+        {% if has_parent_services %}
+        # Initialize parent entity services for composition
+        {%- for ps in parent_services %}
+        self.{{ ps.name | lower }}_service = {{ ps.service_class }}()
+        {%- endfor %}
+        {% endif %}
+        {% if has_multiple_parent_sources %}
+        # Initialize multiple parent sources
+        {%- for ps in parent_sources %}
+        self.{{ ps.source_name | lower }}_source = {{ ps.source_class }}()
+        {%- endfor %}
+        {% elif source_name %}
         self.source = {{ source_name }}Source()
+        {% endif %}
 
 {% if has_computed_attrs %}
-    def _transform_entity(self, raw_data: dict) -> dict:
-        """Transform raw source data to {{ entity_name }} using computed attributes."""
+    def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:
+        """Transform {% if has_parent_services or has_multiple_parent_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }} using computed attributes."""
         context = {}
 
         # Add parent entity data to context
+        {% if has_parent_services %}
+        # Parent data comes from entity services (Pydantic models)
+        {% for parent in parents %}
+        if "{{ parent }}" in parent_data:
+            context["{{ parent }}"] = parent_data["{{ parent }}"].model_dump()
+        {% endfor %}
+        {% elif has_multiple_parent_sources %}
+        # Parent data comes from multiple sources (raw dicts)
+        {% for parent in parents %}
+        if "{{ parent }}" in parent_data:
+            context["{{ parent }}"] = parent_data["{{ parent }}"]
+        {% endfor %}
+        {% else %}
+        # Parent data comes from single raw source
         {% for parent in parents %}
         context["{{ parent }}"] = raw_data
         {% endfor %}
+        {% endif %}
 
         # Transform entity data
         transformed = transform_entity_data(
@@ -73,15 +113,27 @@ class {{ entity_name }}Service:
         """Get a single {{ entity_name }} by ID"""
         logger.debug(f"Getting {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
 
+        {% if has_parent_services %}
+        # Fetch parent entity data via services (composition pattern)
+        parent_data = {}
+        {%- for ps in parent_services %}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
+        {%- endfor %}
+        {% else %}
         # Fetch from source
         raw_data = await self.source.read({{ id_field }})
 
         if not raw_data:
             return None
+        {% endif %}
 
         {% if has_computed_attrs %}
         # Transform entity
+        {% if has_parent_services %}
+        transformed = self._transform_entity(parent_data)
+        {% else %}
         transformed = self._transform_entity(raw_data)
+        {% endif %}
         return {{ entity_name }}(**transformed)
         {% else %}
         return {{ entity_name }}(**raw_data)
@@ -91,12 +143,30 @@ class {{ entity_name }}Service:
         """Get the singleton {{ entity_name }} instance"""
         logger.debug("Getting {{ entity_name }} (singleton)")
 
+        {% if has_parent_services %}
+        # Fetch parent entity data via services (composition pattern)
+        parent_data = {}
+        {%- for ps in parent_services %}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
+        {%- endfor %}
+        {% elif has_multiple_parent_sources %}
+        # Fetch from multiple parent sources
+        parent_data = {}
+        {%- for ps in parent_sources %}
+        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read()
+        {%- endfor %}
+        {% else %}
         # Fetch from source
         raw_data = await self.source.read()
+        {% endif %}
 
         {% if has_computed_attrs %}
         # Transform entity
+        {% if has_parent_services or has_multiple_parent_sources %}
+        transformed = self._transform_entity(parent_data)
+        {% else %}
         transformed = self._transform_entity(raw_data)
+        {% endif %}
         return {{ entity_name }}(**transformed)
         {% else %}
         return {{ entity_name }}(**raw_data)

@@ -53,6 +53,37 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     # Get parent entity names for fetching source data
     parent_names = [p.name for p in parents]
 
+    # Check if any parents are exposed entities (have their own services)
+    # If so, we need to call their services instead of fetching from source
+    from ..exposure_map import build_exposure_map
+    from ..extractors import find_source_for_entity
+
+    exposure_map = build_exposure_map(model)
+
+    parent_services = []
+    parent_sources = []
+
+    for parent in parents:
+        if parent.name in exposure_map:
+            # This parent is exposed - we'll call its service
+            parent_services.append({
+                "name": parent.name,
+                "service_class": f"{parent.name}Service",
+                "method": f"get_{parent.name.lower()}"
+            })
+        else:
+            # This parent is not exposed - check if it has a direct source
+            parent_source, source_type = find_source_for_entity(parent, model)
+            if parent_source and source_type == "REST":
+                parent_sources.append({
+                    "entity_name": parent.name,
+                    "source_name": parent_source.name,
+                    "source_class": f"{parent_source.name}Source"
+                })
+
+    has_parent_services = len(parent_services) > 0
+    has_multiple_parent_sources = len(parent_sources) > 1
+
     # Build operation list
     operation_methods = []
     for op in operations:
@@ -76,13 +107,17 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
 
     rendered = template.render(
         entity_name=entity_name,
-        source_name=source.name,
+        source_name=source.name if source else None,
         operations=operation_methods,
         id_field=id_field,
         has_computed_attrs=has_computed_attrs,
         has_parents=has_parents,
         parents=parent_names,
         computed_attrs=computed_attrs,
+        has_parent_services=has_parent_services,
+        parent_services=parent_services,
+        has_multiple_parent_sources=has_multiple_parent_sources,
+        parent_sources=parent_sources,
     )
 
     # Write to file

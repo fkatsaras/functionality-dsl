@@ -37,6 +37,12 @@ def generate_source_client(source, model, templates_dir, out_dir):
         # Infer standard REST patterns for each operation
         crud_config = {}
         operations = []
+        op_names = [str(op) for op in simple_ops]
+
+        # Check if this is a singleton source (read-only without update/delete)
+        # Singleton pattern: only 'read' operation (no 'update'/'delete')
+        is_singleton = "read" in op_names and not any(op in op_names for op in ["update", "delete"])
+
         for op in simple_ops:
             op_name = str(op)  # Convert to string
             operations.append(op_name)
@@ -45,7 +51,12 @@ def generate_source_client(source, model, templates_dir, out_dir):
             if op_name == "list":
                 crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
             elif op_name == "read":
-                crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+                # Singleton read: no ID parameter, just fetch base_url
+                # Item read: requires ID parameter
+                if is_singleton:
+                    crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
+                else:
+                    crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
             elif op_name == "create":
                 crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
             elif op_name == "update":

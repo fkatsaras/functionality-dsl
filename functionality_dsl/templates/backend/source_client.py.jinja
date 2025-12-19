@@ -33,6 +33,7 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "read" %}
+    {%- if op.path and "{id}" in op.path %}
     async def read(self, id: str) -> Optional[Dict[str, Any]]:
         """Get a single item by ID from {{ source_name }}"""
         url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
@@ -49,6 +50,27 @@ class {{ source_name }}Source:
         except Exception as e:
             logger.error(f"Failed to fetch item: {e}")
             return None
+    {%- else %}
+    async def read(self, id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get singleton resource or item by ID from {{ source_name }}"""
+        if id:
+            url = f"{self.base_url}{{ op.path }}".replace("{id}", id) if "{{ op.path }}" else f"{self.base_url}/{id}"
+        else:
+            url = f"{self.base_url}{{ op.path }}"
+        logger.debug(f"Fetching from {url}")
+
+        try:
+            client = get_http_client()
+            response = await client.request(
+                method="{{ op.method }}",
+                url=url
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch: {e}")
+            return None
+    {%- endif %}
 
     {%- elif op.name == "create" %}
     async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
