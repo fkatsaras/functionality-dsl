@@ -32,6 +32,7 @@ from .generators import (
     generate_source_client,
 )
 from .generators.rest_generator import generate_rest_endpoint
+from .generators.openapi_generator import generate_openapi_spec
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
 
@@ -112,6 +113,10 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
         print("\n  [4.3] Generating entity routers...")
         for entity_name, config in exposure_map.items():
             generate_entity_router(entity_name, config, model, templates_dir, out_dir)
+
+        # Generate OpenAPI specification
+        print("\n  [4.4] Generating OpenAPI specification...")
+        generate_openapi_spec(model, out_dir, server_config)
     else:
         print("  No exposed entities found (using old syntax)")
 

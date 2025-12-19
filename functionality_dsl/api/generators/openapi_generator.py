@@ -1,0 +1,261 @@
+"""
+OpenAPI specification generator for FDSL models.
+
+Generates a static openapi.yaml file documenting all exposed entities,
+their operations, schemas, and error responses.
+"""
+
+import yaml
+from pathlib import Path
+from typing import Dict, Any, List
+
+from ..exposure_map import build_exposure_map
+from ..extractors import get_entities, map_to_openapi_type
+from ..crud_helpers import (
+    get_operation_http_method,
+    get_operation_path_suffix,
+    get_operation_status_code,
+    requires_request_body,
+    derive_request_schema_name,
+)
+
+
+def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any] = None):
+    """
+    Generate OpenAPI 3.0 specification from FDSL model.
+
+    Args:
+        model: The parsed FDSL model
+        output_dir: Path to output directory
+        server_config: Server configuration (host, port, etc.)
+    """
+    exposure_map = build_exposure_map(model)
+
+    if not exposure_map:
+        print("  No exposed entities found - skipping OpenAPI spec generation")
+        return
+
+    # Default server config
+    if not server_config:
+        server_config = {"host": "localhost", "port": 8080}
+
+    host = server_config.get("host", "localhost")
+    port = server_config.get("port", 8080)
+
+    # Build OpenAPI spec
+    spec = {
+        "openapi": "3.0.0",
+        "info": {
+            "title": "FDSL Generated API",
+            "version": "1.0.0",
+            "description": "Auto-generated API from Functionality DSL specification",
+        },
+        "servers": [
+            {
+                "url": f"http://{host}:{port}",
+                "description": "Development server",
+            }
+        ],
+        "paths": {},
+        "components": {
+            "schemas": {},
+        },
+    }
+
+    # Generate schemas for all entities
+    all_entities = {entity.name: entity for entity in get_entities(model)}
+
+    for entity_name, entity in all_entities.items():
+        spec["components"]["schemas"][entity_name] = _generate_entity_schema(entity)
+
+    # Generate Create/Update schemas for exposed entities
+    for entity_name, config in exposure_map.items():
+        entity = config["entity"]
+        operations = config["operations"]
+        readonly_fields = config.get("readonly_fields", [])
+        id_field = config.get("id_field")
+
+        if id_field and id_field not in readonly_fields:
+            readonly_fields = list(readonly_fields) + [id_field]
+
+        # Generate request schemas
+        if "create" in operations:
+            schema_name = f"{entity_name}Create"
+            spec["components"]["schemas"][schema_name] = _generate_request_schema(
+                entity, readonly_fields, "create"
+            )
+
+        if "update" in operations:
+            schema_name = f"{entity_name}Update"
+            spec["components"]["schemas"][schema_name] = _generate_request_schema(
+                entity, readonly_fields, "update"
+            )
+
+    # Generate paths for exposed entities
+    for entity_name, config in exposure_map.items():
+        rest_path = config.get("rest_path")
+        operations = config["operations"]
+        id_field = config.get("id_field", "id")
+
+        if not rest_path:
+            continue
+
+        # Generate operations
+        for operation in operations:
+            http_method = get_operation_http_method(operation).lower()
+            path_suffix = get_operation_path_suffix(operation, id_field)
+            full_path = rest_path + path_suffix
+
+            if full_path not in spec["paths"]:
+                spec["paths"][full_path] = {}
+
+            spec["paths"][full_path][http_method] = _generate_operation_spec(
+                operation, entity_name, config, id_field
+            )
+
+    # Write to file
+    output_file = Path(output_dir) / "openapi.yaml"
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(spec, f, sort_keys=False, default_flow_style=False, allow_unicode=True)
+
+    print(f"[GENERATED] OpenAPI spec: {output_file}")
+
+
+def _generate_entity_schema(entity) -> Dict[str, Any]:
+    """Generate OpenAPI schema for an entity."""
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
+
+    for attr in getattr(entity, "attributes", []) or []:
+        attr_name = attr.name
+        openapi_type = map_to_openapi_type(attr)
+
+        schema["properties"][attr_name] = openapi_type
+
+        # Mark as required if not optional
+        if not getattr(attr, "optional", False):
+            schema["required"].append(attr_name)
+
+    if not schema["required"]:
+        del schema["required"]
+
+    return schema
+
+
+def _generate_request_schema(entity, readonly_fields: List[str], operation: str) -> Dict[str, Any]:
+    """Generate OpenAPI schema for Create/Update requests (excludes readonly fields)."""
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": f"{operation.capitalize()} schema for {entity.name} (excludes readonly fields)",
+    }
+
+    # Get writable attributes from parent if entity has all computed attrs
+    attributes = getattr(entity, "attributes", []) or []
+
+    # If all attributes are computed, try parent
+    if attributes and all(getattr(attr, "expr", None) is not None for attr in attributes):
+        if hasattr(entity, "parents") and entity.parents:
+            attributes = getattr(entity.parents[0], "attributes", []) or []
+
+    for attr in attributes:
+        # Skip computed attributes
+        if getattr(attr, "expr", None) is not None:
+            continue
+
+        # Skip readonly fields
+        if attr.name in readonly_fields:
+            continue
+
+        attr_name = attr.name
+        openapi_type = map_to_openapi_type(attr)
+
+        schema["properties"][attr_name] = openapi_type
+
+        # Mark as required if not optional
+        if not getattr(attr, "optional", False):
+            schema["required"].append(attr_name)
+
+    if not schema["required"]:
+        del schema["required"]
+
+    return schema
+
+
+def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_field: str) -> Dict[str, Any]:
+    """Generate OpenAPI operation specification."""
+    spec = {
+        "summary": f"{operation.capitalize()} {entity_name}",
+        "operationId": f"{operation}_{entity_name.lower()}",
+        "tags": [entity_name],
+        "responses": {},
+    }
+
+    # Add parameters for operations that need ID
+    if operation in {"read", "update", "delete"}:
+        spec["parameters"] = [
+            {
+                "name": id_field,
+                "in": "path",
+                "required": True,
+                "schema": {"type": "string"},
+                "description": f"The {id_field} of the {entity_name}",
+            }
+        ]
+
+    # Add request body for operations that need it
+    if requires_request_body(operation):
+        request_schema = derive_request_schema_name(entity_name, operation)
+        spec["requestBody"] = {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": f"#/components/schemas/{request_schema}"}
+                }
+            },
+        }
+
+    # Add response schemas
+    status_code = get_operation_status_code(operation)
+
+    if operation == "delete":
+        spec["responses"][str(status_code)] = {
+            "description": f"{entity_name} deleted successfully"
+        }
+    elif operation == "list":
+        spec["responses"][str(status_code)] = {
+            "description": f"List of {entity_name} instances",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "array",
+                        "items": {"$ref": f"#/components/schemas/{entity_name}"}
+                    }
+                }
+            },
+        }
+    else:
+        spec["responses"][str(status_code)] = {
+            "description": f"{operation.capitalize()} successful",
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": f"#/components/schemas/{entity_name}"}
+                }
+            },
+        }
+
+    # Add common error responses
+    if operation in {"read", "update", "delete"}:
+        spec["responses"]["404"] = {
+            "description": f"{entity_name} not found"
+        }
+
+    spec["responses"]["500"] = {
+        "description": "Internal server error"
+    }
+
+    return spec

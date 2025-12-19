@@ -20,6 +20,7 @@ dependencies = [
     "networkx",
     "bs4",
     "graphviz",
+    "pyyaml",
 ]
 
 [project.scripts]

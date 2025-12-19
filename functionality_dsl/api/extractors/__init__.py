@@ -9,7 +9,7 @@ from .model_extractor import (
     find_source_for_entity,
     find_target_for_entity,
 )
-from .type_mapper import map_to_python_type
+from .type_mapper import map_to_python_type, map_to_openapi_type
 from .validator_compiler import (
     extract_range_constraint,
     compile_validators_to_pydantic,
@@ -32,6 +32,7 @@ __all__ = [
     "find_source_for_entity",
     "find_target_for_entity",
     "map_to_python_type",
+    "map_to_openapi_type",
     "extract_range_constraint",
     "compile_validators_to_pydantic",
     "get_request_schema",

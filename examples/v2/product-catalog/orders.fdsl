@@ -8,10 +8,6 @@ Server OrderAPI
   loglevel: debug
 end
 
-// ============================================
-// Base Schema Entities (from sources - INTERNAL, not exposed)
-// ============================================
-
 // Raw order from database (schema-only, binds to source)
 Entity RawOrder
   attributes:
@@ -23,7 +19,7 @@ Entity RawOrder
   source: OrderDB
 end
 
-// User from database (schema-only, binds to source, EXPOSED directly)
+// User from database (schema-only, binds to source, EXPOSED )
 Entity User
   attributes:
     - id: string;
@@ -37,11 +33,7 @@ Entity User
     id_field: "id"
 end
 
-// ============================================
-// Transformation Entities (with expressions, EXPOSED)
-// ============================================
-
-// Order with computed totals (inherits from RawOrder, adds calculations, EXPOSED via API)
+// Order with computed totals (inherits from RawOrder, adds calculations, EXPOSED)
 Entity OrderWithTotals(RawOrder)
   attributes:
     - id: string = RawOrder.id;
@@ -60,9 +52,6 @@ Entity OrderWithTotals(RawOrder)
     readonly_fields: ["id", "createdAt", "itemCount", "subtotal", "tax", "total"]
 end
 
-// ============================================
-// CRUD Sources
-// ============================================
 
 Source<REST> OrderDB
   base_url: "http://dummy-order-service:9001/orders"
