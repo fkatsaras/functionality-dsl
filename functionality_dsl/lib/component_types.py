@@ -62,9 +62,11 @@ class _BaseComponent:
         # Get REST path from entity's expose block
         expose = getattr(self.entity_ref, "expose", None)
         if expose:
-            rest_path = getattr(expose, "rest_path", None)
-            if rest_path:
-                return rest_path + (suffix or "")
+            rest = getattr(expose, "rest", None)
+            if rest:
+                rest_path = getattr(rest, "path", None)
+                if rest_path:
+                    return rest_path + (suffix or "")
         # Fallback to entity name
         return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
 
@@ -454,38 +456,31 @@ class ActionFormComponent(_BaseComponent):
     """
     Now binds to an Endpoint<REST> endpoint via 'endpoint:' (grammar already changed).
     """
-    def __init__(self, parent=None, name=None, endpoint=None, fields=None, pathKey=None, submitLabel=None, method=None):
-        super().__init__(parent, name, None)
+    def __init__(self, parent=None, name=None, entity=None, fields=None, pathKey=None, submitLabel=None, method=None):
+        super().__init__(parent, name, entity)
 
-        self.endpoint = endpoint                  # the EndpointREST node
         self.fields = fields or []
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
 
-        # Choose HTTP method: allow override, else default to GET
-        method_from_action = getattr(endpoint, "method", None) or "GET"
-        self.method = (method or method_from_action).upper()
+        # Default method to POST for forms, allow override
+        self.method = (method or "POST").upper()
 
-        if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+        if self.entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
     def to_props(self):
         """
         Build frontend props for ActionForm.
-        - Detect {param} in endpoint path.
-        - Preserve it in URL for runtime interpolation.
-        - Expose pathKey so the frontend knows which field to use.
+        - Get path from entity's expose block
+        - Detect {param} in path for runtime interpolation
+        - Expose pathKey so the frontend knows which field to use
         """
-        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        path = self._endpoint_path()
         import re
 
         match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
         path_key = self.pathKey or (match.group(1) if match else None)
-
-        # if match:
-        #     path = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1}", path)
-            
-        # path = path.replace("{", "{{").replace("}", "}}")
 
         return {
             "endpointPath": path,
@@ -503,22 +498,21 @@ class QueryFormComponent(_BaseComponent):
     QueryForm component for GET requests with query parameters.
     Unlike ActionForm which uses request body, QueryForm builds URL query parameters.
     """
-    def __init__(self, parent=None, name=None, endpoint=None, fields=None, submitLabel=None):
-        super().__init__(parent, name, None)
+    def __init__(self, parent=None, name=None, entity=None, fields=None, submitLabel=None):
+        super().__init__(parent, name, entity)
 
-        self.endpoint = endpoint                  # the EndpointREST node
         self.fields = fields or []
         self.submitLabel = submitLabel
 
-        if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+        if self.entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
     def to_props(self):
         """
         Build frontend props for QueryForm.
         Returns endpoint path and fields for building query parameters.
         """
-        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        path = self._endpoint_path()
 
         return {
             "endpointPath": path,
@@ -533,23 +527,22 @@ class TextFormComponent(_BaseComponent):
     TextForm component for text/plain POST requests.
     Provides a textarea for plain text input and sends it as text/plain content type.
     """
-    def __init__(self, parent=None, name=None, endpoint=None, label=None, placeholder=None, submitLabel=None):
-        super().__init__(parent, name, None)
+    def __init__(self, parent=None, name=None, entity=None, label=None, placeholder=None, submitLabel=None):
+        super().__init__(parent, name, entity)
 
-        self.endpoint = endpoint
         self.label = label
         self.placeholder = placeholder
         self.submitLabel = submitLabel
 
-        if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+        if self.entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
     def to_props(self):
         """
         Build frontend props for TextForm.
         Returns endpoint path and display configuration.
         """
-        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        path = self._endpoint_path()
 
         return {
             "endpointPath": path,
@@ -565,24 +558,23 @@ class FileUploadFormComponent(_BaseComponent):
     FileUploadForm component for multipart/form-data POST requests.
     Provides a file input with drag-and-drop and upload progress.
     """
-    def __init__(self, parent=None, name=None, endpoint=None, label=None, accept=None, maxSize=None, submitLabel=None):
-        super().__init__(parent, name, None)
+    def __init__(self, parent=None, name=None, entity=None, label=None, accept=None, maxSize=None, submitLabel=None):
+        super().__init__(parent, name, entity)
 
-        self.endpoint = endpoint
         self.label = label
         self.accept = accept
         self.maxSize = maxSize
         self.submitLabel = submitLabel
 
-        if self.endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint.")
+        if self.entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
     def to_props(self):
         """
         Build frontend props for FileUploadForm.
         Returns endpoint path, file constraints, and display configuration.
         """
-        path = getattr(self.endpoint, "path", None) or f"/api/{self.endpoint.name.lower()}"
+        path = self._endpoint_path()
 
         return {
             "endpointPath": path,
