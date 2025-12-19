@@ -68,6 +68,7 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "read" %}
+    {%- if op.is_item_op %}
     async def get_{{ entity_name | lower }}(self, {{ id_field }}: str) -> Optional[{{ entity_name }}]:
         """Get a single {{ entity_name }} by ID"""
         logger.debug(f"Getting {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
@@ -85,6 +86,22 @@ class {{ entity_name }}Service:
         {% else %}
         return {{ entity_name }}(**raw_data)
         {% endif %}
+    {%- else %}
+    async def get_{{ entity_name | lower }}(self) -> {{ entity_name }}:
+        """Get the singleton {{ entity_name }} instance"""
+        logger.debug("Getting {{ entity_name }} (singleton)")
+
+        # Fetch from source
+        raw_data = await self.source.read()
+
+        {% if has_computed_attrs %}
+        # Transform entity
+        transformed = self._transform_entity(raw_data)
+        return {{ entity_name }}(**transformed)
+        {% else %}
+        return {{ entity_name }}(**raw_data)
+        {% endif %}
+    {%- endif %}
 
     {%- elif op.operation == "create" %}
     async def create_{{ entity_name | lower }}(self, data) -> {{ entity_name }}:

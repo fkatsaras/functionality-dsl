@@ -113,8 +113,9 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
                 operation, entity_name, config, id_field
             )
 
-    # Write to file
-    output_file = Path(output_dir) / "openapi.yaml"
+    # Write to file in app/api/ directory
+    output_file = Path(output_dir) / "app" / "api" / "openapi.yaml"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(spec, f, sort_keys=False, default_flow_style=False, allow_unicode=True)
 
@@ -188,6 +189,10 @@ def _generate_request_schema(entity, readonly_fields: List[str], operation: str)
 
 def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_field: str) -> Dict[str, Any]:
     """Generate OpenAPI operation specification."""
+    # Normalize empty string to None (TextX returns "" for optional attributes)
+    if id_field == "":
+        id_field = None
+
     spec = {
         "summary": f"{operation.capitalize()} {entity_name}",
         "operationId": f"{operation}_{entity_name.lower()}",
@@ -195,8 +200,9 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
         "responses": {},
     }
 
-    # Add parameters for operations that need ID
-    if operation in {"read", "update", "delete"}:
+    # Add parameters for item operations (that require ID)
+    # Singleton read (id_field is None) should NOT have path parameters
+    if operation in {"read", "update", "delete"} and id_field is not None:
         spec["parameters"] = [
             {
                 "name": id_field,
@@ -249,7 +255,9 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
         }
 
     # Add common error responses
-    if operation in {"read", "update", "delete"}:
+    # Only item operations (with id_field) can have 404 errors
+    # Singleton read should not have 404 (always returns the single instance)
+    if operation in {"read", "update", "delete"} and id_field is not None:
         spec["responses"]["404"] = {
             "description": f"{entity_name} not found"
         }

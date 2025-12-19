@@ -23,6 +23,10 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     source = config["source"]
     id_field = config["id_field"]
 
+    # Normalize empty string to None (TextX returns "" for optional attributes)
+    if id_field == "":
+        id_field = None
+
     print(f"  Generating service for {entity_name}")
 
     # Check if entity has computed attributes (transformation entity)
@@ -52,12 +56,17 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     # Build operation list
     operation_methods = []
     for op in operations:
+        # Determine if this is an item operation for singleton read support
+        from functionality_dsl.api.crud_helpers import is_item_operation
+        is_item_op = is_item_operation(op) and not (op == "read" and id_field is None)
+
         method_config = {
             "operation": op,
             "method_name": f"{op}_{entity_name.lower()}",
             "source_method": f"source.{op}",
             "has_computed_attrs": has_computed_attrs,
             "has_parents": has_parents,
+            "is_item_op": is_item_op,
         }
         operation_methods.append(method_config)
 

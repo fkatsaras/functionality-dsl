@@ -32,6 +32,10 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     id_field = config["id_field"]
     source = config["source"]
 
+    # Normalize empty string to None (TextX returns "" for optional attributes)
+    if id_field == "":
+        id_field = None
+
     # Skip if no REST exposure
     if not rest_path:
         return
@@ -41,13 +45,19 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     # Build operation configs
     operation_configs = []
     for op in operations:
+        # Determine if this is an item operation (requires ID parameter)
+        # - update/delete are ALWAYS item operations
+        # - read is an item operation ONLY if id_field is specified
+        #   (singleton read has no id_field)
+        is_item_op = is_item_operation(op) and not (op == "read" and id_field is None)
+
         op_config = {
             "type": op,
             "method": get_operation_http_method(op),
             "path_suffix": get_operation_path_suffix(op, id_field),
             "function_name": f"{op}_{entity_name.lower()}",
             "status_code": get_operation_status_code(op),
-            "is_item_op": is_item_operation(op),
+            "is_item_op": is_item_op,
             "has_request_body": requires_request_body(op),
             "id_field": id_field,
         }

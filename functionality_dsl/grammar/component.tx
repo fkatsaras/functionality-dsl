@@ -48,7 +48,7 @@ NumberCol: FLOAT | INT;
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('endpoint:' endpoint=[entity.Endpoint])?
+  'entity:' entity_ref=[entity.Entity]
   (
       ('colNames:' colNames=StringList)                   // legacy: explicit list of column names ['id','name',...]
     | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
@@ -85,7 +85,7 @@ TypedLabel:
 
 ChartComponent:
   'Component' '<' 'Chart' '>' name=ID
-  'endpoint:' endpoint=[EndpointREST]
+  'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?

@@ -47,8 +47,24 @@ def get_operation_path_suffix(operation, id_field="id"):
     """
     Get path suffix for a CRUD operation.
     Replaces {id} placeholder with actual id_field name.
+
+    Special case: If id_field is None/empty and operation is 'read', returns ""
+    to support singleton read operations (GET /api/resource instead of GET /api/resource/{id}).
     """
     suffix = OPERATION_PATH_SUFFIX.get(operation, "")
+
+    # Normalize empty string to None (TextX returns "" for optional attributes)
+    if id_field == "":
+        id_field = None
+
+    # Singleton read pattern: read operation without id_field
+    if operation == "read" and id_field is None:
+        return ""
+
+    # If id_field is None for operations that need it, use default "id"
+    if id_field is None:
+        id_field = "id"
+
     return suffix.replace("{id}", f"{{{id_field}}}")
 
 

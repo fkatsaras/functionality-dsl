@@ -57,6 +57,21 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "OK"}
 
+    @app.get("/openapi.yaml")
+    def get_openapi_yaml():
+        """Serve the static OpenAPI YAML specification"""
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+
+        openapi_file = Path(__file__).parent / "api" / "openapi.yaml"
+        if openapi_file.exists():
+            return FileResponse(
+                openapi_file,
+                media_type="application/x-yaml",
+                filename="openapi.yaml"
+            )
+        return {"error": "OpenAPI spec not found"}
+
     return app
 
 

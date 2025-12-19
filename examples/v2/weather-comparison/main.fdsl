@@ -39,8 +39,6 @@ end
 // Merges weather from both cities into row-by-row comparison
 Entity WeatherComparison(ThessWeather, LondonWeather)
   attributes:
-    - thessaloniki_city: string = "Thessaloniki";
-    - london_city: string = "London";
     - comparison_rows: array = map(
         zip(
           ThessWeather.hourly["time"],
@@ -62,19 +60,16 @@ Entity WeatherComparison(ThessWeather, LondonWeather)
           "london_comfortable": ((abs(row[2] - 22) < 3) and (row[4] >= 30) and (row[4] <= 60))
         }
       );
-    - summary: object = {
-        "total_hours": len(ThessWeather.hourly["time"]),
-        "thess_avg_temp": round(sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]), 1),
-        "london_avg_temp": round(sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"]), 1),
-        "avg_temp_difference": round(abs(
-          sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]) -
-          sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"])
-        ), 1)
-      };
+    - total_hours: integer = len(ThessWeather.hourly["time"]);
+    - thess_avg_temp: number = round(sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]), 1);
+    - london_avg_temp: number = round(sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"]), 1);
+    - avg_temp_difference: number = round(abs(
+        sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]) -
+        sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"])
+      ), 1);
   expose:
     rest: "/api/weather/compare"
     operations: [read]
-    id_field: "thessaloniki_city"
 end
 
 // Simplified stats for charting
@@ -87,11 +82,13 @@ Entity WeatherStats(WeatherComparison)
           "london_temp": row["london_temp"]
         }
       );
-    - summary: object = WeatherComparison.summary;
+    - total_hours: integer = WeatherComparison.total_hours;
+    - thess_avg_temp: number = WeatherComparison.thess_avg_temp;
+    - london_avg_temp: number = WeatherComparison.london_avg_temp;
+    - avg_temp_difference: number = WeatherComparison.avg_temp_difference;
   expose:
     rest: "/api/weather/stats"
-    operations: [list]
-    id_field: "summary"
+    operations: [read]
 end
 
 // ============================================
@@ -106,4 +103,31 @@ end
 Source<REST> MeteoLondonAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
   operations: [read]
+end
+
+// ============================================
+// UI Components
+// ============================================
+
+Component<Table> WeatherTable
+  entity: WeatherComparison
+  columns:
+    - "time": string<time>
+    - "thess_temp": number
+    - "london_temp": number
+    - "thess_humidity": number
+    - "london_humidity": number
+    - "temp_delta": number
+    - "hotter_city": string
+    - "significant_difference": boolean
+    - "thess_comfortable": boolean
+    - "london_comfortable": boolean
+end
+
+Component<Chart> TempChart
+  entity: WeatherStats
+  seriesLabels: ["Thessaloniki", "London"]
+  xLabel: string<time> "Time"
+  yLabel: number "Temperature (°C)"
+  height: 400
 end

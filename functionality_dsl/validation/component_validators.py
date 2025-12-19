@@ -22,25 +22,17 @@ def verify_components(model):
 
 def _validate_table_component(comp):
     """Table component validation rules."""
-    # Must have endpoint
-    if comp.endpoint is None:
+    # Must have entity_ref
+    if comp.entity_ref is None:
         raise TextXSemanticError(
-            f"Table '{comp.name}' must bind an 'endpoint:'.",
+            f"Table '{comp.name}' must bind an 'entity:'.",
             **get_location(comp)
-        )
-
-    # Check if endpoint has response schema
-    response = getattr(comp.endpoint, "response", None)
-    if response is None:
-        raise TextXSemanticError(
-            f"Table '{comp.name}': endpoint has no response schema defined.",
-            **get_location(comp.endpoint)
         )
 
     # colNames must not be empty
     if not comp.colNames:
         raise TextXSemanticError(
-            f"Table '{comp.name}': 'colNames:' cannot be empty.",
+            f"Table '{comp.name}': 'colNames:' or 'columns:' cannot be empty.",
             **get_location(comp)
         )
 

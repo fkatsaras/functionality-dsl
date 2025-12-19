@@ -2,24 +2,24 @@
 
 ## Overview
 
-FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications. The main focus is the backend API. UI is just for visualization purposes.
+FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications.
 
 ## Quick Architecture Summary
 
-**Core Concept:** FDSL is a declarative data transformation pipeline. You define entities that transform data as it flows from external sources to your API clients (or vice versa for mutations).
+**Core Concept:** Entity-centric API design. Entities expose CRUD operations via REST endpoints and bind directly to UI components.
 
 **Key Components:**
-- **Sources** - External REST/WebSocket APIs you integrate with
-- **Endpoints** - Your internal API that clients call
-- **Entities** - Data transformation layers (schema → computed attributes)
-- **Parameters** - Explicit mapping from Endpoints to Sources using expressions
+- **Entities** - Data models with optional transformation logic (schema → computed attributes)
+- **Sources** - External REST/WebSocket APIs that provide/consume entity data
+- **Expose Blocks** - Declare which CRUD operations an entity exposes via REST
+- **Components** - UI elements (Table, Chart) that bind to exposed entities
 
-**Data Flow Patterns:**
-- **REST Query**: `External API → Source Entity → Transform Entities → Endpoint Entity → Client`
-- **REST Mutation**: `Client → Request Entity → Validation → Transform Entities → Source → External API`
-- **WebSocket**: Separate publish/subscribe chains with transformation layers
+**Data Flow (NEW SYNTAX v2):**
+- **Entity CRUD**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
+- **UI Binding**: `Component → Entity → REST Endpoint`
+- **Mutations**: Create/Update schemas auto-generated, excluding readonly/computed fields
 
-**Execution Model:** The generator uses topological sort to compute entities in dependency order, evaluating expressions with restricted `eval()` in a controlled context.
+**Execution Model:** Topological sort computes entities in dependency order. Expressions evaluated with restricted `eval()` in controlled context.
 
 ---
 
@@ -36,67 +36,147 @@ Server MyAPI
 end
 ```
 
-### 2. **Sources** (External Integrations)
+### 2. **Entities** (NEW SYNTAX - Core Building Block)
 
-**REST Sources:**
+**Schema Entity** (binds to external source):
 ```fdsl
-// Source with direct entity schema
-Source<REST> ProductDB
-  url: "http://external-api:9000/db/products"
-  method: GET
-  response:
-    type: array
-    entity: ProductList
-end
-
-// Source with path parameters
-Source<REST> ProductDetails
-  url: "http://external-api:9000/db/products/{productId}"
-  method: GET
-  response:
-    type: object
-    entity: Product
-end
-
-// Source accepting request body
-Source<REST> CreateProduct
-  url: "http://external-api:9000/db/products/create"
-  method: POST
-  request:
-    type: object
-    entity: NewProduct
+Entity RawOrder
+  attributes:
+    - id: string;
+    - userId: string;
+    - items: array;
+    - status: string;
+    - createdAt: string;
+  source: OrderDB  // Links to external API
 end
 ```
 
-**WebSocket Sources:**
+**Transformation Entity** (adds computed fields):
 ```fdsl
-Source<WS> StockFeed
-  channel: "ws://inventory:9002/ws/stock"
-  publish:
-    type: object
-    entity: StockUpdate
+Entity OrderWithTotals(RawOrder)
+  attributes:
+    - id: string = RawOrder.id;
+    - userId: string = RawOrder.userId;
+    - items: array = RawOrder.items;
+    - itemCount: integer = len(RawOrder.items);  // Computed
+    - subtotal: number = sum(map(RawOrder.items, i -> i["price"] * i["quantity"]));  // Computed
+    - total: number = subtotal * 1.1;  // Computed
+  expose:
+    rest: "/api/orders"
+    operations: [list, read, create, update, delete]
+    id_field: "id"
+    readonly_fields: ["id", "createdAt", "itemCount", "subtotal", "total"]
 end
 ```
 
-### 3. **Endpoints** (Your Internal API)
+**Key Points:**
+- `source:` links entity to external API
+- `expose:` makes entity available via REST API
+- `operations:` which CRUD ops to support (`list`, `read`, `create`, `update`, `delete`)
+- `readonly_fields:` excluded from Create/Update request schemas
+- All attributes with `=` are computed (evaluated server-side)
 
-**REST Endpoints:**
+### 3. **Sources** (NEW SYNTAX - External APIs)
 
-
-**WebSocket Endpoints:**
-
-### 4. **Entities** (Data Structures & Transformations)
-
-**Pure Schema Entities** (no expressions - just type declarations):
+**Simple Operations List:**
 ```fdsl
-// Schema entity for an object
+Source<REST> OrderDB
+  base_url: "http://dummy-order-service:9001/orders"
+  operations: [list, read, create, update, delete]
+end
+```
+
+Auto-infers standard REST patterns:
+- `list` → `GET /`
+- `read` → `GET /{id}`
+- `create` → `POST /`
+- `update` → `PUT /{id}`
+- `delete` → `DELETE /{id}`
+
+### 4. **Components** (NEW SYNTAX - UI Binding)
+
+**Table Component:**
+```fdsl
+Component<Table> OrdersTable
+  entity: OrderWithTotals  // Binds directly to exposed entity
+  columns:
+    - "id": string
+    - "userId": string
+    - "itemCount": integer
+    - "total": number
+end
+```
+
+**Chart Component:**
+```fdsl
+Component<Chart> TempChart
+  entity: WeatherStats
+  seriesLabels: ["Thessaloniki", "London"]
+  xLabel: string<time> "Time"
+  yLabel: number "Temperature (°C)"
+  height: 400
+end
+```
+
+**Key Points:**
+- Components bind to **entities** (not endpoints anymore)
+- Entity must have `expose:` block with REST path
+- Component automatically calls entity's REST endpoint
+
+---
+
+## Generated Code
+
+**What Gets Generated:**
+1. **Pydantic Models** - `{Entity}`, `{Entity}Create`, `{Entity}Update` schemas
+2. **FastAPI Routers** - CRUD endpoints for each exposed entity
+3. **Service Layer** - Business logic with transformation chains
+4. **Source Clients** - HTTP clients for external APIs
+5. **OpenAPI Spec** - `app/api/openapi.yaml` with full API documentation
+6. **Svelte Components** - UI elements bound to API endpoints
+
+**File Structure:**
+```
+generated/
+├── app/
+│   ├── api/
+│   │   ├── routers/        # One file per exposed entity
+│   │   └── openapi.yaml    # Static API spec
+│   ├── services/           # Entity transformation logic
+│   ├── sources/            # External API clients
+│   ├── domain/
+│   │   └── models.py       # Pydantic models (Entity, EntityCreate, EntityUpdate)
+│   └── core/               # Runtime utilities
+├── frontend/
+│   └── components/         # Svelte UI components
+└── main.py                 # FastAPI app entry point
+```
+
+---
+
+## Old vs New Syntax
+
+| Old (v1) | New (v2 - Entity-Centric) |
+|----------|---------------------------|
+| Define `Endpoint<REST>` explicitly | Entities expose operations directly |
+| Components bind to `endpoint:` | Components bind to `entity:` |
+| Manual CRUD setup | Auto-generated from `operations:` list |
+| Separate request/response schemas | Auto-generated Create/Update schemas |
+| Complex parameter mapping | Simplified source operations |
+
+**Migration:** v2 is a complete rewrite. Use `examples/v2/` for new syntax patterns.
+
+---
+
+## Entity Types (Critical Concept)
+
+**Pure Schema Entities** (no expressions):
+```fdsl
 Entity Product
   attributes:
     - id: string;
     - name: string;
     - price: number;
-    - data: object<ProductData>?;  // Nested entity reference
-end
 
 Entity ProductData
   attributes:

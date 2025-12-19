@@ -114,8 +114,19 @@ def _validate_rest_expose(entity, expose, rest, source):
             )
 
     # Validate id_field for item operations
-    item_ops = {'read', 'update', 'delete'}
-    if any(op in operations for op in item_ops):
+    # Semantic rules:
+    # - update/delete ALWAYS require id_field (they're item operations)
+    # - read can be:
+    #   a) Singleton (no id_field) - GET /api/resource
+    #   b) Item operation (with id_field) - GET /api/resource/{id}
+    # - Singleton read is only allowed when ONLY 'read' is exposed (no update/delete)
+
+    mutation_ops = {'update', 'delete'}
+    has_mutations = any(op in operations for op in mutation_ops)
+    has_read = 'read' in operations
+
+    # If update or delete are present, id_field is REQUIRED
+    if has_mutations:
         id_field = getattr(expose, "id_field", None)
         if id_field:
             # Verify id_field exists in entity attributes
@@ -131,11 +142,26 @@ def _validate_rest_expose(entity, expose, rest, source):
             inferred = _infer_id_field(entity.name, attrs)
             if not inferred:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' has item operations ({item_ops & set(operations)}) "
-                    f"but no 'id_field:' specified and cannot infer one. "
+                    f"Entity '{entity.name}' has mutation operations ({mutation_ops & set(operations)}) "
+                    f"which require 'id_field:' to be specified. Cannot infer id_field. "
                     f"Please specify 'id_field: \"<field_name>\"'.",
                     **get_location(expose),
                 )
+
+    # If ONLY read is present (no mutations), id_field is OPTIONAL
+    # - With id_field: GET /api/resource/{id} (item operation)
+    # - Without id_field: GET /api/resource (singleton operation)
+    elif has_read:
+        id_field = getattr(expose, "id_field", None)
+        if id_field:
+            # Verify id_field exists in entity attributes
+            attrs = {a.name for a in getattr(entity, "attributes", []) or []}
+            if id_field not in attrs:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' id_field '{id_field}' not found in attributes.",
+                    **get_location(expose),
+                )
+        # If no id_field, that's OK - it's a singleton read operation
 
     # Validate path_params if present
     path_params_block = getattr(expose, "path_params", None)

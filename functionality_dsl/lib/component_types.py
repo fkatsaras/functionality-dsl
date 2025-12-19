@@ -14,10 +14,10 @@ def register_component(cls):
 
 
 class _BaseComponent:
-    def __init__(self, parent=None, name=None, endpoint=None):
+    def __init__(self, parent=None, name=None, entity_ref=None):
         self.parent = parent
         self.name = name
-        self.endpoint = endpoint  # InternalEndpoint node (Endpoint<REST>/Endpoint<WS>)
+        self.entity_ref = entity_ref  # Entity reference (new syntax only)
 
     @property
     def kind(self):
@@ -28,10 +28,10 @@ class _BaseComponent:
     def _tpl_file(self):
         return f"components/{self.kind}.jinja"
 
-    # convenience: get the bound entity (via endpoint.entity)
+    # convenience: get the bound entity
     @property
     def entity(self):
-        return getattr(self.endpoint, "entity", None)
+        return self.entity_ref
 
     def _attr_name(self, a):
         """
@@ -59,12 +59,14 @@ class _BaseComponent:
         return None
     
     def _endpoint_path(self, suffix: str | None = None) -> str:
-        p = getattr(self.endpoint, "path", None)
-        if isinstance(p, str) and p.strip():
-            base = p if p.startswith("/") else f"/{p}"
-        else:
-            base = f"/api/{self.endpoint.name.lower()}"
-        return base + (suffix or "")
+        # Get REST path from entity's expose block
+        expose = getattr(self.entity_ref, "expose", None)
+        if expose:
+            rest_path = getattr(expose, "rest_path", None)
+            if rest_path:
+                return rest_path + (suffix or "")
+        # Fallback to entity name
+        return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
 
     def _extract_path_params(self) -> list:
         """Extract path parameter names from endpoint path."""
@@ -121,8 +123,8 @@ def _strip_quotes(s):
 
 @register_component
 class TableComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, endpoint=None, colNames=None, columns=None):
-        super().__init__(parent, name, endpoint)
+    def __init__(self, parent=None, name=None, entity_ref=None, colNames=None, columns=None):
+        super().__init__(parent, name, entity_ref)
 
         # Support both legacy colNames and new typed columns
         if columns:
@@ -150,8 +152,8 @@ class TableComponent(_BaseComponent):
             self.colNames = []
             self.columns = []
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
         if not self.colNames:
             raise ValueError(f"Component '{name}': 'colNames:' or 'columns:' cannot be empty.")
 
@@ -266,8 +268,8 @@ class LiveTableComponent(_BaseComponent):
         self.maxRows = int(maxRows) if maxRows is not None else 100
 
         # Validation
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if endpoint is None and entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
         if endpoint.__class__.__name__ != "EndpointWS":
             raise ValueError(f"Component '{name}': LiveTable requires Endpoint<WS>, got {endpoint.__class__.__name__}")
         if not self.keyField:
@@ -335,13 +337,13 @@ class LiveTableComponent(_BaseComponent):
 @register_component
 class ChartComponent(_BaseComponent):
     """
-    Chart component for REST endpoints - displays time-series data with polling.
+    Chart component for entities - displays time-series data with polling.
     """
     def __init__(
         self,
         parent=None,
         name=None,
-        endpoint=None,
+        entity_ref=None,
         values=None,
         xLabel=None,
         yLabel=None,
@@ -350,7 +352,7 @@ class ChartComponent(_BaseComponent):
         windowSize=None,
         height=None,
     ):
-        super().__init__(parent, name, endpoint)
+        super().__init__(parent, name, entity_ref)
         self.values = values  # Just the attribute name (string)
 
         # Parse typed labels
@@ -362,13 +364,9 @@ class ChartComponent(_BaseComponent):
         self.windowSize = int(windowSize) if windowSize is not None else 0
         self.height = int(height) if height is not None else 300
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
-
-        # Validate: Chart only works with REST endpoints
-        if endpoint.__class__.__name__ != "EndpointREST":
-            raise ValueError(f"Component '{name}': Chart component requires Endpoint<REST>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):
         """Parse TypedLabel node into dict with type, format, and text."""
@@ -421,8 +419,8 @@ class LiveChartComponent(_BaseComponent):
         self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
         self.height = int(height) if height is not None else 300
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if endpoint is None and entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
         # Validate: LiveChart only works with WebSocket endpoints
@@ -614,8 +612,8 @@ class GaugeComponent(_BaseComponent):
         self.label = _strip_quotes(label) if label is not None else _strip_quotes(label_str)
         self.unit  = _strip_quotes(unit)  if unit  is not None else _strip_quotes(unit_str)
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if endpoint is None and entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
         if not self.value:
             raise ValueError(f"Component '{name}': 'value:' is required.")
 
@@ -686,8 +684,8 @@ class LiveViewComponent(_BaseComponent):
 
         self.label = _strip_quotes(label) or ""
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:'.")
+        if endpoint is None and entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
 
     def to_props(self):
         return {
