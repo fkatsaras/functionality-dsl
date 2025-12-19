@@ -4,20 +4,20 @@ import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from ..extractors import (
+from ...extractors import (
     get_entities,
     map_to_python_type,
     compile_validators_to_pydantic,
 )
-from ..utils import format_python_code
-from ..exposure_map import build_exposure_map
-from ..crud_helpers import get_writable_attributes
+from ...utils import format_python_code
+from ...exposure_map import build_exposure_map
+from ...crud_helpers import get_writable_attributes
 
 
 def generate_domain_models(model, templates_dir, output_dir):
     """Generate Pydantic domain models from entities with validation constraints."""
     entities_context = []
-    from ..extractors import get_all_source_names
+    from ...extractors import get_all_source_names
     all_source_names = get_all_source_names(model)
     all_imports = set()
     models_needing_rebuild = set()  # Track models with forward references

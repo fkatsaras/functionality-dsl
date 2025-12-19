@@ -100,7 +100,7 @@ ChartComponent:
 
 LiveChartComponent:
   'Component' '<' 'LiveChart' '>' name=ID
-  'endpoint:' endpoint=[EndpointWS]
+  'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?

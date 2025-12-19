@@ -169,10 +169,21 @@ SourceWS:
   (
     'channel:' url=STRING
     (parameters=ParametersBlock)?
-    (subscribe=SubscribeBlock)?
+    ((subscribe=SubscribeBlock)?
     (publish=PublishBlock)?
+    |
+    (operations=WsOperationsBlock)?)
   )
   'end'
+;
+
+// WebSocket operations block (NEW SYNTAX)
+WsOperationsBlock:
+  'operations:' '[' ws_ops+=WsOperation (',' ws_ops+=WsOperation)* ']'
+;
+
+WsOperation:
+  'subscribe' | 'publish'
 ;
 
 // ---------- API (presentation) ----------

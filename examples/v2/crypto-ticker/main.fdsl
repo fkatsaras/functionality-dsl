@@ -1,0 +1,54 @@
+// Cryptocurrency Price Ticker - NEW SYNTAX (Entity-Centric WebSocket)
+// Demonstrates: Real-time WebSocket streaming with entity exposure
+
+Server BinanceWS
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================
+// Base Schema Entity (from external WebSocket)
+// ============================================
+
+// Raw price tick from Binance (schema-only, from external WS)
+Entity BTCRaw
+  attributes:
+    - c: number;  // Current price
+  source: BinanceBTCUSDT
+end
+
+// ============================================
+// Transformation Entity (with computed timestamp)
+// ============================================
+
+// Price with timestamp - exposes WebSocket channel
+Entity Prices(BTCRaw)
+  attributes:
+    - t: string = formatDate(now(), "YYYY-MM-DD HH:mm:ss");
+    - btc: number = BTCRaw.c;
+  expose:
+    websocket: "/api/prices"
+    operations: [subscribe]
+end
+
+// ============================================
+// External WebSocket Source (Binance ticker)
+// ============================================
+
+Source<WS> BinanceBTCUSDT
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe]
+end
+
+// ============================================
+// UI Component
+// ============================================
+
+Component<LiveChart> BitcoinPrice
+  entity: Prices
+  seriesLabels: ["BTC Price"]
+  xLabel: string<datetime> "Time"
+  yLabel: number "USDT"
+end

@@ -9,9 +9,9 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, List
 
-from ..exposure_map import build_exposure_map
-from ..extractors import get_entities, map_to_openapi_type
-from ..crud_helpers import (
+from ...exposure_map import build_exposure_map
+from ...extractors import get_entities, map_to_openapi_type
+from ...crud_helpers import (
     get_operation_http_method,
     get_operation_path_suffix,
     get_operation_status_code,

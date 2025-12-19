@@ -3,8 +3,8 @@
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from ..utils import format_python_code, get_route_path
-from ..builders import (
+from ...utils import format_python_code, get_route_path
+from ...builders import (
     build_inbound_chain,
     build_outbound_chain,
     build_ws_external_targets,
@@ -82,7 +82,7 @@ def generate_websocket_router(endpoint, model, all_source_names, templates_dir, 
     sync_config_outbound = build_sync_config(entity_out, model)
 
     # --- Extract header parameters ---
-    from ..utils.paths import get_header_params_from_block
+    from ...utils.paths import get_header_params_from_block
     from ...lib.compiler.expr_compiler import compile_expr_to_python
 
     header_params_typed = []

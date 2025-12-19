@@ -24,15 +24,21 @@ from .extractors import (
     get_response_schema,
 )
 from .generators import (
+    # Legacy (v1)
+    generate_rest_endpoint,
     generate_websocket_router,
-    generate_domain_models,
-    scaffold_backend_from_model,
+    # Entity (v2)
     generate_entity_router,
     generate_entity_service,
+    generate_entity_websocket_router,
+    # Sources
     generate_source_client,
+    generate_websocket_source_client,
+    # Core
+    generate_domain_models,
+    scaffold_backend_from_model,
+    generate_openapi_spec,
 )
-from .generators.rest_generator import generate_rest_endpoint
-from .generators.openapi_generator import generate_openapi_spec
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
 
@@ -99,20 +105,30 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         # Generate source clients for operations-based sources
         print("\n  [4.1] Generating source clients...")
-        sources = get_children_of_type("SourceREST", model)
-        for source in sources:
+        # REST sources
+        rest_sources = get_children_of_type("SourceREST", model)
+        for source in rest_sources:
             if hasattr(source, "operations") and source.operations:
                 generate_source_client(source, model, templates_dir, out_dir)
+
+        # WebSocket sources
+        ws_sources = get_children_of_type("SourceWS", model)
+        for source in ws_sources:
+            if hasattr(source, "operations") and source.operations:
+                generate_websocket_source_client(source, model, templates_dir, out_dir)
 
         # Generate entity services
         print("\n  [4.2] Generating entity services...")
         for entity_name, config in exposure_map.items():
             generate_entity_service(entity_name, config, model, templates_dir, out_dir)
 
-        # Generate entity routers
+        # Generate entity routers (REST and WebSocket)
         print("\n  [4.3] Generating entity routers...")
         for entity_name, config in exposure_map.items():
+            # Generate REST router if entity has REST exposure
             generate_entity_router(entity_name, config, model, templates_dir, out_dir)
+            # Generate WebSocket router if entity has WebSocket exposure
+            generate_entity_websocket_router(entity_name, config, model, templates_dir, out_dir)
 
         # Generate OpenAPI specification
         print("\n  [4.4] Generating OpenAPI specification...")

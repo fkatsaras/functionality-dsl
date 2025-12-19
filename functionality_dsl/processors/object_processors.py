@@ -158,10 +158,13 @@ def external_ws_endpoint_obj_processor(ep):
 
     subscribe_block = getattr(ep, "subscribe", None)
     publish_block = getattr(ep, "publish", None)
+    operations_block = getattr(ep, "operations", None)
 
-    if subscribe_block is None and publish_block is None:
+    # NEW SYNTAX: operations: [subscribe, publish]
+    # OLD SYNTAX: explicit subscribe:/publish: blocks
+    if subscribe_block is None and publish_block is None and operations_block is None:
         raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both).",
+            f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both), or 'operations: [subscribe/publish]'.",
             **get_location(ep)
         )
 

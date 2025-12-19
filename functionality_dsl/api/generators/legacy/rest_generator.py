@@ -12,14 +12,14 @@ independent of HTTP method semantics. Supports real-world REST patterns includin
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from ..utils import format_python_code, extract_path_params, get_route_path
-from ..builders import (
+from ...utils import format_python_code, extract_path_params, get_route_path
+from ...builders import (
     build_rest_input_config,
     build_entity_chain,
     resolve_dependencies_for_entity,
 )
-from ..extractors import get_request_schema, get_response_schema
-from ..flow_analyzer import analyze_endpoint_flow, print_flow_analysis, EndpointFlowType
+from ...extractors import get_request_schema, get_response_schema
+from ...flow_analyzer import analyze_endpoint_flow, print_flow_analysis, EndpointFlowType
 
 
 def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, templates_dir, output_dir, server_config):
@@ -230,7 +230,7 @@ def generate_rest_endpoint(endpoint, model, all_endpoints, all_source_names, tem
     route_path = get_route_path(endpoint)
 
     # Extract path parameters WITH type information
-    from ..utils.paths import get_path_params_from_block, get_query_params_from_block, get_header_params_from_block
+    from ...utils.paths import get_path_params_from_block, get_query_params_from_block, get_header_params_from_block
     path_params_typed = get_path_params_from_block(endpoint)
 
     # Extract query parameters WITH type information and default expressions

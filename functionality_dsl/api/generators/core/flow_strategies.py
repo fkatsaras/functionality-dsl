@@ -12,7 +12,7 @@ making the generator logic clear, testable, and maintainable.
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any
-from ..flow_analyzer import EndpointFlowType
+from ...flow_analyzer import EndpointFlowType
 
 
 class FlowStrategy(ABC):
@@ -34,7 +34,7 @@ class FlowStrategy(ABC):
         self.all_source_names = all_source_names
 
         # Extract request/response entities from endpoint
-        from ..extractors import get_request_schema, get_response_schema
+        from ...extractors import get_request_schema, get_response_schema
 
         request_schema = get_request_schema(endpoint)
         self.request_entity = request_schema.get("entity") if request_schema else None
@@ -102,7 +102,7 @@ class ReadFlowStrategy(FlowStrategy):
         For READ flows, build the full response entity chain.
         All computation happens before returning the response.
         """
-        from ..builders.chain_builders import build_entity_chain
+        from ...builders.chain_builders import build_entity_chain
 
         if not self.response_entity:
             return []
@@ -156,7 +156,7 @@ class WriteFlowStrategy(FlowStrategy):
         For WRITE flows, build response transformation chain.
         This computes the response entity from the write target's response.
         """
-        from ..builders.chain_builders import build_entity_chain
+        from ...builders.chain_builders import build_entity_chain
 
         if not self.response_entity:
             return []
@@ -198,7 +198,7 @@ class ReadWriteFlowStrategy(FlowStrategy):
         For READ_WRITE flows, build pre-write computation chain.
         This includes entities needed for write target parameters.
         """
-        from ..builders.chain_builders import build_entity_chain
+        from ...builders.chain_builders import build_entity_chain
 
         compiled_chain = []
 
@@ -234,7 +234,7 @@ class ReadWriteFlowStrategy(FlowStrategy):
         For READ_WRITE flows, build response transformation chain.
         This computes the final response entity from the write target's response.
         """
-        from ..builders.chain_builders import build_entity_chain
+        from ...builders.chain_builders import build_entity_chain
 
         if not self.response_entity:
             return []

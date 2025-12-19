@@ -396,13 +396,14 @@ class ChartComponent(_BaseComponent):
 @register_component
 class LiveChartComponent(_BaseComponent):
     """
-    LiveChart component for WebSocket endpoints - displays real-time streaming data.
+    LiveChart component for WebSocket streaming - displays real-time data.
     """
     def __init__(
         self,
         parent=None,
         name=None,
-        endpoint=None,
+        entity_ref=None,
+        endpoint=None,  # Legacy support
         values=None,
         xLabel=None,
         yLabel=None,
@@ -410,7 +411,7 @@ class LiveChartComponent(_BaseComponent):
         windowSize=None,
         height=None,
     ):
-        super().__init__(parent, name, endpoint)
+        super().__init__(parent, name, entity_ref or endpoint)
         self.values = values  # Just the attribute name (string)
 
         # Parse typed labels
@@ -421,12 +422,18 @@ class LiveChartComponent(_BaseComponent):
         self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
         self.height = int(height) if height is not None else 300
 
-        if endpoint is None and entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
+        if entity_ref is None and endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
-        # Validate: LiveChart only works with WebSocket endpoints
-        if endpoint.__class__.__name__ != "EndpointWS":
+        # NEW SYNTAX: Validate entity has WebSocket exposure
+        if entity_ref:
+            expose = getattr(entity_ref, "expose", None)
+            if not expose or not getattr(expose, "websocket", None):
+                raise ValueError(f"Component '{name}': LiveChart requires entity with WebSocket exposure (expose: websocket: '/channel')")
+
+        # LEGACY: Validate endpoint type
+        if endpoint and endpoint.__class__.__name__ != "EndpointWS":
             raise ValueError(f"Component '{name}': LiveChart component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
 
     def _parse_typed_label(self, typed_label):

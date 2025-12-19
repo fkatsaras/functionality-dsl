@@ -5,7 +5,7 @@ from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..extractors import extract_server_config
+from ...extractors import extract_server_config
 
 
 def render_infrastructure_files(context, templates_dir, output_dir):

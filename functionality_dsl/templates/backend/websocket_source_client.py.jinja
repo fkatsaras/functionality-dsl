@@ -1,0 +1,61 @@
+# ========================================================================
+# AUTO-GENERATED WEBSOCKET SOURCE CLIENT: {{ source_name }}
+# External WebSocket connection
+# ========================================================================
+
+import logging
+import websockets
+import json
+from typing import AsyncIterator, Optional, Dict, Any
+
+logger = logging.getLogger("fdsl.source.{{ source_name }}")
+
+
+class {{ source_name }}Source:
+    """WebSocket source client for {{ source_name }}"""
+
+    def __init__(self):
+        self.url = "{{ channel }}"
+        self.connection = None
+
+    async def subscribe(self) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Subscribe to WebSocket feed and yield messages.
+        """
+        logger.info(f"Connecting to {self.url}")
+
+        try:
+            async with websockets.connect(self.url) as websocket:
+                self.connection = websocket
+                logger.info(f"Connected to {self.url}")
+
+                async for message in websocket:
+                    try:
+                        # Parse JSON message
+                        data = json.loads(message)
+                        logger.debug(f"Received message: {type(data)}")
+                        yield data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse message: {e}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error processing message: {e}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            raise
+
+    async def publish(self, message: Dict[str, Any]) -> None:
+        """
+        Publish message to WebSocket.
+        """
+        if not self.connection:
+            raise RuntimeError("Not connected to WebSocket")
+
+        try:
+            await self.connection.send(json.dumps(message))
+            logger.debug(f"Published message to {self.url}")
+        except Exception as e:
+            logger.error(f"Failed to publish message: {e}")
+            raise

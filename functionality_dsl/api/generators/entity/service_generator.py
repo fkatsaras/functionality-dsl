@@ -55,8 +55,8 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
 
     # Check if any parents are exposed entities (have their own services)
     # If so, we need to call their services instead of fetching from source
-    from ..exposure_map import build_exposure_map
-    from ..extractors import find_source_for_entity
+    from ...exposure_map import build_exposure_map
+    from ...extractors import find_source_for_entity
 
     exposure_map = build_exposure_map(model)
 
