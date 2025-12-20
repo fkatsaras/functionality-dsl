@@ -1,0 +1,188 @@
+# ========================================================================
+# AUTO-GENERATED COMBINED WEBSOCKET ROUTER: {{ ws_channel }}
+# Handles bidirectional WebSocket communication
+# ========================================================================
+
+import logging
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Set
+import asyncio
+
+{% if has_subscribe %}
+from app.services.{{ subscribe_entity_name | lower }}_service import {{ subscribe_entity_name }}Service
+{% endif %}
+{% if has_publish %}
+from app.services.{{ publish_entity_name | lower }}_service import {{ publish_entity_name }}Service
+{% endif %}
+
+logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
+
+router = APIRouter()
+
+# Track active WebSocket connections
+active_connections: Set[WebSocket] = set()
+
+
+@router.websocket("{{ ws_channel }}")
+async def websocket_combined_endpoint(websocket: WebSocket):
+    """
+    Combined WebSocket endpoint for {{ ws_channel }}.
+    Supports: {% if has_subscribe %}subscribe{% endif %}{% if has_subscribe and has_publish %}, {% endif %}{% if has_publish %}publish{% endif %}
+    """
+    await websocket.accept()
+    active_connections.add(websocket)
+    logger.info(f"Client connected to {{ ws_channel }}. Total connections: {len(active_connections)}")
+
+    {% if has_subscribe %}
+    subscribe_service = {{ subscribe_entity_name }}Service()
+    {% endif %}
+    {% if has_publish %}
+    publish_service = {{ publish_entity_name }}Service()
+    {% endif %}
+
+    try:
+        {% if has_subscribe and has_publish %}
+        # Bidirectional mode: Run subscribe and publish concurrently
+        {% if has_subscribe %}
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        subscribe_source = {{ subscribe_ws_source.name }}Source()
+        {% endif %}
+        {% if has_publish and publish_ws_target %}
+        from app.sources.{{ publish_ws_target.name | lower }}_source import {{ publish_ws_target.name }}Source
+
+        # Check if subscribe and publish use the same source - if so, share the connection
+        {% if has_subscribe and subscribe_ws_source.name == publish_ws_target.name %}
+        publish_target = subscribe_source  # Share the same connection
+        {% else %}
+        publish_target = {{ publish_ws_target.name }}Source()
+        {% endif %}
+        {% endif %}
+
+        async def handle_subscribe():
+            """Subscribe task: Stream data from external source to client."""
+            async for raw_message in subscribe_source.subscribe():
+                if raw_message is None:
+                    continue
+
+                # Transform raw message through entity service
+                transformed_message = subscribe_service._transform_entity(raw_message)
+
+                # Send to client
+                await websocket.send_json(transformed_message)
+                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+
+        async def handle_publish():
+            """Publish task: Receive data from client and send to external target."""
+            while True:
+                # Receive message based on content type
+                {% if publish_is_text %}
+                # Content type is text/plain - receive as text
+                raw_data = await websocket.receive_text()
+                logger.debug(f"Received text message from client: {raw_data}")
+                {% else %}
+                # Content type is application/json - receive as JSON
+                raw_data = await websocket.receive_json()
+                logger.debug(f"Received JSON message from client: {raw_data}")
+                {% endif %}
+
+                # Wrap primitive values for wrapper entities
+                {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
+                # Parent entity is a primitive type - wrap in object with attribute name
+                data = {"{{ publish_wrapper_key }}": raw_data}
+                logger.debug(f"Wrapped primitive value: {data}")
+                {% else %}
+                # Parent entity is a full object, use as-is
+                data = raw_data
+                {% endif %}
+
+                # Transform through entity service
+                transformed_data = publish_service._transform_entity(data)
+                logger.debug(f"Transformed message: {transformed_data}")
+
+                {% if publish_ws_target %}
+                # Publish to external WebSocket target
+                await publish_target.publish(transformed_data)
+                logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
+                {% else %}
+                # No target specified - message processed but not forwarded
+                logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
+                {% endif %}
+
+        # Run both tasks concurrently
+        await asyncio.gather(
+            handle_subscribe(),
+            handle_publish(),
+            return_exceptions=True
+        )
+
+        {% elif has_subscribe %}
+        # Subscribe-only mode: Stream data from external source to client
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        source = {{ subscribe_ws_source.name }}Source()
+
+        async for raw_message in source.subscribe():
+            if raw_message is None:
+                continue
+
+            # Transform raw message through entity service
+            transformed_message = subscribe_service._transform_entity(raw_message)
+
+            # Send to client
+            await websocket.send_json(transformed_message)
+            logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+
+        {% elif has_publish %}
+        # Publish-only mode: Receive data from client and send to external target
+        {% if publish_ws_target %}
+        from app.sources.{{ publish_ws_target.name | lower }}_source import {{ publish_ws_target.name }}Source
+
+        target_source = {{ publish_ws_target.name }}Source()
+        {% endif %}
+
+        while True:
+            # Receive message based on content type
+            {% if publish_is_text %}
+            # Content type is text/plain - receive as text
+            raw_data = await websocket.receive_text()
+            logger.debug(f"Received text message from client: {raw_data}")
+            {% else %}
+            # Content type is application/json - receive as JSON
+            raw_data = await websocket.receive_json()
+            logger.debug(f"Received JSON message from client: {raw_data}")
+            {% endif %}
+
+            # Wrap primitive values for wrapper entities
+            {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
+            # Parent entity is a primitive type - wrap in object with attribute name
+            data = {"{{ publish_wrapper_key }}": raw_data}
+            logger.debug(f"Wrapped primitive value: {data}")
+            {% else %}
+            # Parent entity is a full object, use as-is
+            data = raw_data
+            {% endif %}
+
+            # Transform through entity service
+            transformed_data = publish_service._transform_entity(data)
+            logger.debug(f"Transformed message: {transformed_data}")
+
+            {% if publish_ws_target %}
+            # Publish to external WebSocket target
+            await target_source.publish(transformed_data)
+            logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
+            {% else %}
+            # No target specified - message processed but not forwarded
+            logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
+            {% endif %}
+
+        {% endif %}
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from {{ ws_channel }}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+        logger.info(f"Connection closed. Remaining connections: {len(active_connections)}")

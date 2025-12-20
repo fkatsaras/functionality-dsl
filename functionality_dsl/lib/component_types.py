@@ -59,14 +59,25 @@ class _BaseComponent:
         return None
     
     def _endpoint_path(self, suffix: str | None = None) -> str:
-        # Get REST path from entity's expose block
+        # Get path from entity's expose block (REST or WebSocket)
         expose = getattr(self.entity_ref, "expose", None)
         if expose:
+            # Check for REST path
             rest = getattr(expose, "rest", None)
             if rest:
                 rest_path = getattr(rest, "path", None)
                 if rest_path:
                     return rest_path + (suffix or "")
+
+            # Check for WebSocket channel
+            websocket = getattr(expose, "websocket", None)
+            if websocket:
+                ws_channel = getattr(websocket, "channel", None)
+                if ws_channel:
+                    # Remove quotes from channel string
+                    ws_path = ws_channel.strip('"').strip("'")
+                    return ws_path + (suffix or "")
+
         # Fallback to entity name
         return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
 
@@ -635,20 +646,21 @@ class GaugeComponent(_BaseComponent):
 class InputComponent(_BaseComponent):
     """
     <Component<Input> ...>
-      endpoint: <Endpoint<WS> (sink)>
+      entity: <Entity> (v2 syntax) OR endpoint: <Endpoint<WS> (v1 syntax - sink)>
       label: optional label
       placeholder: optional placeholder text
       initial: optional initial value
     """
-    def __init__(self, parent=None, name=None, endpoint=None, label=None, placeholder=None, initial=None, submitLabel=None):
-        super().__init__(parent, name, endpoint)
+    def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None, label=None, placeholder=None, initial=None, submitLabel=None):
+        super().__init__(parent, name, entity_ref=entity_ref or endpoint)
+        self.endpoint = endpoint  # Keep for backward compatibility
         self.label = _strip_quotes(label)
         self.placeholder = _strip_quotes(placeholder)
         self.initial = _strip_quotes(initial)
         self.submitLabel = _strip_quotes(submitLabel)
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS> endpoint.")
+        if entity_ref is None and endpoint is None:
+            raise ValueError(f"Component '{name}' must bind either 'entity:' (v2) or 'endpoint:' (v1) endpoint.")
 
     def to_props(self):
         return {
@@ -662,9 +674,10 @@ class InputComponent(_BaseComponent):
 
 @register_component
 class LiveViewComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, endpoint=None,
+    def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None,
                  fields=None, label=None, maxMessages=None):
-        super().__init__(parent, name, endpoint)
+        super().__init__(parent, name, entity_ref=entity_ref or endpoint)
+        self.endpoint = endpoint  # Keep for backward compatibility
         print("[DEBUG] maxMessages BEFORE =", repr(maxMessages))
         # normalize fields
         if hasattr(fields, "items"):

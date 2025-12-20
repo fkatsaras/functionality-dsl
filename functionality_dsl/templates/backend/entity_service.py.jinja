@@ -47,6 +47,9 @@ class {{ entity_name }}Service:
         {% elif source_name %}
         self.source = {{ source_name }}Source()
         {% endif %}
+        {% if not has_parent_services and not has_multiple_parent_sources and not source_name %}
+        pass
+        {% endif %}
 
 {% if has_computed_attrs %}
     def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:

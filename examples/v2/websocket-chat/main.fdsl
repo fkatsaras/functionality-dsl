@@ -1,0 +1,79 @@
+// WebSocket Chat with Publish/Subscribe - NEW SYNTAX (Entity-Centric)
+// Demonstrates: Bidirectional WebSocket communication with entity exposure
+
+Server ChatServer
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================
+// External WebSocket Service (Echo Server)
+// ============================================
+
+// External echo WebSocket service
+// Supports both publish (send to external) and subscribe (receive from external)
+Source<WS> EchoWS
+  channel: "ws://dummy-echo-service:8765"
+  operations: [subscribe, publish]
+end
+
+// ============================================
+// INBOUND FLOW (subscribe): External WS → Client
+// ============================================
+
+// Raw message received from external echo service
+Entity EchoRaw
+  attributes:
+    - text: string;
+  source: EchoWS
+end
+
+// Transform incoming messages (lowercase) and expose to client (subscribe only)
+Entity ChatIncoming(EchoRaw)
+  attributes:
+    - text: string = lower(EchoRaw.text);
+  expose:
+    websocket: "/api/chat"
+    operations: [subscribe]
+end
+
+// ============================================
+// OUTBOUND FLOW (publish): Client → External WS
+// ============================================
+
+// What client sends (pure schema - receives text from client via WS publish)
+Entity ChatOutgoing
+  type: string
+//  contentType: text/plain
+  attributes:
+    - value: string(3..);
+end
+
+// Transform outgoing messages (uppercase) before sending to external WS
+Entity ChatOutgoingProcessed(ChatOutgoing)
+  attributes:
+    - text: string = upper(ChatOutgoing.value);
+  target: EchoWS  // Send transformed data to external WebSocket
+  expose:
+    websocket: "/api/chat"
+    operations: [publish]
+end
+
+// ============================================
+// UI Components
+// ============================================
+
+Component<Input> ChatBox
+  entity: ChatOutgoingProcessed
+  placeholder: "Type your message..."
+  label: "Chat"
+  submitLabel: "Send"
+end
+
+Component<LiveView> ChatFeed
+  entity: ChatIncoming
+  fields: ["text"]
+  label: "Messages"
+end

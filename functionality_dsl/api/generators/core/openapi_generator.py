@@ -31,8 +31,14 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
     """
     exposure_map = build_exposure_map(model)
 
-    if not exposure_map:
-        print("  No exposed entities found - skipping OpenAPI spec generation")
+    # Filter for REST entities only
+    rest_entities = {
+        name: config for name, config in exposure_map.items()
+        if config.get("rest_path")
+    }
+
+    if not rest_entities:
+        print("  No REST entities found - skipping OpenAPI spec generation")
         return
 
     # Default server config
@@ -68,8 +74,8 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
     for entity_name, entity in all_entities.items():
         spec["components"]["schemas"][entity_name] = _generate_entity_schema(entity)
 
-    # Generate Create/Update schemas for exposed entities
-    for entity_name, config in exposure_map.items():
+    # Generate Create/Update schemas for REST entities
+    for entity_name, config in rest_entities.items():
         entity = config["entity"]
         operations = config["operations"]
         readonly_fields = config.get("readonly_fields", [])
@@ -91,14 +97,11 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
                 entity, readonly_fields, "update"
             )
 
-    # Generate paths for exposed entities
-    for entity_name, config in exposure_map.items():
-        rest_path = config.get("rest_path")
+    # Generate paths for REST entities
+    for entity_name, config in rest_entities.items():
+        rest_path = config["rest_path"]
         operations = config["operations"]
         id_field = config.get("id_field", "id")
-
-        if not rest_path:
-            continue
 
         # Generate operations
         for operation in operations:

@@ -17,6 +17,15 @@ class {{ source_name }}Source:
     def __init__(self):
         self.url = "{{ channel }}"
         self.connection = None
+        self._connection_lock = None
+
+    async def _ensure_connection(self):
+        """Ensure WebSocket connection is established."""
+        if self.connection is None:
+            logger.info(f"Establishing connection to {self.url}")
+            self.connection = await websockets.connect(self.url)
+            logger.info(f"Connected to {self.url}")
+        return self.connection
 
     async def subscribe(self) -> AsyncIterator[Dict[str, Any]]:
         """
@@ -49,13 +58,25 @@ class {{ source_name }}Source:
     async def publish(self, message: Dict[str, Any]) -> None:
         """
         Publish message to WebSocket.
+        Creates a one-shot connection if not already connected.
         """
-        if not self.connection:
-            raise RuntimeError("Not connected to WebSocket")
-
         try:
-            await self.connection.send(json.dumps(message))
-            logger.debug(f"Published message to {self.url}")
+            # For publish-only operations, use a one-shot connection
+            if self.connection is None:
+                async with websockets.connect(self.url) as websocket:
+                    await websocket.send(json.dumps(message))
+                    logger.debug(f"Published message to {self.url} (one-shot)")
+            else:
+                # Use existing connection (for duplex operations)
+                await self.connection.send(json.dumps(message))
+                logger.debug(f"Published message to {self.url}")
         except Exception as e:
             logger.error(f"Failed to publish message: {e}")
             raise
+
+    async def close(self):
+        """Close the WebSocket connection."""
+        if self.connection:
+            await self.connection.close()
+            self.connection = None
+            logger.info(f"Connection to {self.url} closed")

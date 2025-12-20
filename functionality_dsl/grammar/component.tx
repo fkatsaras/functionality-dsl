@@ -167,7 +167,7 @@ FileUploadFormComponent:
 
 InputComponent:
   'Component' '<' 'Input' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
   ( ('label:' label=STRING)
   | ('placeholder:' placeholder=STRING)
   | ('initial:' initial=STRING)
@@ -178,7 +178,7 @@ InputComponent:
 
 LiveViewComponent:
   'Component' '<' 'LiveView' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
   'fields:' fields=StringList
   ( ('label:' label=STRING)
   )*

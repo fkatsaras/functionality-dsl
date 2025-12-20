@@ -177,6 +177,15 @@ def _validate_computed_attrs(model, metamodel=None):
             # Entity is bound to a source, so it's a schema entity
             schema_entities.add(ent.name)
 
+        # Also check for entities that are parents of entities with target directive
+        # These receive data from WebSocket publish and should be schema entities
+        target = getattr(ent, "target", None)
+        if target:
+            # This entity publishes to external source, check its parents
+            parents = getattr(ent, "parents", []) or []
+            for parent in parents:
+                schema_entities.add(parent.name)
+
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is
     def collect_nested_schema_entities(entity_name, collected, visited=None):

@@ -57,12 +57,28 @@ async def websocket_{{ entity_name | lower }}_endpoint(websocket: WebSocket):
 
         {% elif supports_publish %}
         # Publish mode: Receive messages from client
+        {% if ws_target %}
+        from app.sources.{{ ws_target.name | lower }}_source import {{ ws_target.name }}Source
+
+        target_source = {{ ws_target.name }}Source()
+        {% endif %}
+
         while True:
             data = await websocket.receive_json()
             logger.debug(f"Received message from client: {data}")
 
-            # Process through service
-            # TODO: Implement publish handling
+            # Transform through entity service
+            transformed_data = service._transform_entity(data)
+            logger.debug(f"Transformed message: {transformed_data}")
+
+            {% if ws_target %}
+            # Publish to external WebSocket target
+            await target_source.publish(transformed_data)
+            logger.debug(f"Published to external target: {{ ws_target.name }}")
+            {% else %}
+            # No target specified - message processed but not forwarded
+            logger.warning("Message processed but no target specified for {{ entity_name }}")
+            {% endif %}
 
         {% else %}
         # No operations defined

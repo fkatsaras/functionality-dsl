@@ -33,6 +33,7 @@ from .core import (
     scaffold_backend_from_model,
     render_infrastructure_files,
     generate_openapi_spec,
+    generate_asyncapi_spec,
 )
 
 __all__ = [
@@ -51,4 +52,5 @@ __all__ = [
     "scaffold_backend_from_model",
     "render_infrastructure_files",
     "generate_openapi_spec",
+    "generate_asyncapi_spec",
 ]

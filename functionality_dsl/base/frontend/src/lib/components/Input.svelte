@@ -7,6 +7,8 @@
     import Button from "$lib/primitives/Button.svelte";
     import Spinner from "$lib/primitives/icons/Spinner.svelte";
 
+    import { subscribe, publish } from "$lib/ws";
+
     const props = $props<{
         name?: string;
         sinkPath?: string | null;
@@ -24,15 +26,15 @@
     const endpointPath = props.sinkPath || props.wsPath;
 
     let value = $state(props.initial ?? "");
-    let ws: WebSocket | null = null;
     let connected = $state(false);
     let error: string | null = $state(null);
+    let unsub: (() => void) | null = null;
 
     function send() {
-        if (!ws || !connected) return;
+        if (!connected || !endpointPath) return;
 
         try {
-            ws.send(JSON.stringify(value));
+            publish(endpointPath, value);
             value = "";
         } catch (err) {
             error = "Failed to send message";
@@ -46,34 +48,22 @@
             return;
         }
 
-        const wsUrl = endpointPath.startsWith("ws")
-            ? endpointPath
-            : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${endpointPath}`;
-
-        try {
-            ws = new WebSocket(wsUrl);
-        } catch (err) {
-            error = "Invalid WebSocket URL";
-            return;
-        }
-
-        ws.onopen = () => {
-            connected = true;
-            error = null;
-        };
-
-        ws.onclose = () => {
-            connected = false;
-        };
-
-        ws.onerror = () => {
-            error = "Connection error";
-        };
+        // Use shared WebSocket connection - subscribe to handle connection state
+        unsub = subscribe(endpointPath, (msg) => {
+            if (msg?.__meta === "open") {
+                connected = true;
+                error = null;
+            }
+            if (msg?.__meta === "close") {
+                connected = false;
+            }
+            // Ignore other messages - Input component only sends, doesn't receive
+        });
     });
 
     onDestroy(() => {
-        ws?.close();
-        ws = null;
+        unsub?.();
+        unsub = null;
     });
 </script>
 

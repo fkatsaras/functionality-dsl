@@ -15,4 +15,10 @@
   placeholder="{{ props.get('placeholder') or '' }}"
   label="{{ props.get('label') or '' }}"
   submitLabel="{{ props.get('submitLabel') or 'Send' }}"
+  {% if props.get('messageType') %}
+  messageType="{{ props.get('messageType') }}"
+  {% endif %}
+  {% if props.get('contentType') %}
+  contentType="{{ props.get('contentType') }}"
+  {% endif %}
 />

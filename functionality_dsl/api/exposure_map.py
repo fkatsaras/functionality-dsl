@@ -33,16 +33,18 @@ def build_exposure_map(model):
         if not expose:
             continue
 
-        # Get direct source or find source through parents
+        # Get direct source/target or find source through parents
         source = getattr(entity, "source", None)
+        target = getattr(entity, "target", None)
         parents = getattr(entity, "parents", []) or []
 
         # For transformation entities, find source from parent chain
         if not source and parents:
             source = _find_source_in_parents(parents)
 
-        if not source:
-            # No source found (validation should catch this)
+        # If entity has neither source nor target, skip it
+        if not source and not target:
+            # No source or target found (validation should catch this)
             continue
 
         # Extract REST configuration
@@ -73,6 +75,7 @@ def build_exposure_map(model):
             "ws_channel": ws_channel,
             "operations": operations,
             "source": source,
+            "target": target,  # For publish-only entities
             "id_field": id_field,
             "path_params": path_params,
             "readonly_fields": readonly_fields,

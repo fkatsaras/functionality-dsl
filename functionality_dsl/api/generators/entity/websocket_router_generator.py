@@ -61,6 +61,9 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
                 ws_source_entity = parent
                 break
 
+    # For publish operation, check if entity has a target
+    ws_target = config.get("target", None)
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_websocket_router.py.jinja")
@@ -74,6 +77,7 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
         parents=parent_names,
         ws_source=ws_source,
         ws_source_entity=ws_source_entity,
+        ws_target=ws_target,
     )
 
     # Write to file
@@ -81,6 +85,124 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     routers_dir.mkdir(parents=True, exist_ok=True)
 
     router_file = routers_dir / f"{entity_name.lower()}_ws_router.py"
+    router_file.write_text(rendered)
+
+    print(f"    [OK] {router_file.relative_to(out_dir)}")
+
+
+def generate_combined_websocket_router(ws_channel, entities, model, templates_dir, out_dir):
+    """
+    Generate a combined bidirectional WebSocket router for multiple entities on the same channel.
+
+    Args:
+        ws_channel: WebSocket channel path (e.g., "/api/chat")
+        entities: List of (entity_name, config) tuples for this channel
+        model: FDSL model
+        templates_dir: Templates directory path
+        out_dir: Output directory path
+    """
+    print(f"  Generating combined WebSocket router for {ws_channel}")
+
+    # Separate subscribe and publish entities
+    subscribe_entity = None
+    publish_entity = None
+
+    for entity_name, config in entities:
+        operations = config["operations"]
+        if "subscribe" in operations:
+            subscribe_entity = (entity_name, config)
+        if "publish" in operations:
+            publish_entity = (entity_name, config)
+
+    #  Only generate if we have at least one operation
+    if not subscribe_entity and not publish_entity:
+        return
+
+    # Build template context
+    context = {
+        "ws_channel": ws_channel,
+        "has_subscribe": subscribe_entity is not None,
+        "has_publish": publish_entity is not None,
+    }
+
+    # Add subscribe entity details
+    if subscribe_entity:
+        entity_name, config = subscribe_entity
+        entity = config["entity"]
+        parents = getattr(entity, "parents", []) or []
+
+        # Find WebSocket source in parent chain
+        from ...extractors import find_source_for_entity
+        ws_source = None
+        ws_source_entity = None
+
+        for parent in parents:
+            source, source_type = find_source_for_entity(parent, model)
+            if source and source_type == "WS":
+                ws_source = source
+                ws_source_entity = parent
+                break
+
+        context.update({
+            "subscribe_entity_name": entity_name,
+            "subscribe_ws_source": ws_source,
+            "subscribe_ws_source_entity": ws_source_entity,
+        })
+
+    # Add publish entity details
+    if publish_entity:
+        entity_name, config = publish_entity
+        entity = config["entity"]
+        parents = getattr(entity, "parents", []) or []
+        ws_target = config.get("target", None)
+
+        # Get explicit type and contentType from parent entity
+        # The parent entity defines what the client sends
+        publish_entity_type = "object"  # default
+        publish_content_type = "application/json"  # default
+        publish_wrapper_key = None
+        publish_is_text = False  # Whether to use receive_text() vs receive_json()
+
+        if parents:
+            parent_entity = parents[0]
+            # Use explicit type declaration
+            publish_entity_type = getattr(parent_entity, "entity_type", None) or "object"
+            publish_content_type = getattr(parent_entity, "content_type", None) or "application/json"
+
+            # Determine if we should receive as text or JSON based on content type
+            publish_is_text = publish_content_type == "text/plain"
+
+            # If it's a primitive type, get the wrapper attribute name
+            if publish_entity_type in ("string", "number", "integer", "boolean", "array", "binary"):
+                parent_attrs = getattr(parent_entity, "attributes", []) or []
+                if len(parent_attrs) == 1:
+                    publish_wrapper_key = parent_attrs[0].name
+                elif len(parent_attrs) == 0:
+                    publish_wrapper_key = "value"  # default
+
+        context.update({
+            "publish_entity_name": entity_name,
+            "publish_parents": [p.name for p in parents],
+            "publish_ws_target": ws_target,
+            "publish_entity_type": publish_entity_type,  # "string", "object", "array", etc.
+            "publish_content_type": publish_content_type,  # "application/json", "text/plain", etc.
+            "publish_wrapper_key": publish_wrapper_key,  # e.g., "value" for wrapper
+            "publish_is_text": publish_is_text,  # True if text/plain, False if JSON
+        })
+
+    # Render template
+    env = Environment(loader=FileSystemLoader(str(templates_dir)))
+    template = env.get_template("combined_websocket_router.py.jinja")
+
+    rendered = template.render(**context)
+
+    # Write to file - use channel path to create unique filename
+    routers_dir = out_dir / "app" / "api" / "routers"
+    routers_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert /api/chat -> chat_ws_router.py
+    channel_name = ws_channel.strip("/").replace("/", "_")
+    router_file = routers_dir / f"{channel_name}_ws_router.py"
     router_file.write_text(rendered)
 
     print(f"    [OK] {router_file.relative_to(out_dir)}")

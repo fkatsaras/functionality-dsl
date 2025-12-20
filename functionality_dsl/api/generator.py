@@ -38,6 +38,7 @@ from .generators import (
     generate_domain_models,
     scaffold_backend_from_model,
     generate_openapi_spec,
+    generate_asyncapi_spec,
 )
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
@@ -124,15 +125,33 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         # Generate entity routers (REST and WebSocket)
         print("\n  [4.3] Generating entity routers...")
+
+        # Generate REST routers
         for entity_name, config in exposure_map.items():
-            # Generate REST router if entity has REST exposure
             generate_entity_router(entity_name, config, model, templates_dir, out_dir)
-            # Generate WebSocket router if entity has WebSocket exposure
-            generate_entity_websocket_router(entity_name, config, model, templates_dir, out_dir)
+
+        # Group entities by WebSocket channel for combined router generation
+        ws_channels = {}
+        for entity_name, config in exposure_map.items():
+            ws_channel = config.get("ws_channel")
+            if ws_channel:
+                if ws_channel not in ws_channels:
+                    ws_channels[ws_channel] = []
+                ws_channels[ws_channel].append((entity_name, config))
+
+        # Generate WebSocket routers (one per unique channel, handling all entities on that channel)
+        for ws_channel, entities in ws_channels.items():
+            # Pass all entities for this channel to create a combined bidirectional router
+            from .generators.entity.websocket_router_generator import generate_combined_websocket_router
+            generate_combined_websocket_router(ws_channel, entities, model, templates_dir, out_dir)
 
         # Generate OpenAPI specification
         print("\n  [4.4] Generating OpenAPI specification...")
         generate_openapi_spec(model, out_dir, server_config)
+
+        # Generate AsyncAPI specification for WebSocket entities
+        print("\n  [4.5] Generating AsyncAPI specification...")
+        generate_asyncapi_spec(model, out_dir, server_config)
     else:
         print("  No exposed entities found (using old syntax)")
 

@@ -47,10 +47,13 @@ Attribute:
 Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
+  ('type:' entity_type=AttrType)?
+  ('contentType:' content_type=ContentType)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
   ('source:' source=[Source])?
+  ('target:' target=[Source])?
   (expose=ExposeBlock)?
   'end'
 ;

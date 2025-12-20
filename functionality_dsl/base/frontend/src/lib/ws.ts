@@ -127,3 +127,23 @@ export function subscribe(rawUrl: string, onData: Listener): () => void {
         }
     }
 }
+
+/**
+ * Publish a message to a WebSocket url using the shared connection.
+ * The connection must already be established via subscribe().
+ */
+export function publish(rawUrl: string, data: any): void {
+    const full = resolveWs(rawUrl);
+    const st = sockets.get(full);
+
+    if (!st || !st.ws) {
+        console.error(`[ws] Cannot publish to ${rawUrl}: no active connection. Call subscribe() first.`);
+        return;
+    }
+
+    try {
+        st.ws.send(JSON.stringify(data));
+    } catch (err) {
+        console.error(`[ws] Failed to publish to ${rawUrl}:`, err);
+    }
+}

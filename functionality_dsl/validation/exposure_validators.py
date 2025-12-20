@@ -53,20 +53,30 @@ def _validate_exposure_blocks(model, metamodel=None):
         if not expose:
             continue
 
-        # Entity with expose must have a source (direct or inherited from parents)
+        # Entity with expose must have a source OR target (direct or inherited from parents)
         source = getattr(entity, "source", None)
+        target = getattr(entity, "target", None)
         parents = getattr(entity, "parents", []) or []
 
         # For transformation entities, find source in parent chain
         if not source and parents:
             source = _find_source_in_parents(parents)
 
-        if not source:
+        # For publish-only entities with target, no source is required
+        operations = getattr(expose, "operations", [])
+        is_publish_only = "publish" in operations and "subscribe" not in operations and len(operations) == 1
+
+        if not source and not target:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'expose' block but no 'source:' binding. "
-                f"Exposed entities must be bound to a Source (directly or through parent entities).",
+                f"Entity '{entity.name}' has 'expose' block but no 'source:' or 'target:' binding. "
+                f"Exposed entities must be bound to a Source or Target (directly or through parent entities).",
                 **get_location(entity),
             )
+
+        # If entity is publish-only with target but no source, that's valid
+        if not source and target and is_publish_only:
+            # Skip source validation for publish-only entities with target
+            continue
 
         # Validate REST exposure
         rest = getattr(expose, "rest", None)

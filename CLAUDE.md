@@ -15,9 +15,10 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 - **Components** - UI elements (Table, Chart) that bind to exposed entities
 
 **Data Flow (NEW SYNTAX v2):**
-- **Entity CRUD**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
-- **UI Binding**: `Component → Entity → REST Endpoint`
-- **Mutations**: Create/Update schemas auto-generated, excluding readonly/computed fields
+- **REST CRUD**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
+- **WS Subscribe**: `External WS → Entity → Client`
+- **WS Publish**: `Client → Entity → External WS (via target:)`
+- **UI Binding**: `Component → Entity → API Endpoint`
 
 **Execution Model:** Topological sort computes entities in dependency order. Expressions evaluated with restricted `eval()` in controlled context.
 
@@ -93,7 +94,55 @@ Auto-infers standard REST patterns:
 - `update` → `PUT /{id}`
 - `delete` → `DELETE /{id}`
 
-### 4. **Components** (NEW SYNTAX - UI Binding)
+**WebSocket Sources:**
+```fdsl
+Source<WS> BinanceWS
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe, publish]
+end
+```
+
+WebSocket operations:
+- `subscribe` - Receive stream from external WS
+- `publish` - Send messages to external WS
+- Use `target:` on entities to publish transformed data to external WS
+
+### 4. **WebSocket Entities** (Bidirectional Communication)
+
+**Subscribe Entity** (External WS → Client):
+```fdsl
+Entity ChatIncoming(EchoRaw)
+  attributes:
+    - text: string = lower(EchoRaw.text);
+  expose:
+    websocket: "/api/chat"
+    operations: [subscribe]
+end
+```
+
+**Publish Entity** (Client → External WS):
+```fdsl
+Entity ChatOutgoing
+  attributes:
+    - value: string(3..);
+end
+
+Entity ChatOutgoingProcessed(ChatOutgoing)
+  attributes:
+    - text: string = upper(ChatOutgoing.value);
+  target: EchoWS  // Publish to external WebSocket
+  expose:
+    websocket: "/api/chat"
+    operations: [publish]
+end
+```
+
+**Key Points:**
+- Same channel (`/api/chat`), different entities for each direction
+- `target:` specifies where to publish transformed data
+- Follows REST pattern: separate schemas for read vs write
+
+### 5. **Components** (NEW SYNTAX - UI Binding)
 
 **Table Component:**
 ```fdsl
@@ -454,12 +503,14 @@ fdsl generate my-api.fdsl --out generated/
 - Validation happens automatically via Pydantic models
 - HTTPException raised on validation failure
 
-### 6. **WebSocket Handling**
-- Separate computation chains for inbound/outbound
-- Bus-based pub/sub for message distribution
-- Persistent connections to external WS sources via `channel:` field
+### 6. **WebSocket Connection Sharing (Frontend)**
+- **Critical**: For duplex WebSocket (same channel, publish + subscribe), both components MUST share the same WebSocket connection
+- The `ws.ts` module provides a shared connection pool
+- Components use `subscribe()` to listen for messages and `publish()` to send messages
+- Both Input (publish) and LiveView (subscribe) on `/api/chat` share one WebSocket connection
+- **Why**: Echo responses come back on the same connection where the message was sent
+- If each component creates its own connection, messages sent on Input's connection won't be received by LiveView's connection
 
----
 ---
 
 ## Debugging Tips

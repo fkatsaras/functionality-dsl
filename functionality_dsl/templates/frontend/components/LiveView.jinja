@@ -4,4 +4,13 @@
   fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
   label="{{ props.get('label') or '' }}"
   maxMessages={{ props.get('maxMessages') }}
+  {% if props.get('messageType') %}
+  messageType="{{ props.get('messageType') }}"
+  {% endif %}
+  {% if props.get('contentType') %}
+  contentType="{{ props.get('contentType') }}"
+  {% endif %}
+  {% if props.get('valueKey') %}
+  valueKey="{{ props.get('valueKey') }}"
+  {% endif %}
 />
