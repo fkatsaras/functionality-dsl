@@ -1,0 +1,48 @@
+Server OrderAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+  loglevel: debug
+end
+
+Source<REST> OrderDB
+  base_url: "http://dummy-order-service:9001/orders"
+  operations: [list, read, create]
+end
+
+// Nested entity
+Entity OrderItem
+  attributes:
+    - productId: string;
+    - productName: string;
+    - quantity: integer;
+    - price: number;
+end
+
+// Main entity with nested array
+Entity Order
+  attributes:
+    - id: string;
+    - userId: string;
+    - items: array<OrderItem>;
+    - createdAt: string;
+  source: OrderDB
+end
+
+// Computed totals
+Entity OrderWithTotals(Order)
+  attributes:
+    - id: string = Order.id;
+    - userId: string = Order.userId;
+    - items: array<OrderItem> = Order.items;
+    - createdAt: string = Order.createdAt;
+    - itemCount: integer = len(Order.items);
+    - subtotal: number = sum(map(Order.items, item => item["price"] * item["quantity"]));
+    - tax: number = round(OrderWithTotals.subtotal * 0.1, 2);
+    - total: number = OrderWithTotals.subtotal + OrderWithTotals.tax;
+  expose:
+    rest: "/api/orders"
+    operations: [list, read, create]
+    id_field: "id"
+    readonly_fields: ["id", "createdAt", "itemCount", "subtotal", "tax", "total"]
+end
