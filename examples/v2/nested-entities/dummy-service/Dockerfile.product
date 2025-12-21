@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install fastapi uvicorn
+
+COPY product-service.py .
+
+CMD ["python", "product-service.py"]

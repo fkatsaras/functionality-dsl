@@ -42,10 +42,6 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
 
     print(f"  Generating router for {entity_name} (REST: {rest_path})")
 
-    # Check if rest_path already contains path parameters (e.g., /api/resource/{id})
-    # If so, operations shouldn't add duplicate path parameters
-    has_path_param_in_prefix = "{" in rest_path and "}" in rest_path
-
     # Build operation configs
     operation_configs = []
     for op in operations:
@@ -55,17 +51,10 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         #   (singleton read has no id_field)
         is_item_op = is_item_operation(op) and not (op == "read" and id_field is None)
 
-        # If the prefix already has a path parameter, item operations should use "" as suffix
-        # to avoid duplicating the parameter (e.g., /api/inventory/{id} + /{id} = duplicate)
-        if has_path_param_in_prefix and is_item_op:
-            path_suffix = ""
-        else:
-            path_suffix = get_operation_path_suffix(op, id_field)
-
         op_config = {
             "type": op,
             "method": get_operation_http_method(op),
-            "path_suffix": path_suffix,
+            "path_suffix": get_operation_path_suffix(op, id_field),
             "function_name": f"{op}_{entity_name.lower()}",
             "status_code": get_operation_status_code(op),
             "is_item_op": is_item_op,

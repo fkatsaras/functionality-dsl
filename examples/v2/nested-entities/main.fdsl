@@ -1,48 +1,242 @@
-Server OrderAPI
+// ============================================================================
+// E-COMMERCE API - Multi-Entity System
+// ============================================================================
+// This example demonstrates complex entity interactions in a real-world
+// e-commerce scenario with users, products, inventory, orders, and carts.
+// ============================================================================
+
+Server EcommerceAPI
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
   loglevel: debug
 end
 
+// ============================================================================
+// EXTERNAL DATA SOURCES (Microservices)
+// ============================================================================
+
+Source<REST> UserDB
+  base_url: "http://dummy-user-service:9001/users"
+  operations: [list, read, create, update]
+end
+
+Source<REST> ProductDB
+  base_url: "http://dummy-product-service:9002/products"
+  operations: [list, read]
+end
+
+Source<REST> InventoryDB
+  base_url: "http://dummy-inventory-service:9003/inventory"
+  operations: [list, read, update]
+end
+
 Source<REST> OrderDB
-  base_url: "http://dummy-order-service:9001/orders"
+  base_url: "http://dummy-order-service:9004/orders"
   operations: [list, read, create]
 end
 
-// Nested entity
+Source<REST> OrdersByUser
+  base_url: "http://dummy-order-service:9004/orders/by-user"
+  operations: [list]
+end
+
+// ============================================================================
+// NESTED ENTITY TYPES
+// ============================================================================
+
+Entity Address
+  attributes:
+    - street: string;
+    - city: string;
+    - state: string;
+    - zipCode: string;
+    - country: string;
+end
+
 Entity OrderItem
   attributes:
     - productId: string;
     - productName: string;
     - quantity: integer;
-    - price: number;
+    - priceAtPurchase: number;
 end
 
-// Main entity with nested array
+// ============================================================================
+// USER ENTITIES
+// ============================================================================
+
+Entity User
+  attributes:
+    - id: string;
+    - email: string;
+    - name: string;
+    - shippingAddress: object<Address>;
+    - billingAddress: object<Address>;
+    - memberSince: string;
+    - tier: string;
+  source: UserDB
+end
+
+// Add computed loyalty discount based on tier
+Entity UserWithDiscount(User)
+  attributes:
+    - id: string = User.id;
+    - email: string = User.email;
+    - name: string = User.name;
+    - shippingAddress: object<Address> = User.shippingAddress;
+    - billingAddress: object<Address> = User.billingAddress;
+    - memberSince: string = User.memberSince;
+    - tier: string = User.tier;
+    - discountPercent: number = 0.15 if User.tier == "gold" else (0.10 if User.tier == "silver" else (0.05 if User.tier == "bronze" else 0.0));
+    - displayTier: string = "Gold Member (15% off)" if User.tier == "gold" else ("Silver Member (10% off)" if User.tier == "silver" else ("Bronze Member (5% off)" if User.tier == "bronze" else "Standard Member"));
+  expose:
+    rest: "/api/users"
+    operations: [list, read, create, update]
+    id_field: "id"
+    readonly_fields: ["id", "memberSince", "discountPercent", "displayTier"]
+end
+
+// ============================================================================
+// PRODUCT ENTITIES
+// ============================================================================
+
+Entity Product
+  attributes:
+    - id: string;
+    - name: string;
+    - description: string;
+    - category: string;
+    - basePrice: number;
+    - brand: string;
+    - sku: string;
+  source: ProductDB
+end
+
+Entity InventoryRecord
+  attributes:
+    - productId: string;
+    - stockLevel: integer;
+    - reorderPoint: integer;
+    - lastRestocked: string;
+  source: InventoryDB
+end
+
+// Combine product info with inventory status
+Entity ProductWithInventory(Product, InventoryRecord)
+  attributes:
+    - id: string = Product.id;
+    - name: string = Product.name;
+    - description: string = Product.description;
+    - category: string = Product.category;
+    - basePrice: number = Product.basePrice;
+    - brand: string = Product.brand;
+    - sku: string = Product.sku;
+    - stockLevel: integer = InventoryRecord.stockLevel;
+    - inStock: boolean = InventoryRecord.stockLevel > 0;
+    - lowStock: boolean = InventoryRecord.stockLevel <= InventoryRecord.reorderPoint and InventoryRecord.stockLevel > 0;
+    - stockStatus: string = "In Stock" if InventoryRecord.stockLevel > InventoryRecord.reorderPoint else ("Low Stock" if InventoryRecord.stockLevel > 0 else "Out of Stock");
+    - reorderNeeded: boolean = InventoryRecord.stockLevel <= InventoryRecord.reorderPoint;
+    - lastRestocked: string = InventoryRecord.lastRestocked;
+  expose:
+    rest: "/api/products"
+    operations: [list, read]
+    id_field: "id"
+    readonly_fields: ["id", "sku", "inStock", "lowStock", "stockStatus", "reorderNeeded", "lastRestocked"]
+end
+
+// ============================================================================
+// ORDER ENTITIES
+// ============================================================================
+
 Entity Order
   attributes:
     - id: string;
     - userId: string;
     - items: array<OrderItem>;
+    - status: string;
     - createdAt: string;
+    - shippedAt: string;
   source: OrderDB
 end
 
-// Computed totals
-Entity OrderWithTotals(Order)
+// Enrich order with user info and computed totals
+Entity OrderWithDetails(Order, User)
   attributes:
     - id: string = Order.id;
     - userId: string = Order.userId;
+    - customerName: string = User.name;
+    - customerEmail: string = User.email;
+    - customerTier: string = User.tier;
+    - shippingAddress: object<Address> = User.shippingAddress;
     - items: array<OrderItem> = Order.items;
+    - status: string = Order.status;
     - createdAt: string = Order.createdAt;
+    - shippedAt: string = Order.shippedAt;
     - itemCount: integer = len(Order.items);
-    - subtotal: number = sum(map(Order.items, item => item["price"] * item["quantity"]));
-    - tax: number = round(OrderWithTotals.subtotal * 0.1, 2);
-    - total: number = OrderWithTotals.subtotal + OrderWithTotals.tax;
+    - subtotal: number = sum(map(Order.items, item => item["priceAtPurchase"] * item["quantity"]));
+    - discount: number = round(OrderWithDetails.subtotal * (0.15 if User.tier == "gold" else (0.10 if User.tier == "silver" else (0.05 if User.tier == "bronze" else 0.0))), 2);
+    - taxableAmount: number = OrderWithDetails.subtotal - OrderWithDetails.discount;
+    - tax: number = round(OrderWithDetails.taxableAmount * 0.08, 2);
+    - shippingCost: number = 0.0 if OrderWithDetails.subtotal > 50 else 9.99;
+    - total: number = OrderWithDetails.taxableAmount + OrderWithDetails.tax + OrderWithDetails.shippingCost;
+    - isPending: boolean = Order.status == "pending";
+    - isShipped: boolean = Order.status == "shipped";
+    - isDelivered: boolean = Order.status == "delivered";
+    - freeShipping: boolean = OrderWithDetails.shippingCost == 0;
   expose:
     rest: "/api/orders"
     operations: [list, read, create]
     id_field: "id"
-    readonly_fields: ["id", "createdAt", "itemCount", "subtotal", "tax", "total"]
+    readonly_fields: ["id", "createdAt", "shippedAt", "customerName", "customerEmail", "customerTier", "itemCount", "subtotal", "discount", "taxableAmount", "tax", "shippingCost", "total", "isPending", "isShipped", "isDelivered", "freeShipping"]
+end
+
+// ============================================================================
+// SHOPPING CART ENTITIES (Virtual - Computed from Orders)
+// ============================================================================
+
+Entity UserOrders
+  attributes:
+    - orders: array;
+  source: OrdersByUser
+end
+
+// User's order history with analytics
+Entity UserOrderHistory(User, UserOrders)
+  attributes:
+    - userId: string = User.id;
+    - customerName: string = User.name;
+    - customerEmail: string = User.email;
+    - tier: string = User.tier;
+    - orders: array = UserOrders.orders;
+    - totalOrders: integer = len(UserOrders.orders);
+    - totalSpent: number = sum(map(UserOrders.orders, o => get(o, "total", 0)));
+    - averageOrderValue: number = round(UserOrderHistory.totalSpent / UserOrderHistory.totalOrders, 2) if UserOrderHistory.totalOrders > 0 else 0;
+    - pendingOrders: integer = len(filter(UserOrders.orders, o => get(o, "status", "") == "pending"));
+    - shippedOrders: integer = len(filter(UserOrders.orders, o => get(o, "status", "") == "shipped"));
+    - deliveredOrders: integer = len(filter(UserOrders.orders, o => get(o, "status", "") == "delivered"));
+    - mostRecentOrder: string = get(UserOrders.orders[0], "createdAt", "") if len(UserOrders.orders) > 0 else "";
+  expose:
+    rest: "/api/users/{userId}/order-history"
+    operations: [read]
+    id_field: "userId"
+    readonly_fields: ["userId", "customerName", "customerEmail", "tier", "totalOrders", "totalSpent", "averageOrderValue", "pendingOrders", "shippedOrders", "deliveredOrders", "mostRecentOrder"]
+end
+
+// ============================================================================
+// INVENTORY MANAGEMENT ENTITIES
+// ============================================================================
+
+// Update inventory after order
+Entity InventoryUpdate(InventoryRecord)
+  attributes:
+    - productId: string = InventoryRecord.productId;
+    - stockLevel: integer = InventoryRecord.stockLevel;
+    - reorderPoint: integer = InventoryRecord.reorderPoint;
+    - lastRestocked: string = InventoryRecord.lastRestocked;
+  expose:
+    rest: "/api/inventory/{productId}"
+    operations: [read, update]
+    id_field: "productId"
+    readonly_fields: ["productId", "lastRestocked"]
 end
