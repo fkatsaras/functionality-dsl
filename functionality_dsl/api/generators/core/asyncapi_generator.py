@@ -63,11 +63,50 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
         },
     }
 
-    # Generate schemas for all entities
+    # Collect all entities referenced by WebSocket channels
     all_entities = {entity.name: entity for entity in get_entities(model)}
+    ws_related_entities = set()
 
-    for entity_name, entity in all_entities.items():
-        spec["components"]["schemas"][entity_name] = _generate_entity_schema(entity)
+    # Helper function to recursively collect referenced entities
+    def collect_referenced_entities(entity, collected):
+        """Recursively collect all entities referenced by this entity's attributes."""
+        if entity.name in collected:
+            return
+        collected.add(entity.name)
+
+        attributes = getattr(entity, "attributes", []) or []
+        for attr in attributes:
+            type_spec = getattr(attr, "type", None)
+            if not type_spec:
+                continue
+
+            # Check for array item entities
+            item_entity = getattr(type_spec, "itemEntity", None)
+            if item_entity and item_entity.name in all_entities:
+                collect_referenced_entities(item_entity, collected)
+
+            # Check for nested object entities
+            nested_entity = getattr(type_spec, "nestedEntity", None)
+            if nested_entity and nested_entity.name in all_entities:
+                collect_referenced_entities(nested_entity, collected)
+
+    # Collect entities used in WebSocket operations
+    for entity_name, config in ws_entities.items():
+        entity = all_entities.get(entity_name)
+        if entity:
+            collect_referenced_entities(entity, ws_related_entities)
+
+        # Add parent entities too (for publish operations)
+        parents = config.get("parents", [])
+        for parent in parents:
+            if parent.name in all_entities:
+                collect_referenced_entities(all_entities[parent.name], ws_related_entities)
+
+    # Generate schemas only for WebSocket-related entities
+    for entity_name in ws_related_entities:
+        if entity_name in all_entities:
+            entity = all_entities[entity_name]
+            spec["components"]["schemas"][entity_name] = _generate_entity_schema(entity)
 
     # Group entities by WebSocket channel
     channels_by_path = {}

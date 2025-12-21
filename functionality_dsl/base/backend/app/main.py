@@ -53,6 +53,24 @@ def create_app() -> FastAPI:
 
     include_generated_routers(app)
 
+    @app.get("/")
+    def root():
+        """API root with links to documentation"""
+        return {
+            "status": "OK",
+            "message": "FDSL-generated API",
+            "docs": {
+                "openapi": {
+                    "interactive": settings.DOCS_URL or "/docs",
+                    "spec": "/openapi.yaml"
+                },
+                "asyncapi": {
+                    "interactive": "/asyncapi",
+                    "spec": "/asyncapi.yaml"
+                }
+            }
+        }
+
     @app.get("/healthz")
     def health():
         return {"status": "OK"}
@@ -71,6 +89,33 @@ def create_app() -> FastAPI:
                 filename="openapi.yaml"
             )
         return {"error": "OpenAPI spec not found"}
+
+    @app.get("/asyncapi.yaml", include_in_schema=False)
+    def get_asyncapi_yaml():
+        """Serve the static AsyncAPI YAML specification"""
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+
+        asyncapi_file = Path(__file__).parent / "api" / "asyncapi.yaml"
+        if asyncapi_file.exists():
+            return FileResponse(
+                asyncapi_file,
+                media_type="application/x-yaml",
+                filename="asyncapi.yaml"
+            )
+        return {"error": "AsyncAPI spec not found"}
+
+    @app.get("/asyncapi", include_in_schema=False)
+    def get_asyncapi_docs():
+        """Serve interactive AsyncAPI documentation (similar to /docs for OpenAPI)"""
+        from pathlib import Path
+
+        from fastapi.responses import FileResponse
+
+        template_file = Path(__file__).parent / "templates" / "asyncapi.html"
+        if template_file.exists():
+            return FileResponse(template_file, media_type="text/html")
+        return {"error": "AsyncAPI documentation template not found"}
 
     return app
 
