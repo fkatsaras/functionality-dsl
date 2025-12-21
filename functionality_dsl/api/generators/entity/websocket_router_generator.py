@@ -131,22 +131,24 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         entity = config["entity"]
         parents = getattr(entity, "parents", []) or []
 
-        # Find WebSocket source in parent chain
+        # Find ALL WebSocket sources in parent chain
         from ...extractors import find_source_for_entity
-        ws_source = None
-        ws_source_entity = None
+        ws_sources = []  # List of (source, parent_entity) tuples
 
         for parent in parents:
             source, source_type = find_source_for_entity(parent, model)
             if source and source_type == "WS":
-                ws_source = source
-                ws_source_entity = parent
-                break
+                ws_sources.append((source, parent))
+
+        # For backward compatibility, keep ws_source as the first one
+        ws_source = ws_sources[0][0] if ws_sources else None
+        ws_source_entity = ws_sources[0][1] if ws_sources else None
 
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
             "subscribe_ws_source_entity": ws_source_entity,
+            "subscribe_ws_sources": ws_sources,  # NEW: List of all WS sources
         })
 
     # Add publish entity details

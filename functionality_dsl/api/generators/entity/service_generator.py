@@ -62,6 +62,7 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
 
     parent_services = []
     parent_sources = []
+    parent_ws_sources = []  # WebSocket sources
 
     for parent in parents:
         if parent.name in exposure_map:
@@ -80,9 +81,16 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
                     "source_name": parent_source.name,
                     "source_class": f"{parent_source.name}Source"
                 })
+            elif parent_source and source_type == "WS":
+                parent_ws_sources.append({
+                    "entity_name": parent.name,
+                    "source_name": parent_source.name,
+                    "source_class": f"{parent_source.name}Source"
+                })
 
     has_parent_services = len(parent_services) > 0
     has_multiple_parent_sources = len(parent_sources) > 1
+    has_multiple_ws_sources = len(parent_ws_sources) > 1
 
     # Build operation list
     operation_methods = []
@@ -118,6 +126,8 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         parent_services=parent_services,
         has_multiple_parent_sources=has_multiple_parent_sources,
         parent_sources=parent_sources,
+        has_multiple_ws_sources=has_multiple_ws_sources,
+        parent_ws_sources=parent_ws_sources,
     )
 
     # Write to file

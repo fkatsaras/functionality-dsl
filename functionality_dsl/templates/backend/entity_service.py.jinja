@@ -52,8 +52,8 @@ class {{ entity_name }}Service:
         {% endif %}
 
 {% if has_computed_attrs %}
-    def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:
-        """Transform {% if has_parent_services or has_multiple_parent_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }} using computed attributes."""
+    def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:
+        """Transform {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }} using computed attributes."""
         context = {}
 
         # Add parent entity data to context
@@ -63,7 +63,7 @@ class {{ entity_name }}Service:
         if "{{ parent }}" in parent_data:
             context["{{ parent }}"] = parent_data["{{ parent }}"].model_dump()
         {% endfor %}
-        {% elif has_multiple_parent_sources %}
+        {% elif has_multiple_parent_sources or has_multiple_ws_sources %}
         # Parent data comes from multiple sources (raw dicts)
         {% for parent in parents %}
         if "{{ parent }}" in parent_data:

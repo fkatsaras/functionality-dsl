@@ -174,57 +174,76 @@ def model_processor(model, metamodel=None):
 def _component_entity_attr_scope(obj, attr, attr_ref):
     """
     Scope provider for component attribute references.
-    Ties AttrRef.attr to the bound endpoint's entity attributes.
+    Ties AttrRef.attr to the bound entity's attributes.
+    Supports both v2 (entity_ref) and v1 (endpoint) syntax.
     """
     comp = obj
-    while comp is not None and not hasattr(comp, "endpoint"):
+    # Walk up to find component with entity_ref or endpoint
+    while comp is not None and not hasattr(comp, "entity_ref") and not hasattr(comp, "endpoint"):
         comp = getattr(comp, "parent", None)
 
-    if comp is None or getattr(comp, "endpoint", None) is None:
+    if comp is None:
+        # Get location for error reporting
+        try:
+            loc = get_location(attr_ref)
+        except Exception:
+            try:
+                loc = get_location(obj)
+            except Exception:
+                loc = {}
         raise TextXSemanticError(
-            "Component has no 'endpoint:' bound.", **get_location(attr_ref)
+            "Component has no 'entity:' or 'endpoint:' bound.", **loc
         )
 
-    iep = comp.endpoint
-
-    # NEW DESIGN: Extract entity from request/response/subscribe/publish blocks
     entity = None
 
-    # Try response schema (for REST GET or WS publish)
-    response_block = getattr(iep, "response", None)
-    if response_block:
-        schema = getattr(response_block, "schema", None)
-        if schema:
-            entity = getattr(schema, "entity", None)
+    # V2 SYNTAX: Direct entity binding
+    entity_ref = getattr(comp, "entity_ref", None)
+    if entity_ref is not None:
+        entity = entity_ref
+    # V1 SYNTAX: Extract entity from endpoint
+    elif getattr(comp, "endpoint", None) is not None:
+        iep = comp.endpoint
 
-    # Try request schema (for REST POST/PUT/PATCH)
-    if not entity:
-        request_block = getattr(iep, "request", None)
-        if request_block:
-            schema = getattr(request_block, "schema", None)
+        # Extract entity from request/response/subscribe/publish blocks
+        response_block = getattr(iep, "response", None)
+        if response_block:
+            schema = getattr(response_block, "schema", None)
             if schema:
                 entity = getattr(schema, "entity", None)
 
-    # Try publish message (for WS)
-    if not entity:
-        publish_block = getattr(iep, "publish", None)
-        if publish_block:
-            message = getattr(publish_block, "message", None)
-            if message:
-                entity = getattr(message, "entity", None)
+        if not entity:
+            request_block = getattr(iep, "request", None)
+            if request_block:
+                schema = getattr(request_block, "schema", None)
+                if schema:
+                    entity = getattr(schema, "entity", None)
 
-    # Try subscribe message (for WS)
-    if not entity:
-        subscribe_block = getattr(iep, "subscribe", None)
-        if subscribe_block:
-            message = getattr(subscribe_block, "message", None)
-            if message:
-                entity = getattr(message, "entity", None)
+        if not entity:
+            publish_block = getattr(iep, "publish", None)
+            if publish_block:
+                message = getattr(publish_block, "message", None)
+                if message:
+                    entity = getattr(message, "entity", None)
+
+        if not entity:
+            subscribe_block = getattr(iep, "subscribe", None)
+            if subscribe_block:
+                message = getattr(subscribe_block, "message", None)
+                if message:
+                    entity = getattr(message, "entity", None)
 
     if entity is None:
+        # Get location for error reporting
+        try:
+            loc = get_location(attr_ref)
+        except Exception:
+            try:
+                loc = get_location(obj)
+            except Exception:
+                loc = {}
         raise TextXSemanticError(
-            "Internal endpoint has no bound entity in request/response/subscribe/publish schemas.",
-            **get_location(attr_ref)
+            "Component has no bound entity.", **loc
         )
 
     # Build attribute map once per entity

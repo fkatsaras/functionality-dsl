@@ -114,8 +114,8 @@ LiveChartComponent:
 
 GaugeComponent:
   'Component' '<' 'Gauge' '>' name=ID
-  ('endpoint:' endpoint=[entity.Endpoint])?
-  ( ('value:' value=AttrRef)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
+  'entity:' entity_ref=[entity.Entity]
+  ( ('value:' value=STRING)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
   'end'
 ;
 
@@ -187,7 +187,7 @@ LiveViewComponent:
 
 ToggleComponent:
   'Component' '<' 'Toggle' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointREST]
+  'entity:' entity_ref=[entity.Entity]
   ( ('label:' label=STRING)
   | ('onLabel:' onLabel=STRING)
   | ('offLabel:' offLabel=STRING)

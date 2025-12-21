@@ -607,23 +607,23 @@ class FileUploadFormComponent(_BaseComponent):
 class GaugeComponent(_BaseComponent):
     """
     <Component<Gauge> ...>
-      endpoint: <Endpoint<WS> or Endpoint<REST> exposing computed entity>
-      value:  data.<attr>           # required
+      entity: <Entity> (with WebSocket or REST exposure)
+      value:  "field_name"           # required (string, not data.field)
       min/max/label/unit: optional
     """
-    def __init__(self, parent=None, name=None, endpoint=None,
+    def __init__(self, parent=None, name=None, entity_ref=None,
                  value=None, min=None, max=None, label=None, unit=None,
                  min_val=None, max_val=None, label_str=None, unit_str=None):
-        super().__init__(parent, name, endpoint)
-        # accept either attr-ref or string literal variants from grammar
-        self.value = self._attr_name(value)
+        super().__init__(parent, name, entity_ref)
+        # value is now a STRING from grammar
+        self.value = _strip_quotes(value) if value else None
         self.min   = min if isinstance(min, (int, float)) else _strip_quotes(min_val)
         self.max   = max if isinstance(max, (int, float)) else _strip_quotes(max_val)
         self.label = _strip_quotes(label) if label is not None else _strip_quotes(label_str)
         self.unit  = _strip_quotes(unit)  if unit  is not None else _strip_quotes(unit_str)
 
-        if endpoint is None and entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
         if not self.value:
             raise ValueError(f"Component '{name}': 'value:' is required.")
 
@@ -711,29 +711,28 @@ class LiveViewComponent(_BaseComponent):
 class ToggleComponent(_BaseComponent):
     """
     <Component<Toggle> ...>
-      endpoint: <Endpoint<REST>>
-      label/onLabel/offLabel/field/initial
+      entity: <Entity> (with REST exposure)
+      label/onLabel/offLabel/field
     """
     def __init__(
         self,
         parent=None,
         name=None,
-        endpoint=None,
+        entity_ref=None,
         label=None,
         onLabel=None,
         offLabel=None,
         field=None,
     ):
-        super().__init__(parent, name, endpoint)
+        super().__init__(parent, name, entity_ref)
         self.label = _strip_quotes(label)
         self.onLabel = _strip_quotes(onLabel)
         self.offLabel = _strip_quotes(offLabel)
         self.field = _strip_quotes(field)
 
-
-        if endpoint is None:
+        if entity_ref is None:
             raise ValueError(
-                f"Component '{name}' must bind an 'endpoint:' Endpoint<REST> endpoint."
+                f"Component '{name}' must bind an 'entity:' Entity."
             )
 
     def to_props(self):

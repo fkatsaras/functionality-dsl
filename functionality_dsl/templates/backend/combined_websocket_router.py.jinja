@@ -117,7 +117,55 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         )
 
         {% elif has_subscribe %}
-        # Subscribe-only mode: Stream data from external source to client
+        # Subscribe-only mode: Stream data from external source(s) to client
+        {% if subscribe_ws_sources | length > 1 %}
+        # Multiple WebSocket sources - merge streams
+        import asyncio
+        from typing import Dict
+        {% for source, parent_entity in subscribe_ws_sources %}
+        from app.sources.{{ source.name | lower }}_source import {{ source.name }}Source
+        {% endfor %}
+
+        # Create sources
+        {% for source, parent_entity in subscribe_ws_sources %}
+        {{ parent_entity.name | lower }}_source = {{ source.name }}Source()
+        {% endfor %}
+
+        # Shared state for latest messages from each source
+        latest_messages: Dict[str, dict] = {}
+        message_lock = asyncio.Lock()
+
+        async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
+            """Subscribe to a single WebSocket source and update shared state."""
+            try:
+                async for raw_message in source.subscribe():
+                    if raw_message is None:
+                        continue
+
+                    async with message_lock:
+                        latest_messages[parent_entity_name] = raw_message
+
+                        # Only transform and send if we have messages from all sources
+                        if len(latest_messages) == {{ subscribe_ws_sources | length }}:
+                            # Transform combined messages through entity service
+                            # Pass dict mapping parent names to their raw messages
+                            transformed_message = subscribe_service._transform_entity(latest_messages)
+
+                            # Send to client
+                            await websocket.send_json(transformed_message)
+                            logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
+            except Exception as e:
+                logger.error(f"Error in {source_name} subscription: {e}")
+                raise
+
+        # Run all subscriptions concurrently
+        await asyncio.gather(
+            {% for source, parent_entity in subscribe_ws_sources %}
+            subscribe_to_source("{{ source.name }}", {{ parent_entity.name | lower }}_source, "{{ parent_entity.name }}"){{ "," if not loop.last else "" }}
+            {% endfor %}
+        )
+        {% else %}
+        # Single WebSocket source
         from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
 
         source = {{ subscribe_ws_source.name }}Source()
@@ -132,6 +180,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             # Send to client
             await websocket.send_json(transformed_message)
             logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+        {% endif %}
 
         {% elif has_publish %}
         # Publish-only mode: Receive data from client and send to external target
@@ -180,8 +229,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("Client disconnected from {{ ws_channel }}")
+    except ConnectionRefusedError as e:
+        logger.error(f"Failed to connect to external WebSocket source: {e}")
+        logger.error("Make sure the external service is running and accessible.")
+        await websocket.close(code=1011, reason="External service unavailable")
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason=f"Server error: {str(e)[:100]}")
+        except:
+            pass
     finally:
         if websocket in active_connections:
             active_connections.remove(websocket)
