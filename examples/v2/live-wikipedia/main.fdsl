@@ -1,0 +1,60 @@
+Server WikiLive
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+  loglevel: debug
+end
+
+Source<WS> WikiMonEN
+  channel: "wss://wikimon.hatnote.com/en/"
+  operations: [subscribe]
+end
+
+// Raw Wikipedia edit event from external WebSocket
+Entity WikiEdit
+  attributes:
+    - action: string;
+    - change_size: integer;
+    - flags: object?;
+    - page_namespace: integer?;
+    - page_title: string;
+    - user: string;
+    - server_name: string;
+  source: WikiMonEN
+end
+
+// Computed entity for gauge display (absolute value of change size)
+Entity EditGauge(WikiEdit)
+  attributes:
+    - edit_size_abs: integer = abs(WikiEdit.change_size);
+  expose:
+    websocket: "/api/wiki/edits"
+    operations: [subscribe]
+end
+
+// Stream raw edits to client
+Entity WikiEditStream(WikiEdit)
+  attributes:
+    - user: string = WikiEdit.user;
+    - page_title: string = WikiEdit.page_title;
+    - action: string = WikiEdit.action;
+    - change_size: integer = WikiEdit.change_size;
+  expose:
+    websocket: "/api/wiki/edits/feed"
+    operations: [subscribe]
+end
+
+Component<Gauge> LiveEditSize
+  entity: EditGauge
+  value: "edit_size_abs"
+  min: 0
+  max: 2000
+  label: "Wikipedia edit size (abs bytes)"
+  unit: "B"
+end
+
+Component<LiveView> WikiEditsFeed
+  entity: WikiEditStream
+  fields: ["user", "page_title", "action", "change_size"]
+  label: "Who is editing what (live)"
+end
