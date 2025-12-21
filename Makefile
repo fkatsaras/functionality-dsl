@@ -157,6 +157,27 @@ generate-all: ## Generate code for all examples
 .PHONY: gen
 gen: generate ## Alias for 'generate'
 
+.PHONY: visualize
+visualize: ## Visualize FDSL model (usage: make visualize FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		echo "Usage: make visualize FILE=examples/v2/nested-entities/main.fdsl"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Generating model visualization for $(FILE)...$(NC)"
+	$(FDSL) visualize-model $(FILE) --output docs
+	@echo "$(GREEN)Visualization generated!$(NC)"
+	@echo "DOT file: docs/$$(basename $(FILE) .fdsl)_diagram.dot"
+	@if command -v dot > /dev/null 2>&1; then \
+		echo "PNG file: docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	else \
+		echo "$(YELLOW)Note: Install GraphViz to generate PNG files$(NC)"; \
+		echo "To convert: dot -Tpng docs/$$(basename $(FILE) .fdsl)_diagram.dot -o docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	fi
+
+.PHONY: viz
+viz: visualize ## Alias for 'visualize'
+
 # ==============================================================================
 # Testing
 # ==============================================================================

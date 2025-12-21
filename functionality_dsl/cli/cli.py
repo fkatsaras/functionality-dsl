@@ -409,15 +409,22 @@ def visualize_model_cmd(context, model_path, output_dir):
                 rest_expose = getattr(expose, "rest", None)
                 if rest_expose:
                     rest_path = getattr(rest_expose, "path", "")
-                    operations_block = getattr(expose, "operations", None)
-                    operations = getattr(operations_block, "simple_ops", []) if operations_block else []
-                    ops_str = ", ".join(operations) if operations else "CRUD"
+                    # In expose blocks, operations is just a plain list
+                    operations = getattr(expose, "operations", [])
+                    # Show actual operations, not defaults
+                    ops_str = ", ".join(operations) if operations else ""
 
-                    node_label = (
-                        f"[REST API]\\n"
-                        f"{safe_label(rest_path)}\\n"
-                        f"ops: {safe_label(ops_str)}"
-                    )
+                    if ops_str:
+                        node_label = (
+                            f"[REST API]\\n"
+                            f"{safe_label(rest_path)}\\n"
+                            f"ops: {safe_label(ops_str)}"
+                        )
+                    else:
+                        node_label = (
+                            f"[REST API]\\n"
+                            f"{safe_label(rest_path)}"
+                        )
                     dot.node(
                         f"api_rest_{e.name}",
                         label=node_label,
@@ -435,16 +442,24 @@ def visualize_model_cmd(context, model_path, output_dir):
                 # WebSocket expose
                 websocket_expose = getattr(expose, "websocket", None)
                 if websocket_expose:
-                    websocket_path = getattr(websocket_expose, "path", "")
-                    operations_block = getattr(expose, "operations", None)
-                    operations = getattr(operations_block, "simple_ops", []) if operations_block else []
-                    ops_str = ", ".join(operations) if operations else "sub/pub"
+                    # WebSocket uses 'channel' not 'path'
+                    websocket_path = getattr(websocket_expose, "channel", "")
+                    # In expose blocks, operations is just a plain list
+                    operations = getattr(expose, "operations", [])
+                    # Show actual operations, not defaults
+                    ops_str = ", ".join(operations) if operations else ""
 
-                    node_label = (
-                        f"[WS API]\\n"
-                        f"{safe_label(websocket_path)}\\n"
-                        f"ops: {safe_label(ops_str)}"
-                    )
+                    if ops_str:
+                        node_label = (
+                            f"[WS API]\\n"
+                            f"{safe_label(websocket_path)}\\n"
+                            f"ops: {safe_label(ops_str)}"
+                        )
+                    else:
+                        node_label = (
+                            f"[WS API]\\n"
+                            f"{safe_label(websocket_path)}"
+                        )
                     dot.node(
                         f"api_ws_{e.name}",
                         label=node_label,

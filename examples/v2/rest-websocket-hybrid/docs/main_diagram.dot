@@ -1,0 +1,20 @@
+// FDSL Model
+digraph {
+	fontname=Arial fontsize=10 rankdir=LR
+	nodesep=0.5 ranksep=1.0
+	edge [fontsize=9]
+	server_NotificationAPI [label="[SERVER]\nNotificationAPI\nhost=localhost\nport=8080" fillcolor="#bbdefb" shape=box style=filled]
+	entity_Notification [label="[ENTITY]\nNotification\nid: string\nmessage: string\ntimestamp: string\npriority: string" fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_NotificationCRUD [label="[ENTITY]\nNotificationCRUD\nid: string = Notification.get('id')\nmessage: string = Notification.get('message')\ntimestamp: string = Notification.get('timestamp')\npriority: string = Notification.get('priority')\nurgent: boolean = Notification.get('priority') == 'high'\ndisplayMessage: string = dsl_funcs['upper'](Notification.get('mes..." fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_Notification -> entity_NotificationCRUD [label=extends]
+	api_rest_NotificationCRUD [label="[REST API]\n/api/notifications\nops: list, read, create" fillcolor="#ffe0b2" shape=box style=filled]
+	entity_NotificationCRUD -> api_rest_NotificationCRUD [label=exposes color="#ff6f00"]
+	entity_NotificationRaw [label="[ENTITY]\nNotificationRaw\nid: string\nmessage: string\ntimestamp: string\npriority: string" fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_NotificationLive [label="[ENTITY]\nNotificationLive\nid: string = NotificationRaw.get('id')\nmessage: string = NotificationRaw.get('message')\ndisplayMessage: string = dsl_funcs['upper'](NotificationRaw.get('...\ntimestamp: string = NotificationRaw.get('timestamp')\npriority: string = NotificationRaw.get('priority')\nurgent: boolean = NotificationRaw.get('priority') == 'high...\npriorityLevel: integer = 2 if NotificationRaw.get('priority') == ..." fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_NotificationRaw -> entity_NotificationLive [label=extends]
+	api_ws_NotificationLive [label="[WS API]\n/ws/notifications\nops: subscribe" fillcolor="#ffccbc" shape=box style=filled]
+	entity_NotificationLive -> api_ws_NotificationLive [label=exposes color="#ff6f00"]
+	source_NotificationDB [label="[SOURCE REST]\nNotificationDB\nhttp://dummy-notification-service:9002/notificatio...\nops: list, read, create" fillcolor="#d1c4e9" shape=note style=filled]
+	source_NotificationDB -> entity_Notification [label=provides color="#7b1fa2" style=dashed]
+	extws_NotificationStream [label="[SOURCE WS]\nNotificationStream\nws://dummy-notification-service:9002/stream" fillcolor="#b39ddb" shape=note style=filled]
+}
