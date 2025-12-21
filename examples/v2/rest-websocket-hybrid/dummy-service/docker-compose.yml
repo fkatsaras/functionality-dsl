@@ -1,0 +1,13 @@
+services:
+  dummy-notification-service:
+    container_name: dummy-notification-service
+    build: .
+    image: dummy-notification-service
+    ports:
+      - "9002:9002"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true

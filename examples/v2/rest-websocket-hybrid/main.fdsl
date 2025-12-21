@@ -1,0 +1,83 @@
+// REST + WebSocket Hybrid Example: Notification System
+//
+// This example demonstrates how to combine REST and WebSocket in the same API:
+// - REST endpoints for CRUD operations on notifications
+// - WebSocket for real-time notification feed
+// - Business logic in the API layer (formatting, computing urgency flags)
+//
+// Architecture:
+// - Dummy service = Simple storage (DB mock)
+// - Our API = Business logic (uppercase messages, compute urgency, add metadata)
+//
+// Use case:
+// 1. Create notifications via POST /api/notifications
+// 2. All connected clients receive them live via /ws/notifications (with transformations)
+
+Server NotificationAPI
+  host: "localhost"
+  port: 8080
+  cors: "http://localhost:3000"
+end
+
+// REST source for CRUD operations
+Source<REST> NotificationDB
+  base_url: "http://dummy-notification-service:9002/notifications"
+  operations: [list, read, create]
+end
+
+// WebSocket source for live notification stream
+Source<WS> NotificationStream
+  channel: "ws://dummy-notification-service:9002/stream"
+  operations: [subscribe]
+end
+
+// Base notification entity from REST
+Entity Notification
+  attributes:
+    - id: string;
+    - message: string;
+    - timestamp: string;
+    - priority: string;
+  source: NotificationDB
+end
+
+// REST CRUD entity with business logic
+Entity NotificationCRUD(Notification)
+  attributes:
+    - id: string = Notification.id;
+    - message: string = Notification.message;
+    - timestamp: string = Notification.timestamp;
+    - priority: string = Notification.priority;
+    - urgent: boolean = Notification.priority == "high";  // Business logic: compute urgency flag
+    - displayMessage: string = upper(Notification.message) if Notification.priority == "high" else Notification.message;  // Business logic: format based on priority
+  expose:
+    rest: "/api/notifications"
+    operations: [list, read, create]
+    id_field: "id"
+    readonly_fields: ["id", "timestamp", "urgent", "displayMessage"]
+end
+
+// Raw notification from WebSocket stream
+Entity NotificationRaw
+  attributes:
+    - id: string;
+    - message: string;
+    - timestamp: string;
+    - priority: string;
+  source: NotificationStream
+end
+
+// Live notification entity with business logic (transformations applied in our API)
+Entity NotificationLive(NotificationRaw)
+  attributes:
+    - id: string = NotificationRaw.id;
+    - message: string = NotificationRaw.message;
+    - displayMessage: string = upper(NotificationRaw.message) if NotificationRaw.priority == "high" else NotificationRaw.message;  // Business logic: format based on priority
+    - timestamp: string = NotificationRaw.timestamp;
+    - priority: string = NotificationRaw.priority;
+    - urgent: boolean = NotificationRaw.priority == "high";  // Business logic: compute urgency flag
+    - priorityLevel: integer = 2 if NotificationRaw.priority == "high" else (1 if NotificationRaw.priority == "medium" else 0);  // Business logic: numeric priority
+  expose:
+    websocket: "/ws/notifications"
+    operations: [subscribe]
+end
