@@ -1,0 +1,15 @@
+// FDSL Model
+digraph {
+	fontname=Arial fontsize=10 rankdir=LR
+	nodesep=0.5 ranksep=1.0
+	edge [fontsize=9]
+	server_OrderAPI [label="[SERVER]\nOrderAPI\nhost=localhost\nport=8080" fillcolor="#bbdefb" shape=box style=filled]
+	entity_OrderItem [label="[ENTITY]\nOrderItem\nproductId: string\nproductName: string\nquantity: integer\nprice: number" fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_Order [label="[ENTITY]\nOrder\nid: string\nuserId: string\nitems: array<OrderItem>\ncreatedAt: string" fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_OrderWithTotals [label="[ENTITY]\nOrderWithTotals\nid: string = Order.get('id')\nuserId: string = Order.get('userId')\nitems: array<OrderItem> = Order.get('items')\ncreatedAt: string = Order.get('createdAt')\nitemCount: integer = dsl_funcs['len'](Order.get('items'))\nsubtotal: number = dsl_funcs['sum'](dsl_funcs['map'](Order....\ntax: number = dsl_funcs['round'](OrderWithTotals.get('...\ntotal: number = OrderWithTotals.get('subtotal') + OrderW..." fillcolor="#c8e6c9" fontcolor=black fontsize=10 shape=box style="filled,rounded"]
+	entity_Order -> entity_OrderWithTotals [label=extends]
+	api_rest_OrderWithTotals [label="[REST API]\n/api/orders\nops: CRUD" fillcolor="#ffe0b2" shape=box style=filled]
+	entity_OrderWithTotals -> api_rest_OrderWithTotals [label=exposes color="#ff6f00"]
+	source_OrderDB [label="[SOURCE REST]\nOrderDB\nhttp://dummy-order-service:9001/orders\nops: list, read, create" fillcolor="#d1c4e9" shape=note style=filled]
+	source_OrderDB -> entity_Order [label=provides color="#7b1fa2" style=dashed]
+}

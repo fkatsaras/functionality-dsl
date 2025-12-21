@@ -402,6 +402,63 @@ def visualize_model_cmd(context, model_path, output_dir):
                     label="extends"
                 )
 
+            # v2 syntax: Entity expose blocks (REST/WebSocket)
+            expose = getattr(e, "expose", None)
+            if expose:
+                # REST expose
+                rest_expose = getattr(expose, "rest", None)
+                if rest_expose:
+                    rest_path = getattr(rest_expose, "path", "")
+                    operations_block = getattr(expose, "operations", None)
+                    operations = getattr(operations_block, "simple_ops", []) if operations_block else []
+                    ops_str = ", ".join(operations) if operations else "CRUD"
+
+                    node_label = (
+                        f"[REST API]\\n"
+                        f"{safe_label(rest_path)}\\n"
+                        f"ops: {safe_label(ops_str)}"
+                    )
+                    dot.node(
+                        f"api_rest_{e.name}",
+                        label=node_label,
+                        shape="box", fillcolor="#ffe0b2", style="filled"
+                    )
+
+                    # Entity -> REST API
+                    dot.edge(
+                        f"entity_{e.name}",
+                        f"api_rest_{e.name}",
+                        label="exposes",
+                        color="#ff6f00"
+                    )
+
+                # WebSocket expose
+                websocket_expose = getattr(expose, "websocket", None)
+                if websocket_expose:
+                    websocket_path = getattr(websocket_expose, "path", "")
+                    operations_block = getattr(expose, "operations", None)
+                    operations = getattr(operations_block, "simple_ops", []) if operations_block else []
+                    ops_str = ", ".join(operations) if operations else "sub/pub"
+
+                    node_label = (
+                        f"[WS API]\\n"
+                        f"{safe_label(websocket_path)}\\n"
+                        f"ops: {safe_label(ops_str)}"
+                    )
+                    dot.node(
+                        f"api_ws_{e.name}",
+                        label=node_label,
+                        shape="box", fillcolor="#ffccbc", style="filled"
+                    )
+
+                    # Entity -> WS API
+                    dot.edge(
+                        f"entity_{e.name}",
+                        f"api_ws_{e.name}",
+                        label="exposes",
+                        color="#ff6f00"
+                    )
+
         # -------------------------------
         # REST Endpoints
         # -------------------------------
@@ -504,6 +561,7 @@ def visualize_model_cmd(context, model_path, output_dir):
                 shape="ellipse", fillcolor="#f8bbd0", style="filled"
             )
 
+            # v1 syntax: component -> endpoint
             if getattr(c, "endpoint", None):
                 ep = c.endpoint
                 if ep.__class__.__name__ == "EndpointWS":
@@ -516,95 +574,186 @@ def visualize_model_cmd(context, model_path, output_dir):
                     label="endpoint"
                 )
 
+            # v2 syntax: component -> entity
+            if getattr(c, "entity", None):
+                entity = c.entity
+                dot.edge(
+                    f"comp_{c.name}",
+                    f"entity_{entity.name}",
+                    label="binds to",
+                    color="#e91e63"
+                )
+
         # -------------------------------
-        # External Sources (REST)
+        # External Sources (REST) - handles both v1 and v2
         # -------------------------------
         for s in model.externalrest:
-            node_label = (
-                f"[SOURCE REST]\\n"
-                f"{safe_label(s.name)}\\n"
-                f"{safe_label(s.url)}"
-            )
-            dot.node(
-                f"extrest_{s.name}",
-                label=node_label,
-                shape="note", fillcolor="#d1c4e9", style="filled"
-            )
+            # Detect v2 syntax (has base_url and operations) vs v1 (has url)
+            is_v2 = hasattr(s, "base_url") and hasattr(s, "operations")
 
-            # Add edge from source to response entity
-            response = getattr(s, "response", None)
-            if response:
-                schema = getattr(response, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
+            if is_v2:
+                # v2 syntax - show base_url and operations
+                base_url = getattr(s, "base_url", "")
+                operations_block = getattr(s, "operations", None)
+                operations = getattr(operations_block, "simple_ops", []) if operations_block else []
+                ops_str = ", ".join(operations) if operations else "none"
+
+                node_label = (
+                    f"[SOURCE REST]\\n"
+                    f"{safe_label(s.name)}\\n"
+                    f"{safe_label(base_url)}\\n"
+                    f"ops: {safe_label(ops_str)}"
+                )
+                dot.node(
+                    f"source_{s.name}",
+                    label=node_label,
+                    shape="note", fillcolor="#d1c4e9", style="filled"
+                )
+
+                # Find entities that reference this source
+                for e in model.entities:
+                    entity_source = getattr(e, "source", None)
+                    if entity_source and entity_source.name == s.name:
                         dot.edge(
-                            f"extrest_{s.name}",
-                            f"entity_{entity.name}",
+                            f"source_{s.name}",
+                            f"entity_{e.name}",
                             label="provides",
                             color="#7b1fa2",
                             style="dashed"
                         )
+            else:
+                # v1 syntax - show url
+                node_label = (
+                    f"[SOURCE REST]\\n"
+                    f"{safe_label(s.name)}\\n"
+                    f"{safe_label(s.url)}"
+                )
+                dot.node(
+                    f"extrest_{s.name}",
+                    label=node_label,
+                    shape="note", fillcolor="#d1c4e9", style="filled"
+                )
 
-            # Add edge from request entity to source (for mutations)
-            request = getattr(s, "request", None)
-            if request:
-                schema = getattr(request, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"entity_{entity.name}",
-                            f"extrest_{s.name}",
-                            label="sends",
-                            color="#7b1fa2",
-                            style="dashed"
-                        )
+                # Add edge from source to response entity
+                response = getattr(s, "response", None)
+                if response:
+                    schema = getattr(response, "schema", None)
+                    if schema:
+                        entity = getattr(schema, "entity", None)
+                        if entity:
+                            dot.edge(
+                                f"extrest_{s.name}",
+                                f"entity_{entity.name}",
+                                label="provides",
+                                color="#7b1fa2",
+                                style="dashed"
+                            )
+
+                # Add edge from request entity to source (for mutations)
+                request = getattr(s, "request", None)
+                if request:
+                    schema = getattr(request, "schema", None)
+                    if schema:
+                        entity = getattr(schema, "entity", None)
+                        if entity:
+                            dot.edge(
+                                f"entity_{entity.name}",
+                                f"extrest_{s.name}",
+                                label="sends",
+                                color="#7b1fa2",
+                                style="dashed"
+                            )
 
         # -------------------------------
-        # External Sources (WS)
+        # External Sources (WS) - handles both v1 and v2
         # -------------------------------
         for s in model.externalws:
-            node_label = (
-                f"[SOURCE WS]\\n"
-                f"{safe_label(s.name)}\\n"
-                f"{safe_label(s.url)}"
-            )
-            dot.node(
-                f"extws_{s.name}",
-                label=node_label,
-                shape="note", fillcolor="#b39ddb", style="filled"
-            )
+            # Detect v2 syntax (has channel and operations) vs v1 (has url)
+            is_v2 = hasattr(s, "channel") and hasattr(s, "operations")
 
-            # Subscribe block (external source -> entity)
-            subscribe = getattr(s, "subscribe", None)
-            if subscribe:
-                message = getattr(subscribe, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
+            if is_v2:
+                # v2 syntax - show channel and operations
+                channel = getattr(s, "channel", "")
+                operations_block = getattr(s, "operations", None)
+                operations = getattr(operations_block, "simple_ops", []) if operations_block else []
+                ops_str = ", ".join(operations) if operations else "none"
+
+                node_label = (
+                    f"[SOURCE WS]\\n"
+                    f"{safe_label(s.name)}\\n"
+                    f"{safe_label(channel)}\\n"
+                    f"ops: {safe_label(ops_str)}"
+                )
+                dot.node(
+                    f"source_{s.name}",
+                    label=node_label,
+                    shape="note", fillcolor="#b39ddb", style="filled"
+                )
+
+                # Find entities that reference this source (for subscribe)
+                for e in model.entities:
+                    entity_source = getattr(e, "source", None)
+                    if entity_source and entity_source.name == s.name:
                         dot.edge(
-                            f"extws_{s.name}",
-                            f"entity_{entity.name}",
+                            f"source_{s.name}",
+                            f"entity_{e.name}",
                             label="streams",
                             color="#7b1fa2",
                             style="dashed"
                         )
 
-            # Publish block (entity -> external source)
-            publish = getattr(s, "publish", None)
-            if publish:
-                message = getattr(publish, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
+                    # Find entities that target this source (for publish)
+                    target = getattr(e, "target", None)
+                    if target and target.name == s.name:
                         dot.edge(
-                            f"entity_{entity.name}",
-                            f"extws_{s.name}",
-                            label="sends",
+                            f"entity_{e.name}",
+                            f"source_{s.name}",
+                            label="publishes",
                             color="#7b1fa2",
                             style="dashed"
                         )
+            else:
+                # v1 syntax - show url
+                node_label = (
+                    f"[SOURCE WS]\\n"
+                    f"{safe_label(s.name)}\\n"
+                    f"{safe_label(s.url)}"
+                )
+                dot.node(
+                    f"extws_{s.name}",
+                    label=node_label,
+                    shape="note", fillcolor="#b39ddb", style="filled"
+                )
+
+                # Subscribe block (external source -> entity)
+                subscribe = getattr(s, "subscribe", None)
+                if subscribe:
+                    message = getattr(subscribe, "message", None)
+                    if message:
+                        entity = getattr(message, "entity", None)
+                        if entity:
+                            dot.edge(
+                                f"extws_{s.name}",
+                                f"entity_{entity.name}",
+                                label="streams",
+                                color="#7b1fa2",
+                                style="dashed"
+                            )
+
+                # Publish block (entity -> external source)
+                publish = getattr(s, "publish", None)
+                if publish:
+                    message = getattr(publish, "message", None)
+                    if message:
+                        entity = getattr(message, "entity", None)
+                        if entity:
+                            dot.edge(
+                                f"entity_{entity.name}",
+                                f"extws_{s.name}",
+                                label="sends",
+                                color="#7b1fa2",
+                                style="dashed"
+                            )
 
         # -------------------------------
         # Output
