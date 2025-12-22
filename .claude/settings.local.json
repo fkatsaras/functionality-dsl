@@ -133,7 +133,8 @@
       "Bash(timeout 10 bash:*)",
       "Bash(../../../venv_WIN/Scripts/fdsl.exe visualize-model main.fdsl)",
       "Bash(../../../venv_WIN/Scripts/fdsl.exe visualize-model main.fdsl --output docs)",
-      "Bash(wsl bash:*)"
+      "Bash(wsl bash:*)",
+      "Bash(../../../venv_WIN/Scripts/fdsl.exe generate main.fdsl --out ../../../generated)"
     ],
     "deny": [],
     "ask": []

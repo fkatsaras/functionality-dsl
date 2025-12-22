@@ -38,7 +38,7 @@ end
 
 Source<REST> OrdersByUser
   base_url: "http://dummy-order-service:9004/orders/by-user"
-  operations: [list]
+  operations: [list, read]
 end
 
 // ============================================================================

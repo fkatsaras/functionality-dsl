@@ -64,6 +64,59 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     parent_sources = []
     parent_ws_sources = []  # WebSocket sources
 
+    # Helper function to infer the ID field for fetching a parent entity
+    def infer_parent_id_field(parent_entity, child_entity):
+        """
+        Infer which field from the first parent's data should be used to fetch this parent.
+
+        For example, if OrderWithDetails(Order, User) and User is fetched using Order.userId,
+        we need to return "userId" for the User parent.
+        """
+        # Look through child entity attributes to find references to parent fields
+        # that could be an ID reference
+        child_attrs = getattr(child_entity, "attributes", []) or []
+
+        # Common ID field patterns
+        id_patterns = ["id", f"{parent_entity.name.lower()}Id", f"{parent_entity.name.lower()}_id"]
+
+        # Check if the parent entity itself has an id field to determine the pattern
+        parent_attrs = getattr(parent_entity, "attributes", []) or []
+        parent_id_field = None
+        for pattr in parent_attrs:
+            if pattr.name in ["id", "Id", "ID"]:
+                parent_id_field = pattr.name
+                break
+
+        # If this is the first parent (source of list data), use the main id_field
+        if parents and parent_entity.name == parents[0].name:
+            return id_field if id_field else "id"
+
+        # For other parents, look for a field that references this parent
+        # Check for {ParentName}Id or {parentname}Id patterns in child attributes
+        for cattr in child_attrs:
+            # Check if attribute name suggests it's an ID for this parent
+            attr_name_lower = cattr.name.lower()
+            parent_name_lower = parent_entity.name.lower()
+
+            if attr_name_lower == f"{parent_name_lower}id":
+                return cattr.name
+            if attr_name_lower == f"{parent_name_lower}_id":
+                return cattr.name
+
+            # Check if the expression references a parent field that looks like an ID
+            expr = getattr(cattr, "expr", None)
+            if expr:
+                # Look for patterns like "Order.userId" in the expression
+                expr_str = str(expr)
+                for id_pattern in id_patterns:
+                    if f".{id_pattern}" in expr_str and parent_name_lower not in expr_str.lower():
+                        # This attribute gets its value from another parent's ID field
+                        # Extract the field name (e.g., "userId" from "Order.userId")
+                        return id_pattern
+
+        # Default: use id field
+        return id_field if id_field else "id"
+
     for parent in parents:
         if parent.name in exposure_map:
             # This parent is exposed - we'll call its service
@@ -76,10 +129,14 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
             # This parent is not exposed - check if it has a direct source
             parent_source, source_type = find_source_for_entity(parent, model)
             if parent_source and source_type == "REST":
+                # Infer the ID field needed to fetch this parent
+                fetch_id_field = infer_parent_id_field(parent, entity)
+
                 parent_sources.append({
                     "entity_name": parent.name,
                     "source_name": parent_source.name,
-                    "source_class": f"{parent_source.name}Source"
+                    "source_class": f"{parent_source.name}Source",
+                    "id_field": fetch_id_field  # Which field to use for fetching
                 })
             elif parent_source and source_type == "WS":
                 parent_ws_sources.append({

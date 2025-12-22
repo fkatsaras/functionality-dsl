@@ -22,6 +22,8 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 
 **Execution Model:** Topological sort computes entities in dependency order. Expressions evaluated with restricted `eval()` in controlled context.
 
+**Multi-Parent Entities:** FDSL supports entities that inherit from multiple parents, automatically merging data from different sources. See [Multi-Parent Entities Guide](docs/multi-parent-entities.md) for details.
+
 ---
 
 ## Core Concepts

@@ -99,36 +99,6 @@ class {{ entity_name }}Service:
         """List all {{ entity_name }} instances"""
         logger.debug("Listing {{ entity_name }} instances")
 
-        {% if has_multiple_parent_sources %}
-        # Fetch from first parent source (list operation)
-        # Note: For multi-parent entities, list comes from first source
-        # Then we fetch other parent data for each item using the appropriate ID field
-        {%- set first_source = parent_sources[0] %}
-        items_raw = await self.{{ first_source.source_name | lower }}_source.list()
-
-        # For each item, fetch data from all parent sources
-        result = []
-        for item in items_raw:
-            parent_data = {}
-            {%- for ps in parent_sources %}
-            # Fetch {{ ps.entity_name }} using {{ ps.id_field }} from the item
-            parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(item.get("{{ ps.id_field }}"))
-            {%- endfor %}
-
-            {% if has_computed_attrs %}
-            transformed = self._transform_entity(parent_data)
-            result.append({{ entity_name }}(**transformed))
-            {% else %}
-            # Merge all parent data
-            merged = {}
-            for data in parent_data.values():
-                if data:
-                    merged.update(data)
-            result.append({{ entity_name }}(**merged))
-            {% endif %}
-
-        return result
-        {% else %}
         # Fetch from source
         raw_data = await self.source.list()
 
@@ -138,7 +108,6 @@ class {{ entity_name }}Service:
         return [{{ entity_name }}(**item) for item in transformed_items]
         {% else %}
         return [{{ entity_name }}(**item) for item in raw_data]
-        {% endif %}
         {% endif %}
 
     {%- elif op.operation == "read" %}
@@ -153,22 +122,6 @@ class {{ entity_name }}Service:
         {%- for ps in parent_services %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
         {%- endfor %}
-        {% elif has_multiple_parent_sources %}
-        # Fetch from multiple parent sources
-        # First, fetch the primary parent (first in list)
-        parent_data = {}
-        {%- set first_source = parent_sources[0] %}
-        first_parent = await self.{{ first_source.source_name | lower }}_source.read({{ id_field }})
-        if not first_parent:
-            return None
-        parent_data["{{ first_source.entity_name }}"] = first_parent
-
-        # Then fetch other parents using the appropriate ID fields
-        {%- for ps in parent_sources[1:] %}
-        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(first_parent.get("{{ ps.id_field }}"))
-        {%- endfor %}
-        if not all(parent_data.values()):
-            return None
         {% else %}
         # Fetch from source
         raw_data = await self.source.read({{ id_field }})
@@ -179,7 +132,7 @@ class {{ entity_name }}Service:
 
         {% if has_computed_attrs %}
         # Transform entity
-        {% if has_parent_services or has_multiple_parent_sources %}
+        {% if has_parent_services %}
         transformed = self._transform_entity(parent_data)
         {% else %}
         transformed = self._transform_entity(raw_data)
