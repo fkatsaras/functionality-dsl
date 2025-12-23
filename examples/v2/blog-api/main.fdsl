@@ -1,0 +1,166 @@
+ 
+Server BlogAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+ 
+Source<REST> UserDB
+  base_url: "http://dummy-blog-service:9001/users"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> PostDB
+  base_url: "http://dummy-blog-service:9001/posts"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> CommentDB
+  base_url: "http://dummy-blog-service:9001/comments"
+  operations: [read, create, delete]
+end
+
+Source<REST> CategoryDB
+  base_url: "http://dummy-blog-service:9001/categories"
+  operations: [read, create]
+end
+
+// ============================================================================
+// BASE RESOURCE ENTITIES 
+// ============================================================================
+
+// User - Full CRUD
+Entity User
+  attributes:
+    - id: string;
+    - username: string;
+    - email: string;
+    - role: string;
+  source: UserDB
+  expose:
+    rest: "/api/users/{id}"
+    operations: [read, create, update, delete]
+    readonly_fields: ["id"]
+end
+
+// Post - Full CRUD  
+Entity Post
+  attributes:
+    - id: string;
+    - authorId: string;
+    - title: string;
+    - content: string;
+    - categoryId: string;
+    - published: boolean;
+    - createdAt: string;
+  source: PostDB
+  expose:
+    rest: "/api/posts/{id}"
+    operations: [read, create, update, delete]
+    readonly_fields: ["id", "createdAt"]
+end
+
+// Comment - Create, Read, Delete (no update for immutability)
+Entity Comment
+  attributes:
+    - id: string;
+    - postId: string;
+    - authorId: string;
+    - text: string;
+    - createdAt: string;
+  source: CommentDB
+  expose:
+    rest: "/api/comments/{id}"
+    operations: [read, create, delete]
+    readonly_fields: ["id", "createdAt"]
+end
+
+// Category - Read-only + Create (no update/delete)
+Entity Category
+  attributes:
+    - id: string;
+    - name: string;
+    - slug: string;
+  source: CategoryDB
+  expose:
+    rest: "/api/categories/{id}"
+    operations: [read, create]
+    readonly_fields: ["id", "slug"]
+end
+
+// ============================================================================
+// COMPOSITE ENTITIES (Read-only views with relationships)
+// ============================================================================
+
+// PostWithAuthor - 2 parents: Post + User
+Entity PostWithAuthor(Post, User)
+  relationships:
+    - User: Post.authorId
+  attributes:
+    - id: string = Post.id;
+    - title: string = Post.title;
+    - content: string = Post.content;
+    - published: boolean = Post.published;
+    - createdAt: string = Post.createdAt;
+
+    - authorId: string = Post.authorId;
+    - authorName: string = User.username;
+    - authorEmail: string = User.email;
+    - authorRole: string = User.role;
+
+    - wordCount: integer = len(Post.content);
+    - isPublished: boolean = Post.published == true;
+  expose:
+    rest: "/api/posts/{id}/with-author"
+    operations: [read]
+end
+
+// PostFull - 3 parents: Post + User + Category
+Entity PostFull(Post, User, Category)
+  relationships:
+    - User: Post.authorId
+    - Category: Post.categoryId
+  attributes:
+    - id: string = Post.id;
+    - title: string = Post.title;
+    - content: string = Post.content;
+    - published: boolean = Post.published;
+    - createdAt: string = Post.createdAt;
+
+    - authorId: string = Post.authorId;
+    - authorName: string = User.username;
+    - authorRole: string = User.role;
+
+    - categoryId: string = Post.categoryId;
+    - categoryName: string = Category.name;
+    - categorySlug: string = Category.slug;
+
+    - summary: string = Post.title;
+    - isAdminPost: boolean = User.role == "admin";
+  expose:
+    rest: "/api/posts/{id}/full"
+    operations: [read]
+end
+
+// CommentWithContext - 3 parents: Comment + User (author) + Post
+Entity CommentWithContext(Comment, User, Post)
+  relationships:
+    - User: Comment.authorId
+    - Post: Comment.postId
+  attributes:
+    - id: string = Comment.id;
+    - text: string = Comment.text;
+    - createdAt: string = Comment.createdAt;
+
+    - authorId: string = Comment.authorId;
+    - authorName: string = User.username;
+
+    - postId: string = Comment.postId;
+    - postTitle: string = Post.title;
+
+    - commentLength: integer = len(Comment.text);
+  expose:
+    rest: "/api/comments/{id}/with-context"
+    operations: [read]
+end

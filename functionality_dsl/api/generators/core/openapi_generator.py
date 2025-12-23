@@ -103,11 +103,28 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
         operations = config["operations"]
         id_field = config.get("id_field", "id")
 
+        # Split rest_path into base prefix and path parameters
+        # Example: "/api/users/{id}" -> base="/api/users", params="/{id}"
+        import re
+        path_params_pattern = r'/\{[^}]+\}'
+        match = re.search(path_params_pattern, rest_path)
+        if match:
+            base_prefix = rest_path[:match.start()]
+            path_with_params = rest_path[len(base_prefix):]
+        else:
+            base_prefix = rest_path
+            path_with_params = ""
+
         # Generate operations
         for operation in operations:
             http_method = get_operation_http_method(operation).lower()
-            path_suffix = get_operation_path_suffix(operation, id_field)
-            full_path = rest_path + path_suffix
+
+            # For operations that need ID, use base_prefix + path_with_params
+            # For operations without ID (create), use just base_prefix
+            if operation in ["read", "update", "delete"] and path_with_params:
+                full_path = base_prefix + path_with_params
+            else:
+                full_path = base_prefix
 
             if full_path not in spec["paths"]:
                 spec["paths"][full_path] = {}

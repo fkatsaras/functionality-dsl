@@ -1,0 +1,103 @@
+// ============================================================================
+// UNIVERSITY COURSE MANAGEMENT API
+// Testing composite entities with explicit field mapping
+// ============================================================================
+
+Server UniversityAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================================================
+// DATA SOURCES (RESOURCE-SPECIFIC ENDPOINTS)
+// ============================================================================
+
+Source<REST> StudentDB
+  base_url: "http://dummy-university-service:9001/students"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> CourseDB
+  base_url: "http://dummy-university-service:9001/courses"
+  operations: [read]
+end
+
+Source<REST> EnrollmentDB
+  base_url: "http://dummy-university-service:9001/enrollments"
+  operations: [read, create]
+end
+
+// ============================================================================
+// BASE RESOURCE ENTITIES
+// ============================================================================
+
+Entity Student
+  attributes:
+    - id: string;
+    - name: string;
+    - email: string;
+    - enrollmentYear: integer;
+  source: StudentDB
+  expose:
+    rest: "/api/students/{id}"
+    operations: [read, create, update, delete]
+    readonly_fields: ["id"]
+end
+
+Entity Course
+  attributes:
+    - id: string;
+    - title: string;
+    - credits: integer;
+  source: CourseDB
+  expose:
+    rest: "/api/courses/{id}"
+    operations: [read]
+end
+
+Entity Enrollment
+  attributes:
+    - id: string;
+    - studentId: string;
+    - courseId: string;
+    - semester: string;
+    - grade: string;
+  source: EnrollmentDB
+  expose:
+    rest: "/api/enrollments/{id}"
+    operations: [read, create]
+    readonly_fields: ["id"]
+end
+
+// ============================================================================
+// ONE COMPOSITE ENTITY (TESTING)
+// ============================================================================
+
+// EnrollmentDetails: Fetch Enrollment, then Student, then Course
+// First parent: Enrollment (uses endpoint's {id})
+// Second parent: Student (uses Enrollment.studentId)
+// Third parent: Course (uses Enrollment.courseId)
+
+Entity EnrollmentDetails(Enrollment, Student, Course)
+  relationships:
+    - Student: Enrollment.studentId
+    - Course: Enrollment.courseId
+  attributes:
+    - id: string = Enrollment.id;
+    - semester: string = Enrollment.semester;
+    - grade: string = Enrollment.grade;
+    - passed: boolean = Enrollment.grade == "A" or Enrollment.grade == "B" or Enrollment.grade == "C";
+
+    - studentId: string = Enrollment.studentId;
+    - studentName: string = Student.name;
+    - studentEmail: string = Student.email;
+
+    - courseId: string = Enrollment.courseId;
+    - courseTitle: string = Course.title;
+    - credits: integer = Course.credits;
+  expose:
+    rest: "/api/enrollments/{id}/details"
+    operations: [read]
+end

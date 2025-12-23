@@ -151,7 +151,14 @@ class {{ entity_name }}Service:
         # Fetch parent entity data via services (composition pattern)
         parent_data = {}
         {%- for ps in parent_services %}
+        {%- if loop.first %}
+        # First parent: fetch using the endpoint's ID parameter
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ id_field }})
+        {%- else %}
+        # Subsequent parent: fetch using ID field from first parent
+        {%- set first_parent = parent_services[0] %}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(parent_data["{{ first_parent.name }}"].{{ ps.id_field }})
+        {%- endif %}
         {%- endfor %}
         {% elif has_multiple_parent_sources %}
         # Fetch from multiple parent sources

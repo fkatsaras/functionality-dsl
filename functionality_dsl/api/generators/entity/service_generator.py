@@ -167,20 +167,35 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         # Default: use id field
         return id_field if id_field else "id"
 
+    # Get explicit relationships if defined
+    relationships_block = getattr(entity, "relationships", None)
+    relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
+    relationship_map = {rel.parent.name: rel.fetchExpr.attr for rel in relationships}
+
     for parent in parents:
         if parent.name in exposure_map:
             # This parent is exposed - we'll call its service
+            # Use explicit relationship if defined, otherwise infer
+            if parent.name in relationship_map:
+                fetch_id_field = relationship_map[parent.name]
+            else:
+                fetch_id_field = infer_parent_id_field(parent, entity)
+
             parent_services.append({
                 "name": parent.name,
                 "service_class": f"{parent.name}Service",
-                "method": f"get_{parent.name.lower()}"
+                "method": f"get_{parent.name.lower()}",
+                "id_field": fetch_id_field  # Which field to use for fetching
             })
         else:
             # This parent is not exposed - check if it has a direct source
             parent_source, source_type = find_source_for_entity(parent, model)
             if parent_source and source_type == "REST":
-                # Infer the ID field needed to fetch this parent
-                fetch_id_field = infer_parent_id_field(parent, entity)
+                # Use explicit relationship if defined, otherwise infer
+                if parent.name in relationship_map:
+                    fetch_id_field = relationship_map[parent.name]
+                else:
+                    fetch_id_field = infer_parent_id_field(parent, entity)
 
                 parent_sources.append({
                     "entity_name": parent.name,

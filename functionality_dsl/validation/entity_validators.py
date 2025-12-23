@@ -648,6 +648,115 @@ def _validate_entity_inheritance_cycles(model):
             raise
 
 
+def _validate_source_base_urls(model):
+    """
+    Validate that REST source base_urls follow best practices:
+    - Should include the resource path, not just the server root
+    - Helps prevent common mistakes where one source is used for multiple resource types
+
+    Example:
+    ✓ GOOD: base_url: "http://api.example.com/users"
+    ✗ BAD:  base_url: "http://api.example.com"
+    """
+    sources = get_children_of_type("SourceREST", model)
+
+    for source in sources:
+
+        base_url = getattr(source, "base_url", None)
+        if not base_url:
+            continue
+
+        # Parse the URL to check if it has a path component
+        # Remove protocol
+        url_without_protocol = base_url
+        if "://" in base_url:
+            url_without_protocol = base_url.split("://", 1)[1]
+
+        # Check if there's a path after the host
+        # Format: "host:port/path" or "host/path"
+        parts = url_without_protocol.split("/", 1)
+
+        # If there's only one part (no path after host), warn the user
+        if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ""):
+            raise TextXSemanticError(
+                f"Source '{source.name}' has base_url '{base_url}' without a resource path.\n"
+                f"REST sources should include the resource path in base_url.\n"
+                f"Example: Instead of 'http://api.example.com', use 'http://api.example.com/users'\n"
+                f"This ensures each source maps to exactly one resource type.",
+                **get_location(source)
+            )
+
+
+def _validate_entity_relationships(model):
+    """
+    Validate relationships block in composite entities:
+    1. Relationships block can only be used in composite entities (entities with parents)
+    2. All non-first parents must have a relationship defined
+    3. Relationship fetch expressions must reference valid entity attributes
+    4. First parent doesn't need a relationship (uses endpoint ID)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parents = getattr(entity, "parents", []) or []
+        relationships_block = getattr(entity, "relationships", None)
+        relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
+
+        # Rule 1: Relationships block only for composite entities
+        if relationships and not parents:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'relationships:' block but no parents.\n"
+                f"The 'relationships:' block can only be used in composite entities (entities with parents).\n"
+                f"Remove the 'relationships:' block or add parents: Entity {entity.name}(ParentEntity)",
+                **get_location(relationships_block)
+            )
+
+        # If no parents, skip further validation
+        if not parents:
+            continue
+
+        # Rule 2: All non-first parents must have a relationship defined
+        # (First parent uses the endpoint's ID parameter by convention)
+        if len(parents) > 1:
+            relationship_map = {rel.parent.name: rel for rel in relationships}
+
+            for parent in parents[1:]:  # Skip first parent
+                if parent.name not in relationship_map:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' is missing relationship for parent '{parent.name}'.\n"
+                        f"Add to relationships block:\n"
+                        f"  - {parent.name}: <FirstParent>.{parent.name.lower()}Id",
+                        **get_location(entity)
+                    )
+
+        # Rule 3: Validate fetch expressions reference valid attributes
+        for rel in relationships:
+            fetch_expr = rel.fetchExpr
+            source_entity = fetch_expr.entity
+            attr_name = fetch_expr.attr
+
+            # Check that the source entity is the first parent
+            if parents and source_entity.name != parents[0].name:
+                raise TextXSemanticError(
+                    f"Relationship for '{rel.parent.name}' uses '{source_entity.name}.{attr_name}', "
+                    f"but fetch expressions must reference the first parent '{parents[0].name}'.\n"
+                    f"Change to: {rel.parent.name}: {parents[0].name}.{attr_name}",
+                    **get_location(rel)
+                )
+
+            # Check that the attribute exists in the source entity
+            source_attrs = getattr(source_entity, "attributes", []) or []
+            attr_names = [a.name for a in source_attrs]
+
+            if attr_name not in attr_names:
+                raise TextXSemanticError(
+                    f"Relationship for '{rel.parent.name}' references '{source_entity.name}.{attr_name}', "
+                    f"but attribute '{attr_name}' does not exist in entity '{source_entity.name}'.\n"
+                    f"Available attributes: {', '.join(attr_names)}",
+                    **get_location(rel)
+                )
+
+
 # ------------------------------------------------------------------------------
 # Main entity validation entry point
 
@@ -657,3 +766,5 @@ def verify_entities(model):
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
+    _validate_source_base_urls(model)
+    _validate_entity_relationships(model)

@@ -49,6 +49,7 @@ Entity:
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
   ('type:' entity_type=EntityType)?
   ('contentType:' content_type=ContentType)?
+  (relationships=RelationshipsBlock)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
@@ -61,6 +62,21 @@ Entity:
 // Entity type declaration (defaults to 'object' if not specified)
 EntityType:
   'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean'
+;
+
+// Relationships block for composite entities
+// Specifies how to fetch each parent entity
+RelationshipsBlock:
+  'relationships:'
+    '-' relationships+=Relationship ('-' relationships+=Relationship)*
+;
+
+Relationship:
+  parent=[Entity] ':' fetchExpr=AttrRef
+;
+
+AttrRef:
+  entity=[Entity] '.' attr=ID
 ;
 
 // ---------- EXPOSE BLOCK (Entity API Exposure) ----------
