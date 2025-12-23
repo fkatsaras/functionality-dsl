@@ -114,7 +114,7 @@ def _validate_rest_expose(entity, expose, rest, source):
         )
 
     # Check that operations are valid for REST
-    rest_ops = {'list', 'read', 'create', 'update', 'delete'}
+    rest_ops = {'read', 'create', 'update', 'delete'}
     for op in operations:
         if op not in rest_ops:
             raise TextXSemanticError(
@@ -321,7 +321,6 @@ def _validate_crud_operation(source, op_name, op):
 
     # Validate method matches conventional CRUD patterns
     conventional_methods = {
-        'list': 'GET',
         'read': 'GET',
         'create': 'POST',
         'update': 'PUT',
@@ -332,3 +331,69 @@ def _validate_crud_operation(source, op_name, op):
     if expected_method and method.upper() != expected_method:
         # Just a warning - allow non-conventional mappings
         pass
+
+
+def _validate_entity_crud_rules(model, metamodel=None):
+    """
+    Validate CRUD operation rules for entities:
+    1. Mutations (create/update/delete) require source entity
+    2. Composite entities (with parents) cannot have source
+    3. Composite entities can only expose 'read' operation
+    4. Array type entities can only expose 'read' operation
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        expose = getattr(entity, "expose", None)
+        if not expose:
+            continue
+
+        source = getattr(entity, "source", None)
+        parents = getattr(entity, "parents", []) or []
+        entity_type = getattr(entity, "entity_type", None) or "object"  # Default to object
+        operations = getattr(expose, "operations", [])
+
+        # Rule 1: Mutations require source entity
+        mutation_ops = {'create', 'update', 'delete'}
+        has_mutations = any(op in operations for op in mutation_ops)
+
+        if has_mutations and not source:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' exposes mutation operations {mutation_ops & set(operations)} "
+                f"but has no 'source:' field. Only source entities (entities with 'source:') can expose "
+                f"create/update/delete operations. "
+                f"Composite entities can only use 'read' operation.",
+                **get_location(expose),
+            )
+
+        # Rule 2: Composite entities (with parents) cannot have source
+        if parents and source:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has both parents {[p.name for p in parents]} and 'source:' field. "
+                f"Composite entities (entities with parents) cannot have a 'source:' field - they derive data from parents. "
+                f"Either remove the parents or remove the 'source:' field.",
+                **get_location(entity),
+            )
+
+        # Rule 3: Composite entities can only expose 'read'
+        if parents:
+            invalid_ops = set(operations) - {'read', 'subscribe'}  # Allow read and subscribe for composite
+            if invalid_ops:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parents]}) "
+                    f"and exposes invalid operations: {invalid_ops}. "
+                    f"Composite entities can only expose 'read' operation (or 'subscribe' for WebSocket). "
+                    f"To mutate data, expose operations on the source parent entity instead.",
+                    **get_location(expose),
+                )
+
+        # Rule 4: Array type entities can only expose 'read'
+        if entity_type == "array":
+            invalid_ops = set(operations) - {'read'}
+            if invalid_ops:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has type: array and exposes invalid operations: {invalid_ops}. "
+                    f"Array entities (collection wrappers) can only expose 'read' operation. "
+                    f"To create/update/delete items, expose operations on the item entity (type: object) instead.",
+                    **get_location(expose),
+                )

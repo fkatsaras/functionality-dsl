@@ -28,6 +28,7 @@ from functionality_dsl.validation import (
     _validate_ws_connection_scoping,
     _validate_exposure_blocks,
     _validate_crud_blocks,
+    _validate_entity_crud_rules,
     verify_unique_endpoint_paths,
     verify_endpoints,
     verify_path_params,
@@ -360,6 +361,7 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(_validate_ws_connection_scoping)
     mm.register_model_processor(_validate_exposure_blocks)
     mm.register_model_processor(_validate_crud_blocks)
+    mm.register_model_processor(_validate_entity_crud_rules)  # NEW: Validate CRUD rules
 
     return mm
 

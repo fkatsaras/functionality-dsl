@@ -47,7 +47,7 @@ Attribute:
 Entity:
   'Entity' name=ID
   ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
-  ('type:' entity_type=AttrType)?
+  ('type:' entity_type=EntityType)?
   ('contentType:' content_type=ContentType)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
@@ -56,6 +56,11 @@ Entity:
   ('target:' target=[Source])?
   (expose=ExposeBlock)?
   'end'
+;
+
+// Entity type declaration (defaults to 'object' if not specified)
+EntityType:
+  'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean'
 ;
 
 // ---------- EXPOSE BLOCK (Entity API Exposure) ----------
@@ -77,7 +82,7 @@ WsExpose:
 ;
 
 Operation:
-  'list' | 'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)
@@ -132,7 +137,6 @@ OperationsBlock:
 ;
 
 SourceOperations:
-  (list=SourceOp)?
   (read=SourceOp)?
   (create=SourceOp)?
   (update=SourceOp)?
@@ -148,7 +152,7 @@ SourceOp:
 ;
 
 SourceOpName:
-  'list' | 'read' | 'create' | 'update' | 'delete'
+  'read' | 'create' | 'update' | 'delete'
 ;
 
 // Subscribe/Publish blocks for WebSocket (similar to Request/Response)

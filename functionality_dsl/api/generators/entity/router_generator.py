@@ -32,6 +32,9 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     id_field = config["id_field"]
     source = config["source"]
 
+    # Get entity type (defaults to 'object' if not specified)
+    entity_type = getattr(entity, "entity_type", None) or "object"
+
     # Normalize empty string to None (TextX returns "" for optional attributes)
     if id_field == "":
         id_field = None
@@ -40,7 +43,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     if not rest_path:
         return
 
-    print(f"  Generating router for {entity_name} (REST: {rest_path})")
+    print(f"  Generating router for {entity_name} (REST: {rest_path}, type: {entity_type})")
 
     # Check if rest_path already contains path parameters (e.g., /api/resource/{id})
     # If so, operations shouldn't add duplicate path parameters
@@ -51,16 +54,16 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     for op in operations:
         # Determine if this is an item operation (requires ID parameter)
         # - update/delete are ALWAYS item operations
-        # - read is an item operation ONLY if id_field is specified
+        # - read depends on entity type: object=item operation, array=collection operation
         #   (singleton read has no id_field)
-        is_item_op = is_item_operation(op) and not (op == "read" and id_field is None)
+        is_item_op = is_item_operation(op, entity_type) and not (op == "read" and id_field is None)
 
         # If the prefix already has a path parameter, item operations should use "" as suffix
         # to avoid duplicating the parameter (e.g., /api/inventory/{id} + /{id} = duplicate)
         if has_path_param_in_prefix and is_item_op:
             path_suffix = ""
         else:
-            path_suffix = get_operation_path_suffix(op, id_field)
+            path_suffix = get_operation_path_suffix(op, id_field, entity_type)
 
         op_config = {
             "type": op,
@@ -74,15 +77,16 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         }
 
         # Determine request/response models
-        if op == "list":
-            op_config["response_model"] = f"list[{entity_name}]"
-            op_config["request_model"] = None
-        elif requires_request_body(op):
+        if requires_request_body(op):
             op_config["request_model"] = derive_request_schema_name(entity_name, op)
             op_config["response_model"] = entity_name
         else:
             op_config["request_model"] = None
-            op_config["response_model"] = entity_name
+            # For array entities with 'read' operation, wrap in list response
+            if entity_type == "array" and op == "read":
+                op_config["response_model"] = f"list[{entity_name}]"
+            else:
+                op_config["response_model"] = entity_name
 
         operation_configs.append(op_config)
 

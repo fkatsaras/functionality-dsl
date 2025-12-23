@@ -18,27 +18,27 @@ end
 
 Source<REST> UserDB
   base_url: "http://dummy-user-service:9001/users"
-  operations: [list, read, create, update]
+  operations: [read, create, update, delete]
 end
 
 Source<REST> ProductDB
   base_url: "http://dummy-product-service:9002/products"
-  operations: [list, read]
+  operations: [read]
 end
 
 Source<REST> InventoryDB
   base_url: "http://dummy-inventory-service:9003/inventory"
-  operations: [list, read, update]
+  operations: [read, update]
 end
 
 Source<REST> OrderDB
   base_url: "http://dummy-order-service:9004/orders"
-  operations: [list, read, create]
+  operations: [read, create]
 end
 
 Source<REST> OrdersByUser
   base_url: "http://dummy-order-service:9004/orders/by-user"
-  operations: [list, read]
+  operations: [read]
 end
 
 // ============================================================================
@@ -65,7 +65,7 @@ end
 // ============================================================================
 // USER ENTITIES
 // ============================================================================
-
+// CRUD operations on base User entity
 Entity User
   attributes:
     - id: string;
@@ -76,9 +76,14 @@ Entity User
     - memberSince: string;
     - tier: string;
   source: UserDB
+  expose:
+    rest: "/api/users/{id}"
+    operations: [read, create, update, delete]
+    id_field: "id"
+    readonly_fields: ["id", "memberSince"]
 end
 
-// Add computed loyalty discount based on tier
+// Read-only view with computed loyalty discount based on tier
 Entity UserWithDiscount(User)
   attributes:
     - id: string = User.id;
@@ -91,10 +96,9 @@ Entity UserWithDiscount(User)
     - discountPercent: number = 0.15 if User.tier == "gold" else (0.10 if User.tier == "silver" else (0.05 if User.tier == "bronze" else 0.0));
     - displayTier: string = "Gold Member (15% off)" if User.tier == "gold" else ("Silver Member (10% off)" if User.tier == "silver" else ("Bronze Member (5% off)" if User.tier == "bronze" else "Standard Member"));
   expose:
-    rest: "/api/users"
-    operations: [list, read, create, update]
+    rest: "/api/users/{id}/with-discount"
+    operations: [read]  // Read-only - composite entity (has parent)
     id_field: "id"
-    readonly_fields: ["id", "memberSince", "discountPercent", "displayTier"]
 end
 
 // ============================================================================
@@ -139,8 +143,8 @@ Entity ProductWithInventory(Product, InventoryRecord)
     - reorderNeeded: boolean = InventoryRecord.stockLevel <= InventoryRecord.reorderPoint;
     - lastRestocked: string = InventoryRecord.lastRestocked;
   expose:
-    rest: "/api/products"
-    operations: [list, read]
+    rest: "/api/products/{id}"
+    operations: [read]
     id_field: "id"
     readonly_fields: ["id", "sku", "inStock", "lowStock", "stockStatus", "reorderNeeded", "lastRestocked"]
 end
@@ -149,6 +153,7 @@ end
 // ORDER ENTITIES
 // ============================================================================
 
+// Simple Order entity for CREATE operations
 Entity Order
   attributes:
     - id: string;
@@ -158,9 +163,17 @@ Entity Order
     - createdAt: string;
     - shippedAt: string;
   source: OrderDB
+
+  expose:
+    rest: "/api/orders/{id}"
+    operations: [create, read]
+    id_field: "id"
+    readonly_fields: ["id", "createdAt", "shippedAt"]
 end
 
-// Enrich order with user info and computed totals
+// Enriched order with user info and computed totals (READ ONLY)
+// Multi-parent entities can ONLY use read operation (composite/derived data)
+// Create operations must use simple schema entities like Order above
 Entity OrderWithDetails(Order, User)
   attributes:
     - id: string = Order.id;
@@ -185,8 +198,8 @@ Entity OrderWithDetails(Order, User)
     - isDelivered: boolean = Order.status == "delivered";
     - freeShipping: boolean = OrderWithDetails.shippingCost == 0;
   expose:
-    rest: "/api/orders"
-    operations: [list, read, create]
+    rest: "/api/orders/{id}/details"
+    operations: [read]  // Only read operation - composite entity (has parents)
     id_field: "id"
     readonly_fields: ["id", "createdAt", "shippedAt", "customerName", "customerEmail", "customerTier", "itemCount", "subtotal", "discount", "taxableAmount", "tax", "shippingCost", "total", "isPending", "isShipped", "isDelivered", "freeShipping"]
 end
@@ -227,13 +240,14 @@ end
 // INVENTORY MANAGEMENT ENTITIES
 // ============================================================================
 
-// Update inventory after order
-Entity InventoryUpdate(InventoryRecord)
+// CRUD operations on inventory
+Entity InventoryCRUD
   attributes:
-    - productId: string = InventoryRecord.productId;
-    - stockLevel: integer = InventoryRecord.stockLevel;
-    - reorderPoint: integer = InventoryRecord.reorderPoint;
-    - lastRestocked: string = InventoryRecord.lastRestocked;
+    - productId: string;
+    - stockLevel: integer;
+    - reorderPoint: integer;
+    - lastRestocked: string;
+  source: InventoryDB
   expose:
     rest: "/api/inventory/{productId}"
     operations: [read, update]

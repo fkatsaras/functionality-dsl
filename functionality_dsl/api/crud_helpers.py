@@ -5,7 +5,6 @@ Maps CRUD operations to HTTP methods, paths, and status codes.
 
 # Operation to HTTP method mapping
 OPERATION_HTTP_METHOD = {
-    "list": "GET",
     "read": "GET",
     "create": "POST",
     "update": "PUT",
@@ -14,9 +13,9 @@ OPERATION_HTTP_METHOD = {
 
 # Operation to path suffix mapping
 # (relative to base path, {id} placeholder for item operations)
+# Note: 'read' suffix depends on entity type (handled in get_operation_path_suffix)
 OPERATION_PATH_SUFFIX = {
-    "list": "",
-    "read": "/{id}",
+    "read": "/{id}",  # Default for object types
     "create": "",
     "update": "/{id}",
     "delete": "/{id}",
@@ -24,15 +23,14 @@ OPERATION_PATH_SUFFIX = {
 
 # Operation to default HTTP status code mapping
 OPERATION_STATUS_CODE = {
-    "list": 200,
     "read": 200,
     "create": 201,
     "update": 200,
     "delete": 204,
 }
 
-# Operations that require ID parameter
-ITEM_OPERATIONS = {"read", "update", "delete"}
+# Operations that require ID parameter (depends on entity type for 'read')
+ITEM_OPERATIONS = {"update", "delete"}
 
 # Operations that accept request body
 REQUEST_BODY_OPERATIONS = {"create", "update"}
@@ -43,23 +41,29 @@ def get_operation_http_method(operation):
     return OPERATION_HTTP_METHOD.get(operation, "GET")
 
 
-def get_operation_path_suffix(operation, id_field="id"):
+def get_operation_path_suffix(operation, id_field="id", entity_type="object"):
     """
     Get path suffix for a CRUD operation.
     Replaces {id} placeholder with actual id_field name.
 
-    Special case: If id_field is None/empty and operation is 'read', returns ""
-    to support singleton read operations (GET /api/resource instead of GET /api/resource/{id}).
+    Special cases:
+    - If entity_type is 'array' and operation is 'read', returns "" (collection endpoint)
+    - If id_field is None/empty and operation is 'read', returns "" (singleton read)
+    - Otherwise uses id_field for item operations
     """
-    suffix = OPERATION_PATH_SUFFIX.get(operation, "")
-
     # Normalize empty string to None (TextX returns "" for optional attributes)
     if id_field == "":
         id_field = None
 
+    # Array entity read = collection endpoint (no ID)
+    if operation == "read" and entity_type == "array":
+        return ""
+
     # Singleton read pattern: read operation without id_field
     if operation == "read" and id_field is None:
         return ""
+
+    suffix = OPERATION_PATH_SUFFIX.get(operation, "")
 
     # If id_field is None for operations that need it, use default "id"
     if id_field is None:
@@ -73,8 +77,13 @@ def get_operation_status_code(operation):
     return OPERATION_STATUS_CODE.get(operation, 200)
 
 
-def is_item_operation(operation):
-    """Check if operation is an item operation (requires ID)."""
+def is_item_operation(operation, entity_type="object"):
+    """
+    Check if operation is an item operation (requires ID).
+    'read' depends on entity type: object requires ID, array doesn't.
+    """
+    if operation == "read":
+        return entity_type != "array"  # Array reads are collections (no ID)
     return operation in ITEM_OPERATIONS
 
 
@@ -90,7 +99,6 @@ def generate_standard_crud_config(base_url, entity_name):
 
     Example:
     {
-        "list": {"method": "GET", "path": "/"},
         "read": {"method": "GET", "path": "/{id}"},
         "create": {"method": "POST", "path": "/"},
         "update": {"method": "PUT", "path": "/{id}"},
@@ -98,11 +106,6 @@ def generate_standard_crud_config(base_url, entity_name):
     }
     """
     return {
-        "list": {
-            "method": "GET",
-            "path": "/",
-            "url": base_url,
-        },
         "read": {
             "method": "GET",
             "path": "/{id}",

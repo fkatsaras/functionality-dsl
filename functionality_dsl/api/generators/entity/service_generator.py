@@ -7,6 +7,51 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 
+def _validate_mutation_operations(entity_name, operations, has_multiple_parents, attributes, readonly_fields):
+    """
+    Validate that mutation operations (create, update) are used correctly.
+
+    Rules:
+    1. 'create' operation NOT allowed on entities with multiple parents
+    2. 'create' and 'update' NOT allowed if all fields are readonly
+    3. 'delete' always allowed (just needs ID)
+    """
+
+    # Get list of writable fields (not readonly)
+    all_field_names = [attr.name for attr in attributes]
+    writable_fields = [f for f in all_field_names if f not in readonly_fields]
+
+    for op in operations:
+        if op == "create":
+            # Rule 1: Can't create entities with multiple parents (they need joins)
+            if has_multiple_parents:
+                raise ValueError(
+                    f"Semantic error in entity '{entity_name}': "
+                    f"Cannot use 'create' operation on multi-parent entity. "
+                    f"Multi-parent entities require data from multiple sources and cannot be created directly. "
+                    f"Create a simple schema entity instead (without multiple parents)."
+                )
+
+            # Rule 2: Can't create if all fields are readonly
+            if not writable_fields:
+                raise ValueError(
+                    f"Semantic error in entity '{entity_name}': "
+                    f"Cannot use 'create' operation when all fields are readonly. "
+                    f"At least one writable field is required for creation."
+                )
+
+        elif op == "update":
+            # Rule 2: Can't update if all fields are readonly
+            if not writable_fields:
+                raise ValueError(
+                    f"Semantic error in entity '{entity_name}': "
+                    f"Cannot use 'update' operation when all fields are readonly. "
+                    f"At least one writable field is required for updates."
+                )
+
+        # 'delete' and read operations ('list', 'read') are always OK
+
+
 def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     """
     Generate a service class for an exposed entity.
@@ -49,9 +94,14 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     # Check if entity has parent entities
     parents = getattr(entity, "parents", []) or []
     has_parents = len(parents) > 0
+    has_multiple_parents = len(parents) > 1
 
     # Get parent entity names for fetching source data
     parent_names = [p.name for p in parents]
+
+    # Validate mutation operations
+    readonly_fields = config.get("readonly_fields", [])
+    _validate_mutation_operations(entity_name, operations, has_multiple_parents, attributes, readonly_fields)
 
     # Check if any parents are exposed entities (have their own services)
     # If so, we need to call their services instead of fetching from source

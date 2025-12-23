@@ -41,6 +41,7 @@ from functionality_dsl.validation.component_validators import (
 from functionality_dsl.validation.exposure_validators import (
     _validate_exposure_blocks,
     _validate_crud_blocks,
+    _validate_entity_crud_rules,
 )
 
 __all__ = [
@@ -68,4 +69,5 @@ __all__ = [
     # Exposure validators (NEW SYNTAX)
     "_validate_exposure_blocks",
     "_validate_crud_blocks",
+    "_validate_entity_crud_rules",
 ]
