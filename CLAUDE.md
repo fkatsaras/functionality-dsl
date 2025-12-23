@@ -65,19 +65,26 @@ Entity OrderWithTotals(RawOrder)
     - subtotal: number = sum(map(RawOrder.items, i -> i["price"] * i["quantity"]));  // Computed
     - total: number = subtotal * 1.1;  // Computed
   expose:
-    rest: "/api/orders"
-    operations: [list, read, create, update, delete]
-    id_field: "id"
+    rest: "/api/orders/{id}"  // {id} auto-extracted as id_field
+    operations: [read, create, update, delete]
     readonly_fields: ["id", "createdAt", "itemCount", "subtotal", "total"]
 end
 ```
 
 **Key Points:**
-- `source:` links entity to external API
+- `source:` links entity to external API (required for mutations)
 - `expose:` makes entity available via REST API
-- `operations:` which CRUD ops to support (`list`, `read`, `create`, `update`, `delete`)
+- `operations:` which CRUD ops to support (`read`, `create`, `update`, `delete`)
+- `type:` entity type (`object` default, `array` for collections)
+- Path parameters like `{id}` are auto-extracted as id_field
 - `readonly_fields:` excluded from Create/Update request schemas
 - All attributes with `=` are computed (evaluated server-side)
+
+**CRUD Rules:**
+1. **Mutations** (`create`, `update`, `delete`) require `source:` field
+2. **Composite entities** (with parents) cannot have `source:` - read-only
+3. **Array entities** (`type: array`) can only expose `read` operation
+4. Path parameters must map to entity attributes
 
 ### 3. **Sources** (NEW SYNTAX - External APIs)
 
@@ -85,12 +92,11 @@ end
 ```fdsl
 Source<REST> OrderDB
   base_url: "http://dummy-order-service:9001/orders"
-  operations: [list, read, create, update, delete]
+  operations: [read, create, update, delete]
 end
 ```
 
 Auto-infers standard REST patterns:
-- `list` → `GET /`
 - `read` → `GET /{id}`
 - `create` → `POST /`
 - `update` → `PUT /{id}`

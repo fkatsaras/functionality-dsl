@@ -77,9 +77,8 @@ Entity User
     - tier: string;
   source: UserDB
   expose:
-    rest: "/api/users/{id}"
+    rest: "/api/users/{id}"  // <- {id} extracted as id_field automatically
     operations: [read, create, update, delete]
-    id_field: "id"
     readonly_fields: ["id", "memberSince"]
 end
 
@@ -96,11 +95,10 @@ Entity UserWithDiscount(User)
     - discountPercent: number = 0.15 if User.tier == "gold" else (0.10 if User.tier == "silver" else (0.05 if User.tier == "bronze" else 0.0));
     - displayTier: string = "Gold Member (15% off)" if User.tier == "gold" else ("Silver Member (10% off)" if User.tier == "silver" else ("Bronze Member (5% off)" if User.tier == "bronze" else "Standard Member"));
   expose:
-    rest: "/api/users/{id}/with-discount"
+    rest: "/api/users/{id}/with-discount"  // <- {id} extracted automatically
     operations: [read]  // Read-only - composite entity (has parent)
-    id_field: "id"
 end
-
+  
 // ============================================================================
 // PRODUCT ENTITIES
 // ============================================================================
@@ -124,7 +122,12 @@ Entity InventoryRecord
     - reorderPoint: integer;
     - lastRestocked: string;
   source: InventoryDB
+  expose:
+    rest: "/api/inventory/{productId}"  // <- {productId} extracted automatically
+    operations: [read, update]
+    readonly_fields: ["productId", "lastRestocked"]
 end
+
 
 // Combine product info with inventory status
 Entity ProductWithInventory(Product, InventoryRecord)
@@ -143,10 +146,8 @@ Entity ProductWithInventory(Product, InventoryRecord)
     - reorderNeeded: boolean = InventoryRecord.stockLevel <= InventoryRecord.reorderPoint;
     - lastRestocked: string = InventoryRecord.lastRestocked;
   expose:
-    rest: "/api/products/{id}"
+    rest: "/api/products/{id}"  // <- {id} extracted automatically
     operations: [read]
-    id_field: "id"
-    readonly_fields: ["id", "sku", "inStock", "lowStock", "stockStatus", "reorderNeeded", "lastRestocked"]
 end
 
 // ============================================================================
@@ -165,9 +166,8 @@ Entity Order
   source: OrderDB
 
   expose:
-    rest: "/api/orders/{id}"
+    rest: "/api/orders/{id}"  // <- {id} extracted automatically
     operations: [create, read]
-    id_field: "id"
     readonly_fields: ["id", "createdAt", "shippedAt"]
 end
 
@@ -198,9 +198,8 @@ Entity OrderWithDetails(Order, User)
     - isDelivered: boolean = Order.status == "delivered";
     - freeShipping: boolean = OrderWithDetails.shippingCost == 0;
   expose:
-    rest: "/api/orders/{id}/details"
+    rest: "/api/orders/{id}/details"  // <- {id} extracted automatically
     operations: [read]  // Only read operation - composite entity (has parents)
-    id_field: "id"
     readonly_fields: ["id", "createdAt", "shippedAt", "customerName", "customerEmail", "customerTier", "itemCount", "subtotal", "discount", "taxableAmount", "tax", "shippingCost", "total", "isPending", "isShipped", "isDelivered", "freeShipping"]
 end
 
@@ -230,27 +229,7 @@ Entity UserOrderHistory(User, UserOrders)
     - deliveredOrders: integer = len(filter(UserOrders.orders, o => get(o, "status", "") == "delivered"));
     - mostRecentOrder: string = get(UserOrders.orders[0], "createdAt", "") if len(UserOrders.orders) > 0 else "";
   expose:
-    rest: "/api/users/{userId}/order-history"
+    rest: "/api/users/{userId}/order-history"  // <- {userId} extracted automatically
     operations: [read]
-    id_field: "userId"
     readonly_fields: ["userId", "customerName", "customerEmail", "tier", "totalOrders", "totalSpent", "averageOrderValue", "pendingOrders", "shippedOrders", "deliveredOrders", "mostRecentOrder"]
-end
-
-// ============================================================================
-// INVENTORY MANAGEMENT ENTITIES
-// ============================================================================
-
-// CRUD operations on inventory
-Entity InventoryCRUD
-  attributes:
-    - productId: string;
-    - stockLevel: integer;
-    - reorderPoint: integer;
-    - lastRestocked: string;
-  source: InventoryDB
-  expose:
-    rest: "/api/inventory/{productId}"
-    operations: [read, update]
-    id_field: "productId"
-    readonly_fields: ["productId", "lastRestocked"]
 end

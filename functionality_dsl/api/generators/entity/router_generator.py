@@ -45,24 +45,37 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
 
     print(f"  Generating router for {entity_name} (REST: {rest_path}, type: {entity_type})")
 
-    # Check if rest_path already contains path parameters (e.g., /api/resource/{id})
-    # If so, operations shouldn't add duplicate path parameters
-    has_path_param_in_prefix = "{" in rest_path and "}" in rest_path
+    # Split rest_path into base prefix and path parameters
+    # Example: "/api/users/{id}" -> prefix="/api/users", params="/{id}"
+    #          "/api/users/{id}/orders/{orderId}" -> prefix="/api/users", params="/{id}/orders/{orderId}"
+    import re
+    path_params_pattern = r'/\{[^}]+\}'
+
+    # Extract base prefix (everything before first path parameter)
+    match = re.search(path_params_pattern, rest_path)
+    if match:
+        # Path has parameters - split at first parameter
+        base_prefix = rest_path[:match.start()]
+        path_with_params = rest_path[len(base_prefix):]  # e.g., "/{id}" or "/{id}/orders/{orderId}"
+        has_path_params = True
+    else:
+        # No parameters - use entire path as prefix
+        base_prefix = rest_path
+        path_with_params = ""
+        has_path_params = False
 
     # Build operation configs
     operation_configs = []
     for op in operations:
         # Determine if this is an item operation (requires ID parameter)
-        # - update/delete are ALWAYS item operations
-        # - read depends on entity type: object=item operation, array=collection operation
-        #   (singleton read has no id_field)
         is_item_op = is_item_operation(op, entity_type) and not (op == "read" and id_field is None)
 
-        # If the prefix already has a path parameter, item operations should use "" as suffix
-        # to avoid duplicating the parameter (e.g., /api/inventory/{id} + /{id} = duplicate)
-        if has_path_param_in_prefix and is_item_op:
-            path_suffix = ""
+        # Calculate path suffix for this operation
+        if has_path_params and is_item_op:
+            # Path has parameters - use the extracted parameter path
+            path_suffix = path_with_params
         else:
+            # No parameters in original path, or this is a collection operation (create)
             path_suffix = get_operation_path_suffix(op, id_field, entity_type)
 
         op_config = {
@@ -98,7 +111,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         entity_name=entity_name,
         operations=operation_configs,
         service_name=f"{entity_name}Service",
-        rest_path=rest_path,
+        rest_path=base_prefix,  # Use base prefix without path parameters
         id_field=id_field,
         source_name=source.name,
     )

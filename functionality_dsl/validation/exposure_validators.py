@@ -3,7 +3,39 @@ Validation for entity exposure (NEW SYNTAX - entity-centric API exposure).
 Validates expose blocks and CRUD configurations.
 """
 
+import re
 from textx import get_children_of_type, get_location, TextXSemanticError
+
+
+def extract_path_parameters(path):
+    """
+    Extract all path parameters from a path string.
+
+    Examples:
+    - "/api/users/{id}" → ["id"]
+    - "/api/inventory/{productId}" → ["productId"]
+    - "/api/users/{userId}/orders/{orderId}" → ["userId", "orderId"]
+    - "/api/users" → []
+
+    Returns:
+        List of parameter names in order of appearance
+    """
+    return re.findall(r'\{(\w+)\}', path)
+
+
+def get_id_field_from_path(path):
+    """
+    Extract the ID field from path parameters.
+    Uses the LAST path parameter as the ID field.
+
+    Examples:
+    - "/api/users/{id}" → "id"
+    - "/api/inventory/{productId}" → "productId"
+    - "/api/users/{userId}/orders/{orderId}" → "orderId" (last param)
+    - "/api/users" → None (no parameters)
+    """
+    params = extract_path_parameters(path)
+    return params[-1] if params else None
 
 
 def _find_source_in_parents(parents):
@@ -105,6 +137,19 @@ def _validate_rest_expose(entity, expose, rest, source):
             **get_location(rest),
         )
 
+    # Extract path parameters
+    path_params = extract_path_parameters(path)
+
+    # Validate that ALL path parameters map to entity attributes
+    entity_attrs = {a.name for a in getattr(entity, "attributes", []) or []}
+    for param in path_params:
+        if param not in entity_attrs:
+            raise TextXSemanticError(
+                f"Path parameter '{param}' in '{path}' does not match any attribute in entity '{entity.name}'. "
+                f"Add attribute '- {param}: string;' to the entity or fix the path parameter name.",
+                **get_location(rest),
+            )
+
     # Get operations
     operations = getattr(expose, "operations", [])
     if not operations:
@@ -124,54 +169,26 @@ def _validate_rest_expose(entity, expose, rest, source):
             )
 
     # Validate id_field for item operations
-    # Semantic rules:
+    # ID field is extracted from path parameters (last parameter)
     # - update/delete ALWAYS require id_field (they're item operations)
     # - read can be:
-    #   a) Singleton (no id_field) - GET /api/resource
-    #   b) Item operation (with id_field) - GET /api/resource/{id}
-    # - Singleton read is only allowed when ONLY 'read' is exposed (no update/delete)
+    #   a) Collection (no path params, type: array) - GET /api/users
+    #   b) Singleton (no path params, type: object) - GET /api/config
+    #   c) Item operation (with path param) - GET /api/users/{id}
+
+    id_field = get_id_field_from_path(path)  # Extract from path
 
     mutation_ops = {'update', 'delete'}
     has_mutations = any(op in operations for op in mutation_ops)
-    has_read = 'read' in operations
 
     # If update or delete are present, id_field is REQUIRED
-    if has_mutations:
-        id_field = getattr(expose, "id_field", None)
-        if id_field:
-            # Verify id_field exists in entity attributes
-            attrs = {a.name for a in getattr(entity, "attributes", []) or []}
-            if id_field not in attrs:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' id_field '{id_field}' not found in attributes.",
-                    **get_location(expose),
-                )
-        else:
-            # Try to infer id_field
-            attrs = getattr(entity, "attributes", []) or []
-            inferred = _infer_id_field(entity.name, attrs)
-            if not inferred:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' has mutation operations ({mutation_ops & set(operations)}) "
-                    f"which require 'id_field:' to be specified. Cannot infer id_field. "
-                    f"Please specify 'id_field: \"<field_name>\"'.",
-                    **get_location(expose),
-                )
-
-    # If ONLY read is present (no mutations), id_field is OPTIONAL
-    # - With id_field: GET /api/resource/{id} (item operation)
-    # - Without id_field: GET /api/resource (singleton operation)
-    elif has_read:
-        id_field = getattr(expose, "id_field", None)
-        if id_field:
-            # Verify id_field exists in entity attributes
-            attrs = {a.name for a in getattr(entity, "attributes", []) or []}
-            if id_field not in attrs:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' id_field '{id_field}' not found in attributes.",
-                    **get_location(expose),
-                )
-        # If no id_field, that's OK - it's a singleton read operation
+    if has_mutations and not id_field:
+        raise TextXSemanticError(
+            f"Entity '{entity.name}' has mutation operations {mutation_ops & set(operations)} "
+            f"but path '{path}' has no ID parameter. "
+            f"Mutation operations require a path parameter (e.g., '/api/{entity.name.lower()}/{{id}}').",
+            **get_location(rest),
+        )
 
     # Validate path_params if present
     path_params_block = getattr(expose, "path_params", None)

@@ -4,6 +4,7 @@ Builds a mapping from entities to their API exposure configuration.
 """
 
 from textx import get_children_of_type
+from functionality_dsl.validation.exposure_validators import get_id_field_from_path
 
 
 def build_exposure_map(model):
@@ -58,8 +59,14 @@ def build_exposure_map(model):
         # Get operations list
         operations = getattr(expose, "operations", []) or []
 
-        # Get id_field (REQUIRED - no inference)
-        id_field = getattr(expose, "id_field", None)
+        # Get id_field - extract from path parameters (or fall back to explicit id_field if provided)
+        id_field = None
+        if rest_path:
+            id_field = get_id_field_from_path(rest_path)
+
+        # Fallback to explicit id_field if no path params (for backwards compatibility)
+        if not id_field:
+            id_field = getattr(expose, "id_field", None)
 
         # Get path_params
         path_params_block = getattr(expose, "path_params", None)
