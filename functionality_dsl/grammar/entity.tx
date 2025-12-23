@@ -17,10 +17,11 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
+// Extended to support @id marker for identity fields
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? idMarker='@id'?
 ;
 
 TypeConstraint:
@@ -90,7 +91,7 @@ ExposeBlock:
 ;
 
 RestExpose:
-  'rest:' path=STRING
+  'rest:'
 ;
 
 WsExpose:

@@ -694,6 +694,7 @@ def _validate_entity_relationships(model):
     2. All non-first parents must have a relationship defined
     3. Relationship fetch expressions must reference valid entity attributes
     4. First parent doesn't need a relationship (uses endpoint ID)
+    5. Relationships can ONLY reference base entities (non-composite, with source)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -735,11 +736,28 @@ def _validate_entity_relationships(model):
             source_entity = fetch_expr.entity
             attr_name = fetch_expr.attr
 
-            # Check that the source entity is the first parent
-            if parents and source_entity.name != parents[0].name:
+            # Rule 5: Source entity in relationships must be a base entity (not composite)
+            source_is_composite = getattr(source_entity, "_is_composite", False)
+            if source_is_composite:
+                raise TextXSemanticError(
+                    f"Relationship for '{rel.parent.name}' references composite entity '{source_entity.name}'.\n"
+                    f"Relationships can ONLY reference base entities (entities with 'source:' field).\n"
+                    f"Composite entities are computed locally and cannot be used for data fetching.\n"
+                    f"Use the identity anchor instead: {entity._identity_anchor.name if entity._identity_anchor else 'base entity'}",
+                    **get_location(rel)
+                )
+
+            # Check that the source entity is the first parent OR the identity anchor
+            # (Allow referencing the identity anchor directly for nested composites)
+            valid_sources = {parents[0].name}
+            if entity._identity_anchor:
+                valid_sources.add(entity._identity_anchor.name)
+
+            if source_entity.name not in valid_sources:
                 raise TextXSemanticError(
                     f"Relationship for '{rel.parent.name}' uses '{source_entity.name}.{attr_name}', "
-                    f"but fetch expressions must reference the first parent '{parents[0].name}'.\n"
+                    f"but fetch expressions must reference the first parent '{parents[0].name}' "
+                    f"or the identity anchor '{entity._identity_anchor.name if entity._identity_anchor else 'N/A'}'.\n"
                     f"Change to: {rel.parent.name}: {parents[0].name}.{attr_name}",
                     **get_location(rel)
                 )
@@ -758,11 +776,164 @@ def _validate_entity_relationships(model):
 
 
 # ------------------------------------------------------------------------------
+# Identity anchor computation and validation
+
+def _find_id_attribute(entity):
+    """Find the attribute marked with @id marker."""
+    attrs = getattr(entity, "attributes", []) or []
+    for attr in attrs:
+        type_spec = getattr(attr, "type", None)
+        if not type_spec:
+            continue
+        # Check for @id marker on the type spec
+        if getattr(type_spec, "idMarker", None) == "@id":
+            return attr.name
+    return None
+
+
+def _compute_identity_anchors(model):
+    """
+    Compute identity anchor for all entities.
+
+    Rules:
+    - Base entity with @id and source → anchor = itself
+    - Composite entity (has parents) → anchor = first parent's anchor
+    - All parents must resolve to the same anchor (compile-time check)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    # Store computed anchors on entity objects
+    for entity in entities:
+        entity._identity_anchor = None
+        entity._identity_field = None
+        entity._is_composite = False
+
+    def compute_anchor(entity, visited=None):
+        """Recursively compute identity anchor."""
+        if visited is None:
+            visited = set()
+
+        # Check for cycles
+        if id(entity) in visited:
+            raise TextXSemanticError(
+                f"Circular dependency detected in entity hierarchy for '{entity.name}'",
+                **get_location(entity)
+            )
+        visited.add(id(entity))
+
+        # Already computed
+        if entity._identity_anchor is not None:
+            return entity._identity_anchor
+
+        parents = getattr(entity, "parents", []) or []
+
+        # Base entity (no parents)
+        if not parents:
+            id_field = _find_id_attribute(entity)
+            source = getattr(entity, "source", None)
+
+            if id_field and source:
+                # This is a base resource entity
+                entity._identity_anchor = entity
+                entity._identity_field = id_field
+                entity._is_composite = False
+            else:
+                # No identity anchor (schema-only entity or computed entity without source)
+                entity._identity_anchor = None
+                entity._identity_field = None
+                entity._is_composite = False
+
+            return entity._identity_anchor
+
+        # Composite entity (has parents)
+        entity._is_composite = True
+
+        # Compute anchor from first parent
+        # RULE: First parent is ALWAYS the identity anchor
+        # Other parents are data dependencies (fetched via relationships block)
+        first_parent = parents[0]
+        first_parent_anchor = compute_anchor(first_parent, visited.copy())
+
+        if not first_parent_anchor:
+            # First parent has no anchor
+            entity._identity_anchor = None
+            entity._identity_field = None
+            return None
+
+        # Composite inherits anchor from first parent only
+        # Other parents don't need to share the same anchor - they're just data sources
+        entity._identity_anchor = first_parent_anchor
+        entity._identity_field = first_parent_anchor._identity_field
+
+        # Validate composite has matching id field
+        id_field = _find_id_attribute(entity)
+        if id_field:
+            # Check if id derives from parent
+            attrs = getattr(entity, "attributes", []) or []
+            for attr in attrs:
+                if attr.name == id_field:
+                    expr = getattr(attr, "expr", None)
+                    if not expr:
+                        raise TextXSemanticError(
+                            f"Composite entity '{entity.name}' has '@id' attribute '{id_field}' "
+                            f"but it has no expression. Composite entities must assign id from parent:\n"
+                            f"  - {id_field}: string @id = {first_parent.name}.{entity._identity_field};",
+                            **get_location(attr)
+                        )
+                    # Expression exists - we trust it derives from parent
+                    # (full validation happens in _validate_computed_attrs)
+
+        return entity._identity_anchor
+
+    # Compute anchors for all entities
+    for entity in entities:
+        compute_anchor(entity)
+
+
+
+
+def _validate_composite_entities(model):
+    """
+    Validate composite entity rules:
+    1. Composite entities (with parents) cannot have 'source'
+    2. Composite entities cannot have @id field (they're views, not resources)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        if not entity._is_composite:
+            continue
+
+        # Rule 1: Composites cannot have source
+        source = getattr(entity, "source", None)
+        if source:
+            raise TextXSemanticError(
+                f"Composite entity '{entity.name}' cannot have 'source' field.\n"
+                f"Composite entities inherit data from parents and are read-only representations.\n"
+                f"Remove the 'source:' field or remove parent entities.",
+                **get_location(entity)
+            )
+
+        # Rule 2: Composites cannot have @id field
+        id_field = _find_id_attribute(entity)
+        if id_field:
+            raise TextXSemanticError(
+                f"Composite entity '{entity.name}' cannot have '@id' field.\n"
+                f"Composite entities are views/projections of base resources, not resources themselves.\n"
+                f"The URI path parameter identifies the base resource, not the composite entity.\n"
+                f"Remove the '@id' marker from '{id_field}' or make this a base entity (remove parents).",
+                **get_location(entity)
+            )
+
+
+# ------------------------------------------------------------------------------
 # Main entity validation entry point
 
 def verify_entities(model):
     """Entity-specific cross-model validation."""
     _validate_entity_inheritance_cycles(model)
+    _compute_identity_anchors(model)  # Compute anchors first
+    _validate_composite_entities(model)  # Then validate composite rules
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)

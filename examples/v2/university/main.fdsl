@@ -35,40 +35,40 @@ end
 
 Entity Student
   attributes:
-    - id: string;
+    - id: string @id;
     - name: string;
     - email: string;
     - enrollmentYear: integer;
   source: StudentDB
   expose:
-    rest: "/api/students/{id}"
+    rest:
     operations: [read, create, update, delete]
-    readonly_fields: ["id"]
+  //  readonly_fields: ["id"] < since ids are readonly by default>
 end
 
 Entity Course
   attributes:
-    - id: string;
+    - id: string @id;
     - title: string;
     - credits: integer;
   source: CourseDB
   expose:
-    rest: "/api/courses/{id}"
+    rest:
     operations: [read]
 end
 
 Entity Enrollment
   attributes:
-    - id: string;
+    - id: string @id;
     - studentId: string;
     - courseId: string;
     - semester: string;
     - grade: string;
   source: EnrollmentDB
   expose:
-    rest: "/api/enrollments/{id}"
+    rest:
     operations: [read, create]
-    readonly_fields: ["id"]
+   // readonly_fields: ["id"] < since ids are readonly by default>
 end
 
 // ============================================================================
@@ -85,7 +85,6 @@ Entity EnrollmentDetails(Enrollment, Student, Course)
     - Student: Enrollment.studentId
     - Course: Enrollment.courseId
   attributes:
-    - id: string = Enrollment.id;
     - semester: string = Enrollment.semester;
     - grade: string = Enrollment.grade;
     - passed: boolean = Enrollment.grade == "A" or Enrollment.grade == "B" or Enrollment.grade == "C";
@@ -98,6 +97,6 @@ Entity EnrollmentDetails(Enrollment, Student, Course)
     - courseTitle: string = Course.title;
     - credits: integer = Course.credits;
   expose:
-    rest: "/api/enrollments/{id}/details"
+    rest:
     operations: [read]
 end

@@ -123,32 +123,19 @@ def _validate_exposure_blocks(model, metamodel=None):
 
 def _validate_rest_expose(entity, expose, rest, source):
     """Validate REST exposure configuration."""
-    path = getattr(rest, "path", None)
-    if not path or not isinstance(path, str):
+    # REST paths are now auto-generated from identity anchor
+    # Validation of identity anchor happens in entity_validators.py
+    # Here we just validate that the entity HAS an identity anchor
+
+    identity_anchor = getattr(entity, "_identity_anchor", None)
+    identity_field = getattr(entity, "_identity_field", None)
+
+    if not identity_anchor or not identity_field:
         raise TextXSemanticError(
-            f"Entity '{entity.name}' REST expose must have a valid 'rest:' path.",
+            f"Entity '{entity.name}' has REST expose but no identity anchor. "
+            f"Entities must have an @id field (base entity) or inherit from an entity with @id (composite entity).",
             **get_location(expose),
         )
-
-    # Validate path template
-    if not path.startswith("/"):
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' REST path must start with '/': {path}",
-            **get_location(rest),
-        )
-
-    # Extract path parameters
-    path_params = extract_path_parameters(path)
-
-    # Validate that ALL path parameters map to entity attributes
-    entity_attrs = {a.name for a in getattr(entity, "attributes", []) or []}
-    for param in path_params:
-        if param not in entity_attrs:
-            raise TextXSemanticError(
-                f"Path parameter '{param}' in '{path}' does not match any attribute in entity '{entity.name}'. "
-                f"Add attribute '- {param}: string;' to the entity or fix the path parameter name.",
-                **get_location(rest),
-            )
 
     # Get operations
     operations = getattr(expose, "operations", [])
@@ -167,41 +154,6 @@ def _validate_rest_expose(entity, expose, rest, source):
                 f"Valid REST operations: {rest_ops}",
                 **get_location(expose),
             )
-
-    # Validate id_field for item operations
-    # ID field is extracted from path parameters (last parameter)
-    # - update/delete ALWAYS require id_field (they're item operations)
-    # - read can be:
-    #   a) Collection (no path params, type: array) - GET /api/users
-    #   b) Singleton (no path params, type: object) - GET /api/config
-    #   c) Item operation (with path param) - GET /api/users/{id}
-
-    id_field = get_id_field_from_path(path)  # Extract from path
-
-    mutation_ops = {'update', 'delete'}
-    has_mutations = any(op in operations for op in mutation_ops)
-
-    # If update or delete are present, id_field is REQUIRED
-    if has_mutations and not id_field:
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' has mutation operations {mutation_ops & set(operations)} "
-            f"but path '{path}' has no ID parameter. "
-            f"Mutation operations require a path parameter (e.g., '/api/{entity.name.lower()}/{{id}}').",
-            **get_location(rest),
-        )
-
-    # Validate path_params if present
-    path_params_block = getattr(expose, "path_params", None)
-    if path_params_block:
-        params = getattr(path_params_block, "params", []) or []
-        for param in params:
-            param_name = getattr(param, "name", None)
-            # Validate that param appears in path template
-            if f"{{{param_name}}}" not in path:
-                raise TextXSemanticError(
-                    f"Path parameter '{param_name}' declared but not found in path template: {path}",
-                    **get_location(param),
-                )
 
     # Validate readonly_fields if present
     readonly_block = getattr(expose, "readonly_fields", None)

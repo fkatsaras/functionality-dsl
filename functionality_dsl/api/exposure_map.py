@@ -5,6 +5,55 @@ Builds a mapping from entities to their API exposure configuration.
 
 from textx import get_children_of_type
 from functionality_dsl.validation.exposure_validators import get_id_field_from_path
+from pluralizer import Pluralizer
+
+pluralizer = Pluralizer()
+
+
+def _find_id_attribute(entity):
+    """Find the attribute marked with @id marker."""
+    attrs = getattr(entity, "attributes", []) or []
+    for attr in attrs:
+        type_spec = getattr(attr, "type", None)
+        if not type_spec:
+            continue
+        # Check for @id marker on the type spec
+        if getattr(type_spec, "idMarker", None) == "@id":
+            return attr.name
+    return None
+
+
+def _generate_rest_path(entity):
+    """
+    Auto-generate REST path for an entity based on identity anchor.
+
+    Rules:
+    - Base entity: /api/{plural}/{id_field}
+    - Composite entity: /api/{base_plural}/{id_field}/{entity_name_lower}
+
+    Examples:
+    - Student (base) → /api/students/{id}
+    - Enrollment (base) → /api/enrollments/{id}
+    - EnrollmentDetails (composite of Enrollment) → /api/enrollments/{id}/enrollmentdetails
+    - EnrollmentAuditView (composite of EnrollmentDetails) → /api/enrollments/{id}/enrollmentauditview
+    """
+    # Check if entity has identity anchor (computed during validation)
+    identity_anchor = getattr(entity, "_identity_anchor", None)
+    identity_field = getattr(entity, "_identity_field", None)
+    is_composite = getattr(entity, "_is_composite", False)
+
+    if not identity_anchor or not identity_field:
+        return None  # Entity has no REST identity
+
+    # Base entity
+    if identity_anchor == entity:
+        plural = pluralizer.pluralize(entity.name.lower())
+        return f"/api/{plural}/{{{identity_field}}}"
+
+    # Composite entity
+    base_plural = pluralizer.pluralize(identity_anchor.name.lower())
+    entity_suffix = entity.name.lower()
+    return f"/api/{base_plural}/{{{identity_field}}}/{entity_suffix}"
 
 
 def build_exposure_map(model):
@@ -50,7 +99,11 @@ def build_exposure_map(model):
 
         # Extract REST configuration
         rest = getattr(expose, "rest", None)
-        rest_path = getattr(rest, "path", None) if rest else None
+
+        # Auto-generate REST path if REST is exposed
+        rest_path = None
+        if rest:
+            rest_path = _generate_rest_path(entity)
 
         # Extract WebSocket configuration
         websocket = getattr(expose, "websocket", None)
@@ -59,14 +112,8 @@ def build_exposure_map(model):
         # Get operations list
         operations = getattr(expose, "operations", []) or []
 
-        # Get id_field - extract from path parameters (or fall back to explicit id_field if provided)
-        id_field = None
-        if rest_path:
-            id_field = get_id_field_from_path(rest_path)
-
-        # Fallback to explicit id_field if no path params (for backwards compatibility)
-        if not id_field:
-            id_field = getattr(expose, "id_field", None)
+        # Get id_field from entity's identity anchor (computed during validation)
+        id_field = getattr(entity, "_identity_field", None)
 
         # Get path_params
         path_params_block = getattr(expose, "path_params", None)
