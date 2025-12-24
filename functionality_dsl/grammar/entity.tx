@@ -88,19 +88,11 @@ AttrRef:
 // ---------- EXPOSE BLOCK (Entity API Exposure) ----------
 ExposeBlock:
   'expose:'
-    (rest=RestExpose | websocket=WsExpose)
+    ('channel:' channel=STRING)?
     'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
     ('id_field:' id_field=STRING)?
     (path_params=ExposePathParamsBlock)?
     (readonly_fields=ReadonlyFieldsBlock)?
-;
-
-RestExpose:
-  'rest:'
-;
-
-WsExpose:
-  'websocket:' channel=STRING
 ;
 
 Operation:
@@ -144,37 +136,9 @@ SourceREST:
     (request=RequestBlock)?
     (response=ResponseBlock)?)
     |
-    ('base_url:' base_url=STRING
-    (operations=OperationsBlock)?)
+    ('base_url:' base_url=STRING)
   )
   'end'
-;
-
-// ---------- OPERATIONS BLOCK (Source Operations) ----------
-OperationsBlock:
-  'operations:'
-    ('[' simple_ops+=Operation (',' simple_ops+=Operation)* ']'
-    |
-    ops=SourceOperations)
-;
-
-SourceOperations:
-  (read=SourceOp)?
-  (create=SourceOp)?
-  (update=SourceOp)?
-  (delete=SourceOp)?
-;
-
-SourceOp:
-  name=SourceOpName ':'
-    'method:' method=HttpVerb
-    'path:' path=STRING
-    (request=RequestBlock)?
-    (response=ResponseBlock)?
-;
-
-SourceOpName:
-  'read' | 'create' | 'update' | 'delete'
 ;
 
 // Subscribe/Publish blocks for WebSocket (similar to Request/Response)
@@ -198,21 +162,10 @@ SourceWS:
   (
     'channel:' url=STRING
     (parameters=ParametersBlock)?
-    ((subscribe=SubscribeBlock)?
+    (subscribe=SubscribeBlock)?
     (publish=PublishBlock)?
-    |
-    (operations=WsOperationsBlock)?)
   )
   'end'
-;
-
-// WebSocket operations block (NEW SYNTAX)
-WsOperationsBlock:
-  'operations:' '[' ws_ops+=WsOperation (',' ws_ops+=WsOperation)* ']'
-;
-
-WsOperation:
-  'subscribe' | 'publish'
 ;
 
 // ---------- API (presentation) ----------

@@ -111,18 +111,23 @@ def _validate_exposure_blocks(model, metamodel=None):
             # Skip source validation for publish-only entities with target
             continue
 
+        # Infer REST or WebSocket based on operations
+        rest_ops = {'read', 'create', 'update', 'delete'}
+        ws_ops = {'subscribe', 'publish'}
+
+        has_rest_ops = any(op in rest_ops for op in operations)
+        has_ws_ops = any(op in ws_ops for op in operations)
+
         # Validate REST exposure
-        rest = getattr(expose, "rest", None)
-        if rest:
-            _validate_rest_expose(entity, expose, rest, source)
+        if has_rest_ops:
+            _validate_rest_expose(entity, expose, source)
 
         # Validate WebSocket exposure
-        websocket = getattr(expose, "websocket", None)
-        if websocket:
-            _validate_ws_expose(entity, expose, websocket, source)
+        if has_ws_ops:
+            _validate_ws_expose(entity, expose, source)
 
 
-def _validate_rest_expose(entity, expose, rest, source):
+def _validate_rest_expose(entity, expose, source):
     """Validate REST exposure configuration."""
     # REST paths are now auto-generated from identity anchor
     # Validation of identity anchor happens in entity_validators.py
@@ -169,12 +174,12 @@ def _validate_rest_expose(entity, expose, rest, source):
                 )
 
 
-def _validate_ws_expose(entity, expose, websocket, source):
+def _validate_ws_expose(entity, expose, source):
     """Validate WebSocket exposure configuration."""
-    channel = getattr(websocket, "channel", None)
+    channel = getattr(expose, "channel", None)
     if not channel or not isinstance(channel, str):
         raise TextXSemanticError(
-            f"Entity '{entity.name}' WebSocket expose must have a valid 'websocket:' channel.",
+            f"Entity '{entity.name}' WebSocket expose must have a valid 'channel:' field.",
             **get_location(expose),
         )
 
@@ -182,7 +187,7 @@ def _validate_ws_expose(entity, expose, websocket, source):
     if not channel.startswith("/"):
         raise TextXSemanticError(
             f"Entity '{entity.name}' WebSocket channel must start with '/': {channel}",
-            **get_location(websocket),
+            **get_location(expose),
         )
 
     # Get operations

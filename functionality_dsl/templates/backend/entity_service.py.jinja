@@ -115,6 +115,10 @@ class {{ entity_name }}Service:
             parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(item.get("{{ ps.id_field }}"))
             {%- endfor %}
 
+            # Skip items where any parent data is missing
+            if not all(parent_data.values()):
+                continue
+
             {% if has_computed_attrs %}
             transformed = self._transform_entity(parent_data)
             result.append({{ entity_name }}(**transformed))
@@ -154,10 +158,16 @@ class {{ entity_name }}Service:
         {%- if loop.first %}
         # First parent: fetch using the endpoint's ID parameter
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ id_field }})
+        # Fail fast if first parent not found
+        if not parent_data["{{ ps.name }}"]:
+            return None
         {%- else %}
         # Subsequent parent: fetch using ID field from first parent
         {%- set first_parent = parent_services[0] %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(parent_data["{{ first_parent.name }}"].{{ ps.id_field }})
+        # Fail fast if parent not found
+        if not parent_data["{{ ps.name }}"]:
+            return None
         {%- endif %}
         {%- endfor %}
         {% elif has_multiple_parent_sources %}
@@ -205,6 +215,9 @@ class {{ entity_name }}Service:
         parent_data = {}
         {%- for ps in parent_services %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
+        # Fail fast if parent not found
+        if not parent_data["{{ ps.name }}"]:
+            return None
         {%- endfor %}
         {% elif has_multiple_parent_sources %}
         # Fetch from multiple parent sources

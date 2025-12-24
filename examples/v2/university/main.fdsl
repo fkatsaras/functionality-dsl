@@ -16,17 +16,14 @@ end
 
 Source<REST> StudentDB
   base_url: "http://dummy-university-service:9001/students"
-  operations: [read, create, update, delete]
 end
 
 Source<REST> CourseDB
   base_url: "http://dummy-university-service:9001/courses"
-  operations: [read]
 end
 
 Source<REST> EnrollmentDB
   base_url: "http://dummy-university-service:9001/enrollments"
-  operations: [read, create]
 end
 
 // ============================================================================
@@ -41,9 +38,7 @@ Entity Student
     - enrollmentYear: integer;
   source: StudentDB
   expose:
-    rest:
     operations: [read, create, update, delete]
-  //  readonly_fields: ["id"] < since ids are readonly by default>
 end
 
 Entity Course
@@ -53,7 +48,6 @@ Entity Course
     - credits: integer;
   source: CourseDB
   expose:
-    rest:
     operations: [read]
 end
 
@@ -66,9 +60,7 @@ Entity Enrollment
     - grade: string;
   source: EnrollmentDB
   expose:
-    rest:
     operations: [read, create]
-   // readonly_fields: ["id"] < since ids are readonly by default>
 end
 
 // ============================================================================
@@ -97,6 +89,5 @@ Entity EnrollmentDetails(Enrollment, Student, Course)
     - courseTitle: string = Course.title;
     - credits: integer = Course.credits;
   expose:
-    rest:
     operations: [read]
 end

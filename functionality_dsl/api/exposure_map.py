@@ -100,20 +100,25 @@ def build_exposure_map(model):
             # No source or target found (validation should catch this)
             continue
 
-        # Extract REST configuration
-        rest = getattr(expose, "rest", None)
-
-        # Auto-generate REST path if REST is exposed
-        rest_path = None
-        if rest:
-            rest_path = _generate_rest_path(entity)
-
-        # Extract WebSocket configuration
-        websocket = getattr(expose, "websocket", None)
-        ws_channel = getattr(websocket, "channel", None) if websocket else None
-
         # Get operations list
         operations = getattr(expose, "operations", []) or []
+
+        # Infer REST or WebSocket based on operations
+        # REST operations: read, create, update, delete
+        # WS operations: subscribe, publish
+        rest_ops = {'read', 'create', 'update', 'delete'}
+        ws_ops = {'subscribe', 'publish'}
+
+        has_rest_ops = any(op in rest_ops for op in operations)
+        has_ws_ops = any(op in ws_ops for op in operations)
+
+        # Auto-generate REST path if REST operations are exposed
+        rest_path = None
+        if has_rest_ops:
+            rest_path = _generate_rest_path(entity)
+
+        # Extract WebSocket channel (optional field in expose block)
+        ws_channel = getattr(expose, "channel", None)
 
         # Get id_field from entity's identity anchor (computed during validation)
         id_field = getattr(entity, "_identity_field", None)

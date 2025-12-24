@@ -104,53 +104,78 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     if exposure_map:
         print(f"  Found {len(exposure_map)} exposed entities")
 
-        # Generate source clients for operations-based sources
+        # Generate source clients (operations inferred from entities)
         print("\n  [4.1] Generating source clients...")
         # REST sources
         rest_sources = get_children_of_type("SourceREST", model)
         for source in rest_sources:
-            if hasattr(source, "operations") and source.operations:
-                generate_source_client(source, model, templates_dir, out_dir)
+            generate_source_client(source, model, templates_dir, out_dir, exposure_map)
 
         # WebSocket sources
         ws_sources = get_children_of_type("SourceWS", model)
         for source in ws_sources:
-            if hasattr(source, "operations") and source.operations:
-                generate_websocket_source_client(source, model, templates_dir, out_dir)
+            generate_websocket_source_client(source, model, templates_dir, out_dir, exposure_map)
 
-        # Generate entity services
+        # ======================================================================
+        # [4.2] GENERATE ENTITY SERVICES (shared by both REST and WebSocket)
+        # ======================================================================
         print("\n  [4.2] Generating entity services...")
         for entity_name, config in exposure_map.items():
             generate_entity_service(entity_name, config, model, templates_dir, out_dir)
 
-        # Generate entity routers (REST and WebSocket)
-        print("\n  [4.3] Generating entity routers...")
+        # ======================================================================
+        # [4.3] GENERATE REST ROUTERS
+        # ======================================================================
+        print("\n  [4.3] Generating REST entity routers...")
 
-        # Generate REST routers
-        for entity_name, config in exposure_map.items():
-            generate_entity_router(entity_name, config, model, templates_dir, out_dir)
+        # Filter entities with REST exposure
+        rest_entities = {
+            name: config for name, config in exposure_map.items()
+            if config.get("rest_path")
+        }
 
-        # Group entities by WebSocket channel for combined router generation
-        ws_channels = {}
-        for entity_name, config in exposure_map.items():
-            ws_channel = config.get("ws_channel")
-            if ws_channel:
+        if rest_entities:
+            for entity_name, config in rest_entities.items():
+                generate_entity_router(entity_name, config, model, templates_dir, out_dir)
+        else:
+            print("  No REST entities found")
+
+        # ======================================================================
+        # [4.4] GENERATE WEBSOCKET ROUTERS
+        # ======================================================================
+        print("\n  [4.4] Generating WebSocket entity routers...")
+
+        # Filter entities with WebSocket exposure
+        ws_entities = {
+            name: config for name, config in exposure_map.items()
+            if config.get("ws_channel")
+        }
+
+        if ws_entities:
+            # Group entities by WebSocket channel for combined router generation
+            # (Multiple entities can share the same channel for bidirectional communication)
+            ws_channels = {}
+            for entity_name, config in ws_entities.items():
+                ws_channel = config["ws_channel"]
                 if ws_channel not in ws_channels:
                     ws_channels[ws_channel] = []
                 ws_channels[ws_channel].append((entity_name, config))
 
-        # Generate WebSocket routers (one per unique channel, handling all entities on that channel)
-        for ws_channel, entities in ws_channels.items():
-            # Pass all entities for this channel to create a combined bidirectional router
+            # Generate one router per unique channel
+            # Each router handles all entities (subscribe/publish) on that channel
             from .generators.entity.websocket_router_generator import generate_combined_websocket_router
-            generate_combined_websocket_router(ws_channel, entities, model, templates_dir, out_dir)
+            for ws_channel, entities in ws_channels.items():
+                generate_combined_websocket_router(ws_channel, entities, model, templates_dir, out_dir)
+        else:
+            print("  No WebSocket entities found")
 
-        # Generate OpenAPI specification
-        print("\n  [4.4] Generating OpenAPI specification...")
+        # ======================================================================
+        # [4.5] GENERATE API SPECIFICATIONS
+        # ======================================================================
+        print("\n  [4.5] Generating OpenAPI specification (REST)...")
         generate_openapi_spec(model, out_dir, server_config)
 
-        # Generate AsyncAPI specification for WebSocket entities
-        print("\n  [4.5] Generating AsyncAPI specification...")
+        print("\n  [4.6] Generating AsyncAPI specification (WebSocket)...")
         generate_asyncapi_spec(model, out_dir, server_config)
     else:
         print("  No exposed entities found (using old syntax)")

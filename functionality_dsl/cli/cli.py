@@ -405,14 +405,22 @@ def visualize_model_cmd(context, model_path, output_dir):
             # v2 syntax: Entity expose blocks (REST/WebSocket)
             expose = getattr(e, "expose", None)
             if expose:
-                # REST expose
-                rest_expose = getattr(expose, "rest", None)
-                if rest_expose:
-                    rest_path = getattr(rest_expose, "path", "")
-                    # In expose blocks, operations is just a plain list
-                    operations = getattr(expose, "operations", [])
-                    # Show actual operations, not defaults
-                    ops_str = ", ".join(operations) if operations else ""
+                # Get operations list
+                operations = getattr(expose, "operations", [])
+                ops_str = ", ".join(operations) if operations else ""
+
+                # Infer REST or WebSocket based on operations
+                rest_ops = {'read', 'create', 'update', 'delete'}
+                ws_ops = {'subscribe', 'publish'}
+                has_rest_ops = any(op in rest_ops for op in operations)
+                has_ws_ops = any(op in ws_ops for op in operations)
+
+                # REST expose (inferred from operations)
+                if has_rest_ops:
+                    # REST path is auto-generated, get from entity's identity anchor
+                    identity_anchor = getattr(e, "_identity_anchor", None)
+                    identity_field = getattr(e, "_identity_field", None)
+                    rest_path = f"/api/{e.name.lower()}/{{{identity_field}}}" if identity_field else "/api/auto"
 
                     if ops_str:
                         node_label = (
@@ -439,15 +447,10 @@ def visualize_model_cmd(context, model_path, output_dir):
                         color="#ff6f00"
                     )
 
-                # WebSocket expose
-                websocket_expose = getattr(expose, "websocket", None)
-                if websocket_expose:
-                    # WebSocket uses 'channel' not 'path'
-                    websocket_path = getattr(websocket_expose, "channel", "")
-                    # In expose blocks, operations is just a plain list
-                    operations = getattr(expose, "operations", [])
-                    # Show actual operations, not defaults
-                    ops_str = ", ".join(operations) if operations else ""
+                # WebSocket expose (inferred from operations)
+                if has_ws_ops:
+                    # WebSocket uses 'channel' field
+                    websocket_path = getattr(expose, "channel", "/ws/auto")
 
                     if ops_str:
                         node_label = (
@@ -604,14 +607,23 @@ def visualize_model_cmd(context, model_path, output_dir):
         # -------------------------------
         for s in model.externalrest:
             # Detect v2 syntax (has base_url and operations) vs v1 (has url)
-            is_v2 = hasattr(s, "base_url") and hasattr(s, "operations")
+            is_v2 = hasattr(s, "base_url")
 
             if is_v2:
-                # v2 syntax - show base_url and operations
+                # v2 syntax - show base_url and infer operations from entities
                 base_url = getattr(s, "base_url", "")
-                operations_block = getattr(s, "operations", None)
-                operations = getattr(operations_block, "simple_ops", []) if operations_block else []
-                ops_str = ", ".join(operations) if operations else "none"
+
+                # Infer operations from entities that bind to this source
+                operations = set()
+                for e in model.entities:
+                    entity_source = getattr(e, "source", None)
+                    if entity_source and entity_source.name == s.name:
+                        expose = getattr(e, "expose", None)
+                        if expose:
+                            entity_ops = getattr(expose, "operations", [])
+                            operations.update(entity_ops)
+
+                ops_str = ", ".join(sorted(operations)) if operations else "none"
 
                 node_label = (
                     f"[SOURCE REST]\\n"
@@ -683,15 +695,28 @@ def visualize_model_cmd(context, model_path, output_dir):
         # External Sources (WS) - handles both v1 and v2
         # -------------------------------
         for s in model.externalws:
-            # Detect v2 syntax (has channel and operations) vs v1 (has url)
-            is_v2 = hasattr(s, "channel") and hasattr(s, "operations")
+            # Detect v2 syntax (has channel) vs v1 (has url)
+            is_v2 = hasattr(s, "channel")
 
             if is_v2:
-                # v2 syntax - show channel and operations
+                # v2 syntax - show channel and infer operations from entities
                 channel = getattr(s, "channel", "")
-                operations_block = getattr(s, "operations", None)
-                operations = getattr(operations_block, "simple_ops", []) if operations_block else []
-                ops_str = ", ".join(operations) if operations else "none"
+
+                # Infer operations from entities that bind to this source or target
+                operations = set()
+                for e in model.entities:
+                    entity_source = getattr(e, "source", None)
+                    entity_target = getattr(e, "target", None)
+                    if (entity_source and entity_source.name == s.name) or \
+                       (entity_target and entity_target.name == s.name):
+                        expose = getattr(e, "expose", None)
+                        if expose:
+                            entity_ops = getattr(expose, "operations", [])
+                            # Filter for WebSocket operations
+                            ws_ops = [op for op in entity_ops if op in {'subscribe', 'publish'}]
+                            operations.update(ws_ops)
+
+                ops_str = ", ".join(sorted(operations)) if operations else "none"
 
                 node_label = (
                     f"[SOURCE WS]\\n"

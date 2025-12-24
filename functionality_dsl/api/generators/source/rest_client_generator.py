@@ -8,78 +8,71 @@ from jinja2 import Environment, FileSystemLoader
 from functionality_dsl.api.crud_helpers import generate_standard_crud_config
 
 
-def generate_source_client(source, model, templates_dir, out_dir):
+def generate_source_client(source, model, templates_dir, out_dir, exposure_map=None):
     """
-    Generate HTTP client class for an operations-based Source.
+    Generate HTTP client class for a REST Source.
 
     Args:
-        source: SourceREST object with operations block
+        source: SourceREST object
         model: FDSL model
         templates_dir: Templates directory path
         out_dir: Output directory path
+        exposure_map: Optional exposure map to infer operations from entities
     """
-    # Only generate for operations-based sources (NEW SYNTAX)
-    operations_block = getattr(source, "operations", None)
+    # Check if this is a base_url source (standard CRUD) or url source (single operation)
     base_url = getattr(source, "base_url", None)
+    url = getattr(source, "url", None)
 
-    if not operations_block or not base_url:
-        # Old syntax source - skip
+    # For single-operation sources (url:, method:), skip client generation
+    # These are handled directly in the service layer
+    if url and not base_url:
+        return
+
+    # For base_url sources, we need to infer operations from entities that bind to this source
+    if not base_url:
         return
 
     print(f"  Generating source client for {source.name}")
 
-    # Check operation type
-    simple_ops = getattr(operations_block, "simple_ops", None)
-    explicit_ops = getattr(operations_block, "ops", None)
+    # Infer operations from entities that bind to this source
+    operations = set()
+    if exposure_map:
+        for entity_name, config in exposure_map.items():
+            entity_source = config.get("source")
+            if entity_source and entity_source.name == source.name:
+                entity_ops = config.get("operations", [])
+                operations.update(entity_ops)
 
-    if simple_ops:
-        # Simple operations list: operations: [read, list]
-        # Infer standard REST patterns for each operation
-        crud_config = {}
-        operations = []
-        op_names = [str(op) for op in simple_ops]
-
-        # Check if this is a singleton source (read-only without update/delete)
-        # Singleton pattern: only 'read' operation (no 'update'/'delete')
-        is_singleton = "read" in op_names and not any(op in op_names for op in ["update", "delete"])
-
-        for op in simple_ops:
-            op_name = str(op)  # Convert to string
-            operations.append(op_name)
-
-            # Infer standard HTTP method and path for each operation
-            if op_name == "list":
-                crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
-            elif op_name == "read":
-                # Singleton read: no ID parameter, just fetch base_url
-                # Item read: requires ID parameter
-                if is_singleton:
-                    crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
-                else:
-                    crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-            elif op_name == "create":
-                crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
-            elif op_name == "update":
-                crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-            elif op_name == "delete":
-                crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-    elif explicit_ops:
-        # Explicit operations with custom method/path
-        crud_config = {}
-        operations = []
-        for op_name in ['list', 'read', 'create', 'update', 'delete']:
-            op = getattr(explicit_ops, op_name, None)
-            if op:
-                operations.append(op_name)
-                method = getattr(op, "method", "GET").upper()
-                path = getattr(op, "path", "/")
-                crud_config[op_name] = {
-                    "method": method,
-                    "path": path,
-                    "url": f"{base_url}{path}",
-                }
-    else:
+    # If no operations found, skip
+    if not operations:
+        print(f"  Warning: No operations found for source {source.name}, skipping client generation")
         return
+
+    operations = list(operations)
+    op_names = operations
+
+    # Check if this is a singleton source (read-only without update/delete)
+    is_singleton = "read" in op_names and not any(op in op_names for op in ["update", "delete"])
+
+    # Infer standard REST patterns for each operation
+    crud_config = {}
+    for op_name in operations:
+        # Infer standard HTTP method and path for each operation
+        if op_name == "list":
+            crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
+        elif op_name == "read":
+            # Singleton read: no ID parameter, just fetch base_url
+            # Item read: requires ID parameter
+            if is_singleton:
+                crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
+            else:
+                crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+        elif op_name == "create":
+            crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
+        elif op_name == "update":
+            crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+        elif op_name == "delete":
+            crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
 
     # Build operation method configs
     operation_methods = []
