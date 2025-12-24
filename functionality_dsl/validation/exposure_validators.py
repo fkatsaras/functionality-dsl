@@ -5,6 +5,7 @@ Validates expose blocks and CRUD configurations.
 
 import re
 from textx import get_children_of_type, get_location, TextXSemanticError
+from functionality_dsl.validation.entity_validators import _get_parent_entities
 
 
 def extract_path_parameters(path):
@@ -62,7 +63,7 @@ def _find_source_in_parents(parents):
             return source
 
         # Add parent's parents to queue
-        parent_parents = getattr(parent, "parents", []) or []
+        parent_parents = _get_parent_entities(parent)
         queue.extend(parent_parents)
 
     return None
@@ -88,11 +89,11 @@ def _validate_exposure_blocks(model, metamodel=None):
         # Entity with expose must have a source OR target (direct or inherited from parents)
         source = getattr(entity, "source", None)
         target = getattr(entity, "target", None)
-        parents = getattr(entity, "parents", []) or []
+        parent_entities = _get_parent_entities(entity)
 
         # For transformation entities, find source in parent chain
-        if not source and parents:
-            source = _find_source_in_parents(parents)
+        if not source and parent_entities:
+            source = _find_source_in_parents(parent_entities)
 
         # For publish-only entities with target, no source is required
         operations = getattr(expose, "operations", [])
@@ -318,7 +319,7 @@ def _validate_entity_crud_rules(model, metamodel=None):
             continue
 
         source = getattr(entity, "source", None)
-        parents = getattr(entity, "parents", []) or []
+        parent_entities = _get_parent_entities(entity)
         entity_type = getattr(entity, "entity_type", None) or "object"  # Default to object
         operations = getattr(expose, "operations", [])
 
@@ -336,20 +337,20 @@ def _validate_entity_crud_rules(model, metamodel=None):
             )
 
         # Rule 2: Composite entities (with parents) cannot have source
-        if parents and source:
+        if parent_entities and source:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has both parents {[p.name for p in parents]} and 'source:' field. "
+                f"Entity '{entity.name}' has both parents {[p.name for p in parent_entities]} and 'source:' field. "
                 f"Composite entities (entities with parents) cannot have a 'source:' field - they derive data from parents. "
                 f"Either remove the parents or remove the 'source:' field.",
                 **get_location(entity),
             )
 
         # Rule 3: Composite entities can only expose 'read'
-        if parents:
+        if parent_entities:
             invalid_ops = set(operations) - {'read', 'subscribe'}  # Allow read and subscribe for composite
             if invalid_ops:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parents]}) "
+                    f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parent_entities]}) "
                     f"and exposes invalid operations: {invalid_ops}. "
                     f"Composite entities can only expose 'read' operation (or 'subscribe' for WebSocket). "
                     f"To mutate data, expose operations on the source parent entity instead.",

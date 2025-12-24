@@ -86,7 +86,10 @@ def build_exposure_map(model):
         # Get direct source/target or find source through parents
         source = getattr(entity, "source", None)
         target = getattr(entity, "target", None)
-        parents = getattr(entity, "parents", []) or []
+
+        # Extract parent entities from ParentRef objects
+        parent_refs = getattr(entity, "parents", []) or []
+        parents = [ref.entity for ref in parent_refs] if parent_refs else []
 
         # For transformation entities, find source from parent chain
         if not source and parents:

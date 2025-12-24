@@ -254,11 +254,15 @@ def _build_validation_context(model, current_entity, loop_vars: set[str], curren
     for source in get_children_of_type("SourceWS", model):
         context[source.name] = True
 
-    # Add parent entity names (for inheritance)
+    # Add parent entity names and aliases (for inheritance)
     if current_entity:
-        parents = getattr(current_entity, "parents", []) or []
-        for parent in parents:
-            context[parent.name] = True
+        from functionality_dsl.validation.entity_validators import _get_parent_refs, _get_parent_alias
+        parent_refs = _get_parent_refs(current_entity)
+        for parent_ref in parent_refs:
+            # Add both the entity name AND the alias
+            context[parent_ref.entity.name] = True
+            alias = _get_parent_alias(parent_ref)
+            context[alias] = True  # Add alias too
 
     # Add loop variables (lambda parameters)
     for var in loop_vars:

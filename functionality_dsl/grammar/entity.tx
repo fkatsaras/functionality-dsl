@@ -47,7 +47,7 @@ Attribute:
 
 Entity:
   'Entity' name=ID
-  ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
+  ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
   ('type:' entity_type=EntityType)?
   ('contentType:' content_type=ContentType)?
   (relationships=RelationshipsBlock)?
@@ -58,6 +58,11 @@ Entity:
   ('target:' target=[Source])?
   (expose=ExposeBlock)?
   'end'
+;
+
+// Parent reference: either plain (Product) or aliased (thessForecast: Forecast)
+ParentRef:
+  (alias=ID ':')? entity=[Entity]
 ;
 
 // Entity type declaration (defaults to 'object' if not specified)
@@ -73,11 +78,11 @@ RelationshipsBlock:
 ;
 
 Relationship:
-  parent=[Entity] ':' fetchExpr=AttrRef
+  parentAlias=ID ':' fetchExpr=AttrRef
 ;
 
 AttrRef:
-  entity=[Entity] '.' attr=ID
+  entityOrAlias=ID '.' attr=ID
 ;
 
 // ---------- EXPOSE BLOCK (Entity API Exposure) ----------

@@ -1,0 +1,134 @@
+// =============================================================================
+// Weather Analytics API - Demonstrates FDSL's Computational Capabilities
+// =============================================================================
+// This example shows hierarchical REST design with functional transformations:
+// - Base resource: GET /api/forecasts/{city}
+// - Derived analytics: GET /api/forecasts/{city}/analytics
+//
+// External API: Open-Meteo forecast (via dummy service)
+// =============================================================================
+
+Server WeatherAnalyticsAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// =============================================================================
+// EXTERNAL SOURCE - Open-Meteo Compatible Format
+// =============================================================================
+
+Source<REST> OpenMeteoAPI
+  base_url: "http://dummy-weather-service:9003/forecast"
+  operations: [read]
+end
+
+// =============================================================================
+// BASE ENTITY - Raw Forecast Data
+// =============================================================================
+
+Entity RawForecast
+  attributes:
+    - city: string @id;
+    - latitude: number;
+    - longitude: number;
+    - hourly: object;  // { time: string[], temperature_2m: number[], ... }
+  source: OpenMeteoAPI
+  expose:
+    rest:
+    operations: [read]
+end
+
+// =============================================================================
+// DERIVED ENTITY - Weather Analytics (FUNCTIONALITY!)
+// =============================================================================
+
+Entity ForecastAnalytics(RawForecast)
+  attributes:
+    // Identity (inherited from parent, no @id needed)
+    - city: string = RawForecast.city;
+    - location: object = {
+        "latitude": RawForecast.latitude,
+        "longitude": RawForecast.longitude
+      };
+
+    // Statistical Analysis
+    - avg_temp: number = round(
+        sum(RawForecast.hourly["temperature_2m"]) /
+        len(RawForecast.hourly["temperature_2m"]), 1
+      );
+    - max_temp: number = max(RawForecast.hourly["temperature_2m"]);
+    - min_temp: number = min(RawForecast.hourly["temperature_2m"]);
+    - temp_range: number = round(ForecastAnalytics.max_temp - ForecastAnalytics.min_temp, 1);
+
+    // Functional Transformations - Find Comfortable Hours (18-24°C)
+    - comfortable_hours: array = filter(
+        zip(RawForecast.hourly["time"], RawForecast.hourly["temperature_2m"]),
+        hour => hour[1] >= 18 and hour[1] <= 24
+      );
+    - comfort_percentage: number = round(
+        len(ForecastAnalytics.comfortable_hours) * 100.0 / len(RawForecast.hourly["time"]), 1
+      );
+
+    // Data Aggregation - Hourly Details with Computed Fields
+    - hourly_details: array = map(
+        zip(
+          RawForecast.hourly["time"],
+          RawForecast.hourly["temperature_2m"],
+          RawForecast.hourly["relative_humidity_2m"]
+        ),
+        entry => {
+          "time": entry[0],
+          "temp": entry[1],
+          "humidity": entry[2],
+          "comfortable": entry[1] >= 18 and entry[1] <= 24,
+          "deviation_from_avg": round(entry[1] - ForecastAnalytics.avg_temp, 1)
+        }
+      );
+
+    // Summary Statistics
+    - summary: object = {
+        "total_hours": len(RawForecast.hourly["time"]),
+        "comfortable_hours_count": len(ForecastAnalytics.comfortable_hours),
+        "avg_humidity": round(
+          sum(RawForecast.hourly["relative_humidity_2m"]) /
+          len(RawForecast.hourly["relative_humidity_2m"]), 1
+        ),
+        "temp_stats": {
+          "min": ForecastAnalytics.min_temp,
+          "max": ForecastAnalytics.max_temp,
+          "avg": ForecastAnalytics.avg_temp,
+          "range": ForecastAnalytics.temp_range
+        }
+      };
+
+  expose:
+    rest:
+    operations: [read]
+    readonly_fields: [
+      "city", "location", "avg_temp", "max_temp", "min_temp",
+      "temp_range", "comfortable_hours", "comfort_percentage",
+      "hourly_details", "summary"
+    ]
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+Component<Table> ForecastTable
+  entity: RawForecast
+  columns:
+    - "city": string
+    - "latitude": number
+    - "longitude": number
+end
+
+Component<Chart> TemperatureChart
+  entity: ForecastAnalytics
+  seriesLabels: ["Temperature Over Time"]
+  xLabel: string<time> "Time"
+  yLabel: number "Temperature (°C)"
+  height: 400
+end

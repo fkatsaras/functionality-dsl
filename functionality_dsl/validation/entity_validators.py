@@ -20,6 +20,46 @@ from functionality_dsl.validation.expression_validators import (
 
 
 # ------------------------------------------------------------------------------
+# Parent aliasing helpers
+
+def _get_parent_refs(entity):
+    """
+    Get list of parent references (ParentRef objects) from an entity.
+    Returns empty list if no parents.
+    """
+    return getattr(entity, "parents", []) or []
+
+def _get_parent_entities(entity):
+    """
+    Extract actual Entity objects from ParentRef list.
+    Returns list of Entity objects.
+    """
+    parent_refs = _get_parent_refs(entity)
+    return [ref.entity for ref in parent_refs]
+
+def _get_parent_alias(parent_ref):
+    """
+    Get alias for a parent reference, or use entity name if no alias.
+    Returns string alias name.
+    """
+    if hasattr(parent_ref, 'alias') and parent_ref.alias:
+        return parent_ref.alias
+    return parent_ref.entity.name
+
+def _build_parent_alias_map(entity):
+    """
+    Build mapping from alias -> (ParentRef, Entity) for all parents.
+    Returns dict: {alias: (parent_ref, entity)}
+    """
+    parent_refs = _get_parent_refs(entity)
+    alias_map = {}
+    for ref in parent_refs:
+        alias = _get_parent_alias(ref)
+        alias_map[alias] = (ref, ref.entity)
+    return alias_map
+
+
+# ------------------------------------------------------------------------------
 # Entity hierarchy helpers
 
 def _get_all_entity_attributes(entity):
@@ -46,8 +86,8 @@ def _get_all_entity_attributes(entity):
                 seen_names.add(attr.name)
 
         # Add parents to queue
-        parents = getattr(current, "parents", []) or []
-        queue.extend(parents)
+        parent_entities = _get_parent_entities(current)
+        queue.extend(parent_entities)
 
     return all_attrs
 
@@ -182,8 +222,8 @@ def _validate_computed_attrs(model, metamodel=None):
         target = getattr(ent, "target", None)
         if target:
             # This entity publishes to external source, check its parents
-            parents = getattr(ent, "parents", []) or []
-            for parent in parents:
+            parent_entities = _get_parent_entities(ent)
+            for parent in parent_entities:
                 schema_entities.add(parent.name)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
@@ -236,7 +276,7 @@ def _validate_computed_attrs(model, metamodel=None):
     }
 
     for ent in get_children_of_type("Entity", model):
-        parents = getattr(ent, "parents", []) or []
+        parent_entities = _get_parent_entities(ent)
 
         # Check if entity has any attribute without an expression
         has_schema_only_attrs = False
@@ -347,7 +387,7 @@ def _validate_computed_attrs(model, metamodel=None):
                     continue
 
                 # Allow references to parent entities (and validate attr existence)
-                if alias in (p.name for p in parents):
+                if alias in (p.name for p in parent_entities):
                     tgt_attrs = target_attrs.get(alias, set())
                     if attr and attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
@@ -359,7 +399,7 @@ def _validate_computed_attrs(model, metamodel=None):
                 # Check if referencing another entity
                 if alias in target_attrs:
                     # RULE: All entity references in attributes MUST be declared as parents
-                    parent_names = {p.name for p in parents}
+                    parent_names = {p.name for p in parent_entities}
 
                     if alias not in parent_names:
                         all_parents = sorted(parent_names | {alias})
@@ -423,8 +463,8 @@ def _validate_schema_only_entities(model):
     # Validate each request schema entity
     for entity in schema_entities:
         # Check for parent entities
-        parents = getattr(entity, "parents", [])
-        if parents and len(parents) > 0:
+        parent_entities = _get_parent_entities(entity)
+        if parent_entities and len(parent_entities) > 0:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' is used as a request schema and cannot have parent entities. "
                 f"Request schema entities must be simple, self-contained data structures.",
@@ -598,8 +638,8 @@ def _validate_rest_endpoint_entities(model):
                 return True
 
             # Add parents to queue
-            parents = getattr(current, "parents", []) or []
-            queue.extend(parents)
+            parent_entities = _get_parent_entities(current)
+            queue.extend(parent_entities)
 
         return False
 
@@ -699,12 +739,15 @@ def _validate_entity_relationships(model):
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        parents = getattr(entity, "parents", []) or []
+        parent_refs = _get_parent_refs(entity)
+        parent_entities = _get_parent_entities(entity)
+        alias_map = _build_parent_alias_map(entity)  # {alias: (ref, entity)}
+
         relationships_block = getattr(entity, "relationships", None)
         relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
 
         # Rule 1: Relationships block only for composite entities
-        if relationships and not parents:
+        if relationships and not parent_refs:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' has 'relationships:' block but no parents.\n"
                 f"The 'relationships:' block can only be used in composite entities (entities with parents).\n"
@@ -713,34 +756,60 @@ def _validate_entity_relationships(model):
             )
 
         # If no parents, skip further validation
-        if not parents:
+        if not parent_refs:
             continue
 
         # Rule 2: All non-first parents must have a relationship defined
         # (First parent uses the endpoint's ID parameter by convention)
-        if len(parents) > 1:
-            relationship_map = {rel.parent.name: rel for rel in relationships}
+        if len(parent_refs) > 1:
+            relationship_map = {rel.parentAlias: rel for rel in relationships}
+            first_parent_alias = _get_parent_alias(parent_refs[0])
 
-            for parent in parents[1:]:  # Skip first parent
-                if parent.name not in relationship_map:
+            for i, parent_ref in enumerate(parent_refs[1:], start=1):  # Skip first parent
+                parent_alias = _get_parent_alias(parent_ref)
+                if parent_alias not in relationship_map:
                     raise TextXSemanticError(
-                        f"Composite entity '{entity.name}' is missing relationship for parent '{parent.name}'.\n"
+                        f"Composite entity '{entity.name}' is missing relationship for parent alias '{parent_alias}'.\n"
                         f"Add to relationships block:\n"
-                        f"  - {parent.name}: <FirstParent>.{parent.name.lower()}Id",
+                        f"  - {parent_alias}: {first_parent_alias}.{parent_ref.entity.name.lower()}Id",
                         **get_location(entity)
                     )
 
         # Rule 3: Validate fetch expressions reference valid attributes
         for rel in relationships:
+            parent_alias = rel.parentAlias
             fetch_expr = rel.fetchExpr
-            source_entity = fetch_expr.entity
+            source_name = fetch_expr.entityOrAlias
             attr_name = fetch_expr.attr
+
+            # Validate that parentAlias refers to a valid parent
+            if parent_alias not in alias_map:
+                raise TextXSemanticError(
+                    f"Relationship references unknown parent alias '{parent_alias}'.\n"
+                    f"Valid parent aliases: {', '.join(alias_map.keys())}",
+                    **get_location(rel)
+                )
+
+            # Resolve source_name to actual entity (could be alias or entity name)
+            if source_name in alias_map:
+                # It's a parent alias
+                source_entity = alias_map[source_name][1]
+            else:
+                # Try to find entity by name in the model
+                all_entities = get_children_of_type("Entity", model)
+                source_entity = next((e for e in all_entities if e.name == source_name), None)
+                if not source_entity:
+                    raise TextXSemanticError(
+                        f"Relationship for '{parent_alias}' references unknown entity or alias '{source_name}'.\n"
+                        f"Valid aliases: {', '.join(alias_map.keys())}",
+                        **get_location(rel)
+                    )
 
             # Rule 5: Source entity in relationships must be a base entity (not composite)
             source_is_composite = getattr(source_entity, "_is_composite", False)
             if source_is_composite:
                 raise TextXSemanticError(
-                    f"Relationship for '{rel.parent.name}' references composite entity '{source_entity.name}'.\n"
+                    f"Relationship for '{parent_alias}' references composite entity '{source_entity.name}'.\n"
                     f"Relationships can ONLY reference base entities (entities with 'source:' field).\n"
                     f"Composite entities are computed locally and cannot be used for data fetching.\n"
                     f"Use the identity anchor instead: {entity._identity_anchor.name if entity._identity_anchor else 'base entity'}",
@@ -749,16 +818,18 @@ def _validate_entity_relationships(model):
 
             # Check that the source entity is the first parent OR the identity anchor
             # (Allow referencing the identity anchor directly for nested composites)
-            valid_sources = {parents[0].name}
+            first_parent_alias = _get_parent_alias(parent_refs[0])
+            first_parent_entity = parent_entities[0]
+            valid_sources = {first_parent_entity.name}
             if entity._identity_anchor:
                 valid_sources.add(entity._identity_anchor.name)
 
             if source_entity.name not in valid_sources:
                 raise TextXSemanticError(
-                    f"Relationship for '{rel.parent.name}' uses '{source_entity.name}.{attr_name}', "
-                    f"but fetch expressions must reference the first parent '{parents[0].name}' "
+                    f"Relationship for '{parent_alias}' uses '{source_entity.name}.{attr_name}', "
+                    f"but fetch expressions must reference the first parent '{first_parent_entity.name}' (alias: '{first_parent_alias}') "
                     f"or the identity anchor '{entity._identity_anchor.name if entity._identity_anchor else 'N/A'}'.\n"
-                    f"Change to: {rel.parent.name}: {parents[0].name}.{attr_name}",
+                    f"Change to: {parent_alias}: {first_parent_alias}.{attr_name}",
                     **get_location(rel)
                 )
 
@@ -768,7 +839,7 @@ def _validate_entity_relationships(model):
 
             if attr_name not in attr_names:
                 raise TextXSemanticError(
-                    f"Relationship for '{rel.parent.name}' references '{source_entity.name}.{attr_name}', "
+                    f"Relationship for '{parent_alias}' references '{source_entity.name}.{attr_name}', "
                     f"but attribute '{attr_name}' does not exist in entity '{source_entity.name}'.\n"
                     f"Available attributes: {', '.join(attr_names)}",
                     **get_location(rel)
@@ -825,10 +896,10 @@ def _compute_identity_anchors(model):
         if entity._identity_anchor is not None:
             return entity._identity_anchor
 
-        parents = getattr(entity, "parents", []) or []
+        parent_entities = _get_parent_entities(entity)
 
         # Base entity (no parents)
-        if not parents:
+        if not parent_entities:
             id_field = _find_id_attribute(entity)
             source = getattr(entity, "source", None)
 
@@ -851,7 +922,7 @@ def _compute_identity_anchors(model):
         # Compute anchor from first parent
         # RULE: First parent is ALWAYS the identity anchor
         # Other parents are data dependencies (fetched via relationships block)
-        first_parent = parents[0]
+        first_parent = parent_entities[0]
         first_parent_anchor = compute_anchor(first_parent, visited.copy())
 
         if not first_parent_anchor:

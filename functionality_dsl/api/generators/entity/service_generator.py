@@ -92,7 +92,9 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
             })
 
     # Check if entity has parent entities
-    parents = getattr(entity, "parents", []) or []
+    # Extract parent entities from ParentRef objects
+    parent_refs = getattr(entity, "parents", []) or []
+    parents = [ref.entity for ref in parent_refs] if parent_refs else []
     has_parents = len(parents) > 0
     has_multiple_parents = len(parents) > 1
 
@@ -170,7 +172,7 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     # Get explicit relationships if defined
     relationships_block = getattr(entity, "relationships", None)
     relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
-    relationship_map = {rel.parent.name: rel.fetchExpr.attr for rel in relationships}
+    relationship_map = {rel.parentAlias: rel.fetchExpr.attr for rel in relationships}
 
     for parent in parents:
         if parent.name in exposure_map:

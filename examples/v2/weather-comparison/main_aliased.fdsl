@@ -1,0 +1,102 @@
+// Weather Comparison API - REST-Pure with Aliased Parents
+// Demonstrates: Multiple instances of same entity type using parent aliasing
+
+Server WeatherAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================
+// External Weather API Source
+// ============================================
+
+Source<REST> ForecastDB
+  base_url: "http://dummy-weather-service:9001/forecasts"
+  operations: [read]
+end
+
+// ============================================
+// Generic Forecast Resource (REST-pure)
+// ============================================
+
+Entity Forecast
+  attributes:
+    - city: string @id;
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - hourly: object;
+  source: ForecastDB
+  expose:
+    rest:
+    operations: [read]
+end
+// → GET /api/forecasts/{city}
+// → GET /api/forecasts/thessaloniki
+// → GET /api/forecasts/london
+
+// ============================================
+// Composite Entity (Comparison Logic)
+// Using aliased parents to fetch TWO instances of Forecast
+// ============================================
+
+Entity ForecastComparison(thessForecast: Forecast, londonForecast: Forecast)
+  relationships:
+    - londonForecast: thessForecast.city
+  attributes:
+    - city: string = thessForecast.city;
+    - comparison_rows: array = map(
+        zip(
+          thessForecast.hourly["time"],
+          thessForecast.hourly["temperature_2m"],
+          londonForecast.hourly["temperature_2m"],
+          thessForecast.hourly["relative_humidity_2m"],
+          londonForecast.hourly["relative_humidity_2m"]
+        ),
+        row => {
+          "time": row[0],
+          "thess_temp": row[1],
+          "london_temp": row[2],
+          "thess_humidity": row[3],
+          "london_humidity": row[4],
+          "temp_delta": abs(row[1] - row[2]),
+          "hotter_city": ("Thessaloniki" if row[1] > row[2] else "London"),
+          "significant_difference": (abs(row[1] - row[2]) >= 5),
+          "thess_comfortable": ((abs(row[1] - 22) < 3) and (row[3] >= 30) and (row[3] <= 60)),
+          "london_comfortable": ((abs(row[2] - 22) < 3) and (row[4] >= 30) and (row[4] <= 60))
+        }
+      );
+    - total_hours: integer = len(thessForecast.hourly["time"]);
+    - thess_avg_temp: number = round(sum(thessForecast.hourly["temperature_2m"]) / len(thessForecast.hourly["temperature_2m"]), 1);
+    - london_avg_temp: number = round(sum(londonForecast.hourly["temperature_2m"]) / len(londonForecast.hourly["temperature_2m"]), 1);
+    - avg_temp_difference: number = round(abs(
+        sum(thessForecast.hourly["temperature_2m"]) / len(thessForecast.hourly["temperature_2m"]) -
+        sum(londonForecast.hourly["temperature_2m"]) / len(londonForecast.hourly["temperature_2m"])
+      ), 1);
+  expose:
+    rest:
+    operations: [read]
+end
+// → GET /api/forecasts/thessaloniki/forecastcomparison
+
+Entity ForecastStats(ForecastComparison)
+  attributes:
+    - city: string = ForecastComparison.city;
+    - chart_data: array = map(ForecastComparison.comparison_rows, row =>
+        {
+          "time": row["time"],
+          "thess_temp": row["thess_temp"],
+          "london_temp": row["london_temp"]
+        }
+      );
+    - total_hours: integer = ForecastComparison.total_hours;
+    - thess_avg_temp: number = ForecastComparison.thess_avg_temp;
+    - london_avg_temp: number = ForecastComparison.london_avg_temp;
+    - avg_temp_difference: number = ForecastComparison.avg_temp_difference;
+  expose:
+    rest:
+    operations: [read]
+end
+// → GET /api/forecasts/thessaloniki/forecaststats
