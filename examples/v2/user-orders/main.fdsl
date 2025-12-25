@@ -66,8 +66,7 @@ end
 // ============================================================================
 
 Entity OrderItem(Order)
-  relationships:
-    - Order: OrderItem.orderId // maybe this isnt needed?? explain relationships and why they are needed better
+ // relationships arent needed in nested resources only in composites that fetch more than 1 outher base
   attributes:
     - itemId: string @id;
     - orderId: string;
