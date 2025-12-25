@@ -38,7 +38,7 @@ Entity Student
     - enrollmentYear: integer;
   source: StudentDB
   expose:
-    operations: [read, create, update, delete]
+    operations: [list, read, create, update, delete]
 end
 
 Entity Course
@@ -48,7 +48,7 @@ Entity Course
     - credits: integer;
   source: CourseDB
   expose:
-    operations: [read]
+    operations: [list, read]
 end
 
 Entity Enrollment
@@ -60,7 +60,7 @@ Entity Enrollment
     - grade: string;
   source: EnrollmentDB
   expose:
-    operations: [read, create]
+    operations: [list, read, create]
 end
 
 // ============================================================================

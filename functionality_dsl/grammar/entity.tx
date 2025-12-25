@@ -96,7 +96,7 @@ ExposeBlock:
 ;
 
 Operation:
-  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+  'list' | 'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)

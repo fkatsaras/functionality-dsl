@@ -1,0 +1,131 @@
+// ============================================================================
+// USER-ORDERS API - Multi-Level Nested REST Resources
+// Demonstrates nested REST paths: /users/{userId}/orders/{orderId}/items/{itemId}
+// ============================================================================
+
+Server UserOrdersAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================================================
+// DATA SOURCES
+// ============================================================================
+
+Source<REST> UserDB
+  base_url: "http://dummy-service:9001/users"
+end
+
+Source<REST> OrderDB
+  base_url: "http://dummy-service:9001/orders"
+end
+
+Source<REST> OrderItemDB
+  base_url: "http://dummy-service:9001/items"
+end
+
+// ============================================================================
+// LEVEL 1: BASE RESOURCE (User)
+// Path: /api/users/{userId}
+// ============================================================================
+
+Entity User
+  attributes:
+    - userId: string @id;
+    - name: string;
+    - email: string;
+  source: UserDB
+  expose:
+    operations: [read, create, update, delete]
+    readonly_fields: ["userId"]
+end
+
+// ============================================================================
+// LEVEL 2: NESTED RESOURCE (Order belongs to User)
+// Path: /api/users/{userId}/orders/{orderId}
+// ============================================================================
+
+Entity Order(User)
+  attributes:
+    - orderId: string @id;
+    - userId: string;
+    - total: number;
+    - status: string;
+    - createdAt: string;
+  source: OrderDB
+  expose:
+    operations: [read, create, update, delete]
+    readonly_fields: ["orderId", "createdAt"]
+end
+
+// ============================================================================
+// LEVEL 3: DEEPLY NESTED RESOURCE (OrderItem belongs to Order)
+// Path: /api/users/{userId}/orders/{orderId}/orderitems/{itemId}
+// ============================================================================
+
+Entity OrderItem(Order)
+  relationships:
+    - Order: OrderItem.orderId // maybe this isnt needed?? explain relationships and why they are needed better
+  attributes:
+    - itemId: string @id;
+    - orderId: string;
+    - productName: string;
+    - quantity: integer;
+    - price: number;
+  source: OrderItemDB
+  expose:
+    operations: [read, create, update, delete]
+    readonly_fields: ["itemId"]
+end
+
+// ============================================================================
+// COMPOSITE VIEWS (Read-only, no source)
+// ============================================================================
+
+// OrderWithUser - Enriches Order with user information
+// Path: /api/users/{userId}/orders/{orderId}/orderdetails
+Entity OrderDetails(Order, User)
+  relationships:
+    - User: Order.userId
+  attributes:
+    - orderId: string = Order.orderId;
+    - total: number = Order.total;
+    - status: string = Order.status;
+    - createdAt: string = Order.createdAt;
+
+    - userId: string = Order.userId;
+    - userName: string = User.name;
+    - userEmail: string = User.email;
+
+    - formattedTotal: string = "$" + str(Order.total);
+    - isPending: boolean = Order.status == "pending";
+  expose:
+    operations: [read]
+end
+
+// OrderItemWithDetails - Enriches OrderItem with order and user context
+// Path: /api/users/{userId}/orders/{orderId}/orderitems/{itemId}/orderitemdetails
+Entity OrderItemDetails(OrderItem, Order, User)
+  relationships:
+    - Order: OrderItem.orderId
+    - User: Order.userId
+  attributes:
+    - itemId: string = OrderItem.itemId;
+    - productName: string = OrderItem.productName;
+    - quantity: integer = OrderItem.quantity;
+    - price: number = OrderItem.price;
+
+    - orderId: string = OrderItem.orderId;
+    - orderTotal: number = Order.total;
+    - orderStatus: string = Order.status;
+
+    - userId: string = Order.userId;
+    - userName: string = User.name;
+
+    - subtotal: number = OrderItem.quantity * OrderItem.price;
+    - formattedSubtotal: string = "$" + str(OrderItem.quantity * OrderItem.price);
+  expose:
+    operations: [read]
+end

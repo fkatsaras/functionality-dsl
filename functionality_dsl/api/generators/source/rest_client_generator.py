@@ -78,12 +78,15 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
     operation_methods = []
     for op_name in operations:
         config = crud_config.get(op_name, {})
+        # Determine if operation has ID parameter
+        # Note: 'read' might not have ID if it's a singleton
+        has_id = op_name in ['read', 'update', 'delete'] and not (op_name == 'read' and is_singleton)
         operation_methods.append({
             "name": op_name,
             "method": config.get("method", "GET"),
             "url": config.get("url", base_url),
             "path": config.get("path", "/"),
-            "has_id": op_name in ['read', 'update', 'delete'],
+            "has_id": has_id,
             "has_body": op_name in ['create', 'update'],
         })
 

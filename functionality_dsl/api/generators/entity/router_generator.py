@@ -95,8 +95,11 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             op_config["response_model"] = entity_name
         else:
             op_config["request_model"] = None
+            # List operation always returns a list
+            if op == "list":
+                op_config["response_model"] = f"list[{entity_name}]"
             # For array entities with 'read' operation, wrap in list response
-            if entity_type == "array" and op == "read":
+            elif entity_type == "array" and op == "read":
                 op_config["response_model"] = f"list[{entity_name}]"
             else:
                 op_config["response_model"] = entity_name

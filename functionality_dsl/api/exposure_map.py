@@ -25,17 +25,18 @@ def _find_id_attribute(entity):
 
 def _generate_rest_path(entity):
     """
-    Auto-generate REST path for an entity based on identity anchor.
+    Auto-generate REST path for an entity based on identity anchor and parent chain.
 
     Rules:
     - Base entity: /api/{plural}/{id_field}
-    - Composite entity: /api/{base_plural}/{id_field}/{entity_name_lower}
+    - Composite entity (pure view): /api/{base_plural}/{base_id}/{entity_name_lower}
+    - Composite entity (with source + own @id): /api/{base_plural}/{base_id}/{entity_plural}/{entity_id}
 
     Examples:
     - Student (base) → /api/students/{id}
-    - Enrollment (base) → /api/enrollments/{id}
-    - EnrollmentDetails (composite of Enrollment) → /api/enrollments/{id}/enrollmentdetails
-    - EnrollmentAuditView (composite of EnrollmentDetails) → /api/enrollments/{id}/enrollmentauditview
+    - EnrollmentDetails (composite, no source) → /api/enrollments/{id}/enrollmentdetails
+    - UserOrder (composite WITH source) → /api/users/{userId}/orders/{orderId}
+    - OrderItem (composite of UserOrder) → /api/users/{userId}/orders/{orderId}/orderitems/{itemId}
     """
     # Check if entity has identity anchor (computed during validation)
     identity_anchor = getattr(entity, "_identity_anchor", None)
@@ -45,15 +46,79 @@ def _generate_rest_path(entity):
     if not identity_anchor or not identity_field:
         return None  # Entity has no REST identity
 
-    # Base entity
-    if identity_anchor == entity:
+    # Base entity (no parents, has @id)
+    if identity_anchor == entity and not is_composite:
         plural = pluralizer.pluralize(entity.name.lower())
         return f"/api/{plural}/{{{identity_field}}}"
 
-    # Composite entity
+    # Composite entity - build path from parent chain
+    # Traverse from base to current entity, collecting path segments
+    path_segments = []
+
+    # Start from the base (identity anchor)
     base_plural = pluralizer.pluralize(identity_anchor.name.lower())
-    entity_suffix = entity.name.lower()
-    return f"/api/{base_plural}/{{{identity_field}}}/{entity_suffix}"
+    base_id_field = identity_anchor._identity_field
+    path_segments.append(f"{base_plural}/{{{base_id_field}}}")
+
+    # Build chain from base to current entity
+    parent_refs = getattr(entity, "parents", []) or []
+    if parent_refs:
+        # Get first parent (identity parent)
+        first_parent_ref = parent_refs[0]
+        first_parent = first_parent_ref.entity
+
+        # Collect intermediate parents (from base to first parent)
+        parent_chain = _collect_parent_chain(first_parent, identity_anchor)
+
+        # Add each intermediate parent that has its own source and ID
+        for parent in parent_chain:
+            parent_source = getattr(parent, "source", None)
+            parent_id_field = _find_id_attribute(parent)
+
+            if parent_source and parent_id_field:
+                # This parent is a real resource with its own ID
+                parent_plural = pluralizer.pluralize(parent.name.lower())
+                path_segments.append(f"{parent_plural}/{{{parent_id_field}}}")
+
+    # Add current entity
+    entity_source = getattr(entity, "source", None)
+    entity_id_field = _find_id_attribute(entity)
+
+    if entity_source and entity_id_field:
+        # Entity has its own source and ID - it's a nested resource
+        entity_plural = pluralizer.pluralize(entity.name.lower())
+        path_segments.append(f"{entity_plural}/{{{entity_id_field}}}")
+    else:
+        # Entity is a pure view/transformation - just append name
+        entity_suffix = entity.name.lower()
+        path_segments.append(entity_suffix)
+
+    return "/api/" + "/".join(path_segments)
+
+
+def _collect_parent_chain(entity, stop_at):
+    """
+    Collect chain of parents from entity back to stop_at (exclusive).
+    Returns list in order from stop_at to entity (exclusive of both).
+
+    Example: _collect_parent_chain(OrderItem, User)
+    Returns: [Order] (if OrderItem -> Order -> User)
+    """
+    chain = []
+    current = entity
+
+    while current and current != stop_at:
+        parent_refs = getattr(current, "parents", []) or []
+        if not parent_refs:
+            break
+
+        # Follow first parent (identity parent)
+        current = parent_refs[0].entity
+
+        if current and current != stop_at:
+            chain.insert(0, current)  # Insert at beginning to reverse order
+
+    return chain
 
 
 def build_exposure_map(model):
@@ -104,9 +169,9 @@ def build_exposure_map(model):
         operations = getattr(expose, "operations", []) or []
 
         # Infer REST or WebSocket based on operations
-        # REST operations: read, create, update, delete
+        # REST operations: list, read, create, update, delete
         # WS operations: subscribe, publish
-        rest_ops = {'read', 'create', 'update', 'delete'}
+        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
         ws_ops = {'subscribe', 'publish'}
 
         has_rest_ops = any(op in rest_ops for op in operations)

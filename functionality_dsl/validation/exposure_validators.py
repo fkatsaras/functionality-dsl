@@ -112,7 +112,7 @@ def _validate_exposure_blocks(model, metamodel=None):
             continue
 
         # Infer REST or WebSocket based on operations
-        rest_ops = {'read', 'create', 'update', 'delete'}
+        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
         ws_ops = {'subscribe', 'publish'}
 
         has_rest_ops = any(op in rest_ops for op in operations)
@@ -152,7 +152,7 @@ def _validate_rest_expose(entity, expose, source):
         )
 
     # Check that operations are valid for REST
-    rest_ops = {'read', 'create', 'update', 'delete'}
+    rest_ops = {'list', 'read', 'create', 'update', 'delete'}
     for op in operations:
         if op not in rest_ops:
             raise TextXSemanticError(
@@ -350,25 +350,25 @@ def _validate_entity_crud_rules(model, metamodel=None):
                 **get_location(entity),
             )
 
-        # Rule 3: Composite entities can only expose 'read'
+        # Rule 3: Composite entities can only expose 'list' and 'read' (read-only operations)
         if parent_entities:
-            invalid_ops = set(operations) - {'read', 'subscribe'}  # Allow read and subscribe for composite
+            invalid_ops = set(operations) - {'list', 'read', 'subscribe'}  # Allow list, read and subscribe for composite
             if invalid_ops:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parent_entities]}) "
                     f"and exposes invalid operations: {invalid_ops}. "
-                    f"Composite entities can only expose 'read' operation (or 'subscribe' for WebSocket). "
+                    f"Composite entities can only expose 'list' and 'read' operations (or 'subscribe' for WebSocket). "
                     f"To mutate data, expose operations on the source parent entity instead.",
                     **get_location(expose),
                 )
 
-        # Rule 4: Array type entities can only expose 'read'
+        # Rule 4: Array type entities can only expose 'list' and 'read'
         if entity_type == "array":
-            invalid_ops = set(operations) - {'read'}
+            invalid_ops = set(operations) - {'list', 'read'}
             if invalid_ops:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' has type: array and exposes invalid operations: {invalid_ops}. "
-                    f"Array entities (collection wrappers) can only expose 'read' operation. "
+                    f"Array entities (collection wrappers) can only expose 'list' and 'read' operations. "
                     f"To create/update/delete items, expose operations on the item entity (type: object) instead.",
                     **get_location(expose),
                 )

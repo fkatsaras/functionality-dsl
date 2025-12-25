@@ -72,5 +72,21 @@ def create_enrollment():
     ENROLLMENTS[new_id] = enrollment
     return jsonify(enrollment), 201
 
+# List enrollments (optionally filtered)
+@app.route('/enrollments', methods=['GET'])
+def list_enrollments():
+    student_id = request.args.get('studentId')
+    course_id = request.args.get('courseId')
+
+    results = list(ENROLLMENTS.values())
+
+    if student_id:
+        results = [e for e in results if e["studentId"] == student_id]
+
+    if course_id:
+        results = [e for e in results if e["courseId"] == course_id]
+
+    return jsonify(results)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9001, debug=True)

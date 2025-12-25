@@ -1,99 +1,107 @@
- 
+// ============================================================================
+// BLOG API - Multi-level Composite Entities Demo
+// Demonstrates:
+// - Basic entities with different CRUD operations
+// - 2-parent composites (PostWithAuthor)
+// - 3-parent composites (PostFull, CommentWithContext)
+// - Nested composite (PostFullWithStats builds on PostFull)
+// ============================================================================
+
 Server BlogAPI
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
 end
- 
+
+// ============================================================================
+// DATA SOURCES (REST APIs for each resource)
+// ============================================================================
+
 Source<REST> UserDB
   base_url: "http://dummy-blog-service:9001/users"
-  operations: [read, create, update, delete]
 end
 
 Source<REST> PostDB
   base_url: "http://dummy-blog-service:9001/posts"
-  operations: [read, create, update, delete]
 end
 
 Source<REST> CommentDB
   base_url: "http://dummy-blog-service:9001/comments"
-  operations: [read, create, delete]
 end
 
 Source<REST> CategoryDB
   base_url: "http://dummy-blog-service:9001/categories"
-  operations: [read, create]
 end
 
 // ============================================================================
-// BASE RESOURCE ENTITIES 
+// BASE RESOURCE ENTITIES
 // ============================================================================
 
 // User - Full CRUD
 Entity User
   attributes:
-    - id: string;
+    - id: string @id;
     - username: string;
     - email: string;
     - role: string;
+    - bio: string;
   source: UserDB
   expose:
-    rest: "/api/users/{id}"
     operations: [read, create, update, delete]
     readonly_fields: ["id"]
 end
 
-// Post - Full CRUD  
+// Post - Full CRUD
 Entity Post
   attributes:
-    - id: string;
+    - id: string @id;
     - authorId: string;
     - title: string;
     - content: string;
     - categoryId: string;
     - published: boolean;
+    - views: integer;
     - createdAt: string;
   source: PostDB
   expose:
-    rest: "/api/posts/{id}"
     operations: [read, create, update, delete]
-    readonly_fields: ["id", "createdAt"]
+    readonly_fields: ["id", "createdAt", "views"]
 end
 
 // Comment - Create, Read, Delete (no update for immutability)
 Entity Comment
   attributes:
-    - id: string;
+    - id: string @id;
     - postId: string;
     - authorId: string;
     - text: string;
     - createdAt: string;
   source: CommentDB
   expose:
-    rest: "/api/comments/{id}"
     operations: [read, create, delete]
     readonly_fields: ["id", "createdAt"]
 end
 
-// Category - Read-only + Create (no update/delete)
+// Category - Read + Create only (no update/delete)
 Entity Category
   attributes:
-    - id: string;
+    - id: string @id;
     - name: string;
     - slug: string;
+    - description: string;
   source: CategoryDB
   expose:
-    rest: "/api/categories/{id}"
     operations: [read, create]
     readonly_fields: ["id", "slug"]
 end
 
 // ============================================================================
-// COMPOSITE ENTITIES (Read-only views with relationships)
+// LEVEL 1: BASIC COMPOSITE ENTITIES (2-3 parents)
 // ============================================================================
 
-// PostWithAuthor - 2 parents: Post + User
+// PostWithAuthor - Enriches Post with author information
+// Path: /api/posts/{id}/with-author
 Entity PostWithAuthor(Post, User)
   relationships:
     - User: Post.authorId
@@ -102,21 +110,24 @@ Entity PostWithAuthor(Post, User)
     - title: string = Post.title;
     - content: string = Post.content;
     - published: boolean = Post.published;
+    - views: integer = Post.views;
     - createdAt: string = Post.createdAt;
 
     - authorId: string = Post.authorId;
     - authorName: string = User.username;
     - authorEmail: string = User.email;
     - authorRole: string = User.role;
+    - authorBio: string = User.bio;
 
     - wordCount: integer = len(Post.content);
     - isPublished: boolean = Post.published == true;
+    - isAuthorAdmin: boolean = User.role == "admin";
   expose:
-    rest: "/api/posts/{id}/with-author"
     operations: [read]
 end
 
-// PostFull - 3 parents: Post + User + Category
+// PostFull - Complete post with author and category
+// Path: /api/posts/{id}/full
 Entity PostFull(Post, User, Category)
   relationships:
     - User: Post.authorId
@@ -126,6 +137,7 @@ Entity PostFull(Post, User, Category)
     - title: string = Post.title;
     - content: string = Post.content;
     - published: boolean = Post.published;
+    - views: integer = Post.views;
     - createdAt: string = Post.createdAt;
 
     - authorId: string = Post.authorId;
@@ -135,15 +147,17 @@ Entity PostFull(Post, User, Category)
     - categoryId: string = Post.categoryId;
     - categoryName: string = Category.name;
     - categorySlug: string = Category.slug;
+    - categoryDescription: string = Category.description;
 
-    - summary: string = Post.title;
+    - wordCount: integer = len(Post.content);
     - isAdminPost: boolean = User.role == "admin";
+    - readTimeMinutes: integer = len(Post.content) / 200;
   expose:
-    rest: "/api/posts/{id}/full"
     operations: [read]
 end
 
-// CommentWithContext - 3 parents: Comment + User (author) + Post
+// CommentWithContext - Comment with author and post information
+// Path: /api/comments/{id}/with-context
 Entity CommentWithContext(Comment, User, Post)
   relationships:
     - User: Comment.authorId
@@ -155,12 +169,51 @@ Entity CommentWithContext(Comment, User, Post)
 
     - authorId: string = Comment.authorId;
     - authorName: string = User.username;
+    - authorRole: string = User.role;
 
     - postId: string = Comment.postId;
     - postTitle: string = Post.title;
+    - postAuthorId: string = Post.authorId;
 
     - commentLength: integer = len(Comment.text);
+    - isAuthorAdmin: boolean = User.role == "admin";
+    - isCommentOnOwnPost: boolean = Comment.authorId == Post.authorId;
   expose:
-    rest: "/api/comments/{id}/with-context"
+    operations: [read]
+end
+
+// ============================================================================
+// LEVEL 2: NESTED COMPOSITE ENTITY
+// This demonstrates multi-level composition:
+// PostFullWithStats → PostFull → (Post + User + Category)
+// ============================================================================
+
+// PostFullWithStats - Extends PostFull with engagement analytics
+// Path: /api/posts/{id}/postfull/postfullwithstats
+// Demonstrates nested composite: inherits from PostFull which is itself composite
+Entity PostFullWithStats(PostFull)
+  attributes:
+    - id: string @id = PostFull.id;
+    - title: string = PostFull.title;
+    - content: string = PostFull.content;
+    - published: boolean = PostFull.published;
+    - views: integer = PostFull.views;
+    - createdAt: string = PostFull.createdAt;
+
+    - authorName: string = PostFull.authorName;
+    - authorRole: string = PostFull.authorRole;
+    - categoryName: string = PostFull.categoryName;
+    - categorySlug: string = PostFull.categorySlug;
+
+    - wordCount: integer = PostFull.wordCount;
+    - readTimeMinutes: integer = PostFull.readTimeMinutes;
+    - isAdminPost: boolean = PostFull.isAdminPost;
+
+    // NEW: Computed engagement metrics
+    - engagementScore: number = PostFull.views / (PostFull.wordCount if PostFull.wordCount > 0 else 1);
+    - isPremiumContent: boolean = PostFull.wordCount > 1000;
+    - isPopular: boolean = PostFull.views > 100;
+    - contentQuality: string = "high" if PostFull.wordCount > 500 else ("medium" if PostFull.wordCount > 200 else "low");
+  expose:
     operations: [read]
 end

@@ -5,6 +5,7 @@ Maps CRUD operations to HTTP methods, paths, and status codes.
 
 # Operation to HTTP method mapping
 OPERATION_HTTP_METHOD = {
+    "list": "GET",
     "read": "GET",
     "create": "POST",
     "update": "PUT",
@@ -15,6 +16,7 @@ OPERATION_HTTP_METHOD = {
 # (relative to base path, {id} placeholder for item operations)
 # Note: 'read' suffix depends on entity type (handled in get_operation_path_suffix)
 OPERATION_PATH_SUFFIX = {
+    "list": "",  # Collection endpoint (no ID)
     "read": "/{id}",  # Default for object types
     "create": "",
     "update": "/{id}",
@@ -23,6 +25,7 @@ OPERATION_PATH_SUFFIX = {
 
 # Operation to default HTTP status code mapping
 OPERATION_STATUS_CODE = {
+    "list": 200,
     "read": 200,
     "create": 201,
     "update": 200,
@@ -80,8 +83,11 @@ def get_operation_status_code(operation):
 def is_item_operation(operation, entity_type="object"):
     """
     Check if operation is an item operation (requires ID).
+    'list' is never an item operation (collection endpoint).
     'read' depends on entity type: object requires ID, array doesn't.
     """
+    if operation == "list":
+        return False  # List is always a collection endpoint (no ID)
     if operation == "read":
         return entity_type != "array"  # Array reads are collections (no ID)
     return operation in ITEM_OPERATIONS
@@ -99,6 +105,7 @@ def generate_standard_crud_config(base_url, entity_name):
 
     Example:
     {
+        "list": {"method": "GET", "path": "/"},
         "read": {"method": "GET", "path": "/{id}"},
         "create": {"method": "POST", "path": "/"},
         "update": {"method": "PUT", "path": "/{id}"},
@@ -106,6 +113,11 @@ def generate_standard_crud_config(base_url, entity_name):
     }
     """
     return {
+        "list": {
+            "method": "GET",
+            "path": "/",
+            "url": base_url,
+        },
         "read": {
             "method": "GET",
             "path": "/{id}",
