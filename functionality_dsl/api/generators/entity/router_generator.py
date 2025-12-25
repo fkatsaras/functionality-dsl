@@ -15,6 +15,27 @@ from functionality_dsl.api.crud_helpers import (
 )
 
 
+def _map_fdsl_type_to_python(fdsl_type):
+    """
+    Map FDSL type to Python type string for FastAPI type hints.
+
+    Args:
+        fdsl_type: FDSL type string (e.g., "string", "integer", "boolean")
+
+    Returns:
+        Python type string (e.g., "str", "int", "bool")
+    """
+    type_mapping = {
+        "string": "str",
+        "integer": "int",
+        "number": "float",
+        "boolean": "bool",
+        "array": "list",
+        "object": "dict",
+    }
+    return type_mapping.get(fdsl_type, "str")
+
+
 def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     """
     Generate a FastAPI router for an exposed entity.
@@ -31,6 +52,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     operations = config["operations"]
     id_field = config["id_field"]
     source = config["source"]
+    filters = config.get("filters", [])
 
     # Get entity type (defaults to 'object' if not specified)
     entity_type = getattr(entity, "entity_type", None) or "object"
@@ -64,6 +86,23 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         path_with_params = ""
         has_path_params = False
 
+    # Build filter parameter configs (for list operation)
+    filter_params = []
+    if filters:
+        # Get attribute types for filters
+        attributes = getattr(entity, "attributes", []) or []
+        attr_type_map = {attr.name: attr.type for attr in attributes}
+
+        for filter_name in filters:
+            filter_type = attr_type_map.get(filter_name)
+            if filter_type:
+                # Map FDSL types to Python types for FastAPI
+                python_type = _map_fdsl_type_to_python(filter_type)
+                filter_params.append({
+                    "name": filter_name,
+                    "type": python_type,
+                })
+
     # Build operation configs
     operation_configs = []
     for op in operations:
@@ -87,6 +126,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             "is_item_op": is_item_op,
             "has_request_body": requires_request_body(op),
             "id_field": id_field,
+            "filters": filter_params if op == "list" else [],  # Only list operation gets filters
         }
 
         # Determine request/response models

@@ -20,14 +20,15 @@ class {{ source_name }}Source:
 
 {% for op in operations %}
     {%- if op.name == "list" %}
-    async def list(self) -> List[Dict[str, Any]]:
-        """List all items from {{ source_name }}"""
-        logger.debug(f"Fetching list from {self.base_url}{{ op.path }}")
+    async def list(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """List all items from {{ source_name }} with optional query filters"""
+        logger.debug(f"Fetching list from {self.base_url}{{ op.path }} with filters: {filters}")
 
         client = get_http_client()
         response = await client.request(
             method="{{ op.method }}",
-            url=f"{self.base_url}{{ op.path }}"
+            url=f"{self.base_url}{{ op.path }}",
+            params=filters or {}  # Pass filters as query parameters
         )
         response.raise_for_status()
         return response.json()

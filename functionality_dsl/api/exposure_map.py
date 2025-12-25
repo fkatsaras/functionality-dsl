@@ -196,6 +196,10 @@ def build_exposure_map(model):
         readonly_block = getattr(expose, "readonly_fields", None)
         readonly_fields = getattr(readonly_block, "fields", []) if readonly_block else []
 
+        # Get filters
+        filters_block = getattr(expose, "filters", None)
+        filters = getattr(filters_block, "fields", []) if filters_block else []
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -206,6 +210,7 @@ def build_exposure_map(model):
             "id_field": id_field,
             "path_params": path_params,
             "readonly_fields": readonly_fields,
+            "filters": filters,
             "is_transformation": len(parents) > 0,  # Has parent entities
             "parents": parents,
         }

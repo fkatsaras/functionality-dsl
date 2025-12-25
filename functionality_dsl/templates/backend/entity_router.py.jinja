@@ -4,7 +4,7 @@
 # ========================================================================
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -38,6 +38,11 @@ async def {{ op.function_name }}(
     {%- if op.has_request_body %}
     data: {{ op.request_model }},
     {%- endif %}
+    {%- if op.type == "list" and op.filters %}
+    {%- for filter in op.filters %}
+    {{ filter.name }}: Optional[{{ filter.type }}] = None,
+    {%- endfor %}
+    {%- endif %}
     service: {{ service_name }} = Depends()
 ){%- if op.type != "delete" %} -> {{ op.response_model }}{% endif %}:
     """{{ op.type | capitalize }} {{ entity_name }}"""
@@ -48,7 +53,17 @@ async def {{ op.function_name }}(
     {%- endif %}
 
     {%- if op.type == "list" %}
+    {%- if op.filters %}
+    # Build filters dict from query parameters
+    filters = {}
+    {%- for filter in op.filters %}
+    if {{ filter.name }} is not None:
+        filters['{{ filter.name }}'] = {{ filter.name }}
+    {%- endfor %}
+    return await service.list_{{ entity_name | lower }}(filters=filters)
+    {%- else %}
     return await service.list_{{ entity_name | lower }}()
+    {%- endif %}
 
     {%- elif op.type == "read" %}
     {%- if op.is_item_op %}

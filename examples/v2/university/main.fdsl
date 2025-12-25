@@ -39,6 +39,7 @@ Entity Student
   source: StudentDB
   expose:
     operations: [list, read, create, update, delete]
+    filters: ["email", "enrollmentYear"]
 end
 
 Entity Course
@@ -61,6 +62,7 @@ Entity Enrollment
   source: EnrollmentDB
   expose:
     operations: [list, read, create]
+    filters: ["studentId", "courseId", "semester"]
 end
 
 // ============================================================================

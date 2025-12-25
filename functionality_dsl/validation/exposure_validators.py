@@ -173,6 +173,58 @@ def _validate_rest_expose(entity, expose, source):
                     **get_location(readonly_block),
                 )
 
+    # Validate filters if present
+    filters_block = getattr(expose, "filters", None)
+    if filters_block:
+        filters = getattr(filters_block, "fields", []) or []
+        operations = getattr(expose, "operations", [])
+
+        # Rule 1: Filters only allowed if 'list' operation is exposed
+        if 'list' not in operations:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'filters:' but does not expose 'list' operation. "
+                f"Filters can only be used with the 'list' operation.",
+                **get_location(filters_block),
+            )
+
+        # Rule 2: Filters only allowed on base entities (entities with source, no parents)
+        parent_refs = getattr(entity, "parents", []) or []
+        if parent_refs:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' is a composite entity and cannot have 'filters:'. "
+                f"Only base entities (entities with 'source:' and no parents) may define filters. "
+                f"Composite entities are projections and should not support filtering.",
+                **get_location(filters_block),
+            )
+
+        if not source:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'filters:' but no 'source:' field. "
+                f"Only base entities with a source can define filters.",
+                **get_location(filters_block),
+            )
+
+        # Rule 3: Filter fields must exist in entity attributes
+        attrs = {a.name for a in getattr(entity, "attributes", []) or []}
+        for field in filters:
+            if field not in attrs:
+                raise TextXSemanticError(
+                    f"Filter field '{field}' not found in entity '{entity.name}' attributes.",
+                    **get_location(filters_block),
+                )
+
+        # Rule 4: Filter fields must be schema fields (not computed)
+        attributes = getattr(entity, "attributes", []) or []
+        for attr in attributes:
+            if attr.name in filters:
+                expr = getattr(attr, "expr", None)
+                if expr is not None:
+                    raise TextXSemanticError(
+                        f"Filter field '{attr.name}' in entity '{entity.name}' is a computed attribute. "
+                        f"Only schema fields (attributes without expressions) can be used as filters.",
+                        **get_location(filters_block),
+                    )
+
 
 def _validate_ws_expose(entity, expose, source):
     """Validate WebSocket exposure configuration."""

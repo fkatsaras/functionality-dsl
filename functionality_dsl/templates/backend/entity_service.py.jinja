@@ -95,16 +95,16 @@ class {{ entity_name }}Service:
 {% endif %}
 {% for op in operations %}
     {%- if op.operation == "list" %}
-    async def list_{{ entity_name | lower }}(self) -> List[{{ entity_name }}]:
-        """List all {{ entity_name }} instances"""
-        logger.debug("Listing {{ entity_name }} instances")
+    async def list_{{ entity_name | lower }}(self, filters: Optional[dict] = None) -> List[{{ entity_name }}]:
+        """List all {{ entity_name }} instances with optional filters"""
+        logger.debug(f"Listing {{ entity_name }} instances with filters: {filters}")
 
         {% if has_multiple_parent_sources %}
         # Fetch from first parent source (list operation)
         # Note: For multi-parent entities, list comes from first source
         # Then we fetch other parent data for each item using the appropriate ID field
         {%- set first_source = parent_sources[0] %}
-        items_raw = await self.{{ first_source.source_name | lower }}_source.list()
+        items_raw = await self.{{ first_source.source_name | lower }}_source.list(filters=filters)
 
         # For each item, fetch data from all parent sources
         result = []
@@ -134,7 +134,7 @@ class {{ entity_name }}Service:
         return result
         {% else %}
         # Fetch from source
-        raw_data = await self.source.list()
+        raw_data = await self.source.list(filters=filters)
 
         {% if has_computed_attrs %}
         # Transform each item

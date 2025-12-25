@@ -93,6 +93,7 @@ ExposeBlock:
     ('id_field:' id_field=STRING)?
     (path_params=ExposePathParamsBlock)?
     (readonly_fields=ReadonlyFieldsBlock)?
+    (filters=FiltersBlock)?
 ;
 
 Operation:
@@ -110,6 +111,10 @@ ExposePathParamsBlock:
 
 ReadonlyFieldsBlock:
   'readonly_fields:' '[' fields+=STRING (',' fields+=STRING)* ']'
+;
+
+FiltersBlock:
+  'filters:' '[' fields+=STRING (',' fields+=STRING)* ']'
 ;
 
 // Entity sources / targets -------------------
