@@ -729,8 +729,10 @@ def _validate_source_base_urls(model):
 
 def _validate_entity_relationships(model):
     """
-    Validate relationships block in composite entities:
-    1. Relationships block can only be used in composite entities (entities with parents)
+    Validate relationships block in COMPOSITE entities (entities with parents).
+
+    Rules:
+    1. Relationships block can only be used in composite entities
     2. All non-first parents must have a relationship defined
     3. Relationship fetch expressions must reference valid entity attributes
     4. First parent doesn't need a relationship (uses endpoint ID)
@@ -816,20 +818,35 @@ def _validate_entity_relationships(model):
                     **get_location(rel)
                 )
 
-            # Check that the source entity is the first parent OR the identity anchor
-            # (Allow referencing the identity anchor directly for nested composites)
+            # Check that the source entity is either:
+            # 1. The first parent (identity anchor)
+            # 2. Any parent that appears BEFORE the current parent in the parent list
+            #    (for chained relationships like: OrderItem -> Order -> User)
             first_parent_alias = _get_parent_alias(parent_refs[0])
             first_parent_entity = parent_entities[0]
+
+            # Build set of valid source entities (all parents that come before this one)
             valid_sources = {first_parent_entity.name}
             if entity._identity_anchor:
                 valid_sources.add(entity._identity_anchor.name)
 
+            # Find the position of the parent being fetched
+            parent_entity_obj = alias_map[parent_alias][1]
+            try:
+                target_parent_idx = parent_entities.index(parent_entity_obj)
+            except ValueError:
+                target_parent_idx = -1
+
+            # Add all parents that come BEFORE this one as valid sources for chained relationships
+            for i in range(target_parent_idx):
+                valid_sources.add(parent_entities[i].name)
+
             if source_entity.name not in valid_sources:
                 raise TextXSemanticError(
                     f"Relationship for '{parent_alias}' uses '{source_entity.name}.{attr_name}', "
-                    f"but fetch expressions must reference the first parent '{first_parent_entity.name}' (alias: '{first_parent_alias}') "
-                    f"or the identity anchor '{entity._identity_anchor.name if entity._identity_anchor else 'N/A'}'.\n"
-                    f"Change to: {parent_alias}: {first_parent_alias}.{attr_name}",
+                    f"but fetch expressions can only reference parents that appear earlier in the parent list.\n"
+                    f"Valid sources for '{parent_alias}': {', '.join(valid_sources)}.\n"
+                    f"Parents are fetched in order, so you can only use data from parents that come before '{parent_alias}' in the parent list.",
                     **get_location(rel)
                 )
 
@@ -866,10 +883,9 @@ def _compute_identity_anchors(model):
     """
     Compute identity anchor for all entities.
 
-    Rules:
-    - Base entity with @id and source → anchor = itself
-    - Composite entity (has parents) → anchor = first parent's anchor
-    - All parents must resolve to the same anchor (compile-time check)
+    Simplified rules (nested resources removed):
+    - Base entity (no parents, has @id and source) → anchor = itself
+    - Composite entity (has parents) → anchor = first parent's anchor, CANNOT have source
     """
     entities = get_children_of_type("Entity", model)
 
@@ -920,8 +936,6 @@ def _compute_identity_anchors(model):
         entity._is_composite = True
 
         # Compute anchor from first parent
-        # RULE: First parent is ALWAYS the identity anchor
-        # Other parents are data dependencies (fetched via relationships block)
         first_parent = parent_entities[0]
         first_parent_anchor = compute_anchor(first_parent, visited.copy())
 
@@ -931,28 +945,9 @@ def _compute_identity_anchors(model):
             entity._identity_field = None
             return None
 
-        # Composite inherits anchor from first parent only
-        # Other parents don't need to share the same anchor - they're just data sources
+        # Composite inherits anchor from first parent
         entity._identity_anchor = first_parent_anchor
         entity._identity_field = first_parent_anchor._identity_field
-
-        # Validate composite has matching id field
-        id_field = _find_id_attribute(entity)
-        if id_field:
-            # Check if id derives from parent
-            attrs = getattr(entity, "attributes", []) or []
-            for attr in attrs:
-                if attr.name == id_field:
-                    expr = getattr(attr, "expr", None)
-                    if not expr:
-                        raise TextXSemanticError(
-                            f"Composite entity '{entity.name}' has '@id' attribute '{id_field}' "
-                            f"but it has no expression. Composite entities must assign id from parent:\n"
-                            f"  - {id_field}: string @id = {first_parent.name}.{entity._identity_field};",
-                            **get_location(attr)
-                        )
-                    # Expression exists - we trust it derives from parent
-                    # (full validation happens in _validate_computed_attrs)
 
         return entity._identity_anchor
 
@@ -965,27 +960,36 @@ def _compute_identity_anchors(model):
 
 def _validate_composite_entities(model):
     """
-    Validate composite entity rules:
-    1. Composite entities (with parents) cannot have 'source'
-    2. Composite entities cannot have @id field (they're views, not resources)
+    Validate composite entity rules (simplified - no nested resources):
+    1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
+    2. Composite entities CANNOT have @id field (they're views, not resources)
     """
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        if not entity._is_composite:
+        parent_entities = _get_parent_entities(entity)
+
+        # Skip if no parents (base entity)
+        if not parent_entities:
             continue
 
-        # Rule 1: Composites cannot have source
+        # Rule 1: Entities with parents CANNOT have source
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
-                f"Composite entity '{entity.name}' cannot have 'source' field.\n"
-                f"Composite entities inherit data from parents and are read-only representations.\n"
-                f"Remove the 'source:' field or remove parent entities.",
+                f"Entity '{entity.name}' has parents but also has 'source:' field.\n"
+                f"Entities with parents are composite views (read-only) and CANNOT have a source.\n"
+                f"To create a base resource entity with CRUD operations, remove the parent references.\n"
+                f"Example:\n"
+                f"  Entity {entity.name}  # Remove ({', '.join(p.name for p in parent_entities)})\n"
+                f"    attributes: ...\n"
+                f"    source: {source.name}\n"
+                f"    expose: operations: [read, create, update, delete]\n"
+                f"  end",
                 **get_location(entity)
             )
 
-        # Rule 2: Composites cannot have @id field
+        # Rule 2: Composite entities cannot have @id field
         id_field = _find_id_attribute(entity)
         if id_field:
             raise TextXSemanticError(

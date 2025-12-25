@@ -362,11 +362,11 @@ def _validate_crud_operation(source, op_name, op):
 
 def _validate_entity_crud_rules(model, metamodel=None):
     """
-    Validate CRUD operation rules for entities:
+    Validate CRUD operation rules for entities (simplified - no nested resources):
     1. Mutations (create/update/delete) require source entity
-    2. Composite entities (with parents) cannot have source
-    3. Composite entities can only expose 'read' operation
-    4. Array type entities can only expose 'read' operation
+    2. Composite entities (with parents) CANNOT have source (enforced in entity_validators)
+    3. Composite entities can only expose 'list' and 'read' (read-only)
+    4. Array type entities can only expose 'list' and 'read'
     """
     entities = get_children_of_type("Entity", model)
 
@@ -387,34 +387,25 @@ def _validate_entity_crud_rules(model, metamodel=None):
         if has_mutations and not source:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' exposes mutation operations {mutation_ops & set(operations)} "
-                f"but has no 'source:' field. Only source entities (entities with 'source:') can expose "
+                f"but has no 'source:' field. Only base entities (entities with 'source:') can expose "
                 f"create/update/delete operations. "
-                f"Composite entities can only use 'read' operation.",
+                f"Composite entities (with parents) can only use 'list' and 'read' operations.",
                 **get_location(expose),
             )
 
-        # Rule 2: Composite entities (with parents) cannot have source
-        if parent_entities and source:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has both parents {[p.name for p in parent_entities]} and 'source:' field. "
-                f"Composite entities (entities with parents) cannot have a 'source:' field - they derive data from parents. "
-                f"Either remove the parents or remove the 'source:' field.",
-                **get_location(entity),
-            )
-
-        # Rule 3: Composite entities can only expose 'list' and 'read' (read-only operations)
+        # Rule 2: Composite entities (with parents) can only expose 'list' and 'read' (read-only)
         if parent_entities:
-            invalid_ops = set(operations) - {'list', 'read', 'subscribe'}  # Allow list, read and subscribe for composite
+            invalid_ops = set(operations) - {'list', 'read', 'subscribe'}  # Allow list, read and subscribe
             if invalid_ops:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parent_entities]}) "
                     f"and exposes invalid operations: {invalid_ops}. "
-                    f"Composite entities can only expose 'list' and 'read' operations (or 'subscribe' for WebSocket). "
-                    f"To mutate data, expose operations on the source parent entity instead.",
+                    f"Composite entities can ONLY expose 'list' and 'read' operations (or 'subscribe' for WebSocket). "
+                    f"To create/update/delete data, create a base entity without parents and add 'source:' field.",
                     **get_location(expose),
                 )
 
-        # Rule 4: Array type entities can only expose 'list' and 'read'
+        # Rule 3: Array type entities can only expose 'list' and 'read'
         if entity_type == "array":
             invalid_ops = set(operations) - {'list', 'read'}
             if invalid_ops:
