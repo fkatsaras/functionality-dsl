@@ -156,7 +156,7 @@ Entity OrderFulfillment(Order, User, OrderItem[])
     - totalUnits: integer = sum(map(OrderItem, i => i["quantity"]));
     - itemList: array = map(OrderItem, i => i["productName"] + " (x" + toString(i["quantity"]) + ")");
     - heavyItems: integer = len(filter(OrderItem, i => i["quantity"] > 5));
-    - estimatedBoxes: integer = int((sum(map(OrderItem, i => i["quantity"])) + 9) / 10);
+    - estimatedBoxes: integer = toInt((sum(map(OrderItem, i => i["quantity"])) + 9) / 10);
     - isPriority: boolean = Order.total > 200 or sum(map(OrderItem, i => i["quantity"])) > 15;
     - needsSpecialHandling: boolean = any(map(OrderItem, i => i["price"] > 100));
     - packingComplexity: string = "High" if len(OrderItem) > 10 else ("Medium" if len(OrderItem) > 5 else "Low");
