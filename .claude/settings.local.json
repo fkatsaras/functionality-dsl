@@ -140,7 +140,9 @@
       "Bash(websocket \")",
       "Bash(./venv_WIN/Scripts/fdsl.exe generate:*)",
       "Bash(venv_WINScriptsfdsl.exe generate examples/v2/university/main.fdsl --out generated)",
-      "Bash(./venv_WIN/Scripts/fdsl.exe generate examples/v2/university/main.fdsl --out generated)"
+      "Bash(./venv_WIN/Scripts/fdsl.exe generate examples/v2/university/main.fdsl --out generated)",
+      "Bash(.\\\\venv_WIN\\\\Scripts\\\\fdsl.exe generate examples/v2/user-orders/main.fdsl --out generated)",
+      "Bash(venv_WIN/Scripts/fdsl.exe generate:*)"
     ],
     "deny": [],
     "ask": []

@@ -174,7 +174,11 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
     relationship_map = {rel.parentAlias: rel.fetchExpr.attr for rel in relationships}
 
-    for parent in parents:
+    # Process each parent ref to check for array syntax
+    for idx, parent_ref in enumerate(parent_refs):
+        parent = parent_ref.entity
+        is_array = getattr(parent_ref, "is_array", None)
+
         if parent.name in exposure_map:
             # This parent is exposed - we'll call its service
             # Use explicit relationship if defined, otherwise infer
@@ -186,8 +190,10 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
             parent_services.append({
                 "name": parent.name,
                 "service_class": f"{parent.name}Service",
-                "method": f"get_{parent.name.lower()}",
-                "id_field": fetch_id_field  # Which field to use for fetching
+                "method": f"list_{parent.name.lower()}" if is_array else f"get_{parent.name.lower()}",
+                "id_field": fetch_id_field,  # Which field to use for fetching
+                "is_array": bool(is_array),  # Whether this is an array parent
+                "is_first": idx == 0  # Whether this is the first parent
             })
         else:
             # This parent is not exposed - check if it has a direct source
@@ -203,13 +209,16 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
                     "entity_name": parent.name,
                     "source_name": parent_source.name,
                     "source_class": f"{parent_source.name}Source",
-                    "id_field": fetch_id_field  # Which field to use for fetching
+                    "id_field": fetch_id_field,  # Which field to use for fetching
+                    "is_array": bool(is_array),  # Whether this is an array parent
+                    "is_first": idx == 0  # Whether this is the first parent
                 })
             elif parent_source and source_type == "WS":
                 parent_ws_sources.append({
                     "entity_name": parent.name,
                     "source_name": parent_source.name,
-                    "source_class": f"{parent_source.name}Source"
+                    "source_class": f"{parent_source.name}Source",
+                    "is_array": bool(is_array)
                 })
 
     has_parent_services = len(parent_services) > 0

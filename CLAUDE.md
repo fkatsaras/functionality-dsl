@@ -250,6 +250,32 @@ end
 ```
 → Generates: `GET /api/enrollments/{id}/enrollmentdetails`
 
+**Composite Entity with Array Parent (Collection Aggregation):**
+```fdsl
+Entity OrderWithItems(Order, OrderItem[])
+  relationships:
+    - OrderItem: Order.orderId
+  attributes:
+    - orderId: string = Order.orderId;
+    - itemCount: integer = len(OrderItem);
+    - itemsSubtotal: number = sum(map(OrderItem, i => i["quantity"] * i["price"]));
+    - avgItemPrice: number = round(itemsSubtotal / itemCount, 2) if itemCount > 0 else 0;
+  expose:
+    operations: [read]
+end
+```
+→ Generates: `GET /api/orders/{orderId}/orderwithitems`
+
+**Array Parent Rules:**
+- Use `EntityName[]` syntax to indicate one-to-many relationship
+- Array parents must be base entities (have `source:`, cannot be composites)
+- Array parents must have `@id` field for filtering
+- Array parents must expose `list` operation with filters
+- In expressions, array parent name (`OrderItem`) resolves to the fetched array
+- Use collection functions: `len()`, `sum()`, `map()`, `filter()`, `any()`, `all()`
+- Lambda syntax: `i => expression` (e.g., `map(OrderItem, i => i["price"])`)
+- Relationships block required to specify filter field for non-first parents
+
 ### Source Operation Inference
 
 Operations are **inferred** from entities that bind to sources:

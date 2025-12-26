@@ -863,6 +863,105 @@ def _validate_entity_relationships(model):
                 )
 
 
+def _validate_array_parents(model):
+    """
+    Validate array parent syntax (Entity(Parent[])) usage.
+
+    Rules:
+    1. Array parents must be base entities (have source, not composite)
+    2. Array parents must have @id field for filtering
+    3. Array parents must support list operation with filters
+    4. Composite entities with array parents must have relationships defined
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_refs = _get_parent_refs(entity)
+
+        if not parent_refs:
+            continue
+
+        # Check each parent ref for array syntax
+        for parent_ref in parent_refs:
+            is_array = getattr(parent_ref, "is_array", None)
+
+            if not is_array:
+                continue
+
+            # This parent has [] syntax - validate it
+            parent_entity = parent_ref.entity
+            parent_alias = _get_parent_alias(parent_ref)
+
+            # Rule 1: Array parent cannot be a composite entity
+            parent_is_composite = getattr(parent_entity, "_is_composite", False)
+            if parent_is_composite:
+                raise TextXSemanticError(
+                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') is a composite entity.\n"
+                    f"Only base entities (with 'source:' field) can be array parents.\n"
+                    f"Composite entities are computed locally and cannot be fetched as collections.\n"
+                    f"Remove the '[]' syntax or use a base entity instead.",
+                    **get_location(parent_ref)
+                )
+
+            # Rule 1b: Array parent must have source
+            parent_source = getattr(parent_entity, "source", None)
+            if not parent_source:
+                raise TextXSemanticError(
+                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') has no 'source:' field.\n"
+                    f"Array parents must be base entities with a source to support list operations.\n"
+                    f"Add 'source: SourceName' to entity '{parent_entity.name}' or remove the '[]' syntax.",
+                    **get_location(parent_ref)
+                )
+
+            # Rule 2: Array parent must have @id field for filtering
+            parent_id_field = _find_id_attribute(parent_entity)
+            if not parent_id_field:
+                raise TextXSemanticError(
+                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') has no @id field.\n"
+                    f"Array parents must have an @id field to support filtering.\n"
+                    f"Add '@id' marker to an attribute in '{parent_entity.name}' or remove the '[]' syntax.",
+                    **get_location(parent_ref)
+                )
+
+            # Rule 3: Array parent must support list operation
+            # Check if parent entity exposes list operation
+            parent_expose = getattr(parent_entity, "expose", None)
+            if parent_expose:
+                parent_operations = getattr(parent_expose, "operations", [])
+                if 'list' not in parent_operations:
+                    raise TextXSemanticError(
+                        f"Array parent '{parent_alias}' (entity '{parent_entity.name}') does not expose 'list' operation.\n"
+                        f"Array parents must support list operations with filtering.\n"
+                        f"Add 'list' to the operations in '{parent_entity.name}' expose block:\n"
+                        f"  expose:\n"
+                        f"    operations: [list, read, ...]\n"
+                        f"  end",
+                        **get_location(parent_ref)
+                    )
+
+            # Rule 4: Array parent requires relationship definition
+            # (unless it's the first parent, which uses endpoint ID)
+            parent_refs_list = list(parent_refs)
+            parent_idx = parent_refs_list.index(parent_ref)
+
+            if parent_idx > 0:  # Not the first parent
+                relationships_block = getattr(entity, "relationships", None)
+                relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
+                relationship_map = {rel.parentAlias: rel for rel in relationships}
+
+                if parent_alias not in relationship_map:
+                    first_parent_alias = _get_parent_alias(parent_refs_list[0])
+                    raise TextXSemanticError(
+                        f"Array parent '{parent_alias}' requires a relationship definition.\n"
+                        f"Add to relationships block:\n"
+                        f"  relationships:\n"
+                        f"    - {parent_alias}: {first_parent_alias}.{parent_id_field}\n"
+                        f"  end\n"
+                        f"This specifies which field to use for filtering the array parent.",
+                        **get_location(entity)
+                    )
+
+
 # ------------------------------------------------------------------------------
 # Identity anchor computation and validation
 
@@ -1014,3 +1113,4 @@ def verify_entities(model):
     _validate_rest_endpoint_entities(model)
     _validate_source_base_urls(model)
     _validate_entity_relationships(model)
+    _validate_array_parents(model)  # Validate array parent syntax
