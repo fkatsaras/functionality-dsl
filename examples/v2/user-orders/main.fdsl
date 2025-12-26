@@ -40,7 +40,6 @@ Entity User
   source: UserDB
   expose:
     operations: [list, read, create, update, delete]
-    readonly_fields: ["userId"]
     filters: ["email"]
 end
 
@@ -60,7 +59,7 @@ Entity Order
   source: OrderDB
   expose:
     operations: [list, read, create, update, delete]
-    readonly_fields: ["orderId", "createdAt"]
+    readonly_fields: ["createdAt"]
     filters: ["status", "userId"]
 end
 
@@ -79,7 +78,6 @@ Entity OrderItem
   source: OrderItemDB
   expose:
     operations: [list, read, create, update, delete]
-    readonly_fields: ["itemId"]
     filters: ["orderId"]
 end
 
