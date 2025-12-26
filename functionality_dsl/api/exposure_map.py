@@ -183,8 +183,9 @@ def _find_source_in_parents(parents):
         if source:
             return source
 
-        # Add parent's parents to queue
-        parent_parents = getattr(parent, "parents", []) or []
+        # Add parent's parents to queue (extract entities from ParentRef objects)
+        parent_parent_refs = getattr(parent, "parents", []) or []
+        parent_parents = [ref.entity for ref in parent_parent_refs] if parent_parent_refs else []
         queue.extend(parent_parents)
 
     return None
