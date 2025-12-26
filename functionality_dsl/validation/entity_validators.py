@@ -727,11 +727,36 @@ def _validate_source_base_urls(model):
             )
 
 
-def _validate_entity_relationships(model):
+def _is_websocket_entity(entity, model):
     """
-    Validate relationships block in COMPOSITE entities (entities with parents).
+    Determine if an entity is WebSocket-based (either it or its parents are sourced from WS).
 
-    Rules:
+    Returns True if:
+    - Entity has source: field pointing to a Source<WS>
+    - Any parent entity is sourced from Source<WS>
+    """
+    from functionality_dsl.api.extractors import find_source_for_entity
+
+    # Check entity itself
+    source, source_type = find_source_for_entity(entity, model)
+    if source_type == "WS":
+        return True
+
+    # Check parent chain
+    parent_entities = _get_parent_entities(entity)
+    for parent in parent_entities:
+        source, source_type = find_source_for_entity(parent, model)
+        if source_type == "WS":
+            return True
+
+    return False
+
+
+def _validate_rest_entity_relationships(model):
+    """
+    Validate relationships block in REST COMPOSITE entities (entities with parents).
+
+    Rules (REST-specific):
     1. Relationships block can only be used in composite entities
     2. All non-first parents must have a relationship defined
     3. Relationship fetch expressions must reference valid entity attributes
@@ -741,6 +766,10 @@ def _validate_entity_relationships(model):
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
+        # Skip WebSocket entities - they use different semantics
+        if _is_websocket_entity(entity, model):
+            continue
+
         parent_refs = _get_parent_refs(entity)
         parent_entities = _get_parent_entities(entity)
         alias_map = _build_parent_alias_map(entity)  # {alias: (ref, entity)}
@@ -860,6 +889,65 @@ def _validate_entity_relationships(model):
                     f"but attribute '{attr_name}' does not exist in entity '{source_entity.name}'.\n"
                     f"Available attributes: {', '.join(attr_names)}",
                     **get_location(rel)
+                )
+
+
+def _validate_websocket_entity_relationships(model):
+    """
+    Validate WebSocket composite entities (entities with multiple WS parents).
+
+    WebSocket semantics are different from REST:
+    - Multi-parent WebSocket entities use JOIN SEMANTICS (wait for latest from all sources)
+    - NO relationship blocks needed - messages are combined by time, not foreign keys
+    - All parents must be from WebSocket sources
+    - Cannot have relationship blocks (would be a semantic error)
+
+    Example:
+        Entity CombinedSensorData(TemperatureReading, HumidityReading)
+          # Join: wait for latest temp + latest humidity, then emit combined event
+          attributes:
+            - temperature: number = TemperatureReading.temperature;
+            - humidity: number = HumidityReading.humidity;
+        end
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        # Only validate WebSocket entities
+        if not _is_websocket_entity(entity, model):
+            continue
+
+        parent_refs = _get_parent_refs(entity)
+        parent_entities = _get_parent_entities(entity)
+
+        # If no parents, skip
+        if not parent_refs:
+            continue
+
+        relationships_block = getattr(entity, "relationships", None)
+        relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
+
+        # WebSocket entities should NOT have relationship blocks
+        if relationships:
+            raise TextXSemanticError(
+                f"WebSocket entity '{entity.name}' has 'relationships:' block.\n"
+                f"WebSocket entities use JOIN SEMANTICS, not relationship-based fetching.\n"
+                f"The entity will wait for the latest message from each parent source and combine them.\n"
+                f"Remove the 'relationships:' block - it's not needed for WebSocket entities.",
+                **get_location(relationships_block)
+            )
+
+        # Validate that all parents are WebSocket-based
+        from functionality_dsl.api.extractors import find_source_for_entity
+
+        for parent in parent_entities:
+            source, source_type = find_source_for_entity(parent, model)
+            if source_type != "WS":
+                raise TextXSemanticError(
+                    f"WebSocket entity '{entity.name}' has parent '{parent.name}' which is not from a WebSocket source.\n"
+                    f"Multi-parent WebSocket entities must have ALL parents from WebSocket sources (for join semantics).\n"
+                    f"Cannot mix REST and WebSocket parents in the same entity.",
+                    **get_location(entity)
                 )
 
 
@@ -1112,5 +1200,9 @@ def verify_entities(model):
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
     _validate_source_base_urls(model)
-    _validate_entity_relationships(model)
+
+    # Separate REST and WebSocket relationship validation
+    _validate_rest_entity_relationships(model)  # REST: requires relationship blocks for multi-parent
+    _validate_websocket_entity_relationships(model)  # WebSocket: join semantics, no relationships needed
+
     _validate_array_parents(model)  # Validate array parent syntax

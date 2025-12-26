@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  dummy-multi-sensor-gateway:
+    container_name: dummy-multi-sensor-gateway
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: node multi-source-server.js
+    ports:
+      - "9001:9001"  # Temperature WebSocket
+      - "9002:9002"  # Humidity WebSocket
+    networks:
+      - thesis_fdsl_net
+    environment:
+      - NODE_ENV=development
+
+networks:
+  thesis_fdsl_net:
+    external: true

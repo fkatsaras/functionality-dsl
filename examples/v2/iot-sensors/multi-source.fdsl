@@ -1,0 +1,75 @@
+// ============================================================================
+// MULTI-SOURCE WEBSOCKET AGGREGATION
+// Demonstrates: Combining multiple WebSocket sources into derived streams
+// ============================================================================
+
+Server IoTServer
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================================================
+// MULTIPLE EXTERNAL SOURCES (different sensor types)
+// ============================================================================
+
+Source<WS> TemperatureSensorWS
+  channel: "ws://dummy-multi-sensor-gateway:9001"
+end
+
+Source<WS> HumiditySensorWS
+  channel: "ws://dummy-multi-sensor-gateway:9002"
+end
+
+// ============================================================================
+// BASE ENTITIES (one per source)
+// ============================================================================
+
+Entity TemperatureReading
+  attributes:
+    - sensorId: string;
+    - locationId: string;
+    - temperature: number;
+    - timestamp: string;
+  source: TemperatureSensorWS
+  expose:
+    operations: [subscribe]
+    filters: ["locationId"]
+end
+
+Entity HumidityReading
+  attributes:
+    - sensorId: string;
+    - locationId: string;
+    - humidity: number;
+    - timestamp: string;
+  source: HumiditySensorWS
+  expose:
+    operations: [subscribe]
+    filters: ["locationId"]
+end
+
+// ============================================================================
+// COMBINED STREAM (multiple WebSocket parents)
+// Join semantics: wait for latest from BOTH sources, then emit
+// ============================================================================
+
+Entity CombinedSensorData(TemperatureReading, HumidityReading)
+  attributes:
+    - sensorId: string = TemperatureReading.sensorId;
+    - locationId: string = TemperatureReading.locationId;
+    - temperature: number = TemperatureReading.temperature;
+    - humidity: number = HumidityReading.humidity;
+    - heatIndex: number = round(
+        0.5 * (TemperatureReading.temperature + 
+               61.0 + 
+               ((TemperatureReading.temperature - 68.0) * 1.2) + 
+               (HumidityReading.humidity * 0.094)),
+        2
+    );
+    - timestamp: string = TemperatureReading.timestamp;
+  expose:
+    operations: [subscribe]
+    filters: ["locationId"]
+end

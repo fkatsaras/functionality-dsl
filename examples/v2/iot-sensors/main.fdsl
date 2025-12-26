@@ -1,152 +1,116 @@
-// IoT Sensor Monitoring - NEW SYNTAX (Entity-Centric)
-// Demonstrates: Multiple WebSocket sources, entity composition, aggregate statistics, REST mutations
+// ============================================================================
+// IoT SENSOR MONITORING - Multi-Source Streaming with Derived Metrics
+// Demonstrates: WebSocket subscribe with transformations, filters, and alerts
+// ============================================================================
 
 Server IoTServer
   host: "localhost"
-  port: 8085
-  cors: "http://localhost:3000"
+  port: 8080
+  cors: "*"
   loglevel: debug
 end
 
-// ============================================
-// External WebSocket Sources (Sensor Feeds)
-// ============================================
+// ============================================================================
+// EXTERNAL WEBSOCKET SOURCE
+// Could be: MQTT bridge, native WS gateway, Kafka → WS proxy
+// DSL does not care about transport implementation
+// ============================================================================
 
-Source<WS> Sensor1Feed
-  channel: "ws://dummyiot:9601"
-  operations: [subscribe]
+Source<WS> SensorWS
+  channel: "ws://dummy-sensor-gateway:9001/sensors"
 end
 
-Source<WS> Sensor2Feed
-  channel: "ws://dummyiot:9602"
-  operations: [subscribe]
-end
+// ============================================================================
+// BASE ENTITY - Raw Sensor Readings (ground truth event stream)
+// ============================================================================
 
-Source<WS> Sensor3Feed
-  channel: "ws://dummyiot:9603"
-  operations: [subscribe]
-end
-
-Source<WS> Sensor4Feed
-  channel: "ws://dummyiot:9604"
-  operations: [subscribe]
-end
-
-// ============================================
-// Raw Sensor Data Entities (Pure Schema)
-// ============================================
-
-// Raw data from each sensor (bound to external sources)
-Entity Sensor1Raw
+Entity SensorReading
   attributes:
-    - temp: number;
-    - hum: number;
-    - ts: integer;
-  source: Sensor1Feed
-end
-
-Entity Sensor2Raw
-  attributes:
-    - temp: number;
-    - hum: number;
-    - ts: integer;
-  source: Sensor2Feed
-end
-
-Entity Sensor3Raw
-  attributes:
-    - temp: number;
-    - hum: number;
-    - ts: integer;
-  source: Sensor3Feed
-end
-
-Entity Sensor4Raw
-  attributes:
-    - temp: number;
-    - hum: number;
-    - ts: integer;
-  source: Sensor4Feed
-end
-
-// ============================================
-// Telemetry Aggregation and Computation
-// ============================================
-
-// Combine all sensor readings and compute metrics
-Entity TelemetryCombined(Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw)
-  attributes:
-    - t: string = formatDate(Sensor1Raw.ts / 1000, "YYYY-MM-DD HH:mm:ss");
-    - avg_temp: number = avg(map([Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw], r => r["temp"]));
-    - avg_hum: number = avg(map([Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw], r => r["hum"]));
-    - avg_heat: number = avg(map([Sensor1Raw, Sensor2Raw, Sensor3Raw, Sensor4Raw], r => r["temp"] + 0.2 * r["hum"]));
+    - sensorId: string;
+    - locationId: string;
+    - temperature: number;
+    - humidity: number;
+    - battery: number;
+    - timestamp: string;
+  source: SensorWS
   expose:
-    websocket: "/api/telemetry/live"
     operations: [subscribe]
+    filters: ["sensorId", "locationId"]
+    // Clients can subscribe by sensor or location
+    // Example: ws://iot/ws/sensorreading?locationId=room-1
 end
 
-// ============================================
-// Device Control (REST Mutation)
-// ============================================
+// ============================================================================
+// DERIVED STREAM 1: Heat Index Calculation
+// Real-time transformation - computed per event, no storage
+// ============================================================================
 
-// External REST service for AC toggle
-Source<REST> ACToggleExternal
-  base_url: "http://dummyiot:9500/api/device/toggle/ac"
-  operations: [create, read]
-end
-
-// AC toggle entity - simple boolean state
-Entity ACToggle
+Entity HeatIndexReading(SensorReading)
   attributes:
-    - state: boolean;
-  source: ACToggleExternal
+    - sensorId: string = SensorReading.sensorId;
+    - locationId: string = SensorReading.locationId;
+    - temperature: number = SensorReading.temperature;
+    - humidity: number = SensorReading.humidity;
+    - heatIndex: number = round(
+        0.5 * (SensorReading.temperature +
+               61.0 +
+               ((SensorReading.temperature - 68.0) * 1.2) +
+               (SensorReading.humidity * 0.094)),
+        2
+    );
+    - timestamp: string = SensorReading.timestamp;
   expose:
-    rest: "/api/device/toggle/ac"
-    operations: [create, read]
+    operations: [subscribe]
+    filters: ["sensorId", "locationId"]
+    // Filters propagated from parent - no redefinition needed
 end
 
-// ============================================
-// UI Components
-// ============================================
+// ============================================================================
+// DERIVED STREAM 2: Temperature Alerts (threshold logic)
+// Shows conditional transformation - DSL really shines here
+// ============================================================================
 
-// Live table of all sensors
-Component<LiveView> TelemetryTable
-  entity: TelemetryCombined
-  fields: ["t", "avg_temp", "avg_hum", "avg_heat"]
-  label: "Live Sensor Telemetry"
+Entity TemperatureAlert(SensorReading)
+  attributes:
+    - sensorId: string = SensorReading.sensorId;
+    - locationId: string = SensorReading.locationId;
+    - temperature: number = SensorReading.temperature;
+    - severity: string =
+        "critical" if SensorReading.temperature > 80
+        else ("warning" if SensorReading.temperature > 70 else "normal");
+    - message: string =
+        "Temperature critical at " + str(SensorReading.temperature)
+        if SensorReading.temperature > 80
+        else "Temperature normal";
+    - timestamp: string = SensorReading.timestamp;
+  expose:
+    operations: [subscribe]
+    filters: ["locationId", "severity"]
+    // Clients can filter by location AND severity
+    // Example: ws://iot/ws/temperaturealert?locationId=room-1&severity=critical
 end
 
-// REST toggle switch for AC
-Component<Toggle> ACToggleSwitch
-  entity: ACToggle
-  label: "Air Conditioner"
-  onLabel: "Cooling"
-  offLabel: "Idle"
-  field: "state"
+// ============================================================================
+// UI COMPONENTS
+// ============================================================================
+
+Component<LiveView> SensorFeed
+  entity: SensorReading
+  fields: ["sensorId", "locationId", "temperature", "humidity", "battery", "timestamp"]
+  label: "Live Sensor Readings"
 end
 
-// Gauges for averages
-Component<Gauge> Averagetemp
-  entity: TelemetryCombined
-  value: "avg_temp"
+Component<Gauge> HeatIndexGauge
+  entity: HeatIndexReading
+  value: "heatIndex"
   min: 0
-  max: 100
-  label: "Average temp"
-  unit: "C"
+  max: 120
+  label: "Heat Index"
+  unit: "°F"
 end
 
-Component<Gauge> Averagehum
-  entity: TelemetryCombined
-  value: "avg_hum"
-  min: 0
-  max: 100
-  label: "Average hum"
-  unit: "%"
-end
-
-Component<LiveChart> HeatIndexTrend
-  entity: TelemetryCombined
-  seriesLabels: ["Avg Temperature", "Avg Humidity", "Avg Heat Index"]
-  xLabel: string<datetime> "Time"
-  yLabel: number "Sensor Readings"
+Component<LiveView> AlertsFeed
+  entity: TemperatureAlert
+  fields: ["locationId", "temperature", "severity", "message", "timestamp"]
+  label: "Temperature Alerts"
 end
