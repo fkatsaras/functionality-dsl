@@ -1,6 +1,7 @@
 """Infrastructure scaffolding and file generation."""
 
 import re
+import shutil
 from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -37,7 +38,7 @@ def render_infrastructure_files(context, templates_dir, output_dir):
         print(f"[GENERATED] {output_file}")
 
 
-def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path):
+def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Path = None):
     """
     Copy the essential runtime modules (builtins, compiler, runtime)
     from functionality_dsl/lib/ into the generated backend app/core/.
@@ -87,6 +88,18 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path):
     )
     print("  [OK] Created app/core/computed.py")
 
+    # --- Copy error_handlers.py to app/core ---
+    if templates_dir:
+        error_handlers_src = templates_dir / "core" / "error_handlers.py"
+        error_handlers_dest = backend_core_dir / "error_handlers.py"
+        if error_handlers_src.exists():
+            shutil.copy2(error_handlers_src, error_handlers_dest)
+            print("  [OK] Created app/core/error_handlers.py")
+        else:
+            print("  [WARN] error_handlers.py template not found")
+    else:
+        print("  [WARN] templates_dir not provided, skipping error_handlers.py")
+
 
 def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path) -> Path:
     """
@@ -106,7 +119,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
     from functionality_dsl.lib import builtins  # ensures proper path resolution
     lib_root = Path(builtins.__file__).parent.parent  # functionality_dsl/lib/
     backend_core_dir = out_dir / "app" / "core"
-    _copy_runtime_libs(lib_root, backend_core_dir)
+    _copy_runtime_libs(lib_root, backend_core_dir, templates_backend_dir)
 
     # Render infrastructure files
     render_infrastructure_files(context, templates_backend_dir, out_dir)

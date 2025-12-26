@@ -17,6 +17,12 @@ from app.services.{{ subscribe_entity_name | lower }}_service import {{ subscrib
 from app.services.{{ publish_entity_name | lower }}_service import {{ publish_entity_name }}Service
 {% endif %}
 
+from app.core.error_handlers import (
+    WebSocketErrorHandler,
+    ErrorCategory,
+    classify_error
+)
+
 logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
 
 router = APIRouter()
@@ -89,18 +95,12 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     logger.debug(f"Received JSON message from client: {raw_data}")
                     {% endif %}
                 except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON received from client: {e}")
-                    await websocket.send_json({
-                        "error": "Invalid JSON format",
-                        "message": "Please send valid JSON data matching the entity schema. Expected format: {\"text\": \"your message\"}"
-                    })
+                    await WebSocketErrorHandler.handle_json_decode_error(websocket, e, logger)
                     continue
                 except ValueError as e:
-                    logger.error(f"Invalid data format from client: {e}")
-                    await websocket.send_json({
-                        "error": "Invalid data format",
-                        "message": str(e)
-                    })
+                    await WebSocketErrorHandler.send_error(
+                        websocket, e, ErrorCategory.BAD_REQUEST, logger
+                    )
                     continue
 
                 try:
@@ -128,17 +128,9 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     {% endif %}
 
                 except ValidationError as e:
-                    logger.error(f"Validation error: {e}")
-                    await websocket.send_json({
-                        "error": "Validation failed",
-                        "details": e.errors()
-                    })
+                    await WebSocketErrorHandler.handle_validation_error(websocket, e, logger)
                 except Exception as e:
-                    logger.error(f"Error processing message: {e}", exc_info=True)
-                    await websocket.send_json({
-                        "error": "Processing failed",
-                        "message": str(e)
-                    })
+                    await WebSocketErrorHandler.handle_processing_error(websocket, e, logger, fatal=False)
 
         # Run both tasks concurrently
         await asyncio.gather(
@@ -186,8 +178,13 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                             await websocket.send_json(transformed_message)
                             logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
             except Exception as e:
-                logger.error(f"Error in {source_name} subscription: {e}")
-                raise
+                error_category = classify_error(e)
+                logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
+                # Don't raise - let other sources continue working
+                # Send error to client but keep connection open
+                await WebSocketErrorHandler.send_error(
+                    websocket, e, error_category, logger, close_connection=False
+                )
 
         # Run all subscriptions concurrently
         await asyncio.gather(
@@ -261,15 +258,25 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("Client disconnected from {{ ws_channel }}")
     except ConnectionRefusedError as e:
-        logger.error(f"Failed to connect to external WebSocket source: {e}")
-        logger.error("Make sure the external service is running and accessible.")
-        await websocket.close(code=1011, reason="External service unavailable")
+        await WebSocketErrorHandler.handle_connection_error(
+            websocket, e, logger, "{{ ws_channel }}"
+        )
+    except OSError as e:
+        # Handle network errors (DNS resolution, connection issues, etc.)
+        if "Name or service not known" in str(e) or "gaierror" in str(type(e).__name__):
+            await WebSocketErrorHandler.handle_connection_error(
+                websocket, e, logger, "external WebSocket source"
+            )
+        else:
+            await WebSocketErrorHandler.handle_processing_error(
+                websocket, e, logger, fatal=True
+            )
     except Exception as e:
-        logger.error(f"WebSocket error: {e}", exc_info=True)
-        try:
-            await websocket.close(code=1011, reason=f"Server error: {str(e)[:100]}")
-        except:
-            pass
+        # Classify error and handle appropriately
+        error_category = classify_error(e)
+        await WebSocketErrorHandler.send_error(
+            websocket, e, error_category, logger, close_connection=True
+        )
     finally:
         if websocket in active_connections:
             active_connections.remove(websocket)

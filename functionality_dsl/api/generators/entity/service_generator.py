@@ -179,8 +179,19 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         parent = parent_ref.entity
         is_array = getattr(parent_ref, "is_array", None)
 
-        if parent.name in exposure_map:
-            # This parent is exposed - we'll call its service
+        # Check if this parent has a WebSocket source (prioritize WS over services)
+        parent_source, source_type = find_source_for_entity(parent, model)
+
+        if parent_source and source_type == "WS":
+            # WebSocket parent - use direct source connection
+            parent_ws_sources.append({
+                "entity_name": parent.name,
+                "source_name": parent_source.name,
+                "source_class": f"{parent_source.name}Source",
+                "is_array": bool(is_array)
+            })
+        elif parent.name in exposure_map:
+            # This parent is exposed and not WebSocket - we'll call its service
             # Use explicit relationship if defined, otherwise infer
             if parent.name in relationship_map:
                 fetch_id_field = relationship_map[parent.name]
@@ -196,8 +207,7 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
                 "is_first": idx == 0  # Whether this is the first parent
             })
         else:
-            # This parent is not exposed - check if it has a direct source
-            parent_source, source_type = find_source_for_entity(parent, model)
+            # This parent is not exposed - check if it has a direct REST source
             if parent_source and source_type == "REST":
                 # Use explicit relationship if defined, otherwise infer
                 if parent.name in relationship_map:
@@ -213,13 +223,7 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
                     "is_array": bool(is_array),  # Whether this is an array parent
                     "is_first": idx == 0  # Whether this is the first parent
                 })
-            elif parent_source and source_type == "WS":
-                parent_ws_sources.append({
-                    "entity_name": parent.name,
-                    "source_name": parent_source.name,
-                    "source_class": f"{parent_source.name}Source",
-                    "is_array": bool(is_array)
-                })
+            # Note: WS sources are already handled at the top of this if-elif chain
 
     has_parent_services = len(parent_services) > 0
     has_multiple_parent_sources = len(parent_sources) > 1

@@ -57,7 +57,13 @@ class {{ entity_name }}Service:
         context = {}
 
         # Add parent entity data to context
-        {% if has_parent_services %}
+        {% if has_multiple_ws_sources %}
+        # Parent data comes from multiple WebSocket sources (raw dicts, no Pydantic models)
+        {% for parent in parents %}
+        if "{{ parent }}" in parent_data:
+            context["{{ parent }}"] = parent_data["{{ parent }}"]
+        {% endfor %}
+        {% elif has_parent_services %}
         # Parent data comes from entity services (Pydantic models)
         {% for parent in parents %}
         if "{{ parent }}" in parent_data:
@@ -67,7 +73,7 @@ class {{ entity_name }}Service:
             else:
                 context["{{ parent }}"] = parent_data["{{ parent }}"].model_dump()
         {% endfor %}
-        {% elif has_multiple_parent_sources or has_multiple_ws_sources %}
+        {% elif has_multiple_parent_sources %}
         # Parent data comes from multiple sources (raw dicts or lists)
         {% for parent in parents %}
         if "{{ parent }}" in parent_data:
