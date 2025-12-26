@@ -1,3 +1,8 @@
+// ============================================================================
+// LIVE WIKIPEDIA EDITS - WebSocket Stream Example
+// Demonstrates: WebSocket subscribe operations with transformations
+// ============================================================================
+
 Server WikiLive
   host: "localhost"
   port: 8080
@@ -5,12 +10,20 @@ Server WikiLive
   loglevel: debug
 end
 
+// ============================================================================
+// EXTERNAL WEBSOCKET SOURCE
+// No subscribe/publish blocks - just like REST sources!
+// ============================================================================
+
 Source<WS> WikiMonEN
   channel: "wss://wikimon.hatnote.com/en/"
-  operations: [subscribe]
 end
 
-// Raw Wikipedia edit event from external WebSocket
+// ============================================================================
+// BASE ENTITY - Schema from external WebSocket
+// Binds to source just like REST entities
+// ============================================================================
+
 Entity WikiEdit
   attributes:
     - action: string;
@@ -23,13 +36,18 @@ Entity WikiEdit
   source: WikiMonEN
 end
 
+// ============================================================================
+// SUBSCRIBE ENTITIES - Transform and stream to clients
+// Paths auto-generated: /ws/editgauge and /ws/wikieditstream
+// ============================================================================
+
 // Computed entity for gauge display (absolute value of change size)
 Entity EditGauge(WikiEdit)
   attributes:
     - edit_size_abs: integer = abs(WikiEdit.change_size);
   expose:
-    websocket: "/api/wiki/edits"
     operations: [subscribe]
+    // Auto-generated path: /ws/editgauge
 end
 
 // Stream raw edits to client
@@ -40,9 +58,13 @@ Entity WikiEditStream(WikiEdit)
     - action: string = WikiEdit.action;
     - change_size: integer = WikiEdit.change_size;
   expose:
-    websocket: "/api/wiki/edits/feed"
     operations: [subscribe]
+    // Auto-generated path: /ws/wikieditstream
 end
+
+// ============================================================================
+// UI COMPONENTS
+// ============================================================================
 
 Component<Gauge> LiveEditSize
   entity: EditGauge

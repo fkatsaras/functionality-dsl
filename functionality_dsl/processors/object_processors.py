@@ -140,37 +140,56 @@ def external_rest_endpoint_obj_processor(ep):
 
 def external_ws_endpoint_obj_processor(ep):
     """
-    SourceWS validation:
-    - Must have ws/wss url
-    - Require entity_in and/or entity_out
+    SourceWS validation (NEW SYNTAX - aligned with REST):
+    - Must have ws/wss channel URL
+    - No operations/subscribe/publish blocks required
+    - Operations inferred from entities that use this source (just like REST)
+
+    NEW SYNTAX (v2):
+        Source<WS> ChatWS
+          channel: "wss://chat.example.com/ws"
+        end
+
+        Entity ChatMessage
+          attributes: ...
+          source: ChatWS  // Just bind to source
+        end
+
+        Entity ChatIncoming(ChatMessage)
+          expose:
+            operations: [subscribe]  // Source infers it needs subscribe
+        end
     """
+    # Check for 'channel' field (new syntax) or fall back to 'url' (old syntax)
+    channel = getattr(ep, "channel", None)
     url = getattr(ep, "url", None)
-    if not url or not isinstance(url, str):
+
+    ws_url = channel or url
+
+    if not ws_url or not isinstance(ws_url, str):
         raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define a 'url:'.",
+            f"Source<WS> '{ep.name}' must define a 'channel:' (WebSocket URL).",
             **get_location(ep),
         )
-    if not (url.startswith("ws://") or url.startswith("wss://")):
+    if not (ws_url.startswith("ws://") or ws_url.startswith("wss://")):
         raise TextXSemanticError(
             f"Source<WS> '{ep.name}' channel must start with ws:// or wss://.",
             **get_location(ep),
         )
 
+    # NEW SYNTAX: No validation for subscribe/publish blocks
+    # Operations are inferred from entities (just like REST)
+    # The source just declares the external WebSocket connection
+
+    # OLD SYNTAX SUPPORT (for backward compatibility):
+    # If subscribe/publish blocks are present, validate them
     subscribe_block = getattr(ep, "subscribe", None)
     publish_block = getattr(ep, "publish", None)
-    operations_block = getattr(ep, "operations", None)
 
-    # NEW SYNTAX: operations: [subscribe, publish]
-    # OLD SYNTAX: explicit subscribe:/publish: blocks
-    if subscribe_block is None and publish_block is None and operations_block is None:
-        raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both), or 'operations: [subscribe/publish]'.",
-            **get_location(ep)
-        )
-
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Source<WS> '{ep.name}'")
-    _validate_type_schema_compatibility(publish_block, "publish", f"Source<WS> '{ep.name}'")
+    if subscribe_block:
+        _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Source<WS> '{ep.name}'")
+    if publish_block:
+        _validate_type_schema_compatibility(publish_block, "publish", f"Source<WS> '{ep.name}'")
 
 
 # ------------------------------------------------------------------------------

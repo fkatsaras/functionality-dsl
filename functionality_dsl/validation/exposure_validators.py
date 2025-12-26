@@ -227,20 +227,14 @@ def _validate_rest_expose(entity, expose, source):
 
 
 def _validate_ws_expose(entity, expose, source):
-    """Validate WebSocket exposure configuration."""
-    channel = getattr(expose, "channel", None)
-    if not channel or not isinstance(channel, str):
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' WebSocket expose must have a valid 'channel:' field.",
-            **get_location(expose),
-        )
+    """
+    Validate WebSocket exposure configuration (NEW SYNTAX - auto-generated paths).
 
-    # Validate channel path
-    if not channel.startswith("/"):
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' WebSocket channel must start with '/': {channel}",
-            **get_location(expose),
-        )
+    Channels are ALWAYS auto-generated from entity name.
+    Path pattern: /ws/{entity_name_lowercase}
+    No manual channel: field needed (fully symmetric with REST).
+    """
+    # WebSocket channels are auto-generated - no validation needed for channel field
 
     # Get operations
     operations = getattr(expose, "operations", [])
@@ -257,6 +251,24 @@ def _validate_ws_expose(entity, expose, source):
             raise TextXSemanticError(
                 f"Entity '{entity.name}' WebSocket expose has invalid operation '{op}'. "
                 f"Valid WebSocket operations: {ws_ops}",
+                **get_location(expose),
+            )
+
+    # CRITICAL: Validate publish operations require target
+    # Publish flow: Client → Entity → Transform → target: Source → External WS
+    if "publish" in operations:
+        target = getattr(entity, "target", None)
+        if not target:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'publish' operation but no 'target:' field. "
+                f"Publish operations require a target WebSocket source to send data to.\n\n"
+                f"Example:\n"
+                f"  Entity {entity.name}\n"
+                f"    attributes: ...\n"
+                f"    target: MyWebSocketTarget  # <-- Required for publish\n"
+                f"    expose:\n"
+                f"      operations: [publish]\n"
+                f"  end",
                 **get_location(expose),
             )
 
@@ -393,15 +405,20 @@ def _validate_entity_crud_rules(model, metamodel=None):
                 **get_location(expose),
             )
 
-        # Rule 2: Composite entities (with parents) can only expose 'list' and 'read' (read-only)
+        # Rule 2: Composite entities (with parents) can only expose read operations + WebSocket ops
+        # Rationale:
+        # - REST mutations (create/update/delete) require source: field (can't transform and mutate)
+        # - WebSocket subscribe: read-only streaming (transformation before client)
+        # - WebSocket publish: transformation before sending to target (valid use case)
         if parent_entities:
-            invalid_ops = set(operations) - {'list', 'read', 'subscribe'}  # Allow list, read and subscribe
+            # Allow: list, read (REST read-only), subscribe, publish (WebSocket with transformations)
+            invalid_ops = set(operations) - {'list', 'read', 'subscribe', 'publish'}
             if invalid_ops:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parent_entities]}) "
                     f"and exposes invalid operations: {invalid_ops}. "
-                    f"Composite entities can ONLY expose 'list' and 'read' operations (or 'subscribe' for WebSocket). "
-                    f"To create/update/delete data, create a base entity without parents and add 'source:' field.",
+                    f"Composite entities can ONLY expose 'list', 'read', 'subscribe', or 'publish' operations. "
+                    f"To create/update/delete REST data, create a base entity without parents and add 'source:' field.",
                     **get_location(expose),
                 )
 

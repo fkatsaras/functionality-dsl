@@ -33,7 +33,9 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     supports_publish = "publish" in operations
 
     # Get parent entities and sources for data flow
-    parents = getattr(entity, "parents", []) or []
+    # Extract parent entities from ParentRef objects
+    parent_refs = getattr(entity, "parents", []) or []
+    parents = [ref.entity for ref in parent_refs] if parent_refs else []
     parent_names = [p.name for p in parents]
 
     # Check if entity has computed attributes
@@ -129,12 +131,21 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
     if subscribe_entity:
         entity_name, config = subscribe_entity
         entity = config["entity"]
-        parents = getattr(entity, "parents", []) or []
 
-        # Find ALL WebSocket sources in parent chain
+        # Extract parent entities from ParentRef objects
+        parent_refs = getattr(entity, "parents", []) or []
+        parents = [ref.entity for ref in parent_refs] if parent_refs else []
+
+        # Find WebSocket source - check entity itself first, then parents
         from ...extractors import find_source_for_entity
         ws_sources = []  # List of (source, parent_entity) tuples
 
+        # Check the entity itself for a source
+        entity_source, source_type = find_source_for_entity(entity, model)
+        if entity_source and source_type == "WS":
+            ws_sources.append((entity_source, entity))
+
+        # Also check parent chain
         for parent in parents:
             source, source_type = find_source_for_entity(parent, model)
             if source and source_type == "WS":
@@ -155,7 +166,10 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
     if publish_entity:
         entity_name, config = publish_entity
         entity = config["entity"]
-        parents = getattr(entity, "parents", []) or []
+
+        # Extract parent entities from ParentRef objects
+        parent_refs = getattr(entity, "parents", []) or []
+        parents = [ref.entity for ref in parent_refs] if parent_refs else []
         ws_target = config.get("target", None)
 
         # Get explicit type and contentType from parent entity

@@ -29,7 +29,6 @@ Entity Prices(BTCRaw)
     - t: string = formatDate(now(), "YYYY-MM-DD HH:mm:ss");
     - btc: number = BTCRaw.c;
   expose:
-    websocket: "/api/prices"
     operations: [subscribe]
 end
 
@@ -39,16 +38,15 @@ end
 
 Source<WS> BinanceBTCUSDT
   channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
-  operations: [subscribe]
 end
 
 // ============================================
 // UI Component
 // ============================================
 
-Component<LiveChart> BitcoinPrice
-  entity: Prices
-  seriesLabels: ["BTC Price"]
-  xLabel: string<datetime> "Time"
-  yLabel: number "USDT"
-end
+// Component<LiveChart> BitcoinPrice
+//   entity: Prices
+//   seriesLabels: ["BTC Price"]
+//   xLabel: string<datetime> "Time"
+//   yLabel: number "USDT"
+// end

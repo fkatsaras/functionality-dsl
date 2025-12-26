@@ -120,8 +120,12 @@ def build_exposure_map(model):
         if has_rest_ops:
             rest_path = _generate_rest_path(entity)
 
-        # Extract WebSocket channel (optional field in expose block)
-        ws_channel = getattr(expose, "channel", None)
+        # Auto-generate WebSocket channel if WS operations are exposed
+        # Pattern: /ws/{entity_name_lowercase}
+        # Channel is ALWAYS auto-generated (no manual override needed)
+        ws_channel = None
+        if has_ws_ops:
+            ws_channel = f"/ws/{entity.name.lower()}"
 
         # Get id_field from entity's identity anchor (computed during validation)
         id_field = getattr(entity, "_identity_field", None)

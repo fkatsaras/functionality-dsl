@@ -1,5 +1,13 @@
-// WebSocket Chat with Publish/Subscribe - NEW SYNTAX (Entity-Centric)
-// Demonstrates: Bidirectional WebSocket communication with entity exposure
+// ============================================================================
+// WEBSOCKET CHAT - Bidirectional Communication Example
+// Demonstrates: Publish/Subscribe with transformations and target binding
+// ============================================================================
+// NEW UNIFIED SYNTAX:
+// - Sources declare connection only (no operation blocks)
+// - Operations inferred from entity usage
+// - Paths auto-generated from entity names
+// - Publish requires target: field (symmetric with REST mutations)
+// ============================================================================
 
 Server ChatServer
   host: "localhost"
@@ -8,72 +16,47 @@ Server ChatServer
   loglevel: debug
 end
 
-// ============================================
-// External WebSocket Service (Echo Server)
-// ============================================
+// ============================================================================
+// EXTERNAL WEBSOCKET SOURCE
+// No subscribe/publish blocks - just declare connection (like REST sources)
+// ============================================================================
 
-// External echo WebSocket service
-// Supports both publish (send to external) and subscribe (receive from external)
 Source<WS> EchoWS
   channel: "ws://dummy-echo-service:8765"
-  operations: [subscribe, publish]
 end
 
-// ============================================
-// INBOUND FLOW (subscribe): External WS → Client
-// ============================================
+// ============================================================================
+// BIDIRECTIONAL CHAT ENTITY
+// Single entity handles BOTH subscribe and publish on one WebSocket channel
+// ============================================================================
 
-// Raw message received from external echo service
-Entity EchoRaw
+// Base schema from external WebSocket
+Entity ChatMessage
   attributes:
-    - text: string;
-  source: EchoWS
-end
-
-// Transform incoming messages (lowercase) and expose to client (subscribe only)
-Entity ChatIncoming(EchoRaw)
-  attributes:
-    - text: string = lower(EchoRaw.text);
+    - text: string(3..);  // Validation: min 3 chars
+  source: EchoWS  // For subscribe operation
+  target: EchoWS  // For publish operation
   expose:
-    websocket: "/api/chat"
-    operations: [subscribe]
+    operations: [subscribe, publish]
+    // Auto-generates channel: /ws/chatmessage
+    // Subscribe flow: EchoWS → ChatMessage → Client
+    // Publish flow:   Client → ChatMessage → EchoWS
 end
 
-// ============================================
-// OUTBOUND FLOW (publish): Client → External WS
-// ============================================
-
-// What client sends (pure schema - receives text from client via WS publish)
-Entity ChatOutgoing
-  type: string
-//  contentType: text/plain
-  attributes:
-    - value: string(3..);
-end
-
-// Transform outgoing messages (uppercase) before sending to external WS
-Entity ChatOutgoingProcessed(ChatOutgoing)
-  attributes:
-    - text: string = upper(ChatOutgoing.value);
-  target: EchoWS  // Send transformed data to external WebSocket
-  expose:
-    websocket: "/api/chat"
-    operations: [publish]
-end
-
-// ============================================
-// UI Components
-// ============================================
+// ============================================================================
+// UI COMPONENTS
+// Single entity serves both input (publish) and display (subscribe)
+// ============================================================================
 
 Component<Input> ChatBox
-  entity: ChatOutgoingProcessed
+  entity: ChatMessage
   placeholder: "Type your message..."
   label: "Chat"
   submitLabel: "Send"
 end
 
 Component<LiveView> ChatFeed
-  entity: ChatIncoming
+  entity: ChatMessage
   fields: ["text"]
   label: "Messages"
 end
