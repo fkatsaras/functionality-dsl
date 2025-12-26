@@ -16,19 +16,9 @@ Server ChatServer
   loglevel: debug
 end
 
-// ============================================================================
-// EXTERNAL WEBSOCKET SOURCE
-// No subscribe/publish blocks - just declare connection (like REST sources)
-// ============================================================================
-
 Source<WS> EchoWS
   channel: "ws://dummy-echo-service:8765"
 end
-
-// ============================================================================
-// BIDIRECTIONAL CHAT ENTITY
-// Single entity handles BOTH subscribe and publish on one WebSocket channel
-// ============================================================================
 
 // Base schema from external WebSocket
 Entity ChatMessage

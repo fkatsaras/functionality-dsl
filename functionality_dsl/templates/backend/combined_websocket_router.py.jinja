@@ -4,8 +4,10 @@
 # ========================================================================
 
 import logging
+import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Set
+from pydantic import ValidationError
 import asyncio
 
 {% if has_subscribe %}
@@ -75,39 +77,68 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         async def handle_publish():
             """Publish task: Receive data from client and send to external target."""
             while True:
-                # Receive message based on content type
-                {% if publish_is_text %}
-                # Content type is text/plain - receive as text
-                raw_data = await websocket.receive_text()
-                logger.debug(f"Received text message from client: {raw_data}")
-                {% else %}
-                # Content type is application/json - receive as JSON
-                raw_data = await websocket.receive_json()
-                logger.debug(f"Received JSON message from client: {raw_data}")
-                {% endif %}
+                try:
+                    # Receive message based on content type
+                    {% if publish_is_text %}
+                    # Content type is text/plain - receive as text
+                    raw_data = await websocket.receive_text()
+                    logger.debug(f"Received text message from client: {raw_data}")
+                    {% else %}
+                    # Content type is application/json - receive as JSON
+                    raw_data = await websocket.receive_json()
+                    logger.debug(f"Received JSON message from client: {raw_data}")
+                    {% endif %}
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON received from client: {e}")
+                    await websocket.send_json({
+                        "error": "Invalid JSON format",
+                        "message": "Please send valid JSON data matching the entity schema. Expected format: {\"text\": \"your message\"}"
+                    })
+                    continue
+                except ValueError as e:
+                    logger.error(f"Invalid data format from client: {e}")
+                    await websocket.send_json({
+                        "error": "Invalid data format",
+                        "message": str(e)
+                    })
+                    continue
 
-                # Wrap primitive values for wrapper entities
-                {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
-                # Parent entity is a primitive type - wrap in object with attribute name
-                data = {"{{ publish_wrapper_key }}": raw_data}
-                logger.debug(f"Wrapped primitive value: {data}")
-                {% else %}
-                # Parent entity is a full object, use as-is
-                data = raw_data
-                {% endif %}
+                try:
+                    # Wrap primitive values for wrapper entities
+                    {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
+                    # Parent entity is a primitive type - wrap in object with attribute name
+                    data = {"{{ publish_wrapper_key }}": raw_data}
+                    logger.debug(f"Wrapped primitive value: {data}")
+                    {% else %}
+                    # Parent entity is a full object, use as-is
+                    data = raw_data
+                    {% endif %}
 
-                # Transform through entity service
-                transformed_data = publish_service._transform_entity(data)
-                logger.debug(f"Transformed message: {transformed_data}")
+                    # Transform through entity service
+                    transformed_data = publish_service._transform_entity(data)
+                    logger.debug(f"Transformed message: {transformed_data}")
 
-                {% if publish_ws_target %}
-                # Publish to external WebSocket target
-                await publish_target.publish(transformed_data)
-                logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
-                {% else %}
-                # No target specified - message processed but not forwarded
-                logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
-                {% endif %}
+                    {% if publish_ws_target %}
+                    # Publish to external WebSocket target
+                    await publish_target.publish(transformed_data)
+                    logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
+                    {% else %}
+                    # No target specified - message processed but not forwarded
+                    logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
+                    {% endif %}
+
+                except ValidationError as e:
+                    logger.error(f"Validation error: {e}")
+                    await websocket.send_json({
+                        "error": "Validation failed",
+                        "details": e.errors()
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing message: {e}", exc_info=True)
+                    await websocket.send_json({
+                        "error": "Processing failed",
+                        "message": str(e)
+                    })
 
         # Run both tasks concurrently
         await asyncio.gather(

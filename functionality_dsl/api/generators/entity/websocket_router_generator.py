@@ -216,9 +216,13 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
     routers_dir = out_dir / "app" / "api" / "routers"
     routers_dir.mkdir(parents=True, exist_ok=True)
 
-    # Convert /api/chat -> chat_ws_router.py
-    channel_name = ws_channel.strip("/").replace("/", "_")
-    router_file = routers_dir / f"{channel_name}_ws_router.py"
+    # Convert /ws/chatmessage -> chatmessage_ws.py
+    # Remove leading /ws/ prefix and create clean filename
+    channel_path = ws_channel.strip("/")
+    if channel_path.startswith("ws/"):
+        channel_path = channel_path[3:]  # Remove "ws/" prefix
+    channel_name = channel_path.replace("/", "_")
+    router_file = routers_dir / f"{channel_name}_ws.py"
     router_file.write_text(rendered)
 
     print(f"    [OK] {router_file.relative_to(out_dir)}")

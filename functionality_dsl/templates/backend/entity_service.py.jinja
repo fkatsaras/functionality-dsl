@@ -51,9 +51,9 @@ class {{ entity_name }}Service:
         pass
         {% endif %}
 
-{% if has_computed_attrs %}
     def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:
-        """Transform {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }} using computed attributes."""
+        """Transform {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }}{% if has_computed_attrs %} using computed attributes{% else %} (pass-through){% endif %}."""
+{% if has_computed_attrs %}
         context = {}
 
         # Add parent entity data to context
@@ -95,8 +95,12 @@ class {{ entity_name }}Service:
         )
 
         return transformed
-
+{% else %}
+        # No computed attributes - pass through raw data
+        return raw_data
 {% endif %}
+
+
 {% for op in operations %}
     {%- if op.operation == "list" %}
     async def list_{{ entity_name | lower }}(self, filters: Optional[dict] = None) -> List[{{ entity_name }}]:
