@@ -198,13 +198,18 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
             else:
                 fetch_id_field = infer_parent_id_field(parent, entity)
 
+            # Check if this parent is itself a composite (has parents)
+            # This matters for WebSocket chained composites where data is already a dict
+            parent_is_composite = bool(getattr(parent, "parents", []))
+
             parent_services.append({
                 "name": parent.name,
                 "service_class": f"{parent.name}Service",
                 "method": f"list_{parent.name.lower()}" if is_array else f"get_{parent.name.lower()}",
                 "id_field": fetch_id_field,  # Which field to use for fetching
                 "is_array": bool(is_array),  # Whether this is an array parent
-                "is_first": idx == 0  # Whether this is the first parent
+                "is_first": idx == 0,  # Whether this is the first parent
+                "is_composite": parent_is_composite  # Whether parent is itself a composite
             })
         else:
             # This parent is not exposed - check if it has a direct REST source

@@ -75,41 +75,42 @@ Entity CombinedSensorData(TemperatureReading, HumidityReading)
 end
 
 // ============================================================================
-// LEVEL 2: Derived metrics from combined data (chained transformation)
-// Demonstrates: Composite entity with another composite entity as parent
+// DERIVED METRICS (Chained transformation)
+// Demonstrates various DSL functions and expressions
 // ============================================================================
 
 Entity ComfortIndex(CombinedSensorData)
   attributes:
-    - sensorId: string = CombinedSensorData.sensorId;
     - locationId: string = CombinedSensorData.locationId;
     - temperature: number = CombinedSensorData.temperature;
     - humidity: number = CombinedSensorData.humidity;
     - heatIndex: number = CombinedSensorData.heatIndex;
+
     - comfortLevel: string =
         "too_hot" if CombinedSensorData.heatIndex > 80
         else ("uncomfortable" if CombinedSensorData.heatIndex > 75
         else ("comfortable" if CombinedSensorData.heatIndex > 65
         else "too_cold"));
+
     - comfortScore: number = round(
         100 - (CombinedSensorData.heatIndex - 70 if CombinedSensorData.heatIndex > 70 else 70 - CombinedSensorData.heatIndex) * 5,
         1
     );
-    - recommendation: string =
-        "Turn on AC" if CombinedSensorData.heatIndex > 80
-        else ("Open windows" if CombinedSensorData.heatIndex > 75
-        else ("Optimal conditions" if CombinedSensorData.heatIndex > 65
-        else "Turn on heating"));
+
+    - message: string =
+        "Heat index: " + toString(round(CombinedSensorData.heatIndex, 1)) + "°F, " +
+        "Humidity: " + toString(toInt(CombinedSensorData.humidity)) + "%";
+
+    - needsAction: string =
+        "urgent" if CombinedSensorData.heatIndex > 80 and CombinedSensorData.humidity > 65
+        else ("monitor" if CombinedSensorData.heatIndex > 75
+        else "none");
+
     - timestamp: string = CombinedSensorData.timestamp;
   expose:
     operations: [subscribe]
     filters: ["locationId", "comfortLevel"]
 end
-
-// ============================================================================
-// LEVEL 2: Alert stream with severity escalation
-// Demonstrates: Complex conditional logic on composite data
-// ============================================================================
 
 Entity EnvironmentalAlert(CombinedSensorData)
   attributes:
@@ -117,24 +118,27 @@ Entity EnvironmentalAlert(CombinedSensorData)
     - temperature: number = CombinedSensorData.temperature;
     - humidity: number = CombinedSensorData.humidity;
     - heatIndex: number = CombinedSensorData.heatIndex;
+
     - alertType: string =
         "heat_critical" if CombinedSensorData.heatIndex > 85
         else ("heat_warning" if CombinedSensorData.heatIndex > 80
         else ("humidity_high" if CombinedSensorData.humidity > 65
         else ("temp_low" if CombinedSensorData.temperature < 65
         else "normal")));
+
     - severity: string =
         "critical" if CombinedSensorData.heatIndex > 85
         else ("warning" if CombinedSensorData.heatIndex > 80 or CombinedSensorData.humidity > 65
         else "info");
-    - message: string =
-        "CRITICAL: Heat index " + str(CombinedSensorData.heatIndex) + "°F - immediate action required"
-        if CombinedSensorData.heatIndex > 85
-        else ("WARNING: Heat index " + str(CombinedSensorData.heatIndex) + "°F - monitor closely"
-        if CombinedSensorData.heatIndex > 80
-        else ("High humidity: " + str(CombinedSensorData.humidity) + "%"
-        if CombinedSensorData.humidity > 65
-        else "All systems normal"));
+
+    - severityCode: string = upper(
+        "critical" if CombinedSensorData.heatIndex > 85
+        else ("warning" if CombinedSensorData.heatIndex > 80 or CombinedSensorData.humidity > 65
+        else "info")
+    );
+
+    - locationCode: string = lower(CombinedSensorData.locationId);
+
     - timestamp: string = CombinedSensorData.timestamp;
   expose:
     operations: [subscribe]

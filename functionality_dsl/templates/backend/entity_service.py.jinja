@@ -64,14 +64,20 @@ class {{ entity_name }}Service:
             context["{{ parent }}"] = parent_data["{{ parent }}"]
         {% endfor %}
         {% elif has_parent_services %}
-        # Parent data comes from entity services (Pydantic models)
-        {% for parent in parents %}
-        if "{{ parent }}" in parent_data:
+        # Parent data comes from entity services (Pydantic models or dicts from composite parents)
+        {% for parent_info in parent_services %}
+        if "{{ parent_info.name }}" in parent_data:
+            {% if parent_info.is_composite %}
+            # Parent is a composite entity - data is already a dict from transformation
+            context["{{ parent_info.name }}"] = parent_data["{{ parent_info.name }}"]
+            {% else %}
+            # Parent is a base entity - data is a Pydantic model, need to convert to dict
             # Check if this is an array parent (list of models)
-            if isinstance(parent_data["{{ parent }}"], list):
-                context["{{ parent }}"] = [item.model_dump() for item in parent_data["{{ parent }}"]]
+            if isinstance(parent_data["{{ parent_info.name }}"], list):
+                context["{{ parent_info.name }}"] = [item.model_dump() for item in parent_data["{{ parent_info.name }}"]]
             else:
-                context["{{ parent }}"] = parent_data["{{ parent }}"].model_dump()
+                context["{{ parent_info.name }}"] = parent_data["{{ parent_info.name }}"].model_dump()
+            {% endif %}
         {% endfor %}
         {% elif has_multiple_parent_sources %}
         # Parent data comes from multiple sources (raw dicts or lists)

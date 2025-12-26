@@ -136,30 +136,76 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         parent_refs = getattr(entity, "parents", []) or []
         parents = [ref.entity for ref in parent_refs] if parent_refs else []
 
-        # Find WebSocket source - check entity itself first, then parents
+        # Find WebSocket source - check entity itself first, then recursively traverse parents
         from ...extractors import find_source_for_entity
         ws_sources = []  # List of (source, parent_entity) tuples
 
-        # Check the entity itself for a source
-        entity_source, source_type = find_source_for_entity(entity, model)
-        if entity_source and source_type == "WS":
-            ws_sources.append((entity_source, entity))
+        def find_ws_sources_recursive(ent):
+            """Recursively find all WebSocket sources in the parent chain."""
+            sources = []
 
-        # Also check parent chain
-        for parent in parents:
-            source, source_type = find_source_for_entity(parent, model)
-            if source and source_type == "WS":
-                ws_sources.append((source, parent))
+            # Check entity itself
+            ent_source, source_type = find_source_for_entity(ent, model)
+            if ent_source and source_type == "WS":
+                sources.append((ent_source, ent))
+                return sources  # Found direct source, stop recursion
+
+            # Check parents recursively
+            ent_parent_refs = getattr(ent, "parents", []) or []
+            ent_parents = [ref.entity for ref in ent_parent_refs] if ent_parent_refs else []
+
+            for parent in ent_parents:
+                parent_sources = find_ws_sources_recursive(parent)
+                sources.extend(parent_sources)
+
+            return sources
+
+        # Find all WebSocket sources recursively
+        ws_sources = find_ws_sources_recursive(entity)
 
         # For backward compatibility, keep ws_source as the first one
         ws_source = ws_sources[0][0] if ws_sources else None
         ws_source_entity = ws_sources[0][1] if ws_sources else None
+
+        # Check if this is a chained composite (has parents but they also have parents)
+        # We need to track intermediate services for transformation chain
+        is_chained_composite = False
+        intermediate_services = []  # List of service names to chain transformations through (ordered: parent, grandparent, ...)
+
+        def collect_intermediate_services(ent, services_list):
+            """Recursively collect all intermediate composite services in the parent chain."""
+            ent_parent_refs = getattr(ent, "parents", []) or []
+            ent_parents = [ref.entity for ref in ent_parent_refs] if ent_parent_refs else []
+
+            for parent in ent_parents:
+                # Check if this parent is itself a composite (has parents)
+                parent_has_parents = bool(getattr(parent, "parents", []))
+                if parent_has_parents:
+                    # This is an intermediate composite - add to chain
+                    services_list.append(parent.name)
+                    # Continue recursion to find more ancestors
+                    collect_intermediate_services(parent, services_list)
+                # If parent has a direct WebSocket source, stop (reached base entity)
+                parent_source, parent_source_type = find_source_for_entity(parent, model)
+                if parent_source and parent_source_type == "WS":
+                    break
+
+        if parents:
+            # Collect all intermediate services in the chain
+            collect_intermediate_services(entity, intermediate_services)
+            is_chained_composite = len(intermediate_services) > 0
+
+        # Get filters from config
+        subscribe_filters = config.get("filters", [])
 
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
             "subscribe_ws_source_entity": ws_source_entity,
             "subscribe_ws_sources": ws_sources,  # NEW: List of all WS sources
+            "is_chained_composite": is_chained_composite,
+            "intermediate_services": intermediate_services,  # Ordered list of services to chain through
+            "subscribe_filters": subscribe_filters,  # Filter fields for query parameters
         })
 
     # Add publish entity details

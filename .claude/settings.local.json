@@ -144,7 +144,8 @@
       "Bash(.\\\\venv_WIN\\\\Scripts\\\\fdsl.exe generate examples/v2/user-orders/main.fdsl --out generated)",
       "Bash(venv_WIN/Scripts/fdsl.exe generate:*)",
       "Bash(venv_WIN/Scripts/fdsl.exe generate examples/v2/websocket-chat/main.fdsl --out generated)",
-      "Bash(venv_WIN/Scripts/fdsl.exe validate:*)"
+      "Bash(venv_WIN/Scripts/fdsl.exe validate:*)",
+      "Bash(bash run-multisource.sh:*)"
     ],
     "deny": [],
     "ask": []

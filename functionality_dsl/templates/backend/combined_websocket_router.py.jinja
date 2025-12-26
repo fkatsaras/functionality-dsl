@@ -36,6 +36,9 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     """
     Combined WebSocket endpoint for {{ ws_channel }}.
     Supports: {% if has_subscribe %}subscribe{% endif %}{% if has_subscribe and has_publish %}, {% endif %}{% if has_publish %}publish{% endif %}
+    {% if has_subscribe and subscribe_filters %}
+    Filters: {{ subscribe_filters | join(', ') }}
+    {% endif %}
     """
     await websocket.accept()
     active_connections.add(websocket)
@@ -43,6 +46,29 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     {% if has_subscribe %}
     subscribe_service = {{ subscribe_entity_name }}Service()
+
+    # Extract filter values from query parameters
+    {% if subscribe_filters %}
+    filter_values = {}
+    {% for filter_field in subscribe_filters %}
+    filter_values["{{ filter_field }}"] = websocket.query_params.get("{{ filter_field }}")
+    {% endfor %}
+    logger.info(f"Applied filters: {filter_values}")
+
+    def message_matches_filters(message: dict) -> bool:
+        """Check if message matches all specified filters."""
+        for field, expected_value in filter_values.items():
+            if expected_value is None:
+                continue  # No filter for this field
+            # Get actual value from message (handle nested dicts)
+            actual_value = message.get(field)
+            if actual_value is None:
+                return False  # Field not in message
+            # Convert to string for comparison
+            if str(actual_value) != str(expected_value):
+                return False
+        return True
+    {% endif %}
     {% endif %}
     {% if has_publish %}
     publish_service = {{ publish_entity_name }}Service()
@@ -75,6 +101,12 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
                 # Transform raw message through entity service
                 transformed_message = subscribe_service._transform_entity(raw_message)
+
+                # Apply filters if specified
+                {% if subscribe_filters %}
+                if not message_matches_filters(transformed_message):
+                    continue  # Skip this message, doesn't match filters
+                {% endif %}
 
                 # Send to client
                 await websocket.send_json(transformed_message)
@@ -141,7 +173,109 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         {% elif has_subscribe %}
         # Subscribe-only mode: Stream data from external source(s) to client
+        {% if is_chained_composite %}
+        # Chained composite: This entity inherits from composite parent(s)
+        # Chain: {{ subscribe_entity_name }} {% for svc in intermediate_services %}-> {{ svc }} {% endfor %}-> Base entities
+
+        # Import all intermediate services in the transformation chain
+        {% for service_name in intermediate_services %}
+        from app.services.{{ service_name | lower }}_service import {{ service_name }}Service
+        {% endfor %}
+
+        # Create service instances for transformation chain
+        {% for service_name in intermediate_services %}
+        {{ service_name | lower }}_service = {{ service_name }}Service()
+        {% endfor %}
+
+        # Subscribe to the base WebSocket sources (discovered recursively)
         {% if subscribe_ws_sources | length > 1 %}
+        # Multiple WebSocket sources - merge streams (with chained transformation)
+        import asyncio
+        from typing import Dict
+        {% for source, parent_entity in subscribe_ws_sources %}
+        from app.sources.{{ source.name | lower }}_source import {{ source.name }}Source
+        {% endfor %}
+
+        # Create source instances
+        {% for source, parent_entity in subscribe_ws_sources %}
+        {{ parent_entity.name | lower }}_source = {{ source.name }}Source()
+        {% endfor %}
+
+        # Shared state for latest messages from each source
+        latest_messages: Dict[str, dict] = {}
+        message_lock = asyncio.Lock()
+
+        async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
+            """Subscribe to a single WebSocket source and update shared state."""
+            try:
+                async for raw_message in source.subscribe():
+                    if raw_message is None:
+                        continue
+
+                    async with message_lock:
+                        latest_messages[parent_entity_name] = raw_message
+
+                        # Only transform and send if we have messages from all sources
+                        if len(latest_messages) == {{ subscribe_ws_sources | length }}:
+                            # Chain transformations through all intermediate services
+                            transformed = latest_messages.copy()
+
+                            # Apply transformations in reverse order (from deepest parent to current entity)
+                            {% for service_name in intermediate_services | reverse %}
+                            transformed = {{ service_name | lower }}_service._transform_entity(transformed)
+                            transformed = {"{{ service_name }}": transformed}  # Wrap for next level
+                            {% endfor %}
+
+                            # Final transformation through this entity's service
+                            final_message = subscribe_service._transform_entity(transformed)
+
+                            # Apply filters if specified
+                            {% if subscribe_filters %}
+                            if not message_matches_filters(final_message):
+                                continue  # Skip this message, doesn't match filters
+                            {% endif %}
+
+                            # Send to client
+                            await websocket.send_json(final_message)
+                            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+            except Exception as e:
+                error_category = classify_error(e)
+                logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
+                await WebSocketErrorHandler.send_error(
+                    websocket, e, error_category, logger, close_connection=False
+                )
+
+        # Run all subscriptions concurrently
+        await asyncio.gather(
+            {% for source, parent_entity in subscribe_ws_sources %}
+            subscribe_to_source("{{ source.name }}", {{ parent_entity.name | lower }}_source, "{{ parent_entity.name }}"){{ "," if not loop.last else "" }}
+            {% endfor %}
+        )
+        {% else %}
+        # Single WebSocket source with chained transformations
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        source = {{ subscribe_ws_source.name }}Source()
+
+        async for raw_message in source.subscribe():
+            if raw_message is None:
+                continue
+
+            # Chain transformations through all intermediate services
+            transformed = raw_message
+            {% for service_name in intermediate_services | reverse %}
+            transformed = {{ service_name | lower }}_service._transform_entity(transformed)
+            transformed = {"{{ service_name }}": transformed}  # Wrap for next level
+            {% endfor %}
+
+            # Final transformation through this entity's service
+            final_message = subscribe_service._transform_entity(transformed)
+
+            # Send to client
+            await websocket.send_json(final_message)
+            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+        {% endif %}
+        {% elif subscribe_ws_sources | length > 1 %}
         # Multiple WebSocket sources - merge streams
         import asyncio
         from typing import Dict
@@ -174,6 +308,12 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                             # Pass dict mapping parent names to their raw messages
                             transformed_message = subscribe_service._transform_entity(latest_messages)
 
+                            # Apply filters if specified
+                            {% if subscribe_filters %}
+                            if not message_matches_filters(transformed_message):
+                                continue  # Skip this message, doesn't match filters
+                            {% endif %}
+
                             # Send to client
                             await websocket.send_json(transformed_message)
                             logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
@@ -204,6 +344,12 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
             # Transform raw message through entity service
             transformed_message = subscribe_service._transform_entity(raw_message)
+
+            # Apply filters if specified
+            {% if subscribe_filters %}
+            if not message_matches_filters(transformed_message):
+                continue  # Skip this message, doesn't match filters
+            {% endif %}
 
             # Send to client
             await websocket.send_json(transformed_message)
