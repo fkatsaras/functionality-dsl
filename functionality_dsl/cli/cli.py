@@ -393,13 +393,41 @@ def visualize_model_cmd(context, model_path, output_dir):
                 fontsize="10"  # Explicit font size for readability
             )
 
-            # Inheritance - use 'parents' not 'super' (entities can have multiple parents)
+            # Parent dependencies (composite entities)
+            # ParentRef objects have: entity (Entity reference), alias (optional), is_array (bool)
             parents = getattr(e, "parents", []) or []
             for parent in parents:
+                # ParentRef has 'entity' attribute that holds the actual Entity reference
+                parent_entity = getattr(parent, "entity", parent)
+                parent_name = parent_entity.name if hasattr(parent_entity, "name") else str(parent_entity)
+
+                # Check if this is an array parent (one-to-many relationship)
+                is_array = getattr(parent, "is_array", False)
+
+                # Determine edge label and style based on cardinality
+                # Use taillabel (near parent) and headlabel (near child) for cardinality markers
+                if is_array:
+                    edge_label = "depends on"
+                    edge_style = "dashed"
+                    edge_color = "#1976d2"
+                    tail_label = "N"  # Parent side (many instances)
+                    head_label = "1"  # Child side (one composite)
+                else:
+                    edge_label = "depends on"
+                    edge_style = "solid"
+                    edge_color = "#1976d2"
+                    tail_label = "1"  # Parent side
+                    head_label = "1"  # Child side
+
                 dot.edge(
-                    f"entity_{parent.name}",
+                    f"entity_{parent_name}",
                     f"entity_{e.name}",
-                    label="extends"
+                    label=edge_label,
+                    taillabel=tail_label,
+                    headlabel=head_label,
+                    style=edge_style,
+                    color=edge_color,
+                    fontsize="9"
                 )
 
             # v2 syntax: Entity expose blocks (REST/WebSocket)

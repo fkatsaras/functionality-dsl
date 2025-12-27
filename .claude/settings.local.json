@@ -149,7 +149,10 @@
       "Bash(ls -la \"c:\\\\ffile\\\\functionality-dsl\\\\functionality_dsl\\\\templates\\\\frontend\"\" 2>/dev/null || echo \"No templates dir found \")",
       "Bash(xargs cat:*)",
       "Bash(python -m functionality_dsl.cli.cli generate:*)",
-      "Bash(venv_WIN/Scripts/fdsl.exe:*)"
+      "Bash(venv_WIN/Scripts/fdsl.exe:*)",
+      "Bash(python -m functionality_dsl.cli.cli visualize-model:*)",
+      "Bash(where:*)",
+      "Bash(del NUL)"
     ],
     "deny": [],
     "ask": []
