@@ -1,11 +1,12 @@
 // =============================================================================
 // Weather Analytics API - Demonstrates FDSL's Computational Capabilities
 // =============================================================================
-// This example shows hierarchical REST design with functional transformations:
-// - Base resource: GET /api/forecasts/{city}
-// - Derived analytics: GET /api/forecasts/{city}/analytics
+// This example shows singleton REST endpoints with functional transformations:
+// - Base resource: GET /api/forecast (singleton, no path parameter)
+// - Derived analytics: GET /api/analytics (computed from forecast data)
+// - Time series: GET /api/temperaturetimeseries (chart-friendly format)
 //
-// External API: Open-Meteo forecast (via dummy service)
+// External API: Open-Meteo forecast API (Thessaloniki, Greece)
 // =============================================================================
 
 Server WeatherAnalyticsAPI
@@ -16,26 +17,27 @@ Server WeatherAnalyticsAPI
 end
 
 // =============================================================================
-// EXTERNAL SOURCE - Open-Meteo Compatible Format
+// EXTERNAL SOURCE - Open-Meteo API (Singleton - No Path Parameters)
 // =============================================================================
 
 Source<REST> OpenMeteoAPI
-  base_url: "http://dummy-weather-service:9003/forecast"
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m"
 end
 
 // =============================================================================
-// BASE ENTITY - Raw Forecast Data
+// BASE ENTITY - Raw Forecast Data (Singleton - Thessaloniki)
+// No @id field = static singleton endpoint
 // =============================================================================
 
 Entity Forecast
   attributes:
-    - city: string @id;
     - latitude: number;
     - longitude: number;
-    - hourly: object;  // { time: string[], temperature_2m: number[], ... }
+    - timezone: string;
+    - hourly: object;  // { time: string[], temperature_2m: number[], relative_humidity_2m: number[] }
   source: OpenMeteoAPI
   expose:
-    operations: [read]
+    operations: [read]  // Generates: GET /api/forecast (no path parameter)
 end
 
 // =============================================================================
@@ -44,7 +46,6 @@ end
 
 Entity Analytics(Forecast)
   attributes:
-    - city: string = Forecast.city;
     - location: object = {
         "latitude": Forecast.latitude,
         "longitude": Forecast.longitude
@@ -103,28 +104,39 @@ Entity Analytics(Forecast)
   expose:
     operations: [read]
     readonly_fields: [
-      "city", "location", "avg_temp", "max_temp", "min_temp",
+      "location", "avg_temp", "max_temp", "min_temp",
       "temp_range", "comfortable_hours", "comfort_percentage",
       "hourly_details", "summary"
-    ] // This should probably be removed from composite entities
+    ]
+end
+
+// =============================================================================
+// CHART-FRIENDLY ENTITY - Time Series Data
+// =============================================================================
+
+Entity TemperatureTimeSeries(Forecast)
+  attributes:
+    - data: array = map(
+        zip(Forecast.hourly["time"], Forecast.hourly["temperature_2m"]),
+        point => {
+          "time": point[0],
+          "temperature": point[1]
+        }
+      );
+  expose:
+    operations: [read]
 end
 
 // =============================================================================
 // UI COMPONENTS
 // =============================================================================
 
-Component<Table> ForecastTable
-  entity: Forecast
-  columns:
-    - "city": string
-    - "latitude": number
-    - "longitude": number
+Component<Table> HourlyDetailsTable
+  entity: Analytics
+  colNames: ["hourly_details"]
 end
 
-Component<Chart> TemperatureChart
-  entity: Analytics
-  seriesLabels: ["Temperature Over Time"]
-  xLabel: string<time> "Time"
-  yLabel: number "Temperature (°C)"
-  height: 400
+Component<Table> TimeSeriesTable
+  entity: TemperatureTimeSeries
+  colNames: ["data"]
 end

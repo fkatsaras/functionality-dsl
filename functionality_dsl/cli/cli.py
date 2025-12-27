@@ -366,6 +366,10 @@ def visualize_model_cmd(context, model_path, output_dir):
         # Entities
         # -------------------------------
         for e in model.entities:
+            # Check if this is a composite entity (has parents)
+            parents = getattr(e, "parents", []) or []
+            is_composite = len(parents) > 0
+
             # Collect attributes safely - convert TypeSpec and Expr AST to strings
             attrs_lines = []
             for a in e.attributes:
@@ -382,14 +386,22 @@ def visualize_model_cmd(context, model_path, output_dir):
             attrs = "\\n".join(attrs_lines)  # Newline inside a DOT record
 
             # Build label content - use plain text, not HTML-like labels
-            # The format is:  [ENTITY] Name\nattributes...
-            node_label = f"[ENTITY]\\n{safe_label(e.name, escape_angles=False)}\\n{attrs}"
+            # Add «view» stereotype for composite entities (UML notation)
+            if is_composite:
+                node_label = f"«view»\\n{safe_label(e.name, escape_angles=False)}\\n{attrs}"
+                # Use dashed border and different color for composite entities
+                node_style = "filled,dashed,rounded"
+                node_fillcolor = "#e1f5fe"  # Light blue for views/composites
+            else:
+                node_label = f"[ENTITY]\\n{safe_label(e.name, escape_angles=False)}\\n{attrs}"
+                node_style = "filled,rounded"
+                node_fillcolor = "#c8e6c9"  # Green for base entities
 
             dot.node(
                 f"entity_{e.name}",
                 label=node_label,  # Use label parameter explicitly
-                shape="box", fillcolor="#c8e6c9", style="filled,rounded",
-                fontcolor="black",  # Ensure text is visible on green background
+                shape="box", fillcolor=node_fillcolor, style=node_style,
+                fontcolor="black",  # Ensure text is visible on background
                 fontsize="10"  # Explicit font size for readability
             )
 
