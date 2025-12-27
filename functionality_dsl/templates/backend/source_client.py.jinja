@@ -6,7 +6,11 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+import httpx
+from fastapi import HTTPException, status
+
 from app.core.http import get_http_client
+from app.core.error_handlers import RESTErrorHandler
 
 
 logger = logging.getLogger("fdsl.source.{{ source_name }}")
@@ -48,9 +52,39 @@ class {{ source_name }}Source:
             )
             response.raise_for_status()
             return response.json()
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout fetching from {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail={
+                    "message": f"Request to external service '{{ source_name }}' timed out",
+                    "category": "timeout_error",
+                    "details": {"service": "{{ source_name }}", "url": url}
+                }
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Connection failed to {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "message": f"External service '{{ source_name }}' is unavailable",
+                    "category": "service_unavailable",
+                    "details": {"service": "{{ source_name }}", "url": url, "reason": "Connection failed"}
+                }
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from {{ source_name }}: {e.response.status_code}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail={
+                    "message": f"External service '{{ source_name }}' returned error: {e.response.status_code}",
+                    "category": "gateway_error",
+                    "details": {"service": "{{ source_name }}", "status_code": e.response.status_code}
+                }
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch item: {e}")
-            return None
+            logger.error(f"Unexpected error fetching from {{ source_name }}: {e}", exc_info=True)
+            raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
     {%- else %}
     async def read(self, id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get singleton resource or item by ID from {{ source_name }}"""
@@ -68,9 +102,39 @@ class {{ source_name }}Source:
             )
             response.raise_for_status()
             return response.json()
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout fetching from {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail={
+                    "message": f"Request to external service '{{ source_name }}' timed out",
+                    "category": "timeout_error",
+                    "details": {"service": "{{ source_name }}", "url": url}
+                }
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Connection failed to {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "message": f"External service '{{ source_name }}' is unavailable",
+                    "category": "service_unavailable",
+                    "details": {"service": "{{ source_name }}", "url": url, "reason": "Connection failed"}
+                }
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from {{ source_name }}: {e.response.status_code}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail={
+                    "message": f"External service '{{ source_name }}' returned error: {e.response.status_code}",
+                    "category": "gateway_error",
+                    "details": {"service": "{{ source_name }}", "status_code": e.response.status_code}
+                }
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch: {e}")
-            return None
+            logger.error(f"Unexpected error fetching from {{ source_name }}: {e}", exc_info=True)
+            raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
     {%- endif %}
 
     {%- elif op.name == "create" %}
@@ -102,9 +166,39 @@ class {{ source_name }}Source:
             )
             response.raise_for_status()
             return response.json()
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout updating {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail={
+                    "message": f"Request to external service '{{ source_name }}' timed out",
+                    "category": "timeout_error",
+                    "details": {"service": "{{ source_name }}", "url": url}
+                }
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Connection failed to {{ source_name }}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "message": f"External service '{{ source_name }}' is unavailable",
+                    "category": "service_unavailable",
+                    "details": {"service": "{{ source_name }}", "url": url, "reason": "Connection failed"}
+                }
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from {{ source_name }}: {e.response.status_code}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail={
+                    "message": f"External service '{{ source_name }}' returned error: {e.response.status_code}",
+                    "category": "gateway_error",
+                    "details": {"service": "{{ source_name }}", "status_code": e.response.status_code}
+                }
+            )
         except Exception as e:
-            logger.error(f"Failed to update item: {e}")
-            return None
+            logger.error(f"Unexpected error updating {{ source_name }}: {e}", exc_info=True)
+            raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "delete" %}
     async def delete(self, id: str) -> None:

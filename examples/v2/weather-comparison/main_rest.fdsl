@@ -1,12 +1,12 @@
 // =============================================================================
-// Weather Analytics API - Demonstrates FDSL's Computational Capabilities
+// Weather Comparison API - Multi-City Weather Analytics
 // =============================================================================
-// This example shows singleton REST endpoints with functional transformations:
-// - Base resource: GET /api/forecast (singleton, no path parameter)
-// - Derived analytics: GET /api/analytics (computed from forecast data)
-// - Time series: GET /api/temperaturetimeseries (chart-friendly format)
+// This example demonstrates:
+// - Multiple singleton REST endpoints (one per city)
+// - Computed weather statistics per city
+// - Cross-city comparison in tables and charts
 //
-// External API: Open-Meteo forecast API (Thessaloniki, Greece)
+// External API: Open-Meteo forecast API (3 cities)
 // =============================================================================
 
 Server WeatherAnalyticsAPI
@@ -17,110 +17,144 @@ Server WeatherAnalyticsAPI
 end
 
 // =============================================================================
-// EXTERNAL SOURCE - Open-Meteo API (Singleton - No Path Parameters)
+// EXTERNAL SOURCES - Open-Meteo API for 3 Cities
 // =============================================================================
 
-Source<REST> OpenMeteoAPI
+Source<REST> ThessalonikiAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m"
 end
 
+Source<REST> NewYorkAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&hourly=temperature_2m,relative_humidity_2m"
+end
+
+Source<REST> TokyoAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&hourly=temperature_2m,relative_humidity_2m"
+end
+
 // =============================================================================
-// BASE ENTITY - Raw Forecast Data (Singleton - Thessaloniki)
-// No @id field = static singleton endpoint
+// BASE ENTITIES - Raw Forecast Data (Singletons)
 // =============================================================================
 
-Entity Forecast
+Entity ThessalonikiForecast
   attributes:
     - latitude: number;
     - longitude: number;
     - timezone: string;
-    - hourly: object;  // { time: string[], temperature_2m: number[], relative_humidity_2m: number[] }
-  source: OpenMeteoAPI
-  expose:
-    operations: [read]  // Generates: GET /api/forecast (no path parameter)
-end
-
-// =============================================================================
-// DERIVED ENTITY - Weather Analytics (FUNCTIONALITY!)
-// =============================================================================
-
-Entity Analytics(Forecast)
-  attributes:
-    - location: object = {
-        "latitude": Forecast.latitude,
-        "longitude": Forecast.longitude
-      };
-
-    // Statistical Analysis
-    - avg_temp: number = round(
-        sum(Forecast.hourly["temperature_2m"]) /
-        len(Forecast.hourly["temperature_2m"]), 1
-      );
-    - max_temp: number = max(Forecast.hourly["temperature_2m"]);
-    - min_temp: number = min(Forecast.hourly["temperature_2m"]);
-    - temp_range: number = round(Analytics.max_temp - Analytics.min_temp, 1);
-
-    // Functional Transformations - Find Comfortable Hours (18-24°C)
-    - comfortable_hours: array = filter(
-        zip(Forecast.hourly["time"], Forecast.hourly["temperature_2m"]),
-        hour => hour[1] >= 18 and hour[1] <= 24
-      );
-    - comfort_percentage: number = round(
-        len(Analytics.comfortable_hours) * 100.0 / len(Forecast.hourly["time"]), 1
-      );
-
-    // Data Aggregation - Hourly Details with Computed Fields
-    - hourly_details: array = map(
-        zip(
-          Forecast.hourly["time"],
-          Forecast.hourly["temperature_2m"],
-          Forecast.hourly["relative_humidity_2m"]
-        ),
-        entry => {
-          "time": entry[0],
-          "temp": entry[1],
-          "humidity": entry[2],
-          "comfortable": entry[1] >= 18 and entry[1] <= 24,
-          "deviation_from_avg": round(entry[1] - Analytics.avg_temp, 1)
-        }
-      );
-
-    // Summary Statistics
-    - summary: object = {
-        "total_hours": len(Forecast.hourly["time"]),
-        "comfortable_hours_count": len(Analytics.comfortable_hours),
-        "avg_humidity": round(
-          sum(Forecast.hourly["relative_humidity_2m"]) /
-          len(Forecast.hourly["relative_humidity_2m"]), 1
-        ),
-        "temp_stats": {
-          "min": Analytics.min_temp,
-          "max": Analytics.max_temp,
-          "avg": Analytics.avg_temp,
-          "range": Analytics.temp_range
-        }
-      };
-
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
+    - hourly: object;
+    - hourly_units: object?;
+  source: ThessalonikiAPI
   expose:
     operations: [read]
-    readonly_fields: [
-      "location", "avg_temp", "max_temp", "min_temp",
-      "temp_range", "comfortable_hours", "comfort_percentage",
-      "hourly_details", "summary"
-    ]
+end
+
+Entity NewYorkForecast
+  attributes:
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
+    - hourly: object;
+    - hourly_units: object?;
+  source: NewYorkAPI
+  expose:
+    operations: [read]
+end
+
+Entity TokyoForecast
+  attributes:
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
+    - hourly: object;
+    - hourly_units: object?;
+  source: TokyoAPI
+  expose:
+    operations: [read]
 end
 
 // =============================================================================
-// CHART-FRIENDLY ENTITY - Time Series Data
+// CITY COMPARISON - Aggregated Statistics
 // =============================================================================
 
-Entity TemperatureTimeSeries(Forecast)
+Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   attributes:
+    // Simple computed statistics array for table display
+    - stats: array = [
+      {
+        "city": "Thessaloniki",
+        "avg_temp": round(
+          sum(ThessalonikiForecast.hourly["temperature_2m"]) /
+          len(ThessalonikiForecast.hourly["temperature_2m"]), 1
+        ),
+        "max_temp": max(ThessalonikiForecast.hourly["temperature_2m"]),
+        "min_temp": min(ThessalonikiForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(ThessalonikiForecast.hourly["relative_humidity_2m"]) /
+          len(ThessalonikiForecast.hourly["relative_humidity_2m"]), 1
+        )
+      },
+      {
+        "city": "New York",
+        "avg_temp": round(
+          sum(NewYorkForecast.hourly["temperature_2m"]) /
+          len(NewYorkForecast.hourly["temperature_2m"]), 1
+        ),
+        "max_temp": max(NewYorkForecast.hourly["temperature_2m"]),
+        "min_temp": min(NewYorkForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(NewYorkForecast.hourly["relative_humidity_2m"]) /
+          len(NewYorkForecast.hourly["relative_humidity_2m"]), 1
+        )
+      },
+      {
+        "city": "Tokyo",
+        "avg_temp": round(
+          sum(TokyoForecast.hourly["temperature_2m"]) /
+          len(TokyoForecast.hourly["temperature_2m"]), 1
+        ),
+        "max_temp": max(TokyoForecast.hourly["temperature_2m"]),
+        "min_temp": min(TokyoForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(TokyoForecast.hourly["relative_humidity_2m"]) /
+          len(TokyoForecast.hourly["relative_humidity_2m"]), 1
+        )
+      }
+    ];
+  expose:
+    operations: [read]
+end
+
+// =============================================================================
+// TEMPERATURE TRENDS - Chart Data (Time Series with 3 Cities)
+// =============================================================================
+
+Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
+  attributes:
+    // Chart format: array of { time, thessaloniki, newyork, tokyo }
     - data: array = map(
-        zip(Forecast.hourly["time"], Forecast.hourly["temperature_2m"]),
+        zip(
+          ThessalonikiForecast.hourly["time"],
+          ThessalonikiForecast.hourly["temperature_2m"],
+          NewYorkForecast.hourly["temperature_2m"],
+          TokyoForecast.hourly["temperature_2m"]
+        ),
         point => {
           "time": point[0],
-          "temperature": point[1]
+          "thessaloniki": point[1],
+          "newyork": point[2],
+          "tokyo": point[3]
         }
       );
   expose:
@@ -131,18 +165,13 @@ end
 // UI COMPONENTS
 // =============================================================================
 
-Component<Table> HourlyDetailsTable
-  entity: Analytics
-  colNames: ["hourly_details"]
+Component<Table> ComparisonTable
+  entity: CityComparison
+  colNames: ["city", "avg_temp", "max_temp", "min_temp", "avg_humidity"]
 end
 
-Component<Table> TimeSeriesTable
-  entity: TemperatureTimeSeries
-  colNames: ["data"]
-end
-
-Component<Chart> TemperatureChart
-  entity: TemperatureTimeSeries
+Component<Chart> ComparisonChart
+  entity: TemperatureTrends
   values: data
   xLabel: "Time"
   yLabel: "Temperature (°C)"

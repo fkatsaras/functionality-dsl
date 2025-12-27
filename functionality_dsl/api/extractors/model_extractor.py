@@ -123,7 +123,7 @@ def find_target_for_entity(entity, model):
 def extract_server_config(model):
     """
     Extract server configuration from the model.
-    Returns dict with server name, host, port, CORS, loglevel and environment.
+    Returns dict with server name, host, port, CORS, loglevel, timeout and environment.
     """
     servers = list(get_children_of_type("Server", model))
     if not servers:
@@ -148,6 +148,10 @@ def extract_server_config(model):
     if loglvl_value not in {"debug", "info", "error"}:
         loglvl_value = "info"
 
+    # Extract timeout value (default: 10 seconds)
+    timeout_value = getattr(server, "timeout", None)
+    timeout_value = int(timeout_value) if timeout_value else 10
+
     return {
         "server": {
             "name": server.name,
@@ -156,5 +160,6 @@ def extract_server_config(model):
             "cors": cors_value or "http://localhost:3000",
             "env": env_value,
             "loglevel": loglvl_value,
+            "timeout": timeout_value,
         }
     }

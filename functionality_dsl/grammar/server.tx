@@ -9,6 +9,7 @@ Server:
         ('cors:' cors+=STRING (',' cors+=STRING)*)?
         ('env:' env=ID)?          // (expects: dev | prod; or omit)
         ('loglevel:' loglevel=ID)?          // (expects: debug | info | error; or omit)
+        ('timeout:' timeout=INT)?          // HTTP client timeout in seconds (default: 10)
     )#
     'end'
 ;
