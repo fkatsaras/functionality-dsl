@@ -93,3 +93,31 @@ Entity EnrollmentDetails(Enrollment, Student, Course)
   expose:
     operations: [read]
 end
+
+// ============================================================================
+// COMPONENTS (Testing Table component with list operation)
+// ============================================================================
+
+Component<Table> StudentsTable
+  entity: Student
+  colNames: ["id", "name", "email", "enrollmentYear"]
+end
+
+Component<Table> CoursesTable
+  entity: Course
+  colNames: ["id", "title", "credits"]
+end
+
+Component<ActionForm> CreateStudent
+  entity: Student
+  operation: create
+  fields: [name, email, enrollmentYear]
+  submitLabel: "Create Student"
+end
+
+Component<ActionForm> UpdateStudent
+  entity: Student
+  operation: update
+  fields: [name, email, enrollmentYear]
+  submitLabel: "Update Student"
+end

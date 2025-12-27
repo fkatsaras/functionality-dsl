@@ -62,7 +62,6 @@ Entity HeatIndexReading(SensorReading)
   expose:
     operations: [subscribe]
     filters: ["sensorId", "locationId"]
-    // Filters propagated from parent - no redefinition needed
 end
 
 // ============================================================================
@@ -86,8 +85,6 @@ Entity TemperatureAlert(SensorReading)
   expose:
     operations: [subscribe]
     filters: ["locationId", "severity"]
-    // Clients can filter by location AND severity
-    // Example: ws://iot/ws/temperaturealert?locationId=room-1&severity=critical
 end
 
 // ============================================================================

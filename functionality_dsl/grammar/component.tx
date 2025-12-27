@@ -123,12 +123,17 @@ GaugeComponent:
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity=[Entity]
+    ('operation:' operation=ActionOperation)?
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
   )#
   'end'
+;
+
+ActionOperation:
+  'create' | 'update' | 'delete'
 ;
 
 // QueryForm for GET requests with query parameters

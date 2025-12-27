@@ -219,8 +219,29 @@ class TableComponent(_BaseComponent):
         return n
 
     def to_props(self):
+        # Table component needs the LIST endpoint to fetch multiple rows
+        # Check if entity exposes 'list' operation, otherwise use base path
+        expose = getattr(self.entity_ref, "expose", None)
+        operations = getattr(expose, "operations", []) if expose else []
+
+        # Use list endpoint if available (for fetching all rows)
+        if 'list' in operations:
+            # Get base entity path and use list operation
+            identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
+            if identity_anchor and isinstance(identity_anchor, str):
+                # Remove /{id} suffix from identity anchor to get list path
+                # e.g., "/api/users/{userId}" -> "/api/users"
+                base_path = identity_anchor.rsplit('/', 1)[0] if '/{' in identity_anchor else identity_anchor
+            else:
+                # Fallback: use entity name for base entities
+                base_path = f"/api/{self.entity_ref.name.lower()}s"
+            endpoint_path = base_path
+        else:
+            # Fallback to base path
+            endpoint_path = self._endpoint_path("")
+
         return {
-            "endpointPath": self._endpoint_path(""),
+            "endpointPath": endpoint_path,
             "colNames": self.colNames,
             "columns": self.columns,  # Include full column type info
         }
@@ -243,9 +264,9 @@ class LiveTableComponent(_BaseComponent):
     {sessionId: "...", items: [{id:1, name:"A"}, {id:2, name:"B"}], total: 100}
     With arrayField: "items", the table will display rows from the items array.
     """
-    def __init__(self, parent=None, name=None, endpoint=None, keyField=None,
+    def __init__(self, parent=None, name=None, entity_ref=None, keyField=None,
                  colNames=None, columns=None, label=None, maxRows=None, arrayField=None):
-        super().__init__(parent, name, endpoint)
+        super().__init__(parent, name, entity_ref)
 
         # Strip quotes from keyField and arrayField
         self.keyField = self._strip_column_name(keyField) if keyField else None
@@ -281,10 +302,15 @@ class LiveTableComponent(_BaseComponent):
         self.maxRows = int(maxRows) if maxRows is not None else 100
 
         # Validation
-        if endpoint is None and entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
-        if endpoint.__class__.__name__ != "EndpointWS":
-            raise ValueError(f"Component '{name}': LiveTable requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Check if entity has WebSocket subscribe operation
+        expose = getattr(entity_ref, "expose", None)
+        operations = getattr(expose, "operations", []) if expose else []
+        if 'subscribe' not in operations:
+            raise ValueError(f"Component '{name}': LiveTable requires entity with 'subscribe' operation, got {operations}")
+
         if not self.keyField:
             raise ValueError(f"Component '{name}': 'keyField:' is required for LiveTable.")
         if not self.colNames:
@@ -336,13 +362,26 @@ class LiveTableComponent(_BaseComponent):
         return n
 
     def to_props(self):
+        # LiveTable needs the WebSocket channel path from entity's expose block
+        expose = getattr(self.entity_ref, "expose", None)
+        if expose:
+            ws_channel = getattr(expose, "channel", None)
+            if ws_channel:
+                # Strip quotes from channel string
+                stream_path = ws_channel.strip('"').strip("'")
+            else:
+                # Fallback to auto-generated channel
+                stream_path = f"/ws/{self.entity_ref.name.lower()}"
+        else:
+            stream_path = f"/ws/{self.entity_ref.name.lower()}"
+
         return {
-            "streamPath": self._endpoint_path(""),
+            "streamPath": stream_path,
             "arrayField": self.arrayField,
             "keyField": self.keyField,
             "colNames": self.colNames,
             "columns": self.columns,
-            "label": self.label or self.endpoint.name,
+            "label": self.label or self.entity_ref.name,
             "maxRows": self.maxRows,
         }
 
@@ -472,31 +511,72 @@ class LiveChartComponent(_BaseComponent):
 @register_component
 class ActionFormComponent(_BaseComponent):
     """
-    Now binds to an Endpoint<REST> endpoint via 'endpoint:' (grammar already changed).
+    ActionForm binds to an Entity and specifies operation (create/update/delete).
+    Operation is automatically mapped to HTTP method (POST/PUT/DELETE).
     """
-    def __init__(self, parent=None, name=None, entity=None, fields=None, pathKey=None, submitLabel=None, method=None):
+    def __init__(self, parent=None, name=None, entity=None, operation=None, fields=None, pathKey=None, submitLabel=None):
         super().__init__(parent, name, entity)
 
         self.fields = fields or []
         self.pathKey = self._attr_name(pathKey) if pathKey is not None else None
         self.submitLabel = submitLabel
 
-        # Default method to POST for forms, allow override
-        self.method = (method or "POST").upper()
+        # Map operation to HTTP method
+        # operation comes from grammar as string: 'create', 'update', or 'delete'
+        if operation:
+            operation_str = str(operation).lower()
+            if operation_str == 'create':
+                self.method = 'POST'
+                self.operation = 'create'
+            elif operation_str == 'update':
+                self.method = 'PUT'
+                self.operation = 'update'
+            elif operation_str == 'delete':
+                self.method = 'DELETE'
+                self.operation = 'delete'
+            else:
+                raise ValueError(f"Component '{name}': Invalid operation '{operation}'. Must be 'create', 'update', or 'delete'.")
+        else:
+            # Default to create if not specified
+            self.method = 'POST'
+            self.operation = 'create'
 
         if self.entity_ref is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
+        # Validate that entity exposes the requested operation
+        expose = getattr(self.entity_ref, "expose", None)
+        operations = getattr(expose, "operations", []) if expose else []
+        if self.operation not in operations:
+            raise ValueError(f"Component '{name}': Entity '{self.entity_ref.name}' does not expose '{self.operation}' operation. Available operations: {operations}")
+
     def to_props(self):
         """
         Build frontend props for ActionForm.
-        - Get path from entity's expose block
-        - Detect {param} in path for runtime interpolation
+        - Get path from entity's expose block (identity anchor)
+        - For create: use base path without {id}
+        - For update/delete: use path with {id}
         - Expose pathKey so the frontend knows which field to use
         """
-        path = self._endpoint_path()
-        import re
+        # Get the entity's identity anchor
+        identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
 
+        if self.operation == 'create':
+            # For create (POST), use list path without {id}
+            if identity_anchor and isinstance(identity_anchor, str):
+                # Remove /{id} suffix from identity anchor
+                # e.g., "/api/students/{id}" -> "/api/students"
+                path = identity_anchor.rsplit('/', 1)[0] if '/{' in identity_anchor else identity_anchor
+            else:
+                path = f"/api/{self.entity_ref.name.lower()}s"
+        else:
+            # For update/delete (PUT/DELETE), use path with {id}
+            if identity_anchor and isinstance(identity_anchor, str):
+                path = identity_anchor
+            else:
+                path = f"/api/{self.entity_ref.name.lower()}s/{{id}}"
+
+        import re
         match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
         path_key = self.pathKey or (match.group(1) if match else None)
 
@@ -632,8 +712,25 @@ class GaugeComponent(_BaseComponent):
         self.max = float(self.max) if self.max is not None else 100.0
 
     def to_props(self):
+        # Gauge works with WebSocket subscribe entities
+        # Get the WebSocket channel from entity's expose block
+        expose = getattr(self.entity_ref, "expose", None)
+        if expose:
+            operations = getattr(expose, "operations", [])
+            if 'subscribe' in operations:
+                ws_channel = getattr(expose, "channel", None)
+                if ws_channel:
+                    stream_path = ws_channel.strip('"').strip("'")
+                else:
+                    stream_path = f"/ws/{self.entity_ref.name.lower()}"
+            else:
+                # Fallback for non-WS entities (shouldn't happen with Gauge)
+                stream_path = self._endpoint_path("")
+        else:
+            stream_path = f"/ws/{self.entity_ref.name.lower()}"
+
         return {
-            "streamPath":   self._endpoint_path(""),
+            "streamPath": stream_path,
             "value": self.value,
             "min": float(self.min),
             "max": float(self.max),
@@ -700,8 +797,25 @@ class LiveViewComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
 
     def to_props(self):
+        # LiveView works with WebSocket subscribe entities
+        # Get the WebSocket channel from entity's expose block
+        expose = getattr(self.entity_ref, "expose", None)
+        if expose:
+            operations = getattr(expose, "operations", [])
+            if 'subscribe' in operations:
+                ws_channel = getattr(expose, "channel", None)
+                if ws_channel:
+                    stream_path = ws_channel.strip('"').strip("'")
+                else:
+                    stream_path = f"/ws/{self.entity_ref.name.lower()}"
+            else:
+                # Fallback
+                stream_path = self._endpoint_path("")
+        else:
+            stream_path = self._endpoint_path("")
+
         return {
-            "streamPath":   self._endpoint_path(""),
+            "streamPath": stream_path,
             "fields": self.fields,
             "label": self.label,
             "maxMessages": self.maxMessages,

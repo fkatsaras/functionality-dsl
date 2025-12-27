@@ -145,7 +145,11 @@
       "Bash(venv_WIN/Scripts/fdsl.exe generate:*)",
       "Bash(venv_WIN/Scripts/fdsl.exe generate examples/v2/websocket-chat/main.fdsl --out generated)",
       "Bash(venv_WIN/Scripts/fdsl.exe validate:*)",
-      "Bash(bash run-multisource.sh:*)"
+      "Bash(bash run-multisource.sh:*)",
+      "Bash(ls -la \"c:\\\\ffile\\\\functionality-dsl\\\\functionality_dsl\\\\templates\\\\frontend\"\" 2>/dev/null || echo \"No templates dir found \")",
+      "Bash(xargs cat:*)",
+      "Bash(python -m functionality_dsl.cli.cli generate:*)",
+      "Bash(venv_WIN/Scripts/fdsl.exe:*)"
     ],
     "deny": [],
     "ask": []
