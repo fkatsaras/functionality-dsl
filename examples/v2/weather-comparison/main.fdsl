@@ -1,133 +1,179 @@
-// Weather Comparison API - NEW SYNTAX (Entity-Centric with Read-Only)
-// Demonstrates: Read-only entity exposure for live weather data comparison
+// =============================================================================
+// Weather Comparison API - Multi-City Weather Analytics
+// =============================================================================
+// This example demonstrates:
+// - Multiple singleton REST endpoints (one per city)
+// - Computed weather statistics per city
+// - Cross-city comparison in tables and charts
+//
+// External API: Open-Meteo forecast API (3 cities)
+// =============================================================================
 
-Server WeatherAPI
+Server WeatherAnalyticsAPI
   host: "localhost"
-  port: 8080
+  port: 8000
   cors: "*"
   loglevel: debug
 end
 
-// ============================================
-// Base Schema Entities (from external weather APIs)
-// ============================================
+// =============================================================================
+// EXTERNAL SOURCES - Open-Meteo API for 3 Cities
+// =============================================================================
 
-// Raw weather data from Thessaloniki (schema-only, from external API)
-Entity ThessWeather
+Source<REST> ThessalonikiAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m"
+end
+
+Source<REST> NewYorkAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&hourly=temperature_2m,relative_humidity_2m"
+end
+
+Source<REST> TokyoAPI
+  base_url: "https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&hourly=temperature_2m,relative_humidity_2m"
+end
+
+// =============================================================================
+// BASE ENTITIES - Raw Forecast Data (Singletons)
+// =============================================================================
+
+Entity ThessalonikiForecast
   attributes:
     - latitude: number;
     - longitude: number;
     - timezone: string;
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
     - hourly: object;
-  source: MeteoThessAPI
+    - hourly_units: object?;
+  source: ThessalonikiAPI
+  expose:
+    operations: [read]
 end
 
-// Raw weather data from London (schema-only, from external API)
-Entity LondonWeather
+Entity NewYorkForecast
   attributes:
     - latitude: number;
     - longitude: number;
     - timezone: string;
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
     - hourly: object;
-  source: MeteoLondonAPI
+    - hourly_units: object?;
+  source: NewYorkAPI
+  expose:
+    operations: [read]
 end
 
-// ============================================
-// Transformation Entities (with computed comparisons)
-// ============================================
-
-// Merges weather from both cities into row-by-row comparison
-Entity WeatherComparison(ThessWeather, LondonWeather)
+Entity TokyoForecast
   attributes:
-    - comparison_rows: array = map(
-        zip(
-          ThessWeather.hourly["time"],
-          ThessWeather.hourly["temperature_2m"],
-          LondonWeather.hourly["temperature_2m"],
-          ThessWeather.hourly["relative_humidity_2m"],
-          LondonWeather.hourly["relative_humidity_2m"]
+    - latitude: number;
+    - longitude: number;
+    - timezone: string;
+    - generationtime_ms: number?;
+    - utc_offset_seconds: integer?;
+    - timezone_abbreviation: string?;
+    - elevation: number?;
+    - hourly: object;
+    - hourly_units: object?;
+  source: TokyoAPI
+  expose:
+    operations: [read]
+end
+
+// =============================================================================
+// CITY COMPARISON - Aggregated Statistics
+// =============================================================================
+
+Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
+  attributes:
+    // Simple computed statistics array for table display
+    - stats: array = [
+      {
+        "city": "Thessaloniki",
+        "avg_temp": round(
+          sum(ThessalonikiForecast.hourly["temperature_2m"]) /
+          len(ThessalonikiForecast.hourly["temperature_2m"]), 1
         ),
-        row => {
-          "time": row[0],
-          "thess_temp": row[1],
-          "london_temp": row[2],
-          "thess_humidity": row[3],
-          "london_humidity": row[4],
-          "temp_delta": abs(row[1] - row[2]),
-          "hotter_city": ("Thessaloniki" if row[1] > row[2] else "London"),
-          "significant_difference": (abs(row[1] - row[2]) >= 5),
-          "thess_comfortable": ((abs(row[1] - 22) < 3) and (row[3] >= 30) and (row[3] <= 60)),
-          "london_comfortable": ((abs(row[2] - 22) < 3) and (row[4] >= 30) and (row[4] <= 60))
-        }
-      );
-    - total_hours: integer = len(ThessWeather.hourly["time"]);
-    - thess_avg_temp: number = round(sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]), 1);
-    - london_avg_temp: number = round(sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"]), 1);
-    - avg_temp_difference: number = round(abs(
-        sum(ThessWeather.hourly["temperature_2m"]) / len(ThessWeather.hourly["temperature_2m"]) -
-        sum(LondonWeather.hourly["temperature_2m"]) / len(LondonWeather.hourly["temperature_2m"])
-      ), 1);
+        "max_temp": max(ThessalonikiForecast.hourly["temperature_2m"]),
+        "min_temp": min(ThessalonikiForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(ThessalonikiForecast.hourly["relative_humidity_2m"]) /
+          len(ThessalonikiForecast.hourly["relative_humidity_2m"]), 1
+        )
+      },
+      {
+        "city": "New York",
+        "avg_temp": round(
+          sum(NewYorkForecast.hourly["temperature_2m"]) /
+          len(NewYorkForecast.hourly["temperature_2m"]), 1
+        ),
+        "max_temp": max(NewYorkForecast.hourly["temperature_2m"]),
+        "min_temp": min(NewYorkForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(NewYorkForecast.hourly["relative_humidity_2m"]) /
+          len(NewYorkForecast.hourly["relative_humidity_2m"]), 1
+        )
+      },
+      {
+        "city": "Tokyo",
+        "avg_temp": round(
+          sum(TokyoForecast.hourly["temperature_2m"]) /
+          len(TokyoForecast.hourly["temperature_2m"]), 1
+        ),
+        "max_temp": max(TokyoForecast.hourly["temperature_2m"]),
+        "min_temp": min(TokyoForecast.hourly["temperature_2m"]),
+        "avg_humidity": round(
+          sum(TokyoForecast.hourly["relative_humidity_2m"]) /
+          len(TokyoForecast.hourly["relative_humidity_2m"]), 1
+        )
+      }
+    ];
   expose:
-    rest: "/api/weather/compare"
     operations: [read]
 end
 
-// Simplified stats for charting
-Entity WeatherStats(WeatherComparison)
+// =============================================================================
+// TEMPERATURE TRENDS - Chart Data (Time Series with 3 Cities)
+// =============================================================================
+
+Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   attributes:
-    - chart_data: array = map(WeatherComparison.comparison_rows, row =>
-        {
-          "time": row["time"],
-          "thess_temp": row["thess_temp"],
-          "london_temp": row["london_temp"]
+    // Chart format: array of { time, thessaloniki, newyork, tokyo }
+    - data: array = map(
+        zip(
+          ThessalonikiForecast.hourly["time"],
+          ThessalonikiForecast.hourly["temperature_2m"],
+          NewYorkForecast.hourly["temperature_2m"],
+          TokyoForecast.hourly["temperature_2m"]
+        ),
+        point => {
+          "time": point[0],
+          "thessaloniki": point[1],
+          "newyork": point[2],
+          "tokyo": point[3]
         }
       );
-    - total_hours: integer = WeatherComparison.total_hours;
-    - thess_avg_temp: number = WeatherComparison.thess_avg_temp;
-    - london_avg_temp: number = WeatherComparison.london_avg_temp;
-    - avg_temp_difference: number = WeatherComparison.avg_temp_difference;
   expose:
-    rest: "/api/weather/stats"
     operations: [read]
 end
 
-// ============================================
-// External Weather API Sources (Read-Only CRUD)
-// ============================================
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
 
-Source<REST> MeteoThessAPI
-  base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
-  operations: [read]
+Component<Table> ComparisonTable
+  entity: CityComparison
+  colNames: ["city", "avg_temp", "max_temp", "min_temp", "avg_humidity"]
 end
 
-Source<REST> MeteoLondonAPI
-  base_url: "https://api.open-meteo.com/v1/forecast?latitude=51.5072&longitude=-0.1276&hourly=temperature_2m,relative_humidity_2m&timezone=auto"
-  operations: [read]
-end
-
-// ============================================
-// UI Components
-// ============================================
-
-Component<Table> WeatherTable
-  entity: WeatherComparison
-  columns:
-    - "time": string<time>
-    - "thess_temp": number
-    - "london_temp": number
-    - "thess_humidity": number
-    - "london_humidity": number
-    - "temp_delta": number
-    - "hotter_city": string
-    - "significant_difference": boolean
-    - "thess_comfortable": boolean
-    - "london_comfortable": boolean
-end
-
-Component<Chart> TempChart
-  entity: WeatherStats
-  seriesLabels: ["Thessaloniki", "London"]
-  xLabel: string<time> "Time"
-  yLabel: number "Temperature (°C)"
+Component<Chart> ComparisonChart
+  entity: TemperatureTrends
+  values: data
+  xLabel: "Time"
+  yLabel: "Temperature (°C)"
   height: 400
 end
