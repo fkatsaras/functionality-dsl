@@ -425,9 +425,10 @@ def visualize_model_cmd(context, model_path, output_dir):
                     label=edge_label,
                     taillabel=tail_label,
                     headlabel=head_label,
+                    labeldistance="2.5",  # Distance from node
                     style=edge_style,
                     color=edge_color,
-                    fontsize="9"
+                    fontsize="10"
                 )
 
             # v2 syntax: Entity expose blocks (REST/WebSocket)
