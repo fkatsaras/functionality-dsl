@@ -140,3 +140,11 @@ Component<Table> TimeSeriesTable
   entity: TemperatureTimeSeries
   colNames: ["data"]
 end
+
+Component<Chart> TemperatureChart
+  entity: TemperatureTimeSeries
+  values: data
+  xLabel: "Time"
+  yLabel: "Temperature (°C)"
+  height: 400
+end

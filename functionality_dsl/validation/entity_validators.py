@@ -758,10 +758,11 @@ def _validate_rest_entity_relationships(model):
 
     Rules (REST-specific):
     1. Relationships block can only be used in composite entities
-    2. All non-first parents must have a relationship defined
+    2. All non-first parents must have a relationship defined (UNLESS all parents are singletons)
     3. Relationship fetch expressions must reference valid entity attributes
     4. First parent doesn't need a relationship (uses endpoint ID)
     5. Relationships can ONLY reference base entities (non-composite, with source)
+    6. Composites of singleton entities don't need relationships (they just aggregate static data)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -788,6 +789,24 @@ def _validate_rest_entity_relationships(model):
 
         # If no parents, skip further validation
         if not parent_refs:
+            continue
+
+        # Rule 6: Check if all parents are singletons (no relationships needed)
+        all_parents_singleton = all(
+            getattr(parent, "_is_singleton", False) for parent in parent_entities
+        )
+
+        if all_parents_singleton:
+            # Composites of singletons just aggregate static data - no relationships needed
+            # If a relationships block exists, warn but don't fail
+            if relationships:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' is a composite of singleton entities and does not need 'relationships:' block.\n"
+                    f"Singleton entities are static resources (no path parameters), so composites simply aggregate their data.\n"
+                    f"Remove the 'relationships:' block - relationships are only needed for entities with @id fields.",
+                    **get_location(relationships_block)
+                )
+            # Skip further validation for singleton composites
             continue
 
         # Rule 2: All non-first parents must have a relationship defined
@@ -1072,6 +1091,7 @@ def _compute_identity_anchors(model):
 
     Simplified rules (nested resources removed):
     - Base entity (no parents, has @id and source) → anchor = itself
+    - Singleton entity (no parents, no @id, has source, exposes read) → singleton
     - Composite entity (has parents) → anchor = first parent's anchor, CANNOT have source
     """
     entities = get_children_of_type("Entity", model)
@@ -1081,6 +1101,7 @@ def _compute_identity_anchors(model):
         entity._identity_anchor = None
         entity._identity_field = None
         entity._is_composite = False
+        entity._is_singleton = False
 
     def compute_anchor(entity, visited=None):
         """Recursively compute identity anchor."""
@@ -1096,7 +1117,7 @@ def _compute_identity_anchors(model):
         visited.add(id(entity))
 
         # Already computed
-        if entity._identity_anchor is not None:
+        if entity._identity_anchor is not None or entity._is_singleton:
             return entity._identity_anchor
 
         parent_entities = _get_parent_entities(entity)
@@ -1105,26 +1126,53 @@ def _compute_identity_anchors(model):
         if not parent_entities:
             id_field = _find_id_attribute(entity)
             source = getattr(entity, "source", None)
+            expose = getattr(entity, "expose", None)
 
             if id_field and source:
-                # This is a base resource entity
+                # This is a standard base resource entity
                 entity._identity_anchor = entity
                 entity._identity_field = id_field
                 entity._is_composite = False
+                entity._is_singleton = False
+            elif not id_field and source and expose:
+                # Check if this is a singleton (no @id, has source, exposes read)
+                operations = getattr(expose, "operations", [])
+                if 'read' in operations and len(operations) == 1:
+                    # This is a singleton entity
+                    entity._identity_anchor = None
+                    entity._identity_field = None
+                    entity._is_composite = False
+                    entity._is_singleton = True
+                else:
+                    # No identity anchor and not singleton
+                    entity._identity_anchor = None
+                    entity._identity_field = None
+                    entity._is_composite = False
+                    entity._is_singleton = False
             else:
                 # No identity anchor (schema-only entity or computed entity without source)
                 entity._identity_anchor = None
                 entity._identity_field = None
                 entity._is_composite = False
+                entity._is_singleton = False
 
             return entity._identity_anchor
 
         # Composite entity (has parents)
         entity._is_composite = True
+        entity._is_singleton = False
 
         # Compute anchor from first parent
         first_parent = parent_entities[0]
         first_parent_anchor = compute_anchor(first_parent, visited.copy())
+        first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
+
+        # Composite of singleton entity
+        if first_parent_is_singleton:
+            entity._identity_anchor = None
+            entity._identity_field = None
+            # Note: Composite of singleton is also treated as singleton-derived
+            return None
 
         if not first_parent_anchor:
             # First parent has no anchor

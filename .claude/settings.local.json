@@ -152,7 +152,8 @@
       "Bash(venv_WIN/Scripts/fdsl.exe:*)",
       "Bash(python -m functionality_dsl.cli.cli visualize-model:*)",
       "Bash(where:*)",
-      "Bash(del NUL)"
+      "Bash(del NUL)",
+      "Bash(../../../venv_WIN/Scripts/fdsl.exe generate main_rest.fdsl --out generated)"
     ],
     "deny": [],
     "ask": []

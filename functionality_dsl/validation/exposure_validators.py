@@ -129,25 +129,66 @@ def _validate_exposure_blocks(model, metamodel=None):
 
 def _validate_rest_expose(entity, expose, source):
     """Validate REST exposure configuration."""
-    # REST paths are now auto-generated from identity anchor
+    # REST paths are now auto-generated from identity anchor OR as singleton
     # Validation of identity anchor happens in entity_validators.py
-    # Here we just validate that the entity HAS an identity anchor
 
-    identity_anchor = getattr(entity, "_identity_anchor", None)
-    identity_field = getattr(entity, "_identity_field", None)
-
-    if not identity_anchor or not identity_field:
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' has REST expose but no identity anchor. "
-            f"Entities must have an @id field (base entity) or inherit from an entity with @id (composite entity).",
-            **get_location(expose),
-        )
-
-    # Get operations
+    # Get operations first to check for singleton pattern
     operations = getattr(expose, "operations", [])
     if not operations:
         raise TextXSemanticError(
             f"Entity '{entity.name}' expose block must define 'operations: [...]'.",
+            **get_location(expose),
+        )
+
+    identity_anchor = getattr(entity, "_identity_anchor", None)
+    identity_field = getattr(entity, "_identity_field", None)
+    is_singleton = getattr(entity, "_is_singleton", False)
+    is_composite = getattr(entity, "_is_composite", False)
+
+    # Check if this is a composite of a singleton parent
+    is_singleton_derived = False
+    if is_composite and not identity_anchor:
+        # Composite with no anchor might be derived from singleton
+        parent_refs = getattr(entity, "parents", []) or []
+        if parent_refs:
+            first_parent = parent_refs[0].entity if hasattr(parent_refs[0], "entity") else parent_refs[0]
+            first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
+            if first_parent_is_singleton:
+                is_singleton_derived = True
+
+    # Allow singleton entities and singleton-derived composites (no @id, only 'read' operation)
+    # Singleton entities generate endpoints like GET /api/forecast (no path parameter)
+    if is_singleton or is_singleton_derived:
+        # Singleton validation
+        if 'read' not in operations:
+            entity_type = "Singleton-derived composite" if is_singleton_derived else "Singleton"
+            raise TextXSemanticError(
+                f"{entity_type} entity '{entity.name}' must expose 'read' operation.\n"
+                f"Singleton entities (without @id field) can only expose the 'read' operation.\n"
+                f"Add 'read' to operations: [read]",
+                **get_location(expose),
+            )
+
+        # Singleton entities can ONLY have 'read' operation
+        invalid_ops = [op for op in operations if op not in ['read']]
+        if invalid_ops:
+            entity_type = "Singleton-derived composite" if is_singleton_derived else "Singleton"
+            raise TextXSemanticError(
+                f"{entity_type} entity '{entity.name}' cannot have operations: {invalid_ops}.\n"
+                f"Singleton entities (without @id field) can only expose 'read' operation.\n"
+                f"To use list/create/update/delete, add an @id field to make this a standard REST resource.",
+                **get_location(expose),
+            )
+
+        # Singleton entities are valid - skip identity anchor check
+        return
+
+    # Standard REST entities need identity anchor
+    if not identity_anchor or not identity_field:
+        raise TextXSemanticError(
+            f"Entity '{entity.name}' has REST expose but no identity anchor. "
+            f"Entities must have an @id field (base entity) or inherit from an entity with @id (composite entity).\n"
+            f"For singleton endpoints (no path parameter), remove all operations except 'read' and omit the @id field.",
             **get_location(expose),
         )
 

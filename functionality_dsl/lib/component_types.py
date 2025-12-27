@@ -397,6 +397,8 @@ class ChartComponent(_BaseComponent):
         name=None,
         entity_ref=None,
         values=None,
+        xField=None,
+        yField=None,
         xLabel=None,
         yLabel=None,
         seriesLabels=None,
@@ -406,10 +408,12 @@ class ChartComponent(_BaseComponent):
     ):
         super().__init__(parent, name, entity_ref)
         self.values = values  # Just the attribute name (string)
+        self.xField = xField  # Field name for x-axis data in array objects
+        self.yField = yField  # Field name for y-axis data in array objects
 
-        # Parse typed labels
-        self.xLabel = self._parse_typed_label(xLabel)
-        self.yLabel = self._parse_typed_label(yLabel)
+        # Simple string labels (no longer TypedLabel)
+        self.xLabel = _strip_quotes(xLabel) if xLabel else None
+        self.yLabel = _strip_quotes(yLabel) if yLabel else None
 
         self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
         self.refreshMs = int(refreshMs) if refreshMs is not None else 0
@@ -420,20 +424,12 @@ class ChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
-    def _parse_typed_label(self, typed_label):
-        """Parse TypedLabel node into dict with type, format, and text."""
-        if not typed_label:
-            return None
-        return {
-            "type": getattr(typed_label, "typename", "string"),
-            "format": getattr(typed_label, "format", None),
-            "text": _strip_quotes(getattr(typed_label, "label", ""))
-        }
-
     def to_props(self):
         return {
             "endpointPath": self._endpoint_path(""),
             "values": self.values,
+            "xField": self.xField,
+            "yField": self.yField,
             "seriesLabels": self.seriesLabels,
             "xLabel": self.xLabel,
             "yLabel": self.yLabel,
@@ -455,6 +451,8 @@ class LiveChartComponent(_BaseComponent):
         entity_ref=None,
         endpoint=None,  # Legacy support
         values=None,
+        xField=None,
+        yField=None,
         xLabel=None,
         yLabel=None,
         seriesLabels=None,
@@ -463,10 +461,12 @@ class LiveChartComponent(_BaseComponent):
     ):
         super().__init__(parent, name, entity_ref or endpoint)
         self.values = values  # Just the attribute name (string)
+        self.xField = xField  # Field name for x-axis data in array objects
+        self.yField = yField  # Field name for y-axis data in array objects
 
-        # Parse typed labels
-        self.xLabel = self._parse_typed_label(xLabel)
-        self.yLabel = self._parse_typed_label(yLabel)
+        # Simple string labels (no longer TypedLabel)
+        self.xLabel = _strip_quotes(xLabel) if xLabel else None
+        self.yLabel = _strip_quotes(yLabel) if yLabel else None
 
         self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
         self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
@@ -486,20 +486,12 @@ class LiveChartComponent(_BaseComponent):
         if endpoint and endpoint.__class__.__name__ != "EndpointWS":
             raise ValueError(f"Component '{name}': LiveChart component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
 
-    def _parse_typed_label(self, typed_label):
-        """Parse TypedLabel node into dict with type, format, and text."""
-        if not typed_label:
-            return None
-        return {
-            "type": getattr(typed_label, "typename", "string"),
-            "format": getattr(typed_label, "format", None),
-            "text": _strip_quotes(getattr(typed_label, "label", ""))
-        }
-
     def to_props(self):
         return {
             "streamPath": self._endpoint_path(""),
             "values": self.values,
+            "xField": self.xField,
+            "yField": self.yField,
             "seriesLabels": self.seriesLabels,
             "xLabel": self.xLabel,
             "yLabel": self.yLabel,

@@ -29,18 +29,37 @@ def _generate_rest_path(entity):
 
     Rules:
     - Base entity (no parents): /api/{plural}/{id_field}
+    - Singleton entity (no parents, no @id): /api/{entity_name_lower}
     - Composite entity (has parents): /api/{base_plural}/{base_id}/{entity_name_lower}
+    - Composite of singleton: /api/{entity_name_lower}
 
     Examples:
     - User (base) → /api/users/{userId}
     - Order (base) → /api/orders/{orderId}
-    - OrderItem (base) → /api/orderitems/{itemId}
+    - Forecast (singleton) → /api/forecast
+    - Analytics (composite of Forecast singleton) → /api/analytics
     - OrderDetails (composite of Order) → /api/orders/{orderId}/orderdetails
     """
     # Check if entity has identity anchor (computed during validation)
     identity_anchor = getattr(entity, "_identity_anchor", None)
     identity_field = getattr(entity, "_identity_field", None)
     is_composite = getattr(entity, "_is_composite", False)
+    is_singleton = getattr(entity, "_is_singleton", False)
+
+    # Singleton entity (no @id, no parents)
+    if is_singleton:
+        return f"/api/{entity.name.lower()}"
+
+    # Composite of singleton entity
+    if is_composite and not identity_anchor:
+        # Check if any parent is singleton
+        parent_refs = getattr(entity, "parents", []) or []
+        if parent_refs:
+            first_parent = parent_refs[0].entity
+            first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
+            if first_parent_is_singleton:
+                # Composite of singleton gets its own singleton path
+                return f"/api/{entity.name.lower()}"
 
     if not identity_anchor or not identity_field:
         return None  # Entity has no REST identity
@@ -50,7 +69,7 @@ def _generate_rest_path(entity):
         plural = pluralizer.pluralize(entity.name.lower())
         return f"/api/{plural}/{{{identity_field}}}"
 
-    # Composite entity (has parents)
+    # Composite entity (has parents with @id)
     # Path format: /api/{base_plural}/{base_id}/{composite_name}
     base_plural = pluralizer.pluralize(identity_anchor.name.lower())
     base_id_field = identity_anchor._identity_field

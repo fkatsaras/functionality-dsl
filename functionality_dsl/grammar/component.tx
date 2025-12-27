@@ -88,9 +88,11 @@ ChartComponent:
   'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
+    ('xField:' xField=ID)?
+    ('yField:' yField=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
-    ('xLabel:' xLabel=TypedLabel)?
-    ('yLabel:' yLabel=TypedLabel)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
     ('refreshMs:' refreshMs=INT)?
     ('windowSize:' windowSize=INT)?
     ('height:' height=INT)?
@@ -103,9 +105,11 @@ LiveChartComponent:
   'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
+    ('xField:' xField=ID)?
+    ('yField:' yField=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
-    ('xLabel:' xLabel=TypedLabel)?
-    ('yLabel:' yLabel=TypedLabel)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
     ('windowSize:' windowSize=INT)?
     ('height:' height=INT)?
   )#
