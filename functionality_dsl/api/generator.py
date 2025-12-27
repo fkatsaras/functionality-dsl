@@ -40,6 +40,7 @@ from .generators import (
     generate_openapi_spec,
     generate_asyncapi_spec,
 )
+from .generators.core.postman_generator import generate_postman_collection
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
 
@@ -177,6 +178,13 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
 
         print("\n  [4.6] Generating AsyncAPI specification (WebSocket)...")
         generate_asyncapi_spec(model, out_dir, server_config)
+
+        print("\n  [4.7] Generating Postman Collection...")
+        openapi_file = Path(out_dir) / "app" / "api" / "openapi.yaml"
+        if openapi_file.exists():
+            generate_postman_collection(openapi_file, out_dir)
+        else:
+            print("  Skipping Postman collection (no OpenAPI spec found)")
     else:
         print("  No exposed entities found (using old syntax)")
 

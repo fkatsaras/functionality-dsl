@@ -233,6 +233,20 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
             }
         ]
 
+    # Add query parameters for list operations (filters)
+    if operation == "list":
+        filters = config.get("filters", [])
+        if filters:
+            spec["parameters"] = []
+            for filter_field in filters:
+                spec["parameters"].append({
+                    "name": filter_field,
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "string"},
+                    "description": f"Filter by {filter_field}",
+                })
+
     # Add request body for operations that need it
     if requires_request_body(operation):
         request_schema = derive_request_schema_name(entity_name, operation)
