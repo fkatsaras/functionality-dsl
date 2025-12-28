@@ -42,6 +42,11 @@ from functionality_dsl.validation.exposure_validators import (
     _validate_exposure_blocks,
     _validate_crud_blocks,
     _validate_entity_crud_rules,
+    _validate_permissions,
+)
+
+from functionality_dsl.validation.server_validators import (
+    verify_server,
 )
 
 __all__ = [
@@ -70,4 +75,7 @@ __all__ = [
     "_validate_exposure_blocks",
     "_validate_crud_blocks",
     "_validate_entity_crud_rules",
+    "_validate_permissions",
+    # Server validators
+    "verify_server",
 ]

@@ -161,7 +161,8 @@
       "Bash(make gen:*)",
       "Bash(venv_WSL/bin/fdsl generate:*)",
       "Bash(../venv_WIN/Scripts/fdsl validate:*)",
-      "Bash(c:/ffile/functionality-dsl/venv_WIN/Scripts/fdsl validate:*)"
+      "Bash(c:/ffile/functionality-dsl/venv_WIN/Scripts/fdsl validate:*)",
+      "Bash(python -m functionality_dsl.cli.validate:*)"
     ],
     "deny": [],
     "ask": []

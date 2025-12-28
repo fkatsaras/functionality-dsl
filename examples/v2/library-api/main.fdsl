@@ -17,6 +17,9 @@ Server LibraryAPI
   cors: "*"
   loglevel: debug
   timeout: 30
+  auth:
+    type: jwt
+    secret_env: "JWT_SECRET"
 end
 
 // =============================================================================
@@ -59,6 +62,10 @@ Entity Author
   expose:
     operations: [list, read, create, update, delete]
     readonly_fields: ["id", "createdAt"]
+    permissions:
+      - create: ["librarian", "admin"]
+      - update: ["librarian", "admin"]
+      - delete: ["admin"]
 end
 
 Entity Category
@@ -70,6 +77,10 @@ Entity Category
   expose:
     operations: [list, read, create, update, delete]
     readonly_fields: ["id"]
+    permissions:
+      - create: ["librarian", "admin"]
+      - update: ["librarian", "admin"]
+      - delete: ["admin"]
 end
 
 Entity Book
@@ -89,6 +100,10 @@ Entity Book
   expose:
     operations: [list, read, create, update, delete]
     readonly_fields: ["id", "createdAt"]
+    permissions:
+      - create: ["librarian", "admin"]
+      - update: ["librarian", "admin"]
+      - delete: ["admin"]
 end
 
 Entity Member
@@ -105,6 +120,12 @@ Entity Member
   expose:
     operations: [list, read, create, update, delete]
     readonly_fields: ["id", "joinedDate"]
+    permissions:
+      - list: ["librarian", "admin"]
+      - read: ["librarian", "admin"]
+      - create: ["librarian", "admin"]
+      - update: ["librarian", "admin"]
+      - delete: ["admin"]
 end
 
 Entity Loan
@@ -121,6 +142,12 @@ Entity Loan
   expose:
     operations: [list, read, create, update, delete]
     readonly_fields: ["id", "loanDate", "fine"]
+    permissions:
+      - list: ["librarian", "admin"]
+      - read: ["librarian", "admin"]
+      - create: ["librarian", "admin"]
+      - update: ["librarian", "admin"]
+      - delete: ["admin"]
 end
 
 // =============================================================================
@@ -166,6 +193,9 @@ Entity LoanDetails(Loan, Book, Member)
     - isOverdue: boolean = Loan.status == "overdue";
   expose:
     operations: [list, read]
+    permissions:
+      - list: ["librarian", "admin"]
+      - read: ["librarian", "admin"]
 end
 
 Entity MemberStats(Member, Loan[])
@@ -183,6 +213,9 @@ Entity MemberStats(Member, Loan[])
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
   expose:
     operations: [list, read]
+    permissions:
+      - list: ["librarian", "admin"]
+      - read: ["librarian", "admin"]
 end
 
 Entity LibraryStatistics(Book, Member, Loan)
@@ -196,6 +229,8 @@ Entity LibraryStatistics(Book, Member, Loan)
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
   expose:
     operations: [read]
+    permissions:
+      - read: ["librarian", "admin"]
 end
 
 // =============================================================================

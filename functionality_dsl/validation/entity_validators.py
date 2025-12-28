@@ -814,6 +814,31 @@ def _validate_rest_entity_relationships(model):
             # Skip further validation for singleton composites
             continue
 
+        # Rule 7: Check if the composite entity itself is a singleton
+        # Singleton composites aggregate ALL records from parents - no filtering by ID
+        # Example: LibraryStatistics(Book, Member, Loan) exposes only 'read' (not 'list')
+        #
+        # To determine if composite is singleton, check if it exposes 'list' operation
+        # Entities that don't expose 'list' are singletons (single aggregate resource)
+        expose = getattr(entity, "expose", None)
+        operations = getattr(expose, "operations", []) if expose else []
+        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
+        has_rest_ops = any(op in rest_ops for op in operations)
+        has_list = 'list' in operations
+
+        # Singleton composite: has parents, exposes REST ops, but no 'list' operation
+        if has_rest_ops and not has_list:
+            # Singleton composite entities don't need relationships - they fetch all parent records
+            if relationships:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' is a singleton composite (no 'list' operation) and does not need 'relationships:' block.\n"
+                    f"Singleton composites aggregate ALL records from parent entities without filtering by ID.\n"
+                    f"Remove the 'relationships:' block - it's only needed when filtering parents by ID.",
+                    **get_location(relationships_block)
+                )
+            # Skip further validation for singleton composites
+            continue
+
         # Rule 2: All non-first parents must have a relationship defined
         # (First parent uses the endpoint's ID parameter by convention)
         if len(parent_refs) > 1:

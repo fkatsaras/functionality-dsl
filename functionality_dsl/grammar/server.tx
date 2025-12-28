@@ -10,6 +10,40 @@ Server:
         ('env:' env=ID)?          // (expects: dev | prod; or omit)
         ('loglevel:' loglevel=ID)?          // (expects: debug | info | error; or omit)
         ('timeout:' timeout=INT)?          // HTTP client timeout in seconds (default: 10)
+        (auth=AuthBlock)?
     )#
     'end'
+;
+
+// Authentication configuration
+AuthBlock:
+    'auth:'
+        'type:' type=AuthType
+        'roles:' '[' roles+=STRING (',' roles+=STRING)* ']'
+        (jwt_config=JWTAuthConfig)?
+        (session_config=SessionAuthConfig)?
+        (apikey_config=APIKeyAuthConfig)?
+;
+
+AuthType: 'jwt' | 'session' | 'api_key' ;
+
+JWTAuthConfig:
+    ('secret_env:' secret_env=STRING)
+    ('header:' header=STRING)?
+    ('scheme:' scheme=STRING)?
+    ('algorithm:' algorithm=STRING)?
+    ('user_id_claim:' user_id_claim=STRING)?
+    ('roles_claim:' roles_claim=STRING)?
+;
+
+SessionAuthConfig:
+    (('cookie:' cookie=STRING) | ('redis_url_env:' redis_url_env=STRING) | ('store_env:' store_env=STRING))
+    ('cookie:' cookie=STRING)?
+    ('redis_url_env:' redis_url_env=STRING)?
+    ('store_env:' store_env=STRING)?
+;
+
+APIKeyAuthConfig:
+    ('lookup_env:' lookup_env=STRING)
+    ('header:' header=STRING)?
 ;

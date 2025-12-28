@@ -535,3 +535,82 @@ def _validate_entity_crud_rules(model, metamodel=None):
                     f"To create/update/delete items, expose operations on the item entity (type: object) instead.",
                     **get_location(expose),
                 )
+
+
+def _validate_permissions(model, metamodel=None):
+    """
+    Validate permissions blocks in entity expose configurations.
+
+    Rules:
+    - If permissions block exists, all exposed operations must have permission rules
+    - Permission roles must be declared in Server auth block
+    - Default permission for all operations is ["public"] if no permissions block
+    - Permissions are only valid for entities with REST or WebSocket operations
+    """
+    # Get declared roles from server auth block
+    server = getattr(model, "server", None)
+    auth = getattr(server, "auth", None) if server else None
+    declared_roles = set(getattr(auth, "roles", []) or [])
+    declared_roles.add("public")  # "public" is always allowed (no auth)
+
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        expose = getattr(entity, "expose", None)
+        if not expose:
+            continue
+
+        permissions_block = getattr(expose, "permissions", None)
+        operations = getattr(expose, "operations", [])
+
+        if not permissions_block:
+            # No permissions block - defaults to ["public"] for all operations
+            continue
+
+        # Get permission rules
+        perm_rules = getattr(permissions_block, "perms", []) or []
+        perm_map = {rule.operation: rule.roles for rule in perm_rules}
+
+        # Validate that all exposed operations have permission rules
+        for op in operations:
+            if op not in perm_map:
+                defined_ops = list(perm_map.keys())
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' exposes operation '{op}' but has no permission rule for it.\n"
+                    f"All exposed operations must have permission rules when permissions block is present.\n"
+                    f"Exposed operations: {operations}\n"
+                    f"Permission rules defined for: {defined_ops}\n"
+                    f"Add: - {op}: [\"role1\", \"role2\"]",
+                    **get_location(permissions_block),
+                )
+
+        # Validate that permission operations match exposed operations
+        for perm_op in perm_map.keys():
+            if perm_op not in operations:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has permission rule for operation '{perm_op}' "
+                    f"but does not expose that operation.\n"
+                    f"Exposed operations: {operations}\n"
+                    f"Remove the permission rule or add '{perm_op}' to operations list.",
+                    **get_location(permissions_block),
+                )
+
+        # Validate that each operation has at least one role
+        for op, roles in perm_map.items():
+            if not roles or len(roles) == 0:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' operation '{op}' has empty roles list.\n"
+                    f"Each operation must specify at least one role (use [\"public\"] for unauthenticated access).",
+                    **get_location(permissions_block),
+                )
+
+        # Validate that all referenced roles are declared in server auth block
+        for op, roles in perm_map.items():
+            for role in roles:
+                if role not in declared_roles:
+                    raise TextXSemanticError(
+                        f"Entity '{entity.name}' operation '{op}' references undeclared role '{role}'.\n"
+                        f"Declared roles in Server auth block: {sorted(declared_roles)}\n"
+                        f"Add '{role}' to Server auth.roles or use an existing role.",
+                        **get_location(permissions_block),
+                    )
