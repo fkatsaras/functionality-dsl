@@ -1,0 +1,17 @@
+services:
+  dummy-smart-home:
+    build: .
+    container_name: dummy-smart-home
+    ports:
+      - "9100:9100"
+    networks:
+      - thesis_fdsl_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/devices')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  thesis_fdsl_net:
+    external: true

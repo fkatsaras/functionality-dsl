@@ -1,0 +1,57 @@
+// =============================================================================
+// PATTERN 2: Subscribe with Transformation
+// =============================================================================
+// RULE: Subscribe flow with computed fields
+//
+// Flow: External WS → Base Entity (source:) → Composite Entity (computed) → Client
+//
+// Requirements:
+// 1. Source<WS> with channel URL only
+// 2. Base entity with source: binding (pure schema, NO expressions, NO expose)
+// 3. Composite entity with computed attributes (ALL attrs have expressions)
+// 4. Composite entity exposes subscribe operation
+// 5. Client binds to composite entity
+// =============================================================================
+
+Server SubscribeTransformed
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// External WebSocket source
+Source<WS> ExternalWS
+  channel: "ws://dummy-ws-patterns:9200/stream-large"
+end
+
+// Base entity - pure schema from external source
+// NO expose block - not directly accessible to clients
+Entity RawMessage
+  attributes:
+    - id: string;
+    - content: string;
+    - size_bytes: integer;
+  source: ExternalWS
+end
+
+// Composite entity - transforms data
+// ALL attributes MUST have expressions
+Entity ProcessedMessage(RawMessage)
+  attributes:
+    - id: string = RawMessage.id;
+    - text: string = upper(RawMessage.content);
+    - size_kb: number = round(RawMessage.size_bytes / 1024, 2);
+  expose:
+    operations: [subscribe]
+    // Auto-generates path: /ws/processedmessage
+end
+
+// Client connects to: ws://localhost:8000/ws/processedmessage
+// Receives: ProcessedMessage objects (transformed)
+
+Component<LiveView> ProcessedFeed
+  entity: ProcessedMessage
+  fields: ["id", "text", "size_kb"]
+  label: "Processed Messages"
+end

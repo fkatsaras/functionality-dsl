@@ -1,0 +1,265 @@
+// =============================================================================
+// Smart Home IoT Control - REST + WebSocket Bidirectional Demo
+// =============================================================================
+// This example demonstrates COMPLETE IoT bidirectional communication:
+// - REST API for reading device state (GET current status)
+// - WebSocket SUBSCRIBE for live sensor updates (temperature, door sensors)
+// - WebSocket PUBLISH for sending device commands (set temperature, lights)
+//
+// Use Case: Smart home automation with real-time monitoring and control
+// Data Source: Local dummy smart home service
+// =============================================================================
+
+Server SmartHomeAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+  timeout: 30
+end
+
+// =============================================================================
+// REST SOURCES - Device State (Snapshot Data)
+// =============================================================================
+
+Source<REST> ThermostatStateAPI
+  base_url: "http://dummy-smart-home:9100/devices/thermostat"
+end
+
+Source<REST> LightStateAPI
+  base_url: "http://dummy-smart-home:9100/devices/light"
+end
+
+Source<REST> DoorStateAPI
+  base_url: "http://dummy-smart-home:9100/devices/door"
+end
+
+// =============================================================================
+// WEBSOCKET SOURCE - Live Device Updates & Commands
+// =============================================================================
+
+Source<WS> SmartHomeWS
+  channel: "ws://dummy-smart-home:9100/ws/devices"
+end
+
+// =============================================================================
+// BASE ENTITIES - REST Device State (Singletons)
+// =============================================================================
+
+Entity ThermostatState
+  attributes:
+    - deviceId: string;
+    - deviceType: string;
+    - currentTemp: number;
+    - targetTemp: number;
+    - mode: string;
+    - status: string;
+    - humidity: integer;
+    - lastUpdated: string;
+  source: ThermostatStateAPI
+  expose:
+    operations: [read]
+end
+
+Entity LightState
+  attributes:
+    - deviceId: string;
+    - deviceType: string;
+    - power: boolean;
+    - brightness: integer;
+    - color: string;
+    - lastUpdated: string;
+  source: LightStateAPI
+  expose:
+    operations: [read]
+end
+
+Entity DoorState
+  attributes:
+    - deviceId: string;
+    - deviceType: string;
+    - status: string;
+    - batteryLevel: integer;
+    - lastOpened: string;
+    - lastUpdated: string;
+  source: DoorStateAPI
+  expose:
+    operations: [read]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - Live Updates (Subscribe)
+// =============================================================================
+
+Entity DeviceUpdateMessage
+  attributes:
+    - type: string;
+    - data: object?;
+    - thermostat: object?;
+    - light: object?;
+    - door: object?;
+  source: SmartHomeWS
+end
+
+Entity ThermostatLiveUpdate(DeviceUpdateMessage)
+  attributes:
+    - deviceId: string = get(DeviceUpdateMessage.data, "deviceId", "unknown");
+    - currentTemp: number = get(DeviceUpdateMessage.data, "currentTemp", 0);
+    - targetTemp: number = get(DeviceUpdateMessage.data, "targetTemp", 0);
+    - mode: string = get(DeviceUpdateMessage.data, "mode", "off");
+    - status: string = get(DeviceUpdateMessage.data, "status", "unknown");
+    - humidity: integer = get(DeviceUpdateMessage.data, "humidity", 0);
+    - tempDiff: number = round(get(DeviceUpdateMessage.data, "targetTemp", 0) - get(DeviceUpdateMessage.data, "currentTemp", 0), 1);
+  expose:
+    operations: [subscribe]
+end
+
+Entity LightLiveUpdate(DeviceUpdateMessage)
+  attributes:
+    - deviceId: string = get(DeviceUpdateMessage.data, "deviceId", "unknown");
+    - power: boolean = get(DeviceUpdateMessage.data, "power", False);
+    - brightness: integer = get(DeviceUpdateMessage.data, "brightness", 0);
+    - color: string = get(DeviceUpdateMessage.data, "color", "white");
+  expose:
+    operations: [subscribe]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - Device Commands (Publish)
+// =============================================================================
+
+Entity ThermostatCommand
+  attributes:
+    - device: string;
+    - targetTemp: number;
+    - mode: string;
+  target: SmartHomeWS
+  expose:
+    operations: [publish]
+end
+
+Entity LightCommand
+  attributes:
+    - device: string;
+    - power: boolean;
+    - brightness: integer;
+    - color: string;
+  target: SmartHomeWS
+  expose:
+    operations: [publish]
+end
+
+// =============================================================================
+// DERIVED ENTITIES - Home Overview & Analytics
+// =============================================================================
+
+Entity HomeOverview(ThermostatState, LightState, DoorState)
+  attributes:
+    - devices: array = [
+      {
+        "type": "thermostat",
+        "name": ThermostatState.deviceId,
+        "status": ThermostatState.status,
+        "temperature": ThermostatState.currentTemp,
+        "target": ThermostatState.targetTemp,
+        "mode": ThermostatState.mode
+      },
+      {
+        "type": "light",
+        "name": LightState.deviceId,
+        "status": toString(LightState.power),
+        "brightness": LightState.brightness,
+        "color": LightState.color
+      },
+      {
+        "type": "door",
+        "name": DoorState.deviceId,
+        "status": DoorState.status,
+        "battery": DoorState.batteryLevel
+      }
+    ];
+    - activeDevices: integer = (1 if ThermostatState.status != "off" else 0) + (1 if LightState.power else 0);
+    - securityStatus: string = DoorState.status;
+  expose:
+    operations: [read]
+end
+
+Entity ClimateControl(ThermostatState)
+  attributes:
+    - currentTemp: number = ThermostatState.currentTemp;
+    - targetTemp: number = ThermostatState.targetTemp;
+    - tempDifference: number = round(ThermostatState.targetTemp - ThermostatState.currentTemp, 1);
+    - mode: string = ThermostatState.mode;
+    - status: string = ThermostatState.status;
+    - humidity: integer = ThermostatState.humidity;
+  expose:
+    operations: [read]
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+// REST Components - Snapshot data
+Component<Table> DeviceStatusTable
+  entity: HomeOverview
+  colNames: ["type", "name", "status"]
+end
+
+Component<Gauge> CurrentTempGauge
+  entity: ThermostatState
+  value: "currentTemp"
+  min: 0.0
+  max: 40.0
+  label: "Current Temperature"
+  unit: "°C"
+end
+
+Component<Gauge> TargetTempGauge
+  entity: ThermostatState
+  value: "targetTemp"
+  min: 0.0
+  max: 40.0
+  label: "Target Temperature"
+  unit: "°C"
+end
+
+Component<Gauge> HumidityGauge
+  entity: ThermostatState
+  value: "humidity"
+  min: 0.0
+  max: 100.0
+  label: "Humidity"
+  unit: "%"
+end
+
+Component<Gauge> LightBrightnessGauge
+  entity: LightState
+  value: "brightness"
+  min: 0.0
+  max: 100.0
+  label: "Light Brightness"
+  unit: "%"
+end
+
+Component<Gauge> DoorBatteryGauge
+  entity: DoorState
+  value: "batteryLevel"
+  min: 0.0
+  max: 100.0
+  label: "Door Sensor Battery"
+  unit: "%"
+end
+
+// WebSocket Components - Live updates
+Component<LiveView> ThermostatLiveView
+  entity: ThermostatLiveUpdate
+  fields: ["currentTemp", "targetTemp", "mode", "status", "humidity", "tempDiff"]
+  label: "Live Thermostat Monitor"
+end
+
+Component<LiveView> LightLiveView
+  entity: LightLiveUpdate
+  fields: ["power", "brightness", "color"]
+  label: "Live Light Status"
+end

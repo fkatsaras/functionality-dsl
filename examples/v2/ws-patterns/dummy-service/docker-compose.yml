@@ -1,0 +1,17 @@
+services:
+  dummy-ws-patterns:
+    build: .
+    container_name: dummy-ws-patterns
+    ports:
+      - "9200:9200"
+    networks:
+      - thesis_fdsl_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9200/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  thesis_fdsl_net:
+    external: true

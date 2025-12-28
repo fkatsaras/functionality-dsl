@@ -401,4 +401,70 @@ fdsl generate main.fdsl --out generated/
 
 ---
 
+## WebSocket Pattern Rules
+
+**Canonical patterns documented in**: `examples/v2/ws-patterns/`
+
+### Source Definition
+```fdsl
+Source<WS> SourceName
+  channel: "ws://host:port/path"
+end
+```
+- **NO** `subscribe:` or `publish:` blocks
+- Operations inferred from entity usage
+
+### Subscribe Flow
+**Pattern**: `External WS → Base Entity (source:) → [Composite] → Client`
+
+1. Base entity: Pure schema + `source:` binding
+2. Optional composite: ALL attrs have expressions
+3. Exposed entity: `operations: [subscribe]`
+
+### Publish Flow
+**Pattern**: `Client → Base Entity → [Composite (target:)] → External WS`
+
+1. Client-facing entity: Pure schema + `operations: [publish]`
+2. Optional composite: ALL attrs have expressions + `target:` binding
+
+### Bidirectional
+- **Option 1**: Single entity with `source:` + `target:` + `operations: [subscribe, publish]`
+- **Option 2**: Separate entities for subscribe/publish
+
+### Testing WebSocket Patterns
+
+**Prerequisites**:
+```bash
+# Install wscat globally (required for testing)
+npm install -g wscat
+
+# Or with NVM
+nvm install node
+npm install -g wscat
+```
+
+**Test all patterns automatically**:
+```bash
+cd examples/v2/ws-patterns
+make test-all
+```
+
+**Test a specific pattern**:
+```bash
+cd examples/v2/ws-patterns
+make test-pattern EXAMPLE=01-subscribe-simple
+```
+
+**Manual testing**:
+```bash
+# Generate and run a pattern
+make gen EXAMPLE=01-subscribe-simple OUTPUT=generated-test
+cd generated-test && docker compose -p thesis up
+
+# In another terminal - test with wscat
+wscat -c ws://localhost:8000/ws/messagefromexternal
+```
+
+---
+
 **Remember**: FDSL is declarative - describe WHAT you want, not HOW. The framework handles REST/WS routing, validation, transformations, and API specs automatically.

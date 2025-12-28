@@ -1,0 +1,86 @@
+// =============================================================================
+// PATTERN 6: Bidirectional (Separate Subscribe/Publish Entities)
+// =============================================================================
+// RULE: Separate entities for each direction (more control)
+//
+// Subscribe Flow: External WS → SubscribeEntity (source:) → Client
+// Publish Flow:   Client → PublishEntity (target:) → External WS
+//
+// Requirements:
+// 1. Source<WS> with channel URL only
+// 2. Subscribe entity with source: binding (can have transformations)
+// 3. Subscribe entity exposes subscribe operation
+// 4. Publish entity with target: binding (can have transformations)
+// 5. Publish entity exposes publish operation
+// 6. Different client paths for send vs receive
+// =============================================================================
+
+Server BidirectionalSeparate
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// External WebSocket (bidirectional)
+Source<WS> DeviceWS
+  channel: "ws://dummy-ws-patterns:9200/telemetry"
+end
+
+// ============== SUBSCRIBE SIDE ==============
+// Receives telemetry data from device
+
+Entity RawTelemetry
+  attributes:
+    - temp: number;
+    - humidity: integer;
+    - timestamp: integer;
+  source: DeviceWS
+end
+
+Entity ProcessedTelemetry(RawTelemetry)
+  attributes:
+    - temperature_c: number = RawTelemetry.temp;
+    - temperature_f: number = round((RawTelemetry.temp * 9/5) + 32, 1);
+    - humidity: integer = RawTelemetry.humidity;
+    - timestamp: integer = RawTelemetry.timestamp;
+  expose:
+    operations: [subscribe]
+    // Auto-generates path: /ws/processedtelemetry
+end
+
+// ============== PUBLISH SIDE ==============
+// Sends commands to device
+
+Entity DeviceCommand
+  attributes:
+    - action: string;
+    - value: number;
+  expose:
+    operations: [publish]
+    // Auto-generates path: /ws/devicecommand
+end
+
+Entity FormattedCommand(DeviceCommand)
+  attributes:
+    - command: string = upper(DeviceCommand.action);
+    - parameter: number = DeviceCommand.value;
+    - timestamp: integer = int(time());
+  target: DeviceWS
+end
+
+// Clients use different paths:
+// Subscribe: ws://localhost:8000/ws/processedtelemetry (receive data)
+// Publish: ws://localhost:8000/ws/devicecommand (send commands)
+
+Component<LiveView> TelemetryFeed
+  entity: ProcessedTelemetry
+  fields: ["temperature_c", "temperature_f", "humidity", "timestamp"]
+  label: "Device Telemetry"
+end
+
+Component<Input> CommandInput
+  entity: DeviceCommand
+  label: "Device Control"
+  submitLabel: "Send Command"
+end

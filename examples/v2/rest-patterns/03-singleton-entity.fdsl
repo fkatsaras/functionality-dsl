@@ -1,0 +1,67 @@
+// =============================================================================
+// PATTERN 3: Singleton Entity (No @id field)
+// =============================================================================
+// RULE: Entity without @id - single resource, not a collection
+//
+// Requirements:
+// 1. Entity with NO @id field
+// 2. Can ONLY expose 'read' operation
+// 3. Path has no parameter: GET /api/config (not /api/config/{id})
+// 4. Common use case: app configuration, user profile, settings
+// =============================================================================
+
+Server SingletonEntity
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> ConfigAPI
+  base_url: "http://api.example.com/config"
+end
+
+// Singleton entity - no @id field
+Entity AppConfig
+  attributes:
+    - appName: string;
+    - version: string;
+    - environment: string;
+    - features: array;
+    - maintenanceMode: boolean;
+  source: ConfigAPI
+  expose:
+    operations: [read]
+    // Auto-generates: GET /api/appconfig (no {id} parameter)
+    // Cannot use list/create/update/delete (would fail validation)
+end
+
+Source<REST> UserProfileAPI
+  base_url: "http://api.example.com/profile"
+end
+
+// Another singleton - current user's profile
+Entity UserProfile
+  attributes:
+    - username: string;
+    - email: string;
+    - preferences: object;
+    - notifications: boolean;
+  source: UserProfileAPI
+  expose:
+    operations: [read]
+    // Auto-generates: GET /api/userprofile
+end
+
+// Transformation of singleton
+Entity EnrichedProfile(UserProfile)
+  attributes:
+    - username: string = UserProfile.username;
+    - email: string = lower(UserProfile.email);
+    - displayName: string = upper(UserProfile.username);
+    - isNotified: boolean = UserProfile.notifications;
+  expose:
+    operations: [read]
+    // Auto-generates: GET /api/enrichedprofile
+    // Singleton-derived composite (also singleton)
+end

@@ -4,7 +4,7 @@ Builds a mapping from entities to their API exposure configuration.
 """
 
 from textx import get_children_of_type
-from functionality_dsl.validation.exposure_validators import get_id_field_from_path
+from functionality_dsl.validation.exposure_validators import get_id_field_from_path, _find_target_in_descendants
 from pluralizer import Pluralizer
 
 pluralizer = Pluralizer()
@@ -117,13 +117,20 @@ def build_exposure_map(model):
         if not source and parents:
             source = _find_source_in_parents(parents)
 
+        # Get operations list (needed for checking publish operations)
+        operations = getattr(expose, "operations", []) or []
+
+        # For publish entities, find target in descendants (transformation chain)
+        # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
+        has_publish = "publish" in operations
+
+        if not target and has_publish:
+            target = _find_target_in_descendants(entity, model)
+
         # If entity has neither source nor target, skip it
         if not source and not target:
             # No source or target found (validation should catch this)
             continue
-
-        # Get operations list
-        operations = getattr(expose, "operations", []) or []
 
         # Infer REST or WebSocket based on operations
         # REST operations: list, read, create, update, delete

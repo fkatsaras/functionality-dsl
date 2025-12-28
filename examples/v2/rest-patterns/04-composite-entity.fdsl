@@ -1,0 +1,78 @@
+// =============================================================================
+// PATTERN 4: Composite Entity (Derived Projections)
+// =============================================================================
+// RULE: Entity with parent - computed fields, read-only
+//
+// Requirements:
+// 1. Entity with parents: Entity Child(Parent1, Parent2)
+// 2. ALL attributes must have expressions
+// 3. Can ONLY expose list/read operations (no mutations)
+// 4. No source: field (inherits from parents)
+// 5. Path includes parent path: /api/parent/{id}/child
+// =============================================================================
+
+Server CompositeEntity
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> ProductAPI
+  base_url: "http://api.example.com/products"
+end
+
+// Base entity
+Entity Product
+  attributes:
+    - id: string @id;
+    - name: string;
+    - price: number;
+    - category: string;
+    - stock: integer;
+  source: ProductAPI
+  expose:
+    operations: [list, read, create, update, delete]
+    // GET/POST /api/products
+    // GET/PUT/DELETE /api/products/{id}
+end
+
+// Simple transformation - single parent
+Entity ProductSummary(Product)
+  attributes:
+    - id: string = Product.id;
+    - name: string = Product.name;
+    - displayPrice: string = str(Product.price) + " USD";
+    - inStock: boolean = Product.stock > 0;
+    - category: string = upper(Product.category);
+  expose:
+    operations: [list, read]
+    // Auto-generates: GET /api/products/{id}/productsummary
+end
+
+// Multi-field computation
+Entity ProductWithMarkup(Product)
+  attributes:
+    - id: string = Product.id;
+    - name: string = Product.name;
+    - cost: number = Product.price;
+    - markup: number = round(Product.price * 0.3, 2);
+    - retailPrice: number = round(Product.price * 1.3, 2);
+    - discount20: number = round(retailPrice * 0.8, 2);
+  expose:
+    operations: [list, read]
+    // GET /api/products/{id}/productwithmarkup
+end
+
+// Nested transformation - composite of composite
+Entity ProductDisplay(ProductSummary)
+  attributes:
+    - id: string = ProductSummary.id;
+    - title: string = upper(ProductSummary.name);
+    - price: string = ProductSummary.displayPrice;
+    - availability: string = "In Stock" if ProductSummary.inStock else "Out of Stock";
+    - categoryTag: string = "[" + ProductSummary.category + "]";
+  expose:
+    operations: [read]
+    // GET /api/products/{id}/productsummary/productdisplay
+end

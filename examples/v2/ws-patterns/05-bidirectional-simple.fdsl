@@ -1,0 +1,56 @@
+// =============================================================================
+// PATTERN 5: Bidirectional (Subscribe + Publish on Same Entity)
+// =============================================================================
+// RULE: Single entity handles both directions
+//
+// Subscribe Flow: External WS → Entity (source:) → Client
+// Publish Flow:   Client → Entity (target:) → External WS
+//
+// Requirements:
+// 1. Source<WS> with channel URL only
+// 2. Single entity with BOTH source: and target: bindings
+// 3. Entity is pure schema (NO expressions)
+// 4. Entity exposes BOTH subscribe AND publish operations
+// 5. Client can both receive and send via same connection
+// =============================================================================
+
+Server BidirectionalSimple
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// External WebSocket (bidirectional)
+Source<WS> ExternalWS
+  channel: "ws://dummy-ws-patterns:9200/chat"
+end
+
+// Single entity for both directions
+// Pure schema, NO expressions
+Entity ChatMessage
+  attributes:
+    - text: string;
+    - user: string;
+  source: ExternalWS  // Receives messages from external WS
+  target: ExternalWS  // Sends messages to external WS
+  expose:
+    operations: [subscribe, publish]
+    // Auto-generates path: /ws/chatmessage
+end
+
+// Client connects to: ws://localhost:8000/ws/chatmessage
+// Can SEND ChatMessage objects → forwarded to external WS
+// Can RECEIVE ChatMessage objects ← from external WS
+
+Component<Input> ChatInput
+  entity: ChatMessage
+  label: "Chat"
+  submitLabel: "Send"
+end
+
+Component<LiveView> ChatFeed
+  entity: ChatMessage
+  fields: ["user", "text"]
+  label: "Messages"
+end

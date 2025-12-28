@@ -1,0 +1,79 @@
+// =============================================================================
+// PATTERN 5: List Filters
+// =============================================================================
+// RULE: Query parameters for filtering list operations
+//
+// Requirements:
+// 1. Entity must expose 'list' operation
+// 2. Entity must be BASE entity (has source:, no parents)
+// 3. Filter fields must be schema fields (not computed)
+// 4. Generates query params: GET /api/books?author=Smith&year=2023
+// =============================================================================
+
+Server ListFilters
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> BookAPI
+  base_url: "http://api.example.com/books"
+end
+
+// Entity with filters
+Entity Book
+  attributes:
+    - id: string @id;
+    - title: string;
+    - author: string;
+    - year: integer;
+    - genre: string;
+    - price: number;
+    - inStock: boolean;
+  source: BookAPI
+  expose:
+    operations: [list, read, create, update, delete]
+    filters: ["author", "year", "genre", "inStock"]
+    // Generates query parameters:
+    // GET /api/books?author={value}
+    // GET /api/books?year={value}
+    // GET /api/books?genre={value}
+    // GET /api/books?inStock={value}
+    // Can combine: /api/books?author=Smith&year=2023
+end
+
+Source<REST> CustomerAPI
+  base_url: "http://api.example.com/customers"
+end
+
+// Multiple filters example
+Entity Customer
+  attributes:
+    - id: string @id;
+    - name: string;
+    - email: string;
+    - country: string;
+    - status: string;
+    - registeredAt: string;
+  source: CustomerAPI
+  expose:
+    operations: [list, read]
+    filters: ["country", "status"]
+    // GET /api/customers?country=USA
+    // GET /api/customers?status=active
+    // GET /api/customers?country=USA&status=active
+end
+
+// Transformation entities CANNOT have filters
+Entity BookWithMarkup(Book)
+  attributes:
+    - id: string = Book.id;
+    - title: string = Book.title;
+    - author: string = Book.author;
+    - retailPrice: number = round(Book.price * 1.2, 2);
+  expose:
+    operations: [list, read]
+    // NO filters allowed on composite entities
+    // Filters only on base entities
+end

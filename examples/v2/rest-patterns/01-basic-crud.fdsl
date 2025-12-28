@@ -1,0 +1,51 @@
+// =============================================================================
+// PATTERN 1: Basic CRUD (Create, Read, Update, Delete)
+// =============================================================================
+// RULE: Entity with @id field and all CRUD operations
+//
+// Requirements:
+// 1. Source<REST> with base URL
+// 2. Entity with @id marker on one field
+// 3. Entity has source: binding
+// 4. Expose all CRUD operations: [list, read, create, update, delete]
+// 5. Paths auto-generated from entity name
+// =============================================================================
+
+Server BasicCRUD
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// External REST API
+Source<REST> UserAPI
+  base_url: "http://api.example.com/users"
+end
+
+// Base entity with full CRUD
+Entity User
+  attributes:
+    - id: string @id;
+    - name: string;
+    - email: string;
+    - age: integer;
+  source: UserAPI
+  expose:
+    operations: [list, read, create, update, delete]
+    // Auto-generates:
+    // GET    /api/users           (list)
+    // GET    /api/users/{id}      (read)
+    // POST   /api/users           (create)
+    // PUT    /api/users/{id}      (update)
+    // DELETE /api/users/{id}      (delete)
+end
+
+Component<Table> UserTable
+  entity: User
+  columns:
+    - "id": string
+    - "name": string
+    - "email": string
+    - "age": integer
+end

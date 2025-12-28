@@ -69,6 +69,46 @@ def _find_source_in_parents(parents):
     return None
 
 
+def _find_target_in_descendants(entity, model):
+    """
+    Find a target by traversing composite descendants of the given entity.
+    Returns the first target found in descendants.
+
+    For publish flows: Client → Base Entity (expose) → Composite (target:) → External WS
+    """
+    from collections import deque
+
+    # Get all entities in the model
+    all_entities = get_children_of_type("Entity", model)
+
+    # BFS to find descendants
+    queue = deque([entity])
+    visited = set()
+
+    while queue:
+        current = queue.popleft()
+        current_id = id(current)
+
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+
+        # Check if current entity has target
+        target = getattr(current, "target", None)
+        if target:
+            return target
+
+        # Find entities that have current as parent
+        for candidate in all_entities:
+            parent_refs = getattr(candidate, "parents", []) or []
+            for parent_ref in parent_refs:
+                parent_entity = parent_ref.entity if hasattr(parent_ref, "entity") else parent_ref
+                if id(parent_entity) == current_id:
+                    queue.append(candidate)
+
+    return None
+
+
 def _validate_exposure_blocks(model, metamodel=None):
     """
     Validate entity exposure blocks:
@@ -95,14 +135,18 @@ def _validate_exposure_blocks(model, metamodel=None):
         if not source and parent_entities:
             source = _find_source_in_parents(parent_entities)
 
-        # For publish-only entities with target, no source is required
+        # For publish entities, check for target in descendants (transformation chain)
         operations = getattr(expose, "operations", [])
+        has_publish = "publish" in operations
         is_publish_only = "publish" in operations and "subscribe" not in operations and len(operations) == 1
+
+        if not target and has_publish:
+            target = _find_target_in_descendants(entity, model)
 
         if not source and not target:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' has 'expose' block but no 'source:' or 'target:' binding. "
-                f"Exposed entities must be bound to a Source or Target (directly or through parent entities).",
+                f"Exposed entities must be bound to a Source or Target (directly or through parent entities/descendants).",
                 **get_location(entity),
             )
 
@@ -124,7 +168,7 @@ def _validate_exposure_blocks(model, metamodel=None):
 
         # Validate WebSocket exposure
         if has_ws_ops:
-            _validate_ws_expose(entity, expose, source)
+            _validate_ws_expose(entity, expose, source, model)
 
 
 def _validate_rest_expose(entity, expose, source):
@@ -267,7 +311,7 @@ def _validate_rest_expose(entity, expose, source):
                     )
 
 
-def _validate_ws_expose(entity, expose, source):
+def _validate_ws_expose(entity, expose, source, model):
     """
     Validate WebSocket exposure configuration (NEW SYNTAX - auto-generated paths).
 
@@ -296,19 +340,35 @@ def _validate_ws_expose(entity, expose, source):
             )
 
     # CRITICAL: Validate publish operations require target
-    # Publish flow: Client → Entity → Transform → target: Source → External WS
+    # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
+    # Target can be on exposed entity OR on any composite descendant
     if "publish" in operations:
         target = getattr(entity, "target", None)
+
+        # If no direct target, check composite descendants
+        if not target:
+            target = _find_target_in_descendants(entity, model)
+
         if not target:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'publish' operation but no 'target:' field. "
-                f"Publish operations require a target WebSocket source to send data to.\n\n"
-                f"Example:\n"
+                f"Entity '{entity.name}' has 'publish' operation but no 'target:' binding. "
+                f"Publish operations require a target WebSocket source (directly or in composite descendants).\n\n"
+                f"Example (direct target):\n"
                 f"  Entity {entity.name}\n"
                 f"    attributes: ...\n"
-                f"    target: MyWebSocketTarget  # <-- Required for publish\n"
+                f"    target: MyWebSocketTarget\n"
                 f"    expose:\n"
                 f"      operations: [publish]\n"
+                f"  end\n\n"
+                f"Example (target in composite):\n"
+                f"  Entity {entity.name}\n"
+                f"    attributes: ...\n"
+                f"    expose:\n"
+                f"      operations: [publish]\n"
+                f"  end\n\n"
+                f"  Entity Processed{entity.name}({entity.name})\n"
+                f"    attributes: ...\n"
+                f"    target: MyWebSocketTarget\n"
                 f"  end",
                 **get_location(expose),
             )
