@@ -18,7 +18,7 @@ Server PartialCRUD
 end
 
 Source<REST> ProductAPI
-  base_url: "http://api.example.com/products"
+  base_url: "http://dummy-rest-patterns:9001/products"
 end
 
 // Read-only entity (lookup data)
@@ -37,7 +37,7 @@ Entity Product
 end
 
 Source<REST> AuditLogAPI
-  base_url: "http://api.example.com/audit-logs"
+  base_url: "http://dummy-rest-patterns:9001/audit-logs"
 end
 
 // Create-only entity (append-only log)
@@ -58,7 +58,7 @@ Entity AuditLog
 end
 
 Source<REST> CustomerAPI
-  base_url: "http://api.example.com/customers"
+  base_url: "http://dummy-rest-patterns:9001/customers"
 end
 
 // No delete policy (soft delete in practice)
@@ -77,7 +77,7 @@ Entity Customer
 end
 
 Source<REST> NotificationAPI
-  base_url: "http://api.example.com/notifications"
+  base_url: "http://dummy-rest-patterns:9001/notifications"
 end
 
 // Update-only (mark as read)

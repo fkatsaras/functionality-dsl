@@ -17,7 +17,7 @@ Server ReadOnlyFields
 end
 
 Source<REST> OrderAPI
-  base_url: "http://api.example.com/orders"
+  base_url: "http://dummy-rest-patterns:9001/orders"
 end
 
 // Entity with read-only computed fields

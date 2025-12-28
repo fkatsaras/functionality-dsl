@@ -19,11 +19,11 @@ Server ArrayAggregation
 end
 
 Source<REST> OrderAPI
-  base_url: "http://api.example.com/orders"
+  base_url: "http://dummy-rest-patterns:9001/array-orders"
 end
 
 Source<REST> OrderItemAPI
-  base_url: "http://api.example.com/order-items"
+  base_url: "http://dummy-rest-patterns:9001/order-items"
 end
 
 // Base entities

@@ -18,7 +18,7 @@ Server SingletonEntity
 end
 
 Source<REST> ConfigAPI
-  base_url: "http://api.example.com/config"
+  base_url: "http://dummy-rest-patterns:9001/config"
 end
 
 // Singleton entity - no @id field
@@ -37,7 +37,7 @@ Entity AppConfig
 end
 
 Source<REST> UserProfileAPI
-  base_url: "http://api.example.com/profile"
+  base_url: "http://dummy-rest-patterns:9001/profile"
 end
 
 // Another singleton - current user's profile

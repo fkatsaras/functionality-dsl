@@ -20,7 +20,7 @@ end
 
 // External REST API
 Source<REST> UserAPI
-  base_url: "http://api.example.com/users"
+  base_url: "http://dummy-rest-patterns:9001/users"
 end
 
 // Base entity with full CRUD

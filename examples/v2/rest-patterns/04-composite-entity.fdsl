@@ -19,7 +19,7 @@ Server CompositeEntity
 end
 
 Source<REST> ProductAPI
-  base_url: "http://api.example.com/products"
+  base_url: "http://dummy-rest-patterns:9001/products"
 end
 
 // Base entity

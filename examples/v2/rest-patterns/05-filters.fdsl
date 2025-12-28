@@ -18,7 +18,7 @@ Server ListFilters
 end
 
 Source<REST> BookAPI
-  base_url: "http://api.example.com/books"
+  base_url: "http://dummy-rest-patterns:9001/books"
 end
 
 // Entity with filters
@@ -44,7 +44,7 @@ Entity Book
 end
 
 Source<REST> CustomerAPI
-  base_url: "http://api.example.com/customers"
+  base_url: "http://dummy-rest-patterns:9001/customers"
 end
 
 // Multiple filters example
