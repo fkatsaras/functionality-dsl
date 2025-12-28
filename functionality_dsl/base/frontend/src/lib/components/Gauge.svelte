@@ -90,7 +90,7 @@
 
     const derivedArcColor = $derived(
       pct >= 0.9 ? "var(--red-text)" :
-      pct >= 0.6 ? "var(--warning)" :
+      pct >= 0.6 ? "var(--warning-text)" :
       "var(--accent)"
     );
 

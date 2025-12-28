@@ -58,7 +58,7 @@ TableComponent:
 
 LiveTableComponent:
   'Component' '<' 'LiveTable' '>' name=ID
-  'endpoint:' endpoint=[EndpointWS]
+  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
   ('arrayField:' arrayField=STRING)?
   'keyField:' keyField=STRING
   (

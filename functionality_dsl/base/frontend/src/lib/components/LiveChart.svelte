@@ -21,6 +21,8 @@
         yMeta?: { type?: string; format?: string; text?: string } | null;
         seriesLabels?: string[] | null;
         seriesColors?: string[] | null;
+        // Bind to attribute name (like Chart component's 'values: data')
+        values?: string;  // Attribute name containing the value to plot
     }>();
 
     // CHART DATA
@@ -30,6 +32,7 @@
 
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let connected = $state(false);
 
     let hoverLegend: { x: number; values: LegendEntry[] } | null = null;
     let unsub: null | (() => void) = null;
@@ -38,20 +41,42 @@
     // WS HANDLER
     // ----------------------------------
     function pushPayload(row: any) {
+        // Handle meta events
+        if (row?.__meta === "open") {
+            connected = true;
+            loading = false;
+            return;
+        }
+        if (row?.__meta === "close") {
+            connected = false;
+            return;
+        }
+
         loading = false;
+        connected = true;
 
         if (!row || typeof row !== "object") return;
 
-        // detect keys on first packet
+        // Initialize on first data packet
         if (!xKey) {
-            const init = detectKeys(row);
-            xKey = init.xKey;
-            yKeys = init.yKeys;
-            series = init.series;
+            if (props.values) {
+                // Use explicit field name - create single series from that field
+                xKey = "__timestamp";  // Auto-generate timestamps for X-axis
+                yKeys = [props.values];
+                series = { [props.values]: [] };
+            } else {
+                // Auto-detect all numeric fields
+                const init = detectKeys(row);
+                xKey = init.xKey;
+                yKeys = init.yKeys;
+                series = init.series;
+            }
         }
 
-        // push streaming row
-        series = pushRow(row, xKey, yKeys, series, props.windowSize, props.xMeta);
+        // Add timestamp and push the row
+        const timestamp = Date.now();
+        const enrichedRow = { ...row, __timestamp: timestamp };
+        series = pushRow(enrichedRow, xKey, yKeys, series, props.windowSize, props.xMeta);
     }
 
     onMount(() => {

@@ -62,14 +62,38 @@ class _BaseComponent:
         # Get path from entity's expose block (REST or WebSocket)
         expose = getattr(self.entity_ref, "expose", None)
         if expose:
-            # Check for REST path
+            # NEW SYNTAX: Check for operations and channel
+            operations = getattr(expose, "operations", []) or []
+            channel = getattr(expose, "channel", None)
+
+            # WebSocket operations (subscribe/publish)
+            if any(op in ['subscribe', 'publish'] for op in operations):
+                if channel:
+                    # Use explicit channel if provided
+                    ws_path = channel.strip('"').strip("'")
+                    return ws_path + (suffix or "")
+                else:
+                    # Auto-generated WebSocket path
+                    return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
+
+            # REST operations (list/read/create/update/delete)
+            if any(op in ['list', 'read', 'create', 'update', 'delete'] for op in operations):
+                # Use identity anchor if available
+                identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
+                if identity_anchor and isinstance(identity_anchor, str):
+                    return identity_anchor + (suffix or "")
+                else:
+                    # Fallback to entity name
+                    return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
+
+            # OLD SYNTAX: Check for REST path
             rest = getattr(expose, "rest", None)
             if rest:
                 rest_path = getattr(rest, "path", None)
                 if rest_path:
                     return rest_path + (suffix or "")
 
-            # Check for WebSocket channel
+            # OLD SYNTAX: Check for WebSocket channel
             websocket = getattr(expose, "websocket", None)
             if websocket:
                 ws_channel = getattr(websocket, "channel", None)
@@ -264,9 +288,10 @@ class LiveTableComponent(_BaseComponent):
     {sessionId: "...", items: [{id:1, name:"A"}, {id:2, name:"B"}], total: 100}
     With arrayField: "items", the table will display rows from the items array.
     """
-    def __init__(self, parent=None, name=None, entity_ref=None, keyField=None,
+    def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None, keyField=None,
                  colNames=None, columns=None, label=None, maxRows=None, arrayField=None):
-        super().__init__(parent, name, entity_ref)
+        super().__init__(parent, name, entity_ref or endpoint)
+        self.endpoint = endpoint  # Keep for backward compatibility
 
         # Strip quotes from keyField and arrayField
         self.keyField = self._strip_column_name(keyField) if keyField else None
@@ -302,14 +327,15 @@ class LiveTableComponent(_BaseComponent):
         self.maxRows = int(maxRows) if maxRows is not None else 100
 
         # Validation
-        if entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if entity_ref is None and endpoint is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' or 'endpoint:'.")
 
         # Check if entity has WebSocket subscribe operation
-        expose = getattr(entity_ref, "expose", None)
-        operations = getattr(expose, "operations", []) if expose else []
-        if 'subscribe' not in operations:
-            raise ValueError(f"Component '{name}': LiveTable requires entity with 'subscribe' operation, got {operations}")
+        if entity_ref:
+            expose = getattr(entity_ref, "expose", None)
+            operations = getattr(expose, "operations", []) if expose else []
+            if 'subscribe' not in operations:
+                raise ValueError(f"Component '{name}': LiveTable requires entity with 'subscribe' operation, got {operations}")
 
         if not self.keyField:
             raise ValueError(f"Component '{name}': 'keyField:' is required for LiveTable.")
@@ -476,11 +502,12 @@ class LiveChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
-        # NEW SYNTAX: Validate entity has WebSocket exposure
+        # NEW SYNTAX: Validate entity has WebSocket subscribe operation
         if entity_ref:
             expose = getattr(entity_ref, "expose", None)
-            if not expose or not getattr(expose, "websocket", None):
-                raise ValueError(f"Component '{name}': LiveChart requires entity with WebSocket exposure (expose: websocket: '/channel')")
+            operations = getattr(expose, "operations", []) if expose else []
+            if 'subscribe' not in operations:
+                raise ValueError(f"Component '{name}': LiveChart requires entity with 'subscribe' operation for real-time streaming, got {operations}")
 
         # LEGACY: Validate endpoint type
         if endpoint and endpoint.__class__.__name__ != "EndpointWS":

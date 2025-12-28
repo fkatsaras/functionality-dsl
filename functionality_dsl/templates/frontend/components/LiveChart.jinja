@@ -2,16 +2,17 @@
 <LiveChart
   name="{{ common.name }}"
   wsUrl="{{ ws_endpoint }}"
+  {%- if props.get('values') %}
+  values="{{ props.get('values') }}"
+  {%- endif %}
   {%- if props.get('seriesLabels') %}
   seriesLabels={{ "{" }}{{ props.get('seriesLabels') | tojson }}{{ "}" }}
   {%- endif %}
   {%- if props.get('xLabel') %}
-  xLabel="{{ props.get('xLabel').get('text') if props.get('xLabel') else '' }}"
-  xMeta={{ "{" }}{{ props.get('xLabel') | tojson }}{{ "}" }}
+  xLabel="{{ props.get('xLabel') if props.get('xLabel') is string else (props.get('xLabel').get('text') if props.get('xLabel') else '') }}"
   {%- endif %}
   {%- if props.get('yLabel') %}
-  yLabel="{{ props.get('yLabel').get('text') if props.get('yLabel') else '' }}"
-  yMeta={{ "{" }}{{ props.get('yLabel') | tojson }}{{ "}" }}
+  yLabel="{{ props.get('yLabel') if props.get('yLabel') is string else (props.get('yLabel').get('text') if props.get('yLabel') else '') }}"
   {%- endif %}
   {%- if props.get('windowSize') %}
   windowSize={{ props.get('windowSize') }}

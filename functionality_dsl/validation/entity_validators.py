@@ -221,10 +221,15 @@ def _validate_computed_attrs(model, metamodel=None):
         # These receive data from WebSocket publish and should be schema entities
         target = getattr(ent, "target", None)
         if target:
-            # This entity publishes to external source, check its parents
+            # This entity publishes to external source
+            # If it has parents, add them as schema entities
             parent_entities = _get_parent_entities(ent)
             for parent in parent_entities:
                 schema_entities.add(parent.name)
+
+            # If it has NO parents, the entity itself is a schema entity (direct publish)
+            if not parent_entities:
+                schema_entities.add(ent.name)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is

@@ -167,7 +167,7 @@ Entity HomeOverview(ThermostatState, LightState, DoorState)
       {
         "type": "light",
         "name": LightState.deviceId,
-        "status": toString(LightState.power),
+        "status": str(LightState.power),
         "brightness": LightState.brightness,
         "color": LightState.color
       },
@@ -200,14 +200,34 @@ end
 // UI COMPONENTS
 // =============================================================================
 
-// REST Components - Snapshot data
-Component<Table> DeviceStatusTable
+// Table - Home Overview (REST snapshot)
+Component<Table> HomeDevicesTable
   entity: HomeOverview
   colNames: ["type", "name", "status"]
 end
 
+// LiveChart - Temperature Tracking
+Component<LiveChart> TemperatureChart
+  entity: ThermostatLiveUpdate
+  values: currentTemp
+  xLabel: "Time"
+  yLabel: "Temperature (°C)"
+  windowSize: 50
+  height: 300
+end
+
+Component<LiveChart> HumidityChart
+  entity: ThermostatLiveUpdate
+  values: humidity
+  xLabel: "Time"
+  yLabel: "Humidity (%)"
+  windowSize: 50
+  height: 250
+end
+
+// Gauge Components - Real-time Meters
 Component<Gauge> CurrentTempGauge
-  entity: ThermostatState
+  entity: ThermostatLiveUpdate
   value: "currentTemp"
   min: 0.0
   max: 40.0
@@ -215,51 +235,11 @@ Component<Gauge> CurrentTempGauge
   unit: "°C"
 end
 
-Component<Gauge> TargetTempGauge
-  entity: ThermostatState
-  value: "targetTemp"
-  min: 0.0
-  max: 40.0
-  label: "Target Temperature"
-  unit: "°C"
-end
-
 Component<Gauge> HumidityGauge
-  entity: ThermostatState
+  entity: ThermostatLiveUpdate
   value: "humidity"
   min: 0.0
   max: 100.0
   label: "Humidity"
   unit: "%"
-end
-
-Component<Gauge> LightBrightnessGauge
-  entity: LightState
-  value: "brightness"
-  min: 0.0
-  max: 100.0
-  label: "Light Brightness"
-  unit: "%"
-end
-
-Component<Gauge> DoorBatteryGauge
-  entity: DoorState
-  value: "batteryLevel"
-  min: 0.0
-  max: 100.0
-  label: "Door Sensor Battery"
-  unit: "%"
-end
-
-// WebSocket Components - Live updates
-Component<LiveView> ThermostatLiveView
-  entity: ThermostatLiveUpdate
-  fields: ["currentTemp", "targetTemp", "mode", "status", "humidity", "tempDiff"]
-  label: "Live Thermostat Monitor"
-end
-
-Component<LiveView> LightLiveView
-  entity: LightLiveUpdate
-  fields: ["power", "brightness", "color"]
-  label: "Live Light Status"
 end
