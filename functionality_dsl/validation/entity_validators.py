@@ -1140,10 +1140,14 @@ def _compute_identity_anchors(model):
                 entity._is_composite = False
                 entity._is_singleton = False
             elif not id_field and source and expose:
-                # Check if this is a singleton (no @id, has source, exposes read)
+                # Check if this is a singleton (no @id, has source, exposes any operations except 'list')
                 operations = getattr(expose, "operations", [])
-                if 'read' in operations and len(operations) == 1:
-                    # This is a singleton entity
+                rest_ops = {'read', 'create', 'update', 'delete'}
+                has_rest_ops = any(op in rest_ops for op in operations)
+                has_list = 'list' in operations
+
+                if has_rest_ops and not has_list:
+                    # This is a singleton entity (REST operations but no 'list')
                     entity._identity_anchor = None
                     entity._identity_field = None
                     entity._is_composite = False

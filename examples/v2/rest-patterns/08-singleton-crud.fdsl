@@ -1,0 +1,85 @@
+// =============================================================================
+// Pattern 08: Singleton CRUD
+// =============================================================================
+// Demonstrates full CRUD operations on singleton resources (no @id field).
+// Singletons represent a single resource where identity comes from context.
+//
+// Use Cases:
+// - User profile (identity from auth token)
+// - Shopping cart (identity from session)
+// - Application settings (global singleton)
+// - User preferences (per-user singleton)
+//
+// Operations: read, create, update, delete (NO list - not a collection)
+// =============================================================================
+
+Server SingletonCRUDAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// =============================================================================
+// SOURCES
+// =============================================================================
+
+Source<REST> UserProfileAPI
+  base_url: "http://dummy-rest-patterns:9001/profile"
+end
+
+Source<REST> AppConfigAPI
+  base_url: "http://dummy-rest-patterns:9001/config"
+end
+
+// =============================================================================
+// SINGLETON ENTITIES - Full CRUD
+// =============================================================================
+
+// User Profile - Current authenticated user's profile
+Entity UserProfile
+  attributes:
+    - name: string;
+    - email: string;
+    - avatar: string?;
+    - bio: string?;
+    - theme: string;
+    - language: string;
+    - notifications: boolean;
+    - createdAt: string;
+    - updatedAt: string;
+  source: UserProfileAPI
+  expose:
+    operations: [read, create, update, delete]
+    readonly_fields: ["createdAt", "updatedAt"]
+end
+
+// Application Configuration - Global singleton
+Entity AppConfig
+  attributes:
+    - appName: string;
+    - maintenanceMode: boolean;
+    - maxUploadSize: integer;
+    - sessionTimeout: integer;
+    - apiRateLimit: integer;
+    - features: object;
+  source: AppConfigAPI
+  expose:
+    operations: [read, update]  // No create/delete - always exists
+end
+
+// =============================================================================
+// GENERATED ENDPOINTS
+// =============================================================================
+// UserProfile:
+//   GET    /api/userprofile          - Read current user's profile
+//   POST   /api/userprofile          - Create profile (first signup)
+//   PUT    /api/userprofile          - Update profile
+//   DELETE /api/userprofile          - Delete account
+//
+// AppConfig:
+//   GET    /api/appconfig            - Read app configuration
+//   PUT    /api/appconfig            - Update app configuration
+//
+// Note: No /{id} path parameter - identity comes from context
+// =============================================================================

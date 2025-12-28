@@ -200,29 +200,31 @@ def _validate_rest_expose(entity, expose, source):
             if first_parent_is_singleton:
                 is_singleton_derived = True
 
-    # Allow singleton entities and singleton-derived composites (no @id, only 'read' operation)
-    # Singleton entities generate endpoints like GET /api/forecast (no path parameter)
+    # Singleton entities (no @id) generate endpoints without path parameters
+    # Examples: GET /api/profile, PUT /api/profile, DELETE /api/profile
+    # They support any operations except 'list' (which requires collection)
     if is_singleton or is_singleton_derived:
-        # Singleton validation
-        if 'read' not in operations:
+        # Singleton entities cannot have 'list' operation (list requires a collection with IDs)
+        if 'list' in operations:
             entity_type = "Singleton-derived composite" if is_singleton_derived else "Singleton"
             raise TextXSemanticError(
-                f"{entity_type} entity '{entity.name}' must expose 'read' operation.\n"
-                f"Singleton entities (without @id field) can only expose the 'read' operation.\n"
-                f"Add 'read' to operations: [read]",
+                f"{entity_type} entity '{entity.name}' cannot have 'list' operation.\n"
+                f"Singleton entities (without @id field) represent a single resource, not a collection.\n"
+                f"Supported singleton operations: read, create, update, delete\n"
+                f"To use 'list', add an @id field to make this a standard collection resource.",
                 **get_location(expose),
             )
 
-        # Singleton entities can ONLY have 'read' operation
-        invalid_ops = [op for op in operations if op not in ['read']]
-        if invalid_ops:
-            entity_type = "Singleton-derived composite" if is_singleton_derived else "Singleton"
-            raise TextXSemanticError(
-                f"{entity_type} entity '{entity.name}' cannot have operations: {invalid_ops}.\n"
-                f"Singleton entities (without @id field) can only expose 'read' operation.\n"
-                f"To use list/create/update/delete, add an @id field to make this a standard REST resource.",
-                **get_location(expose),
-            )
+        # Singleton-derived composites (read-only transformations) can only have 'read'
+        if is_singleton_derived:
+            invalid_ops = [op for op in operations if op not in ['read']]
+            if invalid_ops:
+                raise TextXSemanticError(
+                    f"Singleton-derived composite entity '{entity.name}' cannot have operations: {invalid_ops}.\n"
+                    f"Composite entities derived from singletons are read-only transformations.\n"
+                    f"Only 'read' operation is allowed.",
+                    **get_location(expose),
+                )
 
         # Singleton entities are valid - skip identity anchor check
         return

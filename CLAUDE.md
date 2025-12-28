@@ -79,7 +79,26 @@ end
 1. **Mutations** (`create`, `update`, `delete`) require `source:` field
 2. **Composite entities** (with parents) cannot have `source:` - read-only
 3. **Array entities** (`type: array`) can only expose `read` operation
-4. **@id marker** required for REST exposure (auto-generates paths)
+4. **@id marker** required for collection resources (generates `/{id}` paths)
+5. **Singleton resources** (no @id) cannot use `list` operation (not a collection)
+
+**Singleton Entities** (no @id field):
+- Represent a single resource where identity comes from context (auth, session, global)
+- Generate endpoints without path parameters: `/api/profile` (not `/api/profile/{id}`)
+- Support operations: `read`, `create`, `update`, `delete` (NO `list`)
+- Examples: user profile, shopping cart, app config, preferences
+```fdsl
+Entity UserProfile
+  attributes:
+    - name: string;
+    - email: string;
+    - theme: string;
+  source: ProfileAPI
+  expose:
+    operations: [read, create, update, delete]  // Full CRUD on singleton
+end
+```
+Generates: `GET/POST/PUT/DELETE /api/userprofile` (identity from auth context)
 
 ### 3. **Sources** (External APIs)
 
