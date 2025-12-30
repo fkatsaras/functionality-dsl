@@ -548,9 +548,11 @@ def _validate_permissions(model, metamodel=None):
     - Permissions are only valid for entities with REST or WebSocket operations
     """
     # Get declared roles from server auth block
-    server = getattr(model, "server", None)
+    servers = getattr(model, "servers", [])
+    server = servers[0] if servers else None
     auth = getattr(server, "auth", None) if server else None
-    declared_roles = set(getattr(auth, "roles", []) or [])
+    raw_roles = getattr(auth, "roles", []) or []
+    declared_roles = set(raw_roles)
     declared_roles.add("public")  # "public" is always allowed (no auth)
 
     entities = get_children_of_type("Entity", model)
@@ -571,18 +573,8 @@ def _validate_permissions(model, metamodel=None):
         perm_rules = getattr(permissions_block, "perms", []) or []
         perm_map = {rule.operation: rule.roles for rule in perm_rules}
 
-        # Validate that all exposed operations have permission rules
-        for op in operations:
-            if op not in perm_map:
-                defined_ops = list(perm_map.keys())
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' exposes operation '{op}' but has no permission rule for it.\n"
-                    f"All exposed operations must have permission rules when permissions block is present.\n"
-                    f"Exposed operations: {operations}\n"
-                    f"Permission rules defined for: {defined_ops}\n"
-                    f"Add: - {op}: [\"role1\", \"role2\"]",
-                    **get_location(permissions_block),
-                )
+        # NOTE: Operations without explicit permission rules default to ["public"]
+        # No validation needed - partial permissions are allowed
 
         # Validate that permission operations match exposed operations
         for perm_op in perm_map.keys():

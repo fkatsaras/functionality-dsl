@@ -13,6 +13,7 @@ from functionality_dsl.api.crud_helpers import (
     requires_request_body,
     derive_request_schema_name,
 )
+from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
 
 
 def _map_fdsl_type_to_python(fdsl_type):
@@ -103,6 +104,9 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
                     "type": python_type,
                 })
 
+    # Get permission requirements for all operations
+    permission_map = get_permission_dependencies(entity, model)
+
     # Build operation configs
     operation_configs = []
     for op in operations:
@@ -117,6 +121,9 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             # No parameters in original path, or this is a collection operation (create)
             path_suffix = get_operation_path_suffix(op, id_field, entity_type)
 
+        # Get required roles for this operation (defaults to ["public"])
+        required_roles = permission_map.get(op, ["public"])
+
         op_config = {
             "type": op,
             "method": get_operation_http_method(op),
@@ -127,6 +134,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             "has_request_body": requires_request_body(op),
             "id_field": id_field,
             "filters": filter_params if op == "list" else [],  # Only list operation gets filters
+            "required_roles": required_roles,  # Add permission requirements
         }
 
         # Determine request/response models
@@ -146,6 +154,13 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
 
         operation_configs.append(op_config)
 
+    # Check if auth is configured in the model
+    servers = getattr(model, "servers", [])
+    has_auth = False
+    if servers:
+        auth = getattr(servers[0], "auth", None)
+        has_auth = auth is not None
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_router.py.jinja")
@@ -157,6 +172,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         rest_path=base_prefix,  # Use base prefix without path parameters
         id_field=id_field,
         source_name=source.name,
+        has_auth=has_auth,  # Pass auth flag to template
     )
 
     # Write to file

@@ -814,29 +814,23 @@ def _validate_rest_entity_relationships(model):
             # Skip further validation for singleton composites
             continue
 
-        # Rule 7: Check if the composite entity itself is a singleton
-        # Singleton composites aggregate ALL records from parents - no filtering by ID
-        # Example: LibraryStatistics(Book, Member, Loan) exposes only 'read' (not 'list')
-        #
-        # To determine if composite is singleton, check if it exposes 'list' operation
-        # Entities that don't expose 'list' are singletons (single aggregate resource)
-        expose = getattr(entity, "expose", None)
-        operations = getattr(expose, "operations", []) if expose else []
-        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
-        has_rest_ops = any(op in rest_ops for op in operations)
-        has_list = 'list' in operations
+        # Rule 7: Check if all parents are array parents (fetch ALL records, no filtering)
+        # Array parents like Book[], Member[], Loan[] fetch all records without ID-based filtering
+        all_parents_array = all(
+            getattr(parent_ref, "is_array", False) for parent_ref in parent_refs
+        )
 
-        # Singleton composite: has parents, exposes REST ops, but no 'list' operation
-        if has_rest_ops and not has_list:
-            # Singleton composite entities don't need relationships - they fetch all parent records
+        if all_parents_array:
+            # Composites with all array parents don't need relationships - they fetch all records
+            # Relationships block should be empty/absent
             if relationships:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' is a singleton composite (no 'list' operation) and does not need 'relationships:' block.\n"
-                    f"Singleton composites aggregate ALL records from parent entities without filtering by ID.\n"
-                    f"Remove the 'relationships:' block - it's only needed when filtering parents by ID.",
+                    f"Entity '{entity.name}' uses only array parents (e.g., Book[], Member[]) which fetch ALL records.\n"
+                    f"Array parents don't need relationships because there's no ID-based filtering.\n"
+                    f"Remove the 'relationships:' block or the filter entries inside it.",
                     **get_location(relationships_block)
                 )
-            # Skip further validation for singleton composites
+            # Skip further validation for all-array-parent composites
             continue
 
         # Rule 2: All non-first parents must have a relationship defined
@@ -1008,7 +1002,7 @@ def _validate_array_parents(model):
     1. Array parents must be base entities (have source, not composite)
     2. Array parents must have @id field for filtering
     3. Array parents must support list operation with filters
-    4. Composite entities with array parents must have relationships defined
+    4. Composite entities with array parents must have relationships defined (UNLESS all parents are arrays)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -1017,6 +1011,11 @@ def _validate_array_parents(model):
 
         if not parent_refs:
             continue
+
+        # Check if ALL parents are array parents (for special handling)
+        all_parents_array = all(
+            getattr(parent_ref, "is_array", False) for parent_ref in parent_refs
+        )
 
         # Check each parent ref for array syntax
         for parent_ref in parent_refs:
@@ -1078,10 +1077,11 @@ def _validate_array_parents(model):
 
             # Rule 4: Array parent requires relationship definition
             # (unless it's the first parent, which uses endpoint ID)
+            # EXCEPTION: If ALL parents are array parents, no relationships needed (fetch all records)
             parent_refs_list = list(parent_refs)
             parent_idx = parent_refs_list.index(parent_ref)
 
-            if parent_idx > 0:  # Not the first parent
+            if parent_idx > 0 and not all_parents_array:  # Not the first parent AND not all-array case
                 relationships_block = getattr(entity, "relationships", None)
                 relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
                 relationship_map = {rel.parentAlias: rel for rel in relationships}

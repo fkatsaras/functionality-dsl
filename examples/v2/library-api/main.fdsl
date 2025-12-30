@@ -16,9 +16,9 @@ Server LibraryAPI
   port: 8000
   cors: "*"
   loglevel: debug
-  timeout: 30
   auth:
     type: jwt
+    roles: ["librarian", "admin"]
     secret_env: "JWT_SECRET"
 end
 
@@ -218,7 +218,7 @@ Entity MemberStats(Member, Loan[])
       - read: ["librarian", "admin"]
 end
 
-Entity LibraryStatistics(Book, Member, Loan)
+Entity LibraryStatistics(Book[], Member[], Loan[])
   attributes:
     - totalBooks: integer = len(Book);
     - totalMembers: integer = len(Member);

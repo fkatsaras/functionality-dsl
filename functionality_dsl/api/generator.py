@@ -40,6 +40,7 @@ from .generators import (
     generate_openapi_spec,
     generate_asyncapi_spec,
 )
+from .generators.core.auth_generator import generate_auth_module
 from .generators.core.postman_generator import generate_postman_collection
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
@@ -78,6 +79,10 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     # Generate domain models
     print("\n[PHASE 1] Generating domain models...")
     generate_domain_models(model, templates_dir, out_dir)
+
+    # Generate auth middleware (if configured)
+    print("\n[PHASE 1.5] Generating authentication middleware...")
+    generate_auth_module(model, templates_dir, out_dir)
 
     # Generate REST routers (using flow-based analysis)
     print("\n[PHASE 2] Generating REST API routers (flow-based)...")

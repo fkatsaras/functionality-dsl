@@ -90,11 +90,12 @@ AttrRef:
 ExposeBlock:
   'expose:'
     ('channel:' channel=STRING)?
-    (operations=OperationsBlock | permissions=PermissionsBlock)
+    'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
     ('id_field:' id_field=STRING)?
     (path_params=ExposePathParamsBlock)?
     (readonly_fields=ReadonlyFieldsBlock)?
     (filters=FiltersBlock)?
+    (permissions=PermissionsBlock)?
 ;
 
 OperationsBlock:
@@ -122,14 +123,14 @@ FiltersBlock:
   'filters:' '[' fields+=STRING (',' fields+=STRING)* ']'
 ;
 
-// Permissions block for RBAC - groups operations by roles
+// Permissions block for RBAC - assigns roles to operations
 PermissionsBlock:
   'permissions:'
     ('-' perms+=PermissionRule)+
 ;
 
 PermissionRule:
-  '[' roles+=STRING (',' roles+=STRING)* ']' ':' '[' operations+=Operation (',' operations+=Operation)* ']'
+  operation=Operation ':' '[' roles+=STRING (',' roles+=STRING)* ']'
 ;
 
 // Entity sources / targets -------------------

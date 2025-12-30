@@ -13,6 +13,9 @@ from app.domain.models import {{ entity_name }}
 {%- if op.has_request_body %}, {{ op.request_model }}{% endif %}
 {%- endfor %}
 from app.services.{{ entity_name | lower }}_service import {{ service_name }}
+{%- if has_auth %}
+from app.core.auth import require_roles
+{%- endif %}
 
 
 logger = logging.getLogger("fdsl.router.{{ entity_name }}")
@@ -30,6 +33,9 @@ router = APIRouter(
     response_model={{ op.response_model }},
     {%- endif %}
     status_code={{ op.status_code }}
+    {%- if has_auth and op.required_roles != ["public"] %},
+    dependencies=[Depends(require_roles({{ op.required_roles }}))]
+    {%- endif %}
 )
 async def {{ op.function_name }}(
     {%- if op.is_item_op %}
