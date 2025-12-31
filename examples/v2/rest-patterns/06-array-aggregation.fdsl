@@ -6,7 +6,7 @@
 // Requirements:
 // 1. Use EntityName[] syntax for array parent
 // 2. Array parent must be base entity with @id
-// 3. Array parent must expose 'list' with filters
+// 3. Array parent must have read operation (generates list) with filters
 // 4. Use relationships block to specify filter field
 // 5. Aggregate functions: len(), sum(), map(), filter(), any(), all()
 // =============================================================================
@@ -20,10 +20,12 @@ end
 
 Source<REST> OrderAPI
   base_url: "http://dummy-rest-patterns:9001/array-orders"
+  operations: [read, create, update, delete]
 end
 
 Source<REST> OrderItemAPI
   base_url: "http://dummy-rest-patterns:9001/order-items"
+  operations: [read, create, update, delete]
 end
 
 // Base entities
@@ -32,11 +34,10 @@ Entity Order
     - orderId: string @id;
     - userId: string;
     - status: string;
-    - createdAt: string;
+    - createdAt: string @readonly;
   source: OrderAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    filters: ["userId", "status"]
+  filters: ["userId", "status"]
+  access: true
 end
 
 Entity OrderItem
@@ -47,10 +48,9 @@ Entity OrderItem
     - quantity: integer;
     - price: number;
   source: OrderItemAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    filters: ["orderId", "productId"]
-    // Filter by orderId enables array aggregation
+  filters: ["orderId", "productId"]
+  access: true
+  // Filter by orderId enables array aggregation
 end
 
 // Aggregate order items for an order
@@ -67,9 +67,9 @@ Entity OrderWithItems(Order, OrderItem[])
     - subtotal: number = sum(map(OrderItem, i => i["quantity"] * i["price"]));
     - avgItemPrice: number = round(subtotal / itemCount, 2) if itemCount > 0 else 0;
     - hasExpensiveItems: boolean = any(map(OrderItem, i => i["price"] > 100));
-  expose:
-    operations: [read]
-    // GET /api/orders/{orderId}/orderwithitems
+  access: true
+  // Composite entity - read-only
+  // GET /api/orders/{orderId}/orderwithitems
 end
 
 // Stats aggregation
@@ -84,7 +84,7 @@ Entity OrderStats(Order, OrderItem[])
     - averageItemValue: number = round(orderValue / totalItems, 2) if totalItems > 0 else 0;
     - maxPrice: number = max(map(OrderItem, i => i["price"])) if len(OrderItem) > 0 else 0;
     - minPrice: number = min(map(OrderItem, i => i["price"])) if len(OrderItem) > 0 else 0;
-  expose:
-    operations: [read]
-    // GET /api/orders/{orderId}/orderstats
+  access: true
+  // Composite entity - read-only
+  // GET /api/orders/{orderId}/orderstats
 end

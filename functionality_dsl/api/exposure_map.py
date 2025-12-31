@@ -207,11 +207,11 @@ def build_exposure_map(model):
         # id_field already retrieved above for read->list expansion
 
         # Get path_params
-        path_params_block = getattr(expose, "path_params", None)
+        path_params_block = getattr(expose, "path_params", None) if expose else None
         path_params = getattr(path_params_block, "params", []) if path_params_block else []
 
-        # Get filters
-        filters_block = getattr(expose, "filters", None)
+        # Get filters from entity level (new syntax) or expose block (old syntax fallback)
+        filters_block = getattr(entity, "filters", None) or (getattr(expose, "filters", None) if expose else None)
         filters = getattr(filters_block, "fields", []) if filters_block else []
 
         # Extract readonly fields from attributes with @id or @readonly markers

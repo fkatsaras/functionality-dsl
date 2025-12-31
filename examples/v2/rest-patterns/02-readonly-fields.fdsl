@@ -5,8 +5,9 @@
 //
 // Requirements:
 // 1. Entity with computed attributes (expressions)
-// 2. Use readonly_fields to exclude from mutations
+// 2. Use @readonly decorator to exclude from mutations
 // 3. Common use case: timestamps, IDs, computed totals
+// 4. @id fields are readonly by default (no need for @readonly)
 // =============================================================================
 
 Server ReadOnlyFields
@@ -18,28 +19,31 @@ end
 
 Source<REST> OrderAPI
   base_url: "http://dummy-rest-patterns:9001/orders"
+  operations: [read, create, update, delete]
 end
 
 // Entity with read-only computed fields
 Entity Order
   attributes:
-    - id: string @id;
+    - id: string @id;              // Readonly by default (@id)
     - userId: string;
     - items: array;
     - subtotal: number;
     - tax: number;
-    - total: number;          // Computed server-side
-    - createdAt: string;      // Server timestamp
-    - updatedAt: string;      // Server timestamp
+    - total: number @readonly;     // Computed server-side
+    - createdAt: string @readonly; // Server timestamp
+    - updatedAt: string @readonly; // Server timestamp
   source: OrderAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id", "total", "createdAt", "updatedAt"]
-    // These fields excluded from OrderCreate and OrderUpdate schemas
-    // Client cannot set them - only server can
+  access: true
+  // Auto-generates:
+  // GET    /api/orders           (list)
+  // GET    /api/orders/{id}      (read)
+  // POST   /api/orders           (create) - excludes id, total, createdAt, updatedAt
+  // PUT    /api/orders/{id}      (update) - excludes id, total, createdAt, updatedAt
+  // DELETE /api/orders/{id}      (delete)
 end
 
-// Transformation entity with ALL computed fields
+// Transformation entity with ALL computed fields (read-only)
 Entity OrderWithTotals(Order)
   attributes:
     - id: string = Order.id;
@@ -49,8 +53,7 @@ Entity OrderWithTotals(Order)
     - tax: number = Order.tax;
     - total: number = Order.subtotal + Order.tax;
     - totalWithFees: number = round(total * 1.05, 2);
-  expose:
-    operations: [list, read]
-    // Transformation entities are read-only (no create/update/delete)
-    // Auto-generates: GET /api/orders/{id}/orderwithtotals
+  access: true
+  // Composite entities are read-only (no create/update/delete)
+  // Auto-generates: GET /api/orders/{id}/orderwithtotals
 end

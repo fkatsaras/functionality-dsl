@@ -4,10 +4,11 @@
 // RULE: Query parameters for filtering list operations
 //
 // Requirements:
-// 1. Entity must expose 'list' operation
+// 1. Entity must have read operation (generates list for collections)
 // 2. Entity must be BASE entity (has source:, no parents)
 // 3. Filter fields must be schema fields (not computed)
 // 4. Generates query params: GET /api/books?author=Smith&year=2023
+// 5. Filters specified as entity-level field
 // =============================================================================
 
 Server ListFilters
@@ -19,6 +20,7 @@ end
 
 Source<REST> BookAPI
   base_url: "http://dummy-rest-patterns:9001/books"
+  operations: [read, create, update, delete]
 end
 
 // Entity with filters
@@ -32,19 +34,19 @@ Entity Book
     - price: number;
     - inStock: boolean;
   source: BookAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    filters: ["author", "year", "genre", "inStock"]
-    // Generates query parameters:
-    // GET /api/books?author={value}
-    // GET /api/books?year={value}
-    // GET /api/books?genre={value}
-    // GET /api/books?inStock={value}
-    // Can combine: /api/books?author=Smith&year=2023
+  filters: ["author", "year", "genre", "inStock"]
+  access: true
+  // Generates query parameters:
+  // GET /api/books?author={value}
+  // GET /api/books?year={value}
+  // GET /api/books?genre={value}
+  // GET /api/books?inStock={value}
+  // Can combine: /api/books?author=Smith&year=2023
 end
 
 Source<REST> CustomerAPI
   base_url: "http://dummy-rest-patterns:9001/customers"
+  operations: [read]
 end
 
 // Multiple filters example
@@ -55,14 +57,13 @@ Entity Customer
     - email: string;
     - country: string;
     - status: string;
-    - registeredAt: string;
+    - registeredAt: string @readonly;
   source: CustomerAPI
-  expose:
-    operations: [list, read]
-    filters: ["country", "status"]
-    // GET /api/customers?country=USA
-    // GET /api/customers?status=active
-    // GET /api/customers?country=USA&status=active
+  filters: ["country", "status"]
+  access: true
+  // GET /api/customers?country=USA
+  // GET /api/customers?status=active
+  // GET /api/customers?country=USA&status=active
 end
 
 // Transformation entities CANNOT have filters
@@ -72,8 +73,8 @@ Entity BookWithMarkup(Book)
     - title: string = Book.title;
     - author: string = Book.author;
     - retailPrice: number = round(Book.price * 1.2, 2);
-  expose:
-    operations: [list, read]
-    // NO filters allowed on composite entities
-    // Filters only on base entities
+  access: true
+  // Composite entities are read-only
+  // NO filters allowed on composite entities
+  // Filters only on base entities
 end

@@ -161,6 +161,25 @@ end
 - These are **independent** - a field can be both, either, or neither
 - Example: `lastLoginAt: string? @readonly` - optional AND readonly
 
+**List Filters:**
+- Use `filters:` as entity-level field (not in expose block)
+- Only for BASE entities (with `source:`, no parents)
+- Filter fields must be schema fields (not computed)
+- Generates query parameters for list endpoints
+```fdsl
+Entity Book
+  attributes:
+    - id: string @id;
+    - title: string;
+    - author: string;
+    - year: integer;
+  source: BookAPI
+  filters: ["author", "year"]
+  access: true
+  // Generates: GET /api/books?author=Smith&year=2023
+end
+```
+
 ### 3. **Sources** (External APIs)
 
 **REST Source:**

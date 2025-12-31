@@ -5,9 +5,10 @@
 //
 // Requirements:
 // 1. Entity with NO @id field
-// 2. Can ONLY expose 'read' operation
-// 3. Path has no parameter: GET /api/config (not /api/config/{id})
-// 4. Common use case: app configuration, user profile, settings
+// 2. Cannot use 'list' operation (not a collection)
+// 3. Can use: read, create, update, delete (identity from context)
+// 4. Path has no parameter: GET /api/config (not /api/config/{id})
+// 5. Common use case: app configuration, user profile, settings
 // =============================================================================
 
 Server SingletonEntity
@@ -19,6 +20,7 @@ end
 
 Source<REST> ConfigAPI
   base_url: "http://dummy-rest-patterns:9001/config"
+  operations: [read]
 end
 
 // Singleton entity - no @id field
@@ -30,17 +32,18 @@ Entity AppConfig
     - features: array;
     - maintenanceMode: boolean;
   source: ConfigAPI
-  expose:
-    operations: [read]
-    // Auto-generates: GET /api/appconfig (no {id} parameter)
-    // Cannot use list/create/update/delete (would fail validation)
+  access: true
+  // Auto-generates: GET /api/appconfig (no {id} parameter)
+  // Cannot use list (would fail validation - not a collection)
 end
 
 Source<REST> UserProfileAPI
   base_url: "http://dummy-rest-patterns:9001/profile"
+  operations: [read, create, update, delete]
 end
 
 // Another singleton - current user's profile
+// Supports full CRUD (identity from auth context)
 Entity UserProfile
   attributes:
     - username: string;
@@ -48,20 +51,22 @@ Entity UserProfile
     - preferences: object;
     - notifications: boolean;
   source: UserProfileAPI
-  expose:
-    operations: [read]
-    // Auto-generates: GET /api/userprofile
+  access: true
+  // Auto-generates:
+  // GET    /api/userprofile  (read)
+  // POST   /api/userprofile  (create)
+  // PUT    /api/userprofile  (update)
+  // DELETE /api/userprofile  (delete)
 end
 
-// Transformation of singleton
+// Transformation of singleton (also singleton - inherits no @id)
 Entity EnrichedProfile(UserProfile)
   attributes:
     - username: string = UserProfile.username;
     - email: string = lower(UserProfile.email);
     - displayName: string = upper(UserProfile.username);
     - isNotified: boolean = UserProfile.notifications;
-  expose:
-    operations: [read]
-    // Auto-generates: GET /api/enrichedprofile
-    // Singleton-derived composite (also singleton)
+  access: true
+  // Auto-generates: GET /api/enrichedprofile
+  // Singleton-derived composite (also singleton, read-only)
 end
