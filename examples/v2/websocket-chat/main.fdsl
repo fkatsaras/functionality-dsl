@@ -3,10 +3,11 @@
 // Demonstrates: Publish/Subscribe with transformations and target binding
 // ============================================================================
 // NEW UNIFIED SYNTAX:
-// - Sources declare connection only (no operation blocks)
-// - Operations inferred from entity usage
+// - Sources declare operations: [subscribe, publish]
+// - Entities use access: true to expose endpoints
 // - Paths auto-generated from entity names
 // - Publish requires target: field (symmetric with REST mutations)
+// - Subscribe requires source: field
 // ============================================================================
 
 Server ChatServer
@@ -18,19 +19,19 @@ end
 
 Source<WS> EchoWS
   channel: "ws://dummy-echo-service:8765"
+  operations: [subscribe, publish]
 end
 
-// Base schema from external WebSocket
+// Base schema from external WebSocket - bidirectional
 Entity ChatMessage
   attributes:
     - text: string(3..);  // Validation: min 3 chars
   source: EchoWS  // For subscribe operation
   target: EchoWS  // For publish operation
-  expose:
-    operations: [subscribe, publish]
-    // Auto-generates channel: /ws/chatmessage
-    // Subscribe flow: EchoWS → ChatMessage → Client
-    // Publish flow:   Client → ChatMessage → EchoWS
+  access: true
+  // Auto-generates channel: /ws/chatmessage
+  // Subscribe flow: EchoWS -> ChatMessage -> Client
+  // Publish flow:   Client -> ChatMessage -> EchoWS
 end
 
 // ============================================================================

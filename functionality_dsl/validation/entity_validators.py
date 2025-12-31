@@ -1207,6 +1207,7 @@ def _compute_identity_anchors(model):
             id_field = _find_id_attribute(entity)
             source = getattr(entity, "source", None)
             expose = getattr(entity, "expose", None)
+            access_block = getattr(entity, "access", None)
 
             if id_field and source:
                 # This is a standard base resource entity
@@ -1214,9 +1215,23 @@ def _compute_identity_anchors(model):
                 entity._identity_field = id_field
                 entity._is_composite = False
                 entity._is_singleton = False
-            elif not id_field and source and expose:
-                # Check if this is a singleton (no @id, has source, exposes any operations except 'list')
-                operations = getattr(expose, "operations", [])
+            elif not id_field and source and (expose or access_block):
+                # Check if this is a singleton (no @id, has source, has exposure)
+                # Singleton entities have no @id field (identity from context)
+                # They can have expose: or access: true
+                if expose:
+                    operations = getattr(expose, "operations", [])
+                else:
+                    # For access: true, operations come from source
+                    operations = []
+                    source_ops_block = getattr(source, "operations", None)
+                    source_ops_list = getattr(source, "operations_list", None)
+                    if source_ops_block:
+                        source_op_rules = getattr(source_ops_block, "ops", []) or []
+                        operations = [rule.operation for rule in source_op_rules]
+                    elif source_ops_list:
+                        operations = getattr(source_ops_list, "operations", []) or []
+
                 rest_ops = {'read', 'create', 'update', 'delete'}
                 has_rest_ops = any(op in rest_ops for op in operations)
                 has_list = 'list' in operations

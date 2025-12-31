@@ -22,14 +22,17 @@ end
 
 Source<REST> ThessalonikiAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m"
+  operations: [read]
 end
 
 Source<REST> NewYorkAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&hourly=temperature_2m,relative_humidity_2m"
+  operations: [read]
 end
 
 Source<REST> TokyoAPI
   base_url: "https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&hourly=temperature_2m,relative_humidity_2m"
+  operations: [read]
 end
 
 // =============================================================================
@@ -48,8 +51,7 @@ Entity ThessalonikiForecast
     - hourly: object;
     - hourly_units: object?;
   source: ThessalonikiAPI
-  expose:
-    operations: [read]
+  access: true
 end
 
 Entity NewYorkForecast
@@ -64,8 +66,7 @@ Entity NewYorkForecast
     - hourly: object;
     - hourly_units: object?;
   source: NewYorkAPI
-  expose:
-    operations: [read]
+  access: true
 end
 
 Entity TokyoForecast
@@ -80,8 +81,7 @@ Entity TokyoForecast
     - hourly: object;
     - hourly_units: object?;
   source: TokyoAPI
-  expose:
-    operations: [read]
+  access: true
 end
 
 // =============================================================================
@@ -132,8 +132,7 @@ Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
         )
       }
     ];
-  expose:
-    operations: [read]
+  access: true
 end
 
 // =============================================================================
@@ -157,8 +156,7 @@ Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
           "tokyo": point[3]
         }
       );
-  expose:
-    operations: [read]
+  access: true
 end
 
 // =============================================================================
