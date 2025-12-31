@@ -166,7 +166,9 @@
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl -o generated)",
       "Bash(venv_WIN/Scripts/fdsl generate:*)",
       "Bash(venv_WIN/Scripts/python:*)",
-      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl --out generated)"
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl --out generated)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate 05-filters.fdsl --out generated-filters)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate 07-partial-crud.fdsl --out generated-partial)"
     ],
     "deny": [],
     "ask": []

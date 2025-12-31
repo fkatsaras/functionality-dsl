@@ -164,6 +164,7 @@ end
 **List Filters:**
 - Use `filters:` as entity-level field (not in expose block)
 - Only for BASE entities (with `source:`, no parents)
+- Reference attribute names directly (not strings) for type safety
 - Filter fields must be schema fields (not computed)
 - Generates query parameters for list endpoints
 ```fdsl
@@ -174,7 +175,7 @@ Entity Book
     - author: string;
     - year: integer;
   source: BookAPI
-  filters: ["author", "year"]
+  filters: [author, year]
   access: true
   // Generates: GET /api/books?author=Smith&year=2023
 end

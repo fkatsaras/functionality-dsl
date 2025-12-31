@@ -34,7 +34,7 @@ Entity Book
     - price: number;
     - inStock: boolean;
   source: BookAPI
-  filters: ["author", "year", "genre", "inStock"]
+  filters: [author, year, genre, inStock]
   access: true
   // Generates query parameters:
   // GET /api/books?author={value}
@@ -59,7 +59,7 @@ Entity Customer
     - status: string;
     - registeredAt: string @readonly;
   source: CustomerAPI
-  filters: ["country", "status"]
+  filters: [country, status]
   access: true
   // GET /api/customers?country=USA
   // GET /api/customers?status=active

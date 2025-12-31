@@ -26,10 +26,12 @@ end
 
 Source<REST> UserProfileAPI
   base_url: "http://dummy-rest-patterns:9001/profile"
+  operations: [read, create, update, delete]
 end
 
 Source<REST> AppConfigAPI
   base_url: "http://dummy-rest-patterns:9001/config"
+  operations: [read, update]
 end
 
 // =============================================================================
@@ -46,12 +48,16 @@ Entity UserProfile
     - theme: string;
     - language: string;
     - notifications: boolean;
-    - createdAt: string;
-    - updatedAt: string;
+    - createdAt: string @readonly;
+    - updatedAt: string @readonly;
   source: UserProfileAPI
-  expose:
-    operations: [read, create, update, delete]
-    readonly_fields: ["createdAt", "updatedAt"]
+  access: true
+  // Source has full CRUD operations
+  // Auto-generates:
+  // GET    /api/userprofile  (read)
+  // POST   /api/userprofile  (create - first signup)
+  // PUT    /api/userprofile  (update)
+  // DELETE /api/userprofile  (delete account)
 end
 
 // Application Configuration - Global singleton
@@ -64,8 +70,11 @@ Entity AppConfig
     - apiRateLimit: integer;
     - features: object;
   source: AppConfigAPI
-  expose:
-    operations: [read, update]  // No create/delete - always exists
+  access: true
+  // Source has only read and update (no create/delete - always exists)
+  // Auto-generates:
+  // GET /api/appconfig  (read)
+  // PUT /api/appconfig  (update)
 end
 
 // =============================================================================
@@ -81,5 +90,5 @@ end
 //   GET    /api/appconfig            - Read app configuration
 //   PUT    /api/appconfig            - Update app configuration
 //
-// Note: No /{id} path parameter - identity comes from context
+// Note: No /{id} path parameter
 // =============================================================================

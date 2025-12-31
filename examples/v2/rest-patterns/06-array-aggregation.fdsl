@@ -36,7 +36,7 @@ Entity Order
     - status: string;
     - createdAt: string @readonly;
   source: OrderAPI
-  filters: ["userId", "status"]
+  filters: [userId, status]
   access: true
 end
 
@@ -48,7 +48,7 @@ Entity OrderItem
     - quantity: integer;
     - price: number;
   source: OrderItemAPI
-  filters: ["orderId", "productId"]
+  filters: [orderId, productId]
   access: true
   // Filter by orderId enables array aggregation
 end

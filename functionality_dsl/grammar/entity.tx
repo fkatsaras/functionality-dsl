@@ -117,7 +117,7 @@ ExposePathParamsBlock:
 ;
 
 FiltersBlock:
-  'filters:' '[' fields+=STRING (',' fields+=STRING)* ']'
+  'filters:' '[' fields+=ID (',' fields+=ID)* ']'
 ;
 
 // Permissions block for RBAC (deprecated - use source operations instead)
