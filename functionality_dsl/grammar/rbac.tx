@@ -1,0 +1,38 @@
+// =============================================================================
+// RBAC (Role-Based Access Control) Grammar
+// =============================================================================
+// Defines roles as first-class entities with their own permissions
+// Each role is self-contained and declares what it can access
+
+// Role Declaration - first-class citizen with optional permissions
+Role:
+  'Role' name=RoleName
+  (permissions+=ResourcePermission+)?
+  'end'
+;
+
+// Role name - either a declared role name or wildcard '*' for public
+RoleName:
+  name=ID | wildcard='*'
+;
+
+// Resource Permission - operations allowed on specific resources
+// Example: on AuthorsAPI, BooksAPI: [read, create, update]
+ResourcePermission:
+  'on' targets+=ResourceTarget (',' targets+=ResourceTarget)* ':' operations=OperationList
+;
+
+// Resource Target - either wildcard or specific Source/Entity name
+ResourceTarget:
+  wildcard='*' | name=ID
+;
+
+// Operation List - either wildcard or specific operations
+OperationList:
+  '[' (wildcard_ops='*' | operations+=Operation (',' operations+=Operation)*) ']'
+;
+
+// Operation types (same as in entity.tx)
+Operation:
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+;

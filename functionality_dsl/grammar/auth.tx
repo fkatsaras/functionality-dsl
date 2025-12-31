@@ -1,0 +1,38 @@
+// =============================================================================
+// Authentication Configuration Grammar
+// =============================================================================
+// Defines authentication as a first-class entity, separate from Server
+// Server references Auth by name
+
+// Auth Declaration - first-class citizen
+Auth:
+  'Auth' name=ID
+    'type:' type=AuthType
+    (jwt_config=JWTAuthConfig)?
+    (session_config=SessionAuthConfig)?
+    (apikey_config=APIKeyAuthConfig)?
+  'end'
+;
+
+AuthType: 'jwt' | 'session' | 'api_key' ;
+
+JWTAuthConfig:
+    (('secret:' secret=STRING) | ('secret_env:' secret_env=STRING))
+    ('header:' header=STRING)?
+    ('scheme:' scheme=STRING)?
+    ('algorithm:' algorithm=STRING)?
+    ('user_id_claim:' user_id_claim=STRING)?
+    ('roles_claim:' roles_claim=STRING)?
+;
+
+SessionAuthConfig:
+    (('cookie:' cookie=STRING) | ('redis_url_env:' redis_url_env=STRING) | ('store_env:' store_env=STRING))
+    ('cookie:' cookie=STRING)?
+    ('redis_url_env:' redis_url_env=STRING)?
+    ('store_env:' store_env=STRING)?
+;
+
+APIKeyAuthConfig:
+    ('lookup_env:' lookup_env=STRING)
+    ('header:' header=STRING)?
+;

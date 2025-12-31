@@ -26,13 +26,41 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 
 ## Core Concepts
 
-### 1. **Server**
+### 1. **Roles** (RBAC - First-Class Citizens)
+```fdsl
+Role admin
+Role librarian
+Role user
+```
+
+Roles are declared as first-class entities and referenced in AccessControl blocks.
+
+### 2. **Authentication** (Identity Verification)
+```fdsl
+Auth MyAuth
+  type: jwt
+  secret_env: "JWT_SECRET"
+  roles_claim: "roles"
+end
+```
+
+Auth blocks define authentication configuration separately from Server.
+**Supported types:** `jwt`, `session`, `api_key`
+
+**Key Points:**
+- Authentication (Auth) ≠ Authorization (AccessControl)
+- Auth verifies WHO the user is
+- AccessControl determines WHAT they can do
+- Server references Auth by name
+
+### 3. **Server** (Configuration)
 ```fdsl
 Server MyAPI
   host: "localhost"
   port: 8080
   cors: "http://localhost:3000"
   loglevel: debug
+  auth: MyAuth  // References Auth declaration by name
 end
 ```
 
@@ -47,10 +75,11 @@ Entity RawOrder
     - items: array;
     - status: string;
   source: OrderDB
+  access: true
 end
 ```
 
-**Transformation Entity** (adds computed fields):
+**Composite Entity** (read-only transformation with computed fields):
 ```fdsl
 Entity OrderWithTotals(RawOrder)
   attributes:
@@ -59,20 +88,19 @@ Entity OrderWithTotals(RawOrder)
     - items: array = RawOrder.items;
     - itemCount: integer = len(RawOrder.items);
     - total: number = sum(map(items, i -> i["price"] * i["quantity"])) * 1.1;
-  expose:
-    operations: [read, create, update, delete]
-    readonly_fields: ["id", "itemCount", "total"]
+  access: true
 end
 ```
 
 **Key Points:**
 - `source:` links entity to external API (required for mutations)
-- `expose:` makes entity available via API
-- `operations:` CRUD ops (`read`, `create`, `update`, `delete`) or WS ops (`subscribe`, `publish`)
-- REST/WS type **inferred from operations** - no explicit `rest:` or `websocket:` needed
+- `access: true` exposes entity via REST API
+- Base entities with `source:` inherit operations from the source
+- Composite entities (with parents) are read-only and expose only `read` operation
 - REST paths **auto-generated** from entity name and `@id` field
-- For WebSocket: use `channel: "/ws/path"` in expose block
-- `readonly_fields:` excluded from Create/Update request schemas
+- For WebSocket: use `expose:` block with `channel:` and `operations: [subscribe/publish]`
+- `@id` marker: identifies the primary key field (always readonly)
+- `@readonly` marker: excludes field from Create/Update request schemas (for computed fields, timestamps, etc.)
 - Attributes with `=` are computed (evaluated server-side)
 
 **CRUD Rules:**
@@ -99,6 +127,39 @@ Entity UserProfile
 end
 ```
 Generates: `GET/POST/PUT/DELETE /api/userprofile` (identity from auth context)
+
+**Readonly Fields** (`@readonly` decorator):
+- Mark fields that should NOT be included in Create/Update request schemas
+- Automatically applied to `@id` fields (primary keys are always readonly)
+- Use for: server-generated timestamps, computed fields, auto-incremented values
+- Readonly fields appear in response schemas but not in request schemas
+
+**Common Readonly Patterns:**
+```fdsl
+Entity Product
+  attributes:
+    - id: string @id;                    // Readonly by default (@id)
+    - name: string;                      // Writable
+    - price: number;                     // Writable
+    - createdAt: string @readonly;       // Server timestamp (readonly)
+    - updatedAt: string @readonly;       // Server timestamp (readonly)
+    - viewCount: integer @readonly = 0;  // Computed field (readonly)
+  source: ProductsAPI
+  expose:
+    operations: [read, create, update]
+end
+```
+
+**Generated Schemas:**
+- `Product` (response): All 6 fields
+- `ProductCreate` (request): Only `name` and `price`
+- `ProductUpdate` (request): Only `name` and `price`
+
+**Optional vs Readonly:**
+- `optional?` = field can be null/omitted (data modeling)
+- `@readonly` = field cannot be set by client (API design)
+- These are **independent** - a field can be both, either, or neither
+- Example: `lastLoginAt: string? @readonly` - optional AND readonly
 
 ### 3. **Sources** (External APIs)
 
@@ -182,6 +243,38 @@ Component<Table> OrdersTable
     - "total": number
 end
 ```
+
+### 6. **AccessControl** (Authorization Policy)
+
+```fdsl
+AccessControl MyPolicy
+
+  on Source UsersAPI
+    read:    [*]              // Public access (wildcard)
+    create:  [admin]
+    update:  [admin, user]
+    delete:  [admin]
+
+  on Entity UserProfile
+    read: [user, admin]       // Entity-level override
+
+end
+```
+
+**Key Points:**
+- Centralized authorization policy (separate from entities and sources)
+- **Requires:** At least one Role and one Auth declaration
+- **Priority:** Entity-level rules override Source-level rules
+- **Wildcard `[*]`:** Public access (no authentication required)
+- **No AccessControl:** All operations default to public access
+- Sources declare capabilities (`operations: [read, create, ...]`)
+- AccessControl determines who can use those capabilities
+
+**Rules:**
+1. Validation enforces: `AccessControl` → requires `Role` + `Auth`
+2. Entity-level permissions override source-level
+3. Operations not listed in AccessControl are filtered out
+4. Composite entities typically get read-only access
 
 ---
 

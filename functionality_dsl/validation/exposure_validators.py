@@ -537,6 +537,109 @@ def _validate_entity_crud_rules(model, metamodel=None):
                 )
 
 
+def _validate_source_operations(model, metamodel=None):
+    """
+    Validate source operations blocks (new syntax).
+
+    Rules:
+    - Source operations must reference valid operation types
+    - Operation roles must be declared in Server auth block (or use '*' wildcard)
+    - Each operation must have at least one role
+    """
+    # Get declared roles from server auth block
+    servers = getattr(model, "servers", [])
+    server = servers[0] if servers else None
+    auth = getattr(server, "auth", None) if server else None
+    raw_roles = getattr(auth, "roles", []) or []
+    declared_roles = set(raw_roles)
+    declared_roles.add("public")  # "public" is always allowed (no auth)
+
+    # Get all sources
+    rest_sources = get_children_of_type("SourceREST", model)
+    ws_sources = get_children_of_type("SourceWS", model)
+    all_sources = rest_sources + ws_sources
+
+    for source in all_sources:
+        source_ops_block = getattr(source, "operations", None)
+        if not source_ops_block:
+            continue
+
+        source_op_rules = getattr(source_ops_block, "ops", []) or []
+
+        for rule in source_op_rules:
+            op = rule.operation
+            roles = rule.roles
+
+            # Validate that each operation has at least one role
+            if not roles or len(roles) == 0:
+                raise TextXSemanticError(
+                    f"Source '{source.name}' operation '{op}' has empty roles list.\n"
+                    f"Each operation must specify at least one role (use ['*'] for public access).",
+                    **get_location(source_ops_block),
+                )
+
+            # Validate that all referenced roles are declared (or use wildcard)
+            for role in roles:
+                if role == '*':
+                    continue  # Wildcard is always allowed
+                if role not in declared_roles:
+                    raise TextXSemanticError(
+                        f"Source '{source.name}' operation '{op}' references undeclared role '{role}'.\n"
+                        f"Declared roles in Server auth block: {sorted(declared_roles)}\n"
+                        f"Add '{role}' to Server auth.roles, use an existing role, or use '*' for public access.",
+                        **get_location(source_ops_block),
+                    )
+
+
+def _validate_entity_access_blocks(model, metamodel=None):
+    """
+    Validate entity access blocks (new syntax).
+
+    Rules:
+    - Entity access block can only reference operations defined in its source
+    - Entity must have a source if using access block
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        access = getattr(entity, "access", None)
+        if not access:
+            continue
+
+        has_access = getattr(access, "access", False)
+        if not has_access:
+            continue  # access: false is valid (no exposure)
+
+        # Entity with access: true must have a source (or be a composite entity with parents)
+        source = getattr(entity, "source", None)
+        parents = getattr(entity, "parents", []) or []
+        is_composite = len(parents) > 0
+
+        if not source and not is_composite:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'access: true' but no 'source:' reference.\n"
+                f"Access requires a Source to inherit operations from.\n"
+                f"Add 'source: SourceName' or set 'access: false'.",
+                **get_location(access),
+            )
+
+        # Composite entities don't need source validation (they're read-only transformations)
+        if is_composite:
+            continue
+
+        # Check if source has operations (either old or new syntax)
+        source_ops_block = getattr(source, "operations", None)
+        source_ops_list = getattr(source, "operations_list", None)
+
+        if not source_ops_block and not source_ops_list:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has 'access: true' but source '{source.name}' has no 'operations:' declaration.\n"
+                f"The source must define operations for entities to inherit.\n"
+                f"Add 'operations: [read, create, ...]' to Source '{source.name}'.",
+                **get_location(access),
+            )
+
+
 def _validate_permissions(model, metamodel=None):
     """
     Validate permissions blocks in entity expose configurations.

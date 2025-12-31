@@ -4,11 +4,12 @@
 // RULE: Entity with @id field and all CRUD operations
 //
 // Requirements:
-// 1. Source<REST> with base URL
+// 1. Source<REST> with base URL and operations list
 // 2. Entity with @id marker on one field
-// 3. Entity has source: binding
-// 4. Expose all CRUD operations: [list, read, create, update, delete]
+// 3. Entity has source: binding and access: true
+// 4. Source declares operations: [read, create, update, delete]
 // 5. Paths auto-generated from entity name
+// 6. No AccessControl = public access (free for all)
 // =============================================================================
 
 Server BasicCRUD
@@ -18,12 +19,13 @@ Server BasicCRUD
   loglevel: debug
 end
 
-// External REST API
+// External REST API - declares capabilities
 Source<REST> UserAPI
   base_url: "http://dummy-rest-patterns:9001/users"
+  operations: [read, create, update, delete]
 end
 
-// Base entity with full CRUD
+// Base entity with full CRUD - public access (no AccessControl)
 Entity User
   attributes:
     - id: string @id;
@@ -31,14 +33,13 @@ Entity User
     - email: string;
     - age: integer;
   source: UserAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    // Auto-generates:
-    // GET    /api/users           (list)
-    // GET    /api/users/{id}      (read)
-    // POST   /api/users           (create)
-    // PUT    /api/users/{id}      (update)
-    // DELETE /api/users/{id}      (delete)
+  access: true
+  // Auto-generates (all public):
+  // GET    /api/users           (collection)
+  // GET    /api/users/{id}      (read)
+  // POST   /api/users           (create)
+  // PUT    /api/users/{id}      (update)
+  // DELETE /api/users/{id}      (delete)
 end
 
 Component<Table> UserTable

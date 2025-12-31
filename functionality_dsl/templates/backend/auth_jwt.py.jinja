@@ -21,9 +21,15 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # Configuration
 # ============================================================================
 
+{% if secret %}
+# Using direct secret value from FDSL (for testing)
+JWT_SECRET = "{{ secret }}"
+{% else %}
+# Using environment variable
 JWT_SECRET = os.getenv("{{ secret_env }}")
 if not JWT_SECRET:
     raise ValueError("{{ secret_env }} environment variable not set")
+{% endif %}
 
 JWT_ALGORITHM = "{{ algorithm }}"
 USER_ID_CLAIM = "{{ user_id_claim }}"
@@ -168,8 +174,26 @@ def require_roles(required_roles: List[str]):
             return {"message": "Staff access granted"}
     """
     # Special case: public access (no auth required)
-    if required_roles == ["public"]:
-        return lambda: None  # No-op dependency
+    # If 'public' is in the allowed roles, allow unauthenticated access
+    if "public" in required_roles:
+        async def _check_roles_or_public(
+            credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+        ):
+            """Check if user has required roles OR allow public access"""
+            if credentials is None:
+                # No token provided - allow as public
+                return None
+
+            # Token provided - verify it has one of the required roles
+            user = decode_token(credentials.credentials)
+            if not user.has_any_role(required_roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+                )
+            return user
+
+        return _check_roles_or_public
 
     async def _check_roles(user: TokenPayload = Depends(get_current_user)):
         """Check if user has required roles"""

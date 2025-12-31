@@ -10,23 +10,31 @@ Requirements:
     pip install pyjwt
 """
 
-import jwt
 import argparse
 from datetime import datetime, timedelta
 
-import os
+try:
+    import jwt
+except ImportError:
+    print("Error: PyJWT library not installed. Install it with:")
+    print("  pip install pyjwt")
+    exit(1)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-here")  # Get from env or use default
+# Must match the secret in main.fdsl Auth block
+JWT_SECRET = "test-secret-key-for-library-api-demo-only-change-in-production"
 JWT_ALGORITHM = "HS256"
 
 
 def generate_token(user_id: str, roles: list[str], hours: int = 24) -> str:
     """Generate a JWT token"""
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
     payload = {
         "sub": user_id,           # User ID (standard JWT claim)
         "roles": roles,           # Roles list
-        "exp": datetime.utcnow() + timedelta(hours=hours),
-        "iat": datetime.utcnow()
+        "exp": now + timedelta(hours=hours),
+        "iat": now
     }
 
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)

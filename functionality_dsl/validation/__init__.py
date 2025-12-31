@@ -43,10 +43,18 @@ from functionality_dsl.validation.exposure_validators import (
     _validate_crud_blocks,
     _validate_entity_crud_rules,
     _validate_permissions,
+    _validate_source_operations,
+    _validate_entity_access_blocks,
 )
 
 from functionality_dsl.validation.server_validators import (
     verify_server,
+)
+
+from functionality_dsl.validation.rbac_validators import (
+    validate_accesscontrol_dependencies,
+    validate_role_references,
+    validate_server_auth_reference,
 )
 
 __all__ = [
@@ -76,6 +84,12 @@ __all__ = [
     "_validate_crud_blocks",
     "_validate_entity_crud_rules",
     "_validate_permissions",
+    "_validate_source_operations",
+    "_validate_entity_access_blocks",
     # Server validators
     "verify_server",
+    # RBAC validators
+    "validate_accesscontrol_dependencies",
+    "validate_role_references",
+    "validate_server_auth_reference",
 ]

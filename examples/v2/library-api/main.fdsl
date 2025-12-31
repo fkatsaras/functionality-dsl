@@ -5,45 +5,78 @@
 // - Books with authors and categories
 // - Members (library patrons)
 // - Loans (borrowing records)
-// - Full CRUD operations
+// - Full CRUD operations with RBAC
 // - Relationships and computed fields
 //
 // Data Source: Local dummy library service
 // =============================================================================
 
+// =============================================================================
+// ROLES - First-class declarations with permissions
+// =============================================================================
+
+Role admin
+  on *: [*]
+end
+
+Role librarian
+  on AuthorsAPI, BooksAPI, CategoriesAPI, MembersAPI, LoansAPI: [read, create, update]
+  on BookDetails, LoanDetails, MemberStats, LibraryStatistics: [read]
+end
+
+Role *
+  on AuthorsAPI, BooksAPI, CategoriesAPI: [read]
+  on BookDetails: [read]
+end
+
+// =============================================================================
+// AUTHENTICATION - Identity verification (separate from authorization)
+// =============================================================================
+
+Auth LibraryAuth
+  type: jwt
+  secret: "test-secret-key-for-library-api-demo-only-change-in-production"
+end
+
+// =============================================================================
+// SERVER - Configuration (references Auth by name)
+// =============================================================================
+  
 Server LibraryAPI
   host: "localhost"
   port: 8000
   cors: "*"
   loglevel: debug
-  auth:
-    type: jwt
-    roles: ["librarian", "admin"]
-    secret_env: "JWT_SECRET"
+  auth: LibraryAuth
 end
 
 // =============================================================================
-// REST SOURCES - Library Database
+// REST SOURCES - Library Database (capabilities only)
 // =============================================================================
-
-Source<REST> BooksAPI
-  base_url: "http://dummy-library:9200/books"
-end
 
 Source<REST> AuthorsAPI
   base_url: "http://dummy-library:9200/authors"
-end
-
-Source<REST> MembersAPI
-  base_url: "http://dummy-library:9200/members"
-end
-
-Source<REST> LoansAPI
-  base_url: "http://dummy-library:9200/loans"
+  operations: [read, create, update, delete]
 end
 
 Source<REST> CategoriesAPI
   base_url: "http://dummy-library:9200/categories"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> BooksAPI
+  base_url: "http://dummy-library:9200/books"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> MembersAPI
+  base_url: "http://dummy-library:9200/members"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> LoansAPI
+  base_url: "http://dummy-library:9200/loans"
+  operations: [read, create, update, delete]
 end
 
 // =============================================================================
@@ -57,15 +90,9 @@ Entity Author
     - birthYear: integer?;
     - nationality: string?;
     - biography: string?;
-    - createdAt: string;
+    - createdAt: string @readonly;
   source: AuthorsAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id", "createdAt"]
-    permissions:
-      - create: ["librarian", "admin"]
-      - update: ["librarian", "admin"]
-      - delete: ["admin"]
+  access: true
 end
 
 Entity Category
@@ -74,13 +101,7 @@ Entity Category
     - name: string;
     - description: string?;
   source: CategoriesAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id"]
-    permissions:
-      - create: ["librarian", "admin"]
-      - update: ["librarian", "admin"]
-      - delete: ["admin"]
+  access: true
 end
 
 Entity Book
@@ -95,15 +116,9 @@ Entity Book
     - language: string;
     - availableCopies: integer;
     - totalCopies: integer;
-    - createdAt: string;
+    - createdAt: string @readonly;
   source: BooksAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id", "createdAt"]
-    permissions:
-      - create: ["librarian", "admin"]
-      - update: ["librarian", "admin"]
-      - delete: ["admin"]
+  access: true
 end
 
 Entity Member
@@ -114,18 +129,10 @@ Entity Member
     - phone: string?;
     - address: string?;
     - membershipType: string;
-    - joinedDate: string;
+    - joinedDate: string @readonly;
     - active: boolean;
   source: MembersAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id", "joinedDate"]
-    permissions:
-      - list: ["librarian", "admin"]
-      - read: ["librarian", "admin"]
-      - create: ["librarian", "admin"]
-      - update: ["librarian", "admin"]
-      - delete: ["admin"]
+  access: true
 end
 
 Entity Loan
@@ -139,15 +146,7 @@ Entity Loan
     - status: string;
     - fine: number;
   source: LoansAPI
-  expose:
-    operations: [list, read, create, update, delete]
-    readonly_fields: ["id", "loanDate", "fine"]
-    permissions:
-      - list: ["librarian", "admin"]
-      - read: ["librarian", "admin"]
-      - create: ["librarian", "admin"]
-      - update: ["librarian", "admin"]
-      - delete: ["admin"]
+  access: true
 end
 
 // =============================================================================
@@ -171,8 +170,7 @@ Entity BookDetails(Book, Author, Category)
     - availableCopies: integer = Book.availableCopies;
     - totalCopies: integer = Book.totalCopies;
     - isAvailable: boolean = Book.availableCopies > 0;
-  expose:
-    operations: [list, read]
+  access: true
 end
 
 Entity LoanDetails(Loan, Book, Member)
@@ -191,11 +189,7 @@ Entity LoanDetails(Loan, Book, Member)
     - status: string = Loan.status;
     - fine: number = Loan.fine;
     - isOverdue: boolean = Loan.status == "overdue";
-  expose:
-    operations: [list, read]
-    permissions:
-      - list: ["librarian", "admin"]
-      - read: ["librarian", "admin"]
+  access: true
 end
 
 Entity MemberStats(Member, Loan[])
@@ -211,26 +205,19 @@ Entity MemberStats(Member, Loan[])
     - activeLoans: integer = len(filter(Loan, l => l["status"] == "active"));
     - overdueLoans: integer = len(filter(Loan, l => l["status"] == "overdue"));
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
-  expose:
-    operations: [list, read]
-    permissions:
-      - list: ["librarian", "admin"]
-      - read: ["librarian", "admin"]
+  access: true
 end
 
 Entity LibraryStatistics(Book[], Member[], Loan[])
   attributes:
     - totalBooks: integer = len(Book);
     - totalMembers: integer = len(Member);
-    - activeMembers: integer = len(filter(Member, m => m["active"] == True));
+    - activeMembers: integer = len(filter(Member, m => m["active"] == true));
     - totalLoans: integer = len(Loan);
     - activeLoans: integer = len(filter(Loan, l => l["status"] == "active"));
     - overdueLoans: integer = len(filter(Loan, l => l["status"] == "overdue"));
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
-  expose:
-    operations: [read]
-    permissions:
-      - read: ["librarian", "admin"]
+  access: true
 end
 
 // =============================================================================
@@ -257,3 +244,4 @@ Component<Table> MemberStatsTable
   entity: MemberStats
   colNames: ["name", "totalLoans", "activeLoans", "overdueLoans", "totalFines"]
 end
+

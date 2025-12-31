@@ -30,12 +30,17 @@ from functionality_dsl.validation import (
     _validate_crud_blocks,
     _validate_entity_crud_rules,
     _validate_permissions,
+    _validate_source_operations,
+    _validate_entity_access_blocks,
     verify_unique_endpoint_paths,
     verify_endpoints,
     verify_path_params,
     verify_entities,
     verify_components,
     verify_server,
+    validate_accesscontrol_dependencies,
+    validate_role_references,
+    validate_server_auth_reference,
 )
 
 # Import object processors
@@ -158,11 +163,17 @@ def _populate_aggregates(model):
 def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
-    Order matters: unique names -> server -> endpoints -> entities -> components -> aggregates
+    Order matters: unique names -> RBAC validation -> server -> endpoints -> entities -> components -> aggregates
 
     Note: Imports are handled in build_model() via _expand_imports() before parsing.
     """
     verify_unique_names(model)
+
+    # RBAC validation (must run early, before other validations)
+    validate_accesscontrol_dependencies(model)
+    validate_role_references(model)
+    validate_server_auth_reference(model)
+
     verify_server(model)
     verify_unique_endpoint_paths(model)
     verify_endpoints(model)
@@ -365,7 +376,9 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(_validate_exposure_blocks)
     mm.register_model_processor(_validate_crud_blocks)
     mm.register_model_processor(_validate_entity_crud_rules)  # NEW: Validate CRUD rules
-    mm.register_model_processor(_validate_permissions)  # NEW: Validate permissions/RBAC
+    mm.register_model_processor(_validate_permissions)  # OLD SYNTAX: Validate permissions/RBAC in expose blocks
+    mm.register_model_processor(_validate_source_operations)  # NEW SYNTAX: Validate source operations
+    mm.register_model_processor(_validate_entity_access_blocks)  # NEW SYNTAX: Validate entity access blocks
 
     return mm
 

@@ -105,12 +105,60 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
                 })
 
     # Get permission requirements for all operations
-    permission_map = get_permission_dependencies(entity, model)
+    # Permissions can come from:
+    # 1. New syntax: exposure map (source operations)
+    # 2. Old syntax: entity expose permissions block
+    permission_map = config.get("permissions", {})
+    if not permission_map:
+        # Fallback to old syntax
+        permission_map = get_permission_dependencies(entity, model)
 
     # Build operation configs
+    # Special handling: 'read' generates TWO endpoints:
+    # 1. Collection GET (list all) - GET /resource
+    # 2. Item GET (read one) - GET /resource/{id}
     operation_configs = []
     for op in operations:
-        # Determine if this is an item operation (requires ID parameter)
+        if op == "read":
+            # Generate collection endpoint (list all)
+            collection_required_roles = permission_map.get("read", ["public"])
+            collection_config = {
+                "type": "list",
+                "method": "GET",
+                "path_suffix": "",
+                "function_name": f"list_{entity_name.lower()}",
+                "status_code": 200,
+                "is_item_op": False,
+                "has_request_body": False,
+                "id_field": id_field,
+                "filters": filter_params,  # List gets filters
+                "required_roles": collection_required_roles,
+                "request_model": None,
+                "response_model": f"list[{entity_name}]",
+            }
+            operation_configs.append(collection_config)
+
+            # Generate item endpoint (read one) - only if entity has ID
+            if id_field:
+                item_path = path_with_params if has_path_params else f"/{{{id_field}}}"
+                item_config = {
+                    "type": "read",
+                    "method": "GET",
+                    "path_suffix": item_path,
+                    "function_name": f"read_{entity_name.lower()}",
+                    "status_code": 200,
+                    "is_item_op": True,
+                    "has_request_body": False,
+                    "id_field": id_field,
+                    "filters": [],
+                    "required_roles": collection_required_roles,
+                    "request_model": None,
+                    "response_model": entity_name,
+                }
+                operation_configs.append(item_config)
+            continue
+
+        # Regular operations (create, update, delete)
         is_item_op = is_item_operation(op, entity_type) and not (op == "read" and id_field is None)
 
         # Calculate path suffix for this operation
@@ -133,7 +181,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             "is_item_op": is_item_op,
             "has_request_body": requires_request_body(op),
             "id_field": id_field,
-            "filters": filter_params if op == "list" else [],  # Only list operation gets filters
+            "filters": [],
             "required_roles": required_roles,  # Add permission requirements
         }
 
@@ -142,15 +190,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             op_config["request_model"] = derive_request_schema_name(entity_name, op)
             op_config["response_model"] = entity_name
         else:
-            op_config["request_model"] = None
-            # List operation always returns a list
-            if op == "list":
-                op_config["response_model"] = f"list[{entity_name}]"
-            # For array entities with 'read' operation, wrap in list response
-            elif entity_type == "array" and op == "read":
-                op_config["response_model"] = f"list[{entity_name}]"
-            else:
-                op_config["response_model"] = entity_name
+            op_config["response_model"] = entity_name
 
         operation_configs.append(op_config)
 

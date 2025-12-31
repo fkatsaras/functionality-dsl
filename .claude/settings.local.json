@@ -164,7 +164,9 @@
       "Bash(c:/ffile/functionality-dsl/venv_WIN/Scripts/fdsl validate:*)",
       "Bash(python -m functionality_dsl.cli.validate:*)",
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl -o generated)",
-      "Bash(venv_WIN/Scripts/fdsl generate:*)"
+      "Bash(venv_WIN/Scripts/fdsl generate:*)",
+      "Bash(venv_WIN/Scripts/python:*)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl --out generated)"
     ],
     "deny": [],
     "ask": []

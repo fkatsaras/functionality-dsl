@@ -1060,20 +1060,36 @@ def _validate_array_parents(model):
                 )
 
             # Rule 3: Array parent must support list operation
-            # Check if parent entity exposes list operation
+            # Check if parent entity exposes list operation (old or new syntax)
             parent_expose = getattr(parent_entity, "expose", None)
+            parent_source = getattr(parent_entity, "source", None)
+            parent_operations = []
+
+            # Try expose block first (may have explicit operations list)
             if parent_expose:
-                parent_operations = getattr(parent_expose, "operations", [])
-                if 'list' not in parent_operations:
-                    raise TextXSemanticError(
-                        f"Array parent '{parent_alias}' (entity '{parent_entity.name}') does not expose 'list' operation.\n"
-                        f"Array parents must support list operations with filtering.\n"
-                        f"Add 'list' to the operations in '{parent_entity.name}' expose block:\n"
-                        f"  expose:\n"
-                        f"    operations: [list, read, ...]\n"
-                        f"  end",
-                        **get_location(parent_ref)
-                    )
+                parent_operations = getattr(parent_expose, "operations", []) or []
+
+            # If no operations from expose, try source
+            if not parent_operations and parent_source:
+                # Try old syntax (operations block with permissions)
+                source_ops_block = getattr(parent_source, "operations", None)
+                if source_ops_block:
+                    source_op_rules = getattr(source_ops_block, "ops", []) or []
+                    parent_operations = [rule.operation for rule in source_op_rules]
+
+                # Try new syntax (operations_list - simple array)
+                if not parent_operations:
+                    source_ops_list = getattr(parent_source, "operations_list", None)
+                    if source_ops_list:
+                        parent_operations = getattr(source_ops_list, "operations", []) or []
+
+            if 'read' not in parent_operations:
+                raise TextXSemanticError(
+                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') does not support 'read' operation.\n"
+                    f"Array parents must support read operations (which includes listing) for filtering.\n"
+                    f"Add 'read' to the operations in source '{parent_source.name if parent_source else 'Unknown'}' OR expose block.",
+                    **get_location(parent_ref)
+                )
 
             # Rule 4: Array parent requires relationship definition
             # (unless it's the first parent, which uses endpoint ID)

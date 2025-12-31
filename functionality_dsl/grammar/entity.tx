@@ -17,11 +17,11 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
-// Extended to support @id marker for identity fields
+// Extended to support @id marker for identity fields and @readonly marker for read-only fields
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? idMarker='@id'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?
 ;
 
 TypeConstraint:
@@ -57,6 +57,7 @@ Entity:
   ('source:' source=[Source])?
   ('target:' target=[Source])?
   (expose=ExposeBlock)?
+  (access=AccessBlock)?
   'end'
 ;
 
@@ -86,24 +87,23 @@ AttrRef:
   entityOrAlias=ID '.' attr=ID
 ;
 
-// ---------- EXPOSE BLOCK (Entity API Exposure) ----------
+// ---------- EXPOSE BLOCK ----------
+// Supports two syntaxes:
+// 1. NEW: expose: true (simple boolean for composite entities)
+// 2. OLD: expose: operations: [...] (for WebSocket with explicit operations)
 ExposeBlock:
-  'expose:'
+    'expose:' expose_value=BOOL                           // NEW: expose: true
+  | 'expose:'                                              // OLD: expose block with fields
     ('channel:' channel=STRING)?
-    'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
+    ('operations:' '[' operations+=Operation (',' operations+=Operation)* ']')?
     ('id_field:' id_field=STRING)?
     (path_params=ExposePathParamsBlock)?
-    (readonly_fields=ReadonlyFieldsBlock)?
     (filters=FiltersBlock)?
     (permissions=PermissionsBlock)?
 ;
 
-OperationsBlock:
-  'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
-;
-
 Operation:
-  'list' | 'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)
@@ -115,15 +115,11 @@ ExposePathParamsBlock:
   'path_params:' params+=ExposePathParam+
 ;
 
-ReadonlyFieldsBlock:
-  'readonly_fields:' '[' fields+=STRING (',' fields+=STRING)* ']'
-;
-
 FiltersBlock:
   'filters:' '[' fields+=STRING (',' fields+=STRING)* ']'
 ;
 
-// Permissions block for RBAC - assigns roles to operations
+// Permissions block for RBAC (deprecated - use source operations instead)
 PermissionsBlock:
   'permissions:'
     ('-' perms+=PermissionRule)+
@@ -131,6 +127,31 @@ PermissionsBlock:
 
 PermissionRule:
   operation=Operation ':' '[' roles+=STRING (',' roles+=STRING)* ']'
+;
+
+// DEPRECATED: Source operations block with inline permissions (OLD SYNTAX)
+// Keep for backward compatibility during migration
+SourceOperationsBlock:
+  'operations:'
+    ('-' ops+=SourceOperationRule)+
+;
+
+SourceOperationRule:
+  operation=Operation ':' '[' roles+=RoleOrWildcard (',' roles+=RoleOrWildcard)* ']'
+;
+
+RoleOrWildcard:
+  STRING | '*'
+;
+
+// NEW SYNTAX: Simple operation list (permissions defined in AccessControl block)
+SourceOperationsList:
+  'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
+;
+
+// Access block for entities - simple boolean to enable/disable API exposure
+AccessBlock:
+  'access:' access=BOOL
 ;
 
 // Entity sources / targets -------------------
@@ -157,7 +178,8 @@ SourceREST:
     (request=RequestBlock)?
     (response=ResponseBlock)?)
     |
-    ('base_url:' base_url=STRING)
+    ('base_url:' base_url=STRING
+    (operations=SourceOperationsBlock | operations_list=SourceOperationsList)?)
   )
   'end'
 ;
@@ -185,6 +207,7 @@ SourceWS:
     (parameters=ParametersBlock)?
     (subscribe=SubscribeBlock)?
     (publish=PublishBlock)?
+    (operations=SourceOperationsBlock | operations_list=SourceOperationsList)?
   )
   'end'
 ;
