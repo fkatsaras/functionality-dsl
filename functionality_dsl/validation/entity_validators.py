@@ -1270,6 +1270,7 @@ def _compute_identity_anchors(model):
         if first_parent_is_singleton:
             entity._identity_anchor = None
             entity._identity_field = None
+            entity._is_singleton = True  # Composite of singleton is also a singleton
             # Note: Composite of singleton is also treated as singleton-derived
             return None
 

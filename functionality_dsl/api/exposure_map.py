@@ -258,6 +258,9 @@ def build_exposure_map(model):
             allowed_ops = set(permissions.keys())
             operations = [op for op in operations if op in allowed_ops]
 
+        # Check if entity is a singleton (no @id field, identity from context)
+        is_singleton = getattr(entity, "_is_singleton", False)
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -267,6 +270,7 @@ def build_exposure_map(model):
             "target": target,  # Primary target (first in list)
             "targets": target_list,  # All targets (for fan-out)
             "id_field": id_field,
+            "is_singleton": is_singleton,  # True if singleton (no @id, identity from context)
             "path_params": path_params,
             "filters": filters,
             "readonly_fields": readonly_fields,  # Fields marked with @id or @readonly

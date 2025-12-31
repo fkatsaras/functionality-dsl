@@ -102,7 +102,45 @@ class _BaseComponent:
                     ws_path = ws_channel.strip('"').strip("'")
                     return ws_path + (suffix or "")
 
-        # Fallback to entity name
+        # NEW SYNTAX: access: true (no expose block)
+        # Check if entity has source to determine if it's REST or WebSocket
+        access_block = getattr(self.entity_ref, "access", None)
+        if access_block:
+            has_access = getattr(access_block, "access", False)
+            if has_access:
+                # Determine if WebSocket or REST based on source type
+                source = getattr(self.entity_ref, "source", None)
+
+                # Check parent chain for source if not found on entity
+                if not source:
+                    parents = getattr(self.entity_ref, "parents", []) or []
+                    if parents:
+                        from collections import deque
+                        queue = deque(parents)
+                        visited = set()
+                        while queue and not source:
+                            parent_ref = queue.popleft()
+                            parent = parent_ref.entity if hasattr(parent_ref, 'entity') else parent_ref
+                            parent_id = id(parent)
+                            if parent_id in visited:
+                                continue
+                            visited.add(parent_id)
+                            source = getattr(parent, "source", None)
+                            if not source:
+                                parent_parents = getattr(parent, "parents", []) or []
+                                queue.extend(parent_parents)
+
+                # Check if source is WebSocket
+                if source:
+                    source_class = source.__class__.__name__
+                    if source_class == "SourceWS" or source_class == "WSSource" or source_class == "WSEndpoint":
+                        # WebSocket entity
+                        return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
+
+                # Default to REST
+                return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
+
+        # Fallback to REST path
         return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
 
     def _extract_path_params(self) -> list:
@@ -817,21 +855,8 @@ class LiveViewComponent(_BaseComponent):
 
     def to_props(self):
         # LiveView works with WebSocket subscribe entities
-        # Get the WebSocket channel from entity's expose block
-        expose = getattr(self.entity_ref, "expose", None)
-        if expose:
-            operations = getattr(expose, "operations", [])
-            if 'subscribe' in operations:
-                ws_channel = getattr(expose, "channel", None)
-                if ws_channel:
-                    stream_path = ws_channel.strip('"').strip("'")
-                else:
-                    stream_path = f"/ws/{self.entity_ref.name.lower()}"
-            else:
-                # Fallback
-                stream_path = self._endpoint_path("")
-        else:
-            stream_path = self._endpoint_path("")
+        # Use _endpoint_path to get the correct path (handles both old and new syntax)
+        stream_path = self._endpoint_path("")
 
         return {
             "streamPath": stream_path,

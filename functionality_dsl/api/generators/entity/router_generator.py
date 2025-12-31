@@ -115,47 +115,69 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
 
     # Build operation configs
     # Special handling: 'read' generates TWO endpoints:
-    # 1. Collection GET (list all) - GET /resource
-    # 2. Item GET (read one) - GET /resource/{id}
+    # 1. Collection GET (list all) - GET /resource (only for collection resources)
+    # 2. Item GET (read one) - GET /resource/{id} (for collections) OR GET /resource (for singletons)
+    is_singleton = config.get("is_singleton", False)
+
     operation_configs = []
     for op in operations:
         if op == "read":
-            # Generate collection endpoint (list all)
             collection_required_roles = permission_map.get("read", ["public"])
-            collection_config = {
-                "type": "list",
-                "method": "GET",
-                "path_suffix": "",
-                "function_name": f"list_{entity_name.lower()}",
-                "status_code": 200,
-                "is_item_op": False,
-                "has_request_body": False,
-                "id_field": id_field,
-                "filters": filter_params,  # List gets filters
-                "required_roles": collection_required_roles,
-                "request_model": None,
-                "response_model": f"list[{entity_name}]",
-            }
-            operation_configs.append(collection_config)
 
-            # Generate item endpoint (read one) - only if entity has ID
-            if id_field:
-                item_path = path_with_params if has_path_params else f"/{{{id_field}}}"
-                item_config = {
+            if is_singleton:
+                # Singleton entity: only generate singleton GET endpoint (no list)
+                # Path: GET /api/entityname (no ID parameter)
+                singleton_config = {
                     "type": "read",
                     "method": "GET",
-                    "path_suffix": item_path,
-                    "function_name": f"read_{entity_name.lower()}",
+                    "path_suffix": "",
+                    "function_name": f"get_{entity_name.lower()}",
                     "status_code": 200,
-                    "is_item_op": True,
+                    "is_item_op": False,  # Not an item operation (no ID needed)
                     "has_request_body": False,
-                    "id_field": id_field,
+                    "id_field": None,  # No ID for singletons
                     "filters": [],
                     "required_roles": collection_required_roles,
                     "request_model": None,
                     "response_model": entity_name,
                 }
-                operation_configs.append(item_config)
+                operation_configs.append(singleton_config)
+            else:
+                # Collection entity: generate list endpoint
+                collection_config = {
+                    "type": "list",
+                    "method": "GET",
+                    "path_suffix": "",
+                    "function_name": f"list_{entity_name.lower()}",
+                    "status_code": 200,
+                    "is_item_op": False,
+                    "has_request_body": False,
+                    "id_field": id_field,
+                    "filters": filter_params,  # List gets filters
+                    "required_roles": collection_required_roles,
+                    "request_model": None,
+                    "response_model": f"list[{entity_name}]",
+                }
+                operation_configs.append(collection_config)
+
+                # Generate item endpoint (read one) - only if entity has ID
+                if id_field:
+                    item_path = path_with_params if has_path_params else f"/{{{id_field}}}"
+                    item_config = {
+                        "type": "read",
+                        "method": "GET",
+                        "path_suffix": item_path,
+                        "function_name": f"read_{entity_name.lower()}",
+                        "status_code": 200,
+                        "is_item_op": True,
+                        "has_request_body": False,
+                        "id_field": id_field,
+                        "filters": [],
+                        "required_roles": collection_required_roles,
+                        "request_model": None,
+                        "response_model": entity_name,
+                    }
+                    operation_configs.append(item_config)
             continue
 
         # Regular operations (create, update, delete)
