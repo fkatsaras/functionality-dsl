@@ -55,7 +55,7 @@ Entity:
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
   ('source:' source=[Source])?
-  ('target:' target=[Source])?
+  ('target:' targets=TargetList)?
   (filters=FiltersBlock)?
   (expose=ExposeBlock)?
   (access=AccessBlock)?
@@ -118,6 +118,11 @@ ExposePathParamsBlock:
 
 FiltersBlock:
   'filters:' '[' fields+=ID (',' fields+=ID)* ']'
+;
+
+// Target list - single source or array of sources for fan-out
+TargetList:
+  ('[' targets+=[Source] (',' targets+=[Source])* ']') | targets=[Source]
 ;
 
 // Permissions block for RBAC (deprecated - use source operations instead)

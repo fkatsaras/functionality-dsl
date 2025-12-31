@@ -93,10 +93,13 @@ def _find_target_in_descendants(entity, model):
             continue
         visited.add(current_id)
 
-        # Check if current entity has target
-        target = getattr(current, "target", None)
-        if target:
-            return target
+        # Check if current entity has target(s)
+        target_list_obj = getattr(current, "targets", None)
+        if target_list_obj:
+            # Extract targets from TargetList object
+            targets = getattr(target_list_obj, "targets", []) or []
+            if targets:
+                return targets[0]  # Return first target for compatibility
 
         # Find entities that have current as parent
         for candidate in all_entities:
@@ -345,13 +348,21 @@ def _validate_ws_expose(entity, expose, source, model):
     # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
     # Target can be on exposed entity OR on any composite descendant
     if "publish" in operations:
-        target = getattr(entity, "target", None)
+        # Handle new targets field (can be list)
+        target_list_obj = getattr(entity, "targets", None)
+        if target_list_obj:
+            targets = getattr(target_list_obj, "targets", []) or []
+            has_target = len(targets) > 0
+        else:
+            has_target = False
+            targets = []
 
         # If no direct target, check composite descendants
-        if not target:
-            target = _find_target_in_descendants(entity, model)
+        if not has_target:
+            descendant_target = _find_target_in_descendants(entity, model)
+            has_target = descendant_target is not None
 
-        if not target:
+        if not has_target:
             raise TextXSemanticError(
                 f"Entity '{entity.name}' has 'publish' operation but no 'target:' binding. "
                 f"Publish operations require a target WebSocket source (directly or in composite descendants).\n\n"
@@ -359,14 +370,18 @@ def _validate_ws_expose(entity, expose, source, model):
                 f"  Entity {entity.name}\n"
                 f"    attributes: ...\n"
                 f"    target: MyWebSocketTarget\n"
-                f"    expose:\n"
-                f"      operations: [publish]\n"
+                f"    access: true\n"
+                f"  end\n\n"
+                f"Example (multiple targets for fan-out):\n"
+                f"  Entity {entity.name}\n"
+                f"    attributes: ...\n"
+                f"    target: [TargetA, TargetB]\n"
+                f"    access: true\n"
                 f"  end\n\n"
                 f"Example (target in composite):\n"
                 f"  Entity {entity.name}\n"
                 f"    attributes: ...\n"
-                f"    expose:\n"
-                f"      operations: [publish]\n"
+                f"    access: true\n"
                 f"  end\n\n"
                 f"  Entity Processed{entity.name}({entity.name})\n"
                 f"    attributes: ...\n"
@@ -610,32 +625,58 @@ def _validate_entity_access_blocks(model, metamodel=None):
         if not has_access:
             continue  # access: false is valid (no exposure)
 
-        # Entity with access: true must have a source (or be a composite entity with parents)
+        # Entity with access: true must have EITHER:
+        # 1. source: (direct or inherited) → subscribe flow
+        # 2. target: (direct or in descendants) → publish flow
+        # 3. Both → bidirectional
+
         source = getattr(entity, "source", None)
         parents = getattr(entity, "parents", []) or []
         is_composite = len(parents) > 0
 
-        if not source and not is_composite:
+        # Check for source (direct or inherited from parents)
+        has_source = source is not None
+        if not has_source and is_composite:
+            # Check if parent chain has source
+            has_source = _find_source_in_parents([p.entity if hasattr(p, 'entity') else p for p in parents]) is not None
+
+        # Check for target (direct or in descendants)
+        target_list_obj = getattr(entity, "targets", None)
+        has_target = False
+        if target_list_obj:
+            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
+            targets_attr = getattr(target_list_obj, "targets", None)
+            if targets_attr:
+                # List form
+                targets = targets_attr if isinstance(targets_attr, list) else [targets_attr]
+                has_target = len(targets) > 0
+            else:
+                # Single form
+                has_target = True
+
+        if not has_target:
+            # Check descendants for target
+            descendant_target = _find_target_in_descendants(entity, model)
+            has_target = descendant_target is not None
+
+        # Entity must have at least source OR target
+        if not has_source and not has_target:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'access: true' but no 'source:' reference.\n"
-                f"Access requires a Source to inherit operations from.\n"
-                f"Add 'source: SourceName' or set 'access: false'.",
-                **get_location(access),
-            )
-
-        # Composite entities don't need source validation (they're read-only transformations)
-        if is_composite:
-            continue
-
-        # Check if source has operations (either old or new syntax)
-        source_ops_block = getattr(source, "operations", None)
-        source_ops_list = getattr(source, "operations_list", None)
-
-        if not source_ops_block and not source_ops_list:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'access: true' but source '{source.name}' has no 'operations:' declaration.\n"
-                f"The source must define operations for entities to inherit.\n"
-                f"Add 'operations: [read, create, ...]' to Source '{source.name}'.",
+                f"Entity '{entity.name}' has 'access: true' but no data flow binding.\n\n"
+                f"Entities must have at least one of:\n"
+                f"  - 'source:' (for subscribe/read operations)\n"
+                f"  - 'target:' (for publish operations)\n"
+                f"  - Parent with 'source:' (inherits subscribe)\n"
+                f"  - Descendant with 'target:' (enables publish)\n\n"
+                f"Examples:\n"
+                f"  Subscribe: Entity {entity.name}\n"
+                f"             source: MySource\n"
+                f"             access: true\n"
+                f"           end\n\n"
+                f"  Publish:   Entity {entity.name}\n"
+                f"             target: MyTarget\n"
+                f"             access: true\n"
+                f"           end",
                 **get_location(access),
             )
 

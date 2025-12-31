@@ -3,14 +3,14 @@
 // =============================================================================
 // RULE: Single entity handles both directions
 //
-// Subscribe Flow: External WS → Entity (source:) → Client
-// Publish Flow:   Client → Entity (target:) → External WS
+// Subscribe Flow: External WS -> Entity (source:) -> Client
+// Publish Flow:   Client -> Entity (target:) -> External WS
 //
 // Requirements:
-// 1. Source<WS> with channel URL only
+// 1. Source<WS> with channel URL and operations [subscribe, publish]
 // 2. Single entity with BOTH source: and target: bindings
 // 3. Entity is pure schema (NO expressions)
-// 4. Entity exposes BOTH subscribe AND publish operations
+// 4. Entity uses access: true (inherits both operations)
 // 5. Client can both receive and send via same connection
 // =============================================================================
 
@@ -24,6 +24,7 @@ end
 // External WebSocket (bidirectional)
 Source<WS> ExternalWS
   channel: "ws://dummy-ws-patterns:9200/chat"
+  operations: [subscribe, publish]
 end
 
 // Single entity for both directions
@@ -34,14 +35,14 @@ Entity ChatMessage
     - user: string;
   source: ExternalWS  // Receives messages from external WS
   target: ExternalWS  // Sends messages to external WS
-  expose:
-    operations: [subscribe, publish]
-    // Auto-generates path: /ws/chatmessage
+  access: true
+  // Auto-generates path: /ws/chatmessage
+  // Inherits both subscribe and publish operations
 end
 
 // Client connects to: ws://localhost:8000/ws/chatmessage
-// Can SEND ChatMessage objects → forwarded to external WS
-// Can RECEIVE ChatMessage objects ← from external WS
+// Can SEND ChatMessage objects -> forwarded to external WS
+// Can RECEIVE ChatMessage objects <- from external WS
 
 Component<Input> ChatInput
   entity: ChatMessage

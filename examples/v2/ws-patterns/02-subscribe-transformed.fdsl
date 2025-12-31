@@ -6,10 +6,10 @@
 // Flow: External WS → Base Entity (source:) → Composite Entity (computed) → Client
 //
 // Requirements:
-// 1. Source<WS> with channel URL only
-// 2. Base entity with source: binding (pure schema, NO expressions, NO expose)
+// 1. Source<WS> with channel URL and operations
+// 2. Base entity with source: binding (pure schema, NO expressions, NO access)
 // 3. Composite entity with computed attributes (ALL attrs have expressions)
-// 4. Composite entity exposes subscribe operation
+// 4. Composite entity uses access: true
 // 5. Client binds to composite entity
 // =============================================================================
 
@@ -23,13 +23,14 @@ end
 // External WebSocket source
 Source<WS> ExternalWS
   channel: "ws://dummy-ws-patterns:9200/stream-large"
+  operations: [subscribe]
 end
 
 // Base entity - pure schema from external source
-// NO expose block - not directly accessible to clients
+// NO access - not directly accessible to clients
 Entity RawMessage
   attributes:
-    - id: string;
+    - id: string @readonly;
     - content: string;
     - size_bytes: integer;
   source: ExternalWS
@@ -42,9 +43,9 @@ Entity ProcessedMessage(RawMessage)
     - id: string = RawMessage.id;
     - text: string = upper(RawMessage.content);
     - size_kb: number = round(RawMessage.size_bytes / 1024, 2);
-  expose:
-    operations: [subscribe]
-    // Auto-generates path: /ws/processedmessage
+  access: true
+  // Auto-generates path: /ws/processedmessage
+  // Inherits 'subscribe' from parent chain
 end
 
 // Client connects to: ws://localhost:8000/ws/processedmessage

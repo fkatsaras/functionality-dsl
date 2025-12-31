@@ -6,9 +6,9 @@
 // Flow: External WS → Base Entity (source:) → Client
 //
 // Requirements:
-// 1. Source<WS> with channel URL only
+// 1. Source<WS> with channel URL and operations
 // 2. Base entity with source: binding (pure schema, NO expressions)
-// 3. Base entity exposes subscribe operation
+// 3. Base entity uses access: true (inherits subscribe operation)
 // 4. Client binds to exposed entity
 // =============================================================================
 
@@ -19,21 +19,22 @@ Server SubscribeSimple
   loglevel: debug
 end
 
-// External WebSocket source - just the connection
+// External WebSocket source - declares capabilities
 Source<WS> ExternalWS
   channel: "ws://dummy-ws-patterns:9200/stream"
+  operations: [subscribe]
 end
 
 // Base entity - pure schema, binds to source
 Entity MessageFromExternal
   attributes:
-    - id: string;
+    - id: string @readonly;
     - text: string;
-    - timestamp: integer;
+    - timestamp: integer @readonly;
   source: ExternalWS
-  expose:
-    operations: [subscribe]
-    // Auto-generates path: /ws/messagefromexternal
+  access: true
+  // Auto-generates path: /ws/messagefromexternal
+  // Inherits 'subscribe' operation from source
 end
 
 // Client connects to: ws://localhost:8000/ws/messagefromexternal

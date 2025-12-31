@@ -219,8 +219,14 @@ def _validate_computed_attrs(model, metamodel=None):
 
         # Also check for entities that are parents of entities with target directive
         # These receive data from WebSocket publish and should be schema entities
-        target = getattr(ent, "target", None)
-        if target:
+        target_list_obj = getattr(ent, "targets", None)
+        has_target = False
+        if target_list_obj:
+            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
+            targets_attr = getattr(target_list_obj, "targets", None)
+            has_target = targets_attr is not None or target_list_obj is not None
+
+        if has_target:
             # This entity publishes to external source
             # If it has parents, add them as schema entities
             parent_entities = _get_parent_entities(ent)
@@ -229,6 +235,18 @@ def _validate_computed_attrs(model, metamodel=None):
 
             # If it has NO parents, the entity itself is a schema entity (direct publish)
             if not parent_entities:
+                schema_entities.add(ent.name)
+
+        # Also check if entity has access: true and a descendant with target
+        # This is for publish flows: Client -> Base (access: true) -> Composite (target:)
+        access = getattr(ent, "access", None)
+        has_access = getattr(access, "access", False) if access else False
+        if has_access and not has_target:
+            # Check if any descendant has target
+            from functionality_dsl.validation.exposure_validators import _find_target_in_descendants
+            descendant_target = _find_target_in_descendants(ent, model)
+            if descendant_target:
+                # This entity receives from client and passes to descendant for publishing
                 schema_entities.add(ent.name)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
@@ -937,29 +955,28 @@ def _validate_rest_entity_relationships(model):
 
 def _validate_websocket_entity_relationships(model):
     """
-    Validate WebSocket composite entities (entities with multiple WS parents).
+    Validate WebSocket composite entities.
 
-    WebSocket semantics are different from REST:
-    - Multi-parent WebSocket entities use JOIN SEMANTICS (wait for latest from all sources)
-    - NO relationship blocks needed - messages are combined by time, not foreign keys
-    - All parents must be from WebSocket sources
-    - Cannot have relationship blocks (would be a semantic error)
+    MVP/v1 RESTRICTION:
+    - WebSocket composite entities can have ONLY ONE WebSocket parent
+    - Multi-source WebSocket aggregation is NOT supported (too complex)
+    - Use separate subscribe endpoints + client-side merge instead
 
-    Example:
-        Entity CombinedSensorData(TemperatureReading, HumidityReading)
-          # Join: wait for latest temp + latest humidity, then emit combined event
-          attributes:
-            - temperature: number = TemperatureReading.temperature;
-            - humidity: number = HumidityReading.humidity;
-        end
+    Rationale:
+    - WebSocket is event-driven (messages arrive asynchronously)
+    - Multi-source merge requires complex state management and timing logic
+    - Better handled client-side or with explicit server logic (future enhancement)
+
+    Allowed:
+    - Single WebSocket parent (transformation): Entity B(WsEntityA)
+    - Mixed parents (REST + WS): Only if one WS parent max
+
+    Disallowed:
+    - Multiple WebSocket parents: Entity C(WsEntityA, WsEntityB) → ERROR
     """
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        # Only validate WebSocket entities
-        if not _is_websocket_entity(entity, model):
-            continue
-
         parent_refs = _get_parent_refs(entity)
         parent_entities = _get_parent_entities(entity)
 
@@ -967,30 +984,47 @@ def _validate_websocket_entity_relationships(model):
         if not parent_refs:
             continue
 
-        relationships_block = getattr(entity, "relationships", None)
-        relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
-
-        # WebSocket entities should NOT have relationship blocks
-        if relationships:
-            raise TextXSemanticError(
-                f"WebSocket entity '{entity.name}' has 'relationships:' block.\n"
-                f"WebSocket entities use JOIN SEMANTICS, not relationship-based fetching.\n"
-                f"The entity will wait for the latest message from each parent source and combine them.\n"
-                f"Remove the 'relationships:' block - it's not needed for WebSocket entities.",
-                **get_location(relationships_block)
-            )
-
-        # Validate that all parents are WebSocket-based
+        # Count WebSocket parents
         from functionality_dsl.api.extractors import find_source_for_entity
+        ws_parents = []
 
         for parent in parent_entities:
             source, source_type = find_source_for_entity(parent, model)
-            if source_type != "WS":
+            if source_type == "WS":
+                ws_parents.append(parent.name)
+
+        # MVP RESTRICTION: Disallow multiple WebSocket parents
+        if len(ws_parents) > 1:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' has multiple WebSocket parents: {ws_parents}.\n\n"
+                f"MVP RESTRICTION: Multi-source WebSocket aggregation is not supported.\n\n"
+                f"WebSocket messages arrive asynchronously from different sources, making merge semantics complex.\n"
+                f"For aggregating multiple WebSocket streams:\n\n"
+                f"1. Create separate entities for each WebSocket source:\n"
+                f"   Entity SensorAData\n"
+                f"     source: SensorAWS\n"
+                f"     access: true  # Client subscribes to /ws/sensoradata\n"
+                f"   end\n\n"
+                f"   Entity SensorBData\n"
+                f"     source: SensorBWS\n"
+                f"     access: true  # Client subscribes to /ws/sensorbdata\n"
+                f"   end\n\n"
+                f"2. Connect to both WebSocket endpoints from client\n"
+                f"3. Merge streams client-side with your desired logic\n\n"
+                f"This will be supported in a future version with explicit merge strategies.",
+                **get_location(entity)
+            )
+
+        # WebSocket entities should NOT have relationship blocks
+        relationships_block = getattr(entity, "relationships", None)
+        if relationships_block and ws_parents:
+            relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
+            if relationships:
                 raise TextXSemanticError(
-                    f"WebSocket entity '{entity.name}' has parent '{parent.name}' which is not from a WebSocket source.\n"
-                    f"Multi-parent WebSocket entities must have ALL parents from WebSocket sources (for join semantics).\n"
-                    f"Cannot mix REST and WebSocket parents in the same entity.",
-                    **get_location(entity)
+                    f"WebSocket entity '{entity.name}' has 'relationships:' block.\n"
+                    f"Relationships are for REST entities with foreign-key based fetching.\n"
+                    f"WebSocket entities use message streaming - remove the 'relationships:' block.",
+                    **get_location(relationships_block)
                 )
 
 

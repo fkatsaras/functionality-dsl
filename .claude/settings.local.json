@@ -168,7 +168,15 @@
       "Bash(venv_WIN/Scripts/python:*)",
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate main.fdsl --out generated)",
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate 05-filters.fdsl --out generated-filters)",
-      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate 07-partial-crud.fdsl --out generated-partial)"
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" generate 07-partial-crud.fdsl --out generated-partial)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 01-subscribe-simple.fdsl)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 05-bidirectional-simple.fdsl:*)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 03-publish-simple.fdsl)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 02-subscribe-transformed.fdsl)",
+      "Bash(for:*)",
+      "Bash(do echo \"=== Testing $f ===\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate \"$f\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 04-publish-transformed.fdsl)"
     ],
     "deny": [],
     "ask": []

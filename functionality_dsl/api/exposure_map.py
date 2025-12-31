@@ -121,7 +121,24 @@ def build_exposure_map(model):
 
         # Get direct source/target or find source through parents
         source = getattr(entity, "source", None)
-        target = getattr(entity, "target", None)
+
+        # Handle target(s) - can be single or multiple (fan-out)
+        target_list_obj = getattr(entity, "targets", None)
+        if target_list_obj:
+            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
+            targets_attr = getattr(target_list_obj, "targets", None)
+            if targets_attr:
+                # List form
+                target_list = targets_attr if isinstance(targets_attr, list) else [targets_attr]
+            else:
+                # Single form - the attribute itself is the target reference
+                target_list = [target_list_obj]
+
+            # For backward compatibility, store first target as 'target'
+            target = target_list[0] if target_list else None
+        else:
+            target = None
+            target_list = []
 
         # For transformation entities, find source from parent chain
         if not source and parents:
@@ -164,8 +181,12 @@ def build_exposure_map(model):
         # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
         has_publish = "publish" in operations
 
-        if not target and has_publish:
-            target = _find_target_in_descendants(entity, model)
+        if not target_list and has_publish:
+            # Try to find target in descendants
+            descendant_target = _find_target_in_descendants(entity, model)
+            if descendant_target:
+                target = descendant_target
+                target_list = [descendant_target]
 
         # If entity has neither source nor target, skip it
         if not source and not target:
@@ -243,7 +264,8 @@ def build_exposure_map(model):
             "ws_channel": ws_channel,
             "operations": operations,
             "source": source,
-            "target": target,  # For publish-only entities
+            "target": target,  # Primary target (first in list)
+            "targets": target_list,  # All targets (for fan-out)
             "id_field": id_field,
             "path_params": path_params,
             "filters": filters,

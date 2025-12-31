@@ -7,11 +7,11 @@
 // Publish Flow:   Client → PublishEntity (target:) → External WS
 //
 // Requirements:
-// 1. Source<WS> with channel URL only
+// 1. Source<WS> with channel URL and operations [subscribe, publish]
 // 2. Subscribe entity with source: binding (can have transformations)
-// 3. Subscribe entity exposes subscribe operation
+// 3. Subscribe entity uses access: true
 // 4. Publish entity with target: binding (can have transformations)
-// 5. Publish entity exposes publish operation
+// 5. Publish entity uses access: true
 // 6. Different client paths for send vs receive
 // =============================================================================
 
@@ -25,6 +25,7 @@ end
 // External WebSocket (bidirectional)
 Source<WS> DeviceWS
   channel: "ws://dummy-ws-patterns:9200/telemetry"
+  operations: [subscribe, publish]
 end
 
 // ============== SUBSCRIBE SIDE ==============
@@ -34,7 +35,7 @@ Entity RawTelemetry
   attributes:
     - temp: number;
     - humidity: integer;
-    - timestamp: integer;
+    - timestamp: integer @readonly;
   source: DeviceWS
 end
 
@@ -44,9 +45,9 @@ Entity ProcessedTelemetry(RawTelemetry)
     - temperature_f: number = round((RawTelemetry.temp * 9/5) + 32, 1);
     - humidity: integer = RawTelemetry.humidity;
     - timestamp: integer = RawTelemetry.timestamp;
-  expose:
-    operations: [subscribe]
-    // Auto-generates path: /ws/processedtelemetry
+  access: true
+  // Auto-generates path: /ws/processedtelemetry
+  // Inherits 'subscribe' from parent chain
 end
 
 // ============== PUBLISH SIDE ==============
@@ -56,17 +57,18 @@ Entity DeviceCommand
   attributes:
     - action: string;
     - value: number;
-  expose:
-    operations: [publish]
-    // Auto-generates path: /ws/devicecommand
+  access: true
+  // Auto-generates path: /ws/devicecommand
+  // Client publishes here (target found in descendant)
 end
 
 Entity FormattedCommand(DeviceCommand)
   attributes:
     - command: string = upper(DeviceCommand.action);
     - parameter: number = DeviceCommand.value;
-    - timestamp: integer = int(time());
+    - timestamp: integer = toInt(time());
   target: DeviceWS
+  // Internal transformation before sending
 end
 
 // Clients use different paths:
