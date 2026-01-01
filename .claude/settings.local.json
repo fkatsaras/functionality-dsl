@@ -176,7 +176,13 @@
       "Bash(for:*)",
       "Bash(do echo \"=== Testing $f ===\")",
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate \"$f\")",
-      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 04-publish-transformed.fdsl)"
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''../../..''\\); from functionality_dsl.cli.cli import main; main\\(\\)\" validate 04-publish-transformed.fdsl)",
+      "Bash(python -m functionality_dsl.cli.cli:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(timeout 15 python:*)",
+      "Bash(pkill:*)",
+      "Bash(timeout 10 python3:*)",
+      "Bash(venv_WSL/bin/python:*)"
     ],
     "deny": [],
     "ask": []

@@ -101,10 +101,11 @@ ExposeBlock:
     (path_params=ExposePathParamsBlock)?
     (filters=FiltersBlock)?
     (permissions=PermissionsBlock)?
+    (access=ExposeAccessBlock)?
 ;
 
 Operation:
-  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+  'read' | 'create' | 'update' | 'delete' | 'list' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)
@@ -155,9 +156,29 @@ SourceOperationsList:
   'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
 ;
 
-// Access block for entities - simple boolean to enable/disable API exposure
+// Access block for entities - controls authorization
+// Supports three syntaxes:
+// 1. access: public (public access to all operations)
+// 2. access: [role1, role2] (all operations require these roles)
+// 3. access: read: public create: [admin] (per-operation control)
 AccessBlock:
-  'access:' access=BOOL
+    'access:' public_keyword='public'                             // Public access: access: public
+  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list: access: [admin, user]
+  | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
+;
+
+// Access rule for per-operation control
+// Example: read: public  or  create: [admin, librarian]
+AccessRule:
+  operation=Operation ':' (public_keyword='public' | '[' roles+=ID (',' roles+=ID)* ']')
+;
+
+// Expose access block (for WebSocket entities in expose block)
+// Same structure as AccessBlock but nested in expose
+ExposeAccessBlock:
+    'access:' public_keyword='public'                             // Public access
+  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list
+  | 'access:' access_rules+=AccessRule+                           // Per-operation
 ;
 
 // Entity sources / targets -------------------

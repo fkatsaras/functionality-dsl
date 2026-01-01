@@ -132,36 +132,99 @@ def _extract_auth_config(auth):
     return config
 
 
-def get_permission_dependencies(entity, model):
+def get_permission_dependencies(entity, model, operations=None):
     """
     Get permission requirements for each operation of an entity.
+
+    NEW SYNTAX: Supports three access control patterns:
+    1. access: public                    -> all operations public
+    2. access: [role1, role2]           -> all operations require roles
+    3. access: read: public create: [...] -> per-operation control
+
+    Also supports WebSocket access in expose block.
 
     Args:
         entity: Entity object from FDSL model
         model: Full FDSL model
+        operations: List of operations (if None, inferred from entity/expose)
 
     Returns:
         dict: Mapping of operation -> list of required roles
               Example: {"create": ["librarian", "admin"], "read": ["public"]}
+              "public" means no authentication required
     """
-    expose = getattr(entity, "expose", None)
-    if not expose:
-        return {}
+    # Try entity-level access block first (REST entities)
+    access_block = getattr(entity, "access", None)
 
-    operations = getattr(expose, "operations", [])
-    permissions_block = getattr(expose, "permissions", None)
+    # If no entity-level access, check expose block (WebSocket entities)
+    if not access_block:
+        expose = getattr(entity, "expose", None)
+        if expose:
+            access_block = getattr(expose, "access", None)
 
-    # Default: all operations are public
-    permission_map = {op: ["public"] for op in operations}
+    # No access control defined - default to public
+    if not access_block:
+        if operations is None:
+            # Infer operations from expose block or default CRUD
+            expose = getattr(entity, "expose", None)
+            if expose:
+                operations = getattr(expose, "operations", []) or []
+            else:
+                # Default REST operations
+                operations = ["read", "create", "update", "delete", "list"]
 
-    if permissions_block:
-        perm_rules = getattr(permissions_block, "perms", []) or []
+        return {op: ["public"] for op in operations}
 
-        for rule in perm_rules:
+    # Parse access block structure
+    # Type 1: access: public
+    public_keyword = getattr(access_block, "public_keyword", None)
+    if public_keyword == "public":
+        if operations is None:
+            expose = getattr(entity, "expose", None)
+            if expose:
+                operations = getattr(expose, "operations", []) or []
+            else:
+                operations = ["read", "create", "update", "delete", "list"]
+
+        return {op: ["public"] for op in operations}
+
+    # Type 2: access: [role1, role2] (all operations use these roles)
+    roles = getattr(access_block, "roles", []) or []
+    if roles and not getattr(access_block, "access_rules", []):
+        if operations is None:
+            expose = getattr(entity, "expose", None)
+            if expose:
+                operations = getattr(expose, "operations", []) or []
+            else:
+                operations = ["read", "create", "update", "delete", "list"]
+
+        return {op: roles for op in operations}
+
+    # Type 3: per-operation access rules
+    access_rules = getattr(access_block, "access_rules", []) or []
+    if access_rules:
+        permission_map = {}
+
+        for rule in access_rules:
             operation = getattr(rule, "operation", None)
-            roles = getattr(rule, "roles", [])
 
-            if operation and roles:
-                permission_map[operation] = roles
+            # Check if rule uses 'public' keyword
+            rule_public = getattr(rule, "public_keyword", None)
+            if rule_public == "public":
+                permission_map[operation] = ["public"]
+            else:
+                # Get roles for this operation
+                rule_roles = getattr(rule, "roles", []) or []
+                permission_map[operation] = rule_roles if rule_roles else ["public"]
 
-    return permission_map
+        return permission_map
+
+    # Fallback: public access
+    if operations is None:
+        expose = getattr(entity, "expose", None)
+        if expose:
+            operations = getattr(expose, "operations", []) or []
+        else:
+            operations = ["read", "create", "update", "delete", "list"]
+
+    return {op: ["public"] for op in operations}

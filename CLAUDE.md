@@ -26,14 +26,17 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 
 ## Core Concepts
 
-### 1. **Roles** (RBAC - First-Class Citizens)
+### 1. **Roles** (Simple Identity Declarations)
 ```fdsl
 Role admin
 Role librarian
 Role user
 ```
 
-Roles are declared as first-class entities and referenced in AccessControl blocks.
+**Key Points:**
+- Roles are pure identity declarations - no embedded permissions
+- Referenced in entity `access:` fields for authorization
+- Clean separation: Role = identity, `access:` = authorization
 
 ### 2. **Authentication** (Identity Verification)
 ```fdsl
@@ -48,9 +51,10 @@ Auth blocks define authentication configuration separately from Server.
 **Supported types:** `jwt`, `session`, `api_key`
 
 **Key Points:**
-- Authentication (Auth) ≠ Authorization (AccessControl)
+- Authentication (Auth) ≠ Authorization (access control)
 - Auth verifies WHO the user is
-- AccessControl determines WHAT they can do
+- Role identifies their ROLE
+- Entity `access:` field determines WHAT they can do
 - Server references Auth by name
 
 ### 3. **Server** (Configuration)
@@ -64,7 +68,7 @@ Server MyAPI
 end
 ```
 
-### 2. **Entities**
+### 4. **Entities**
 
 **Schema Entity** (binds to external source):
 ```fdsl
@@ -75,7 +79,7 @@ Entity RawOrder
     - items: array;
     - status: string;
   source: OrderDB
-  access: true
+  access: public
 end
 ```
 
@@ -87,18 +91,18 @@ Entity OrderWithTotals(RawOrder)
     - userId: string = RawOrder.userId;
     - items: array = RawOrder.items;
     - itemCount: integer = len(RawOrder.items);
-    - total: number = sum(map(items, i -> i["price"] * i["quantity"])) * 1.1;
-  access: true
+    - total: number = sum(map(items, i -> i["price"public * i["quantity"public)) * 1.1;
+  access: public
 end
 ```
 
 **Key Points:**
 - `source:` links entity to external API (required for mutations)
-- `access: true` exposes entity via REST API
+- `access:` controls who can access entity operations (see Access Control section)
 - Base entities with `source:` inherit operations from the source
 - Composite entities (with parents) are read-only and expose only `read` operation
 - REST paths **auto-generated** from entity name and `@id` field
-- For WebSocket: use `expose:` block with `channel:` and `operations: [subscribe/publish]`
+- For WebSocket: use `expose:` block with `channel:` and `operations: [subscribe/publishpublic`
 - `@id` marker: identifies the primary key field (always readonly)
 - `@readonly` marker: excludes field from Create/Update request schemas (for computed fields, timestamps, etc.)
 - Attributes with `=` are computed (evaluated server-side)
@@ -123,7 +127,7 @@ Entity UserProfile
     - theme: string;
   source: ProfileAPI
   expose:
-    operations: [read, create, update, delete]  // Full CRUD on singleton
+    operations: [read, create, update, deletepublic  // Full CRUD on singleton
 end
 ```
 Generates: `GET/POST/PUT/DELETE /api/userprofile` (identity from auth context)
@@ -146,7 +150,7 @@ Entity Product
     - viewCount: integer @readonly = 0;  // Computed field (readonly)
   source: ProductsAPI
   expose:
-    operations: [read, create, update]
+    operations: [read, create, updatepublic
 end
 ```
 
@@ -175,13 +179,83 @@ Entity Book
     - author: string;
     - year: integer;
   source: BookAPI
-  filters: [author, year]
-  access: true
+  filters: [author, yearpublic
+  access: public
   // Generates: GET /api/books?author=Smith&year=2023
 end
 ```
 
-### 3. **Sources** (External APIs)
+### 5. **Access Control** (Entity-Level Authorization)
+
+**Public Access (all operations):**
+```fdsl
+Entity Book
+  attributes:
+    - id: string @id;
+    - title: string;
+  source: BooksAPI
+  access: public  // Public access to all operations
+end
+```
+
+**Role-Based (all operations):**
+```fdsl
+Entity Member
+  attributes:
+    - id: string @id;
+    - name: string;
+  source: MembersAPI
+  access: [admin, librarianpublic  // All operations require these roles
+end
+```
+
+**Per-Operation Control:**
+```fdsl
+Entity Book
+  attributes:
+    - id: string @id;
+    - title: string;
+  source: BooksAPI
+  access:
+    read: all                    // Public reads
+    create: [admin, librarianpublic   // Restricted writes
+    update: [admin, librarianpublic
+    delete: [adminpublic
+end
+```
+
+**WebSocket Access Control:**
+```fdsl
+Entity ChatMessages
+  attributes:
+    - text: string;
+  source: ChatWS
+  expose:
+    channel: "/ws/chat"
+    operations: [subscribe, publishpublic
+    access:
+      subscribe: all              // Anyone can listen
+      publish: [user, adminpublic      // Only users can send
+end
+```
+
+**Validation Rules:**
+1. **REST Entities:**
+   - Operations in `access:` must be subset of source operations
+   - Valid operations: `read`, `create`, `update`, `delete`, `list`
+   - Composite entities (with parents): only `read` allowed
+
+2. **WebSocket Entities:**
+   - Operations in `access:` must match `expose.operations`
+   - Valid operations: `subscribe`, `publish`
+
+3. **General Rules:**
+   - `all` = public access (no authentication required)
+   - `[role1, role2public` = requires one of these roles
+   - If entity has `access:` field, file must have `Role` and `Auth` declarations
+   - No `access:` field = defaults to `access: public` (public)
+
+### 6. **Sources** (External APIs)
 
 **REST Source:**
 ```fdsl
@@ -217,7 +291,7 @@ end
 - `subscribe:` defines incoming message schema
 - `publish:` defines outgoing message schema
 
-### 4. **WebSocket Entities**
+### 7. **WebSocket Entities**
 
 **Subscribe Entity** (External WS → Client):
 ```fdsl
@@ -226,7 +300,7 @@ Entity ChatIncoming(EchoRaw)
     - text: string = lower(EchoRaw.text);
   expose:
     channel: "/api/chat"
-    operations: [subscribe]
+    operations: [subscribepublic
 end
 ```
 
@@ -243,7 +317,7 @@ Entity ChatOutgoingProcessed(ChatOutgoing)
   target: EchoWS
   expose:
     channel: "/api/chat"
-    operations: [publish]
+    operations: [publishpublic
 end
 ```
 
@@ -251,8 +325,9 @@ end
 - Use `channel:` in expose block for WebSocket path
 - `target:` specifies external WS to publish to
 - Same channel, different entities for bidirectional communication
+- Use `access:` in expose block for WebSocket authorization (see Access Control section)
 
-### 5. **Components**
+### 8. **Components**
 
 ```fdsl
 Component<Table> OrdersTable
@@ -263,38 +338,6 @@ Component<Table> OrdersTable
     - "total": number
 end
 ```
-
-### 6. **AccessControl** (Authorization Policy)
-
-```fdsl
-AccessControl MyPolicy
-
-  on Source UsersAPI
-    read:    [*]              // Public access (wildcard)
-    create:  [admin]
-    update:  [admin, user]
-    delete:  [admin]
-
-  on Entity UserProfile
-    read: [user, admin]       // Entity-level override
-
-end
-```
-
-**Key Points:**
-- Centralized authorization policy (separate from entities and sources)
-- **Requires:** At least one Role and one Auth declaration
-- **Priority:** Entity-level rules override Source-level rules
-- **Wildcard `[*]`:** Public access (no authentication required)
-- **No AccessControl:** All operations default to public access
-- Sources declare capabilities (`operations: [read, create, ...]`)
-- AccessControl determines who can use those capabilities
-
-**Rules:**
-1. Validation enforces: `AccessControl` → requires `Role` + `Auth`
-2. Entity-level permissions override source-level
-3. Operations not listed in AccessControl are filtered out
-4. Composite entities typically get read-only access
 
 ---
 
@@ -365,7 +408,7 @@ Entity Student
     - id: string @id;
     - name: string;
   expose:
-    operations: [read, create, update, delete]
+    operations: [read, create, update, deletepublic
 end
 ```
 → Generates: `GET/POST /api/students/{id}`
@@ -377,35 +420,35 @@ Entity EnrollmentDetails(Enrollment)
     - id: string = Enrollment.id;
     - courseName: string = Enrollment.course.name;
   expose:
-    operations: [read]
+    operations: [readpublic
 end
 ```
 → Generates: `GET /api/enrollments/{id}/enrollmentdetails`
 
 **Composite Entity with Array Parent (Collection Aggregation):**
 ```fdsl
-Entity OrderWithItems(Order, OrderItem[])
+Entity OrderWithItems(Order, OrderItempublic)
   relationships:
     - OrderItem: Order.orderId
   attributes:
     - orderId: string = Order.orderId;
     - itemCount: integer = len(OrderItem);
-    - itemsSubtotal: number = sum(map(OrderItem, i => i["quantity"] * i["price"]));
+    - itemsSubtotal: number = sum(map(OrderItem, i => i["quantity"public * i["price"public));
     - avgItemPrice: number = round(itemsSubtotal / itemCount, 2) if itemCount > 0 else 0;
   expose:
-    operations: [read]
+    operations: [readpublic
 end
 ```
 → Generates: `GET /api/orders/{orderId}/orderwithitems`
 
 **Array Parent Rules:**
-- Use `EntityName[]` syntax to indicate one-to-many relationship
+- Use `EntityNamepublic` syntax to indicate one-to-many relationship
 - Array parents must be base entities (have `source:`, cannot be composites)
 - Array parents must have `@id` field for filtering
 - Array parents must expose `list` operation with filters
 - In expressions, array parent name (`OrderItem`) resolves to the fetched array
 - Use collection functions: `len()`, `sum()`, `map()`, `filter()`, `any()`, `all()`
-- Lambda syntax: `i => expression` (e.g., `map(OrderItem, i => i["price"])`)
+- Lambda syntax: `i => expression` (e.g., `map(OrderItem, i => i["price"public)`)
 - Relationships block required to specify filter field for non-first parents
 
 ### Source Operation Inference
@@ -427,13 +470,13 @@ Entity User
     - name: string;
   source: UserDB
   expose:
-    operations: [read, create, update]  # These ops determine source capabilities
+    operations: [read, create, updatepublic  # These ops determine source capabilities
 end
 ```
 
 The generator:
 1. Finds all entities with `source: UserDB`
-2. Collects their `operations: [...]`
+2. Collects their `operations: [...public`
 3. Generates source client methods for those operations
 
 ### Type Detection (REST vs WebSocket)
@@ -442,12 +485,12 @@ The generator:
 
 ```fdsl
 expose:
-  operations: [read, create]  # REST operations → generates REST router
+  operations: [read, createpublic  # REST operations → generates REST router
 end
 
 expose:
   channel: "/ws/chat"
-  operations: [subscribe, publish]  # WS operations → generates WS router
+  operations: [subscribe, publishpublic  # WS operations → generates WS router
 end
 ```
 
@@ -472,7 +515,7 @@ end
 ```fdsl
 Entity Summary(Data)
   attributes:
-    - total: number = sum(map(Data.items, i -> i["price"]));
+    - total: number = sum(map(Data.items, i -> i["price"public));
     - count: integer = len(Data.items);
     - average: number = round(total / count, 2) if count > 0 else 0;
 end
@@ -490,8 +533,8 @@ Endpoint<REST> GetUser
     type: object
     entity: UserData
   errors:
-    - 404: condition: not UserData["id"] "User not found"
-    - 403: condition: UserData["role"] != "admin" "Access denied"
+    - 404: condition: not UserData["id"public "User not found"
+    - 403: condition: UserData["role"public != "admin" "Access denied"
 end
 ```
 
@@ -526,9 +569,13 @@ fdsl generate main.fdsl --out generated/
 
 | Old | New |
 |-----|-----|
-| `rest: "/api/path"` | `operations: [read]` (path auto-generated) |
-| `websocket: "/ws/path"` | `channel: "/ws/path"` + `operations: [subscribe]` |
-| Source `operations: [read]` | Removed (inferred from entities) |
+| `access: true` | `access: public` |
+| `AccessControl` block | Removed - use entity `access:` field |
+| `Role ... on ... end` with permissions | `Role ...` (simple declaration) |
+| Wildcard `[*public` | `all` keyword |
+| `rest: "/api/path"` | `operations: [readpublic` (path auto-generated) |
+| `websocket: "/ws/path"` | `channel: "/ws/path"` + `operations: [subscribepublic` |
+| Source `operations: [readpublic` | Removed (inferred from entities) |
 | Explicit `Endpoint<REST>` | Entity `expose:` blocks |
 
 ---
@@ -547,20 +594,20 @@ end
 - Operations inferred from entity usage
 
 ### Subscribe Flow
-**Pattern**: `External WS → Base Entity (source:) → [Composite] → Client`
+**Pattern**: `External WS → Base Entity (source:) → [Compositepublic → Client`
 
 1. Base entity: Pure schema + `source:` binding
 2. Optional composite: ALL attrs have expressions
-3. Exposed entity: `operations: [subscribe]`
+3. Exposed entity: `operations: [subscribepublic`
 
 ### Publish Flow
-**Pattern**: `Client → Base Entity → [Composite (target:)] → External WS`
+**Pattern**: `Client → Base Entity → [Composite (target:)public → External WS`
 
-1. Client-facing entity: Pure schema + `operations: [publish]`
+1. Client-facing entity: Pure schema + `operations: [publishpublic`
 2. Optional composite: ALL attrs have expressions + `target:` binding
 
 ### Bidirectional
-- **Option 1**: Single entity with `source:` + `target:` + `operations: [subscribe, publish]`
+- **Option 1**: Single entity with `source:` + `target:` + `operations: [subscribe, publishpublic`
 - **Option 2**: Separate entities for subscribe/publish
 
 ### Testing WebSocket Patterns

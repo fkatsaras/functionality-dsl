@@ -12,22 +12,12 @@
 // =============================================================================
 
 // =============================================================================
-// ROLES - First-class declarations with permissions
+// ROLES - Simple identity declarations
 // =============================================================================
 
 Role admin
-  on *: [*]
-end
-
 Role librarian
-  on AuthorsAPI, BooksAPI, CategoriesAPI, MembersAPI, LoansAPI: [read, create, update]
-  on BookDetails, LoanDetails, MemberStats, LibraryStatistics: [read]
-end
-
-Role *
-  on AuthorsAPI, BooksAPI, CategoriesAPI: [read]
-  on BookDetails: [read]
-end
+Role guest
 
 // =============================================================================
 // AUTHENTICATION - Identity verification (separate from authorization)
@@ -92,7 +82,11 @@ Entity Author
     - biography: string?;
     - createdAt: string @readonly;
   source: AuthorsAPI
-  access: true
+  access:
+    read: public
+    create: [admin, librarian]
+    update: [admin, librarian]
+    delete: [admin]
 end
 
 Entity Category
@@ -101,7 +95,11 @@ Entity Category
     - name: string;
     - description: string?;
   source: CategoriesAPI
-  access: true
+  access:
+    read: public
+    create: [admin, librarian]
+    update: [admin, librarian]
+    delete: [admin]
 end
 
 Entity Book
@@ -118,7 +116,11 @@ Entity Book
     - totalCopies: integer;
     - createdAt: string @readonly;
   source: BooksAPI
-  access: true
+  access:
+    read: public
+    create: [admin, librarian]
+    update: [admin, librarian]
+    delete: [admin]
 end
 
 Entity Member
@@ -132,7 +134,11 @@ Entity Member
     - joinedDate: string @readonly;
     - active: boolean;
   source: MembersAPI
-  access: true
+  access:
+    read: [admin, librarian]
+    create: [admin, librarian]
+    update: [admin, librarian]
+    delete: [admin]
 end
 
 Entity Loan
@@ -146,7 +152,11 @@ Entity Loan
     - status: string;
     - fine: number;
   source: LoansAPI
-  access: true
+  access:
+    read: [admin, librarian]
+    create: [admin, librarian]
+    update: [admin, librarian]
+    delete: [admin]
 end
 
 // =============================================================================
@@ -170,7 +180,7 @@ Entity BookDetails(Book, Author, Category)
     - availableCopies: integer = Book.availableCopies;
     - totalCopies: integer = Book.totalCopies;
     - isAvailable: boolean = Book.availableCopies > 0;
-  access: true
+  access: public
 end
 
 Entity LoanDetails(Loan, Book, Member)
@@ -189,7 +199,7 @@ Entity LoanDetails(Loan, Book, Member)
     - status: string = Loan.status;
     - fine: number = Loan.fine;
     - isOverdue: boolean = Loan.status == "overdue";
-  access: true
+  access: [admin, librarian]
 end
 
 Entity MemberStats(Member, Loan[])
@@ -205,7 +215,7 @@ Entity MemberStats(Member, Loan[])
     - activeLoans: integer = len(filter(Loan, l => l["status"] == "active"));
     - overdueLoans: integer = len(filter(Loan, l => l["status"] == "overdue"));
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
-  access: true
+  access: [admin, librarian]
 end
 
 Entity LibraryStatistics(Book[], Member[], Loan[])
@@ -217,7 +227,7 @@ Entity LibraryStatistics(Book[], Member[], Loan[])
     - activeLoans: integer = len(filter(Loan, l => l["status"] == "active"));
     - overdueLoans: integer = len(filter(Loan, l => l["status"] == "overdue"));
     - totalFines: number = round(sum(map(Loan, l => l["fine"])), 2);
-  access: true
+  access: [admin, librarian]
 end
 
 // =============================================================================

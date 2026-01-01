@@ -112,9 +112,10 @@ def build_exposure_map(model):
 
         # Entity must have:
         # - expose block (for WebSocket with explicit operations), OR
-        # - source + access: true (for REST entities with direct source), OR
-        # - parents + access: true (for composite/transformation entities)
-        has_access = access and getattr(access, "access", False) if access else False
+        # - source + access (for REST entities with direct source), OR
+        # - parents + access (for composite/transformation entities)
+        # NEW SYNTAX: access can be 'public', [roles], or per-operation rules
+        has_access = access is not None
 
         if not expose and not ((source_ref or is_composite) and has_access):
             continue
@@ -165,7 +166,7 @@ def build_exposure_map(model):
                 # Old syntax: expose block with operations list
                 operations = getattr(expose, "operations", []) or []
         elif source and has_access:
-            # New syntax: get ALL operations from source
+            # New syntax: get operations from source
             # Try new syntax first (operations_list)
             source_ops_list = getattr(source, "operations_list", None)
             if source_ops_list:
@@ -176,6 +177,11 @@ def build_exposure_map(model):
                 if source_ops_block:
                     source_op_rules = getattr(source_ops_block, "ops", []) or []
                     operations = [rule.operation for rule in source_op_rules]
+
+            # CRITICAL: Composite entities (with parents) can ONLY have 'read' operation
+            # Multi-parent entities require data from multiple sources and cannot be created/updated/deleted
+            if is_composite:
+                operations = ['read']
 
         # For publish entities, find target in descendants (transformation chain)
         # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
@@ -349,17 +355,54 @@ def _extract_permissions(model, entity, source, expose):
     Returns operation -> roles mapping by inverting role -> operations.
 
     Priority order:
-    1. Standalone Role blocks (NEW)
-    2. Old syntax: AccessControl block role-centric rules
-    3. Old syntax: AccessControl entity-level rules
-    4. Old syntax: AccessControl source-level rules
-    5. Old syntax: expose block permissions
-    6. Old syntax: source operations with inline permissions
+    1. Entity-level access block (NEWEST SYNTAX: access: public / access: [roles] / access: read: public ...)
+    2. Standalone Role blocks (NEW)
+    3. Old syntax: AccessControl block role-centric rules
+    4. Old syntax: AccessControl entity-level rules
+    5. Old syntax: AccessControl source-level rules
+    6. Old syntax: expose block permissions
+    7. Old syntax: source operations with inline permissions
 
     Returns:
         dict: {operation: [roles...]}
     """
     permissions = {}
+
+    # PRIORITY 1: Entity-level access block (NEWEST SYNTAX)
+    # Handles: access: public, access: [role1, role2], access: read: public create: [admin]
+    access_block = getattr(entity, "access", None) or (getattr(expose, "access", None) if expose else None)
+    if access_block:
+        # Get list of all valid operations for this entity
+        declared_ops = _get_declared_operations(entity, source)
+
+        # Check which form of access block this is
+        public_keyword = getattr(access_block, "public_keyword", None)
+        roles_list = getattr(access_block, "roles", []) or []
+        access_rules = getattr(access_block, "access_rules", []) or []
+
+        if public_keyword == "public":
+            # Form 1: access: public - all operations are public
+            for op in declared_ops:
+                permissions[op] = ["public"]
+            return _apply_read_list_expansion(permissions, entity)
+        elif roles_list:
+            # Form 2: access: [role1, role2] - all operations require these roles
+            role_names = [r for r in roles_list]
+            for op in declared_ops:
+                permissions[op] = role_names
+            return _apply_read_list_expansion(permissions, entity)
+        elif access_rules:
+            # Form 3: access: read: public create: [admin] - per-operation rules
+            for rule in access_rules:
+                op = rule.operation
+                rule_public = getattr(rule, "public_keyword", None)
+                rule_roles = getattr(rule, "roles", []) or []
+
+                if rule_public == "public":
+                    permissions[op] = ["public"]
+                elif rule_roles:
+                    permissions[op] = [r for r in rule_roles]
+            return _apply_read_list_expansion(permissions, entity)
 
     # NEW SYNTAX: Get standalone Role declarations
     roles = get_children_of_type("Role", model)

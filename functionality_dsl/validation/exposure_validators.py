@@ -611,74 +611,111 @@ def _validate_entity_access_blocks(model, metamodel=None):
     Validate entity access blocks (new syntax).
 
     Rules:
-    - Entity access block can only reference operations defined in its source
-    - Entity must have a source if using access block
+    - Operations in access block must match those available from source
+    - For REST entities: validate against source operations
+    - For WebSocket entities: validate against expose operations
+    - Composite entities can only have 'read' operation
     """
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        access = getattr(entity, "access", None)
-        if not access:
+        access_block = getattr(entity, "access", None)
+        if not access_block:
             continue
 
-        has_access = getattr(access, "access", False)
-        if not has_access:
-            continue  # access: false is valid (no exposure)
-
-        # Entity with access: true must have EITHER:
-        # 1. source: (direct or inherited) → subscribe flow
-        # 2. target: (direct or in descendants) → publish flow
-        # 3. Both → bidirectional
-
-        source = getattr(entity, "source", None)
+        # Get available operations based on entity type
         parents = getattr(entity, "parents", []) or []
         is_composite = len(parents) > 0
+        source = getattr(entity, "source", None)
 
-        # Check for source (direct or inherited from parents)
-        has_source = source is not None
-        if not has_source and is_composite:
-            # Check if parent chain has source
-            has_source = _find_source_in_parents([p.entity if hasattr(p, 'entity') else p for p in parents]) is not None
-
-        # Check for target (direct or in descendants)
-        target_list_obj = getattr(entity, "targets", None)
-        has_target = False
-        if target_list_obj:
-            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
-            targets_attr = getattr(target_list_obj, "targets", None)
-            if targets_attr:
-                # List form
-                targets = targets_attr if isinstance(targets_attr, list) else [targets_attr]
-                has_target = len(targets) > 0
+        # Determine available operations
+        if is_composite:
+            # Composite entities are read-only
+            available_ops = {'read'}
+        elif source:
+            # Get operations from source
+            available_ops = _get_source_operations(source)
+        else:
+            # No source - might be OK if there's an expose block (WS)
+            expose_block = getattr(entity, "expose", None)
+            if expose_block:
+                # WebSocket entity - operations from expose block
+                expose_ops = getattr(expose_block, "operations", []) or []
+                available_ops = set(expose_ops)
             else:
-                # Single form
-                has_target = True
+                # No source, no expose - entity can't be accessed
+                continue
 
-        if not has_target:
-            # Check descendants for target
-            descendant_target = _find_target_in_descendants(entity, model)
-            has_target = descendant_target is not None
+        # Check access block type and validate operations
+        # Type 1: access: all (no validation needed)
+        public_keyword = getattr(access_block, "public_keyword", None)
+        if public_keyword == 'public':
+            continue
 
-        # Entity must have at least source OR target
-        if not has_source and not has_target:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'access: true' but no data flow binding.\n\n"
-                f"Entities must have at least one of:\n"
-                f"  - 'source:' (for subscribe/read operations)\n"
-                f"  - 'target:' (for publish operations)\n"
-                f"  - Parent with 'source:' (inherits subscribe)\n"
-                f"  - Descendant with 'target:' (enables publish)\n\n"
-                f"Examples:\n"
-                f"  Subscribe: Entity {entity.name}\n"
-                f"             source: MySource\n"
-                f"             access: true\n"
-                f"           end\n\n"
-                f"  Publish:   Entity {entity.name}\n"
-                f"             target: MyTarget\n"
-                f"             access: true\n"
-                f"           end",
-                **get_location(access),
-            )
+        # Type 2: access: [role1, role2] (all operations)
+        roles = getattr(access_block, "roles", []) or []
+        if roles and not getattr(access_block, "access_rules", []):
+            # Using all available operations - no specific validation needed
+            continue
+
+        # Type 3: per-operation access rules
+        access_rules = getattr(access_block, "access_rules", []) or []
+        for rule in access_rules:
+            operation = getattr(rule, "operation", None)
+            if operation not in available_ops:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' access block references operation '{operation}' "
+                    f"which is not available for this entity.\n"
+                    f"Available operations: {', '.join(sorted(available_ops))}\n"
+                    f"Hint: {'Composite entities only support read operation' if is_composite else f'Check source {source.name} operations'}",
+                    **get_location(rule),
+                )
+
+        # Also check expose block access (for WebSocket)
+        expose_block = getattr(entity, "expose", None)
+        if expose_block:
+            expose_access = getattr(expose_block, "access", None)
+            if expose_access:
+                # Get operations from expose block
+                expose_ops = getattr(expose_block, "operations", []) or []
+                available_expose_ops = set(expose_ops)
+
+                # Validate expose access rules
+                expose_access_rules = getattr(expose_access, "access_rules", []) or []
+                for rule in expose_access_rules:
+                    operation = getattr(rule, "operation", None)
+                    if operation not in available_expose_ops:
+                        raise TextXSemanticError(
+                            f"Entity '{entity.name}' expose.access block references operation '{operation}' "
+                            f"which is not in the expose.operations list.\n"
+                            f"Exposed operations: {', '.join(sorted(available_expose_ops))}\n"
+                            f"Either add '{operation}' to expose.operations or remove it from access rules.",
+                            **get_location(rule),
+                        )
+
+
+def _get_source_operations(source):
+    """
+    Get available operations from a source.
+    Returns set of operation names.
+    """
+    if not source:
+        return set()
+
+    # Check for operations_list (new syntax)
+    operations_list = getattr(source, "operations_list", None)
+    if operations_list:
+        ops = getattr(operations_list, "operations", []) or []
+        return set(ops)
+
+    # Check for operations block (old syntax with roles)
+    operations_block = getattr(source, "operations", None)
+    if operations_block:
+        ops_rules = getattr(operations_block, "ops", []) or []
+        return {getattr(rule, "operation", None) for rule in ops_rules if getattr(rule, "operation", None)}
+
+    # Default REST CRUD operations
+    return {'read', 'create', 'update', 'delete', 'list'}
 
 
 def _validate_permissions(model, metamodel=None):
