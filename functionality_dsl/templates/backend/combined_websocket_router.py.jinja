@@ -6,7 +6,7 @@
 import logging
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Set
+from typing import Set, Optional
 from pydantic import ValidationError
 import asyncio
 
@@ -22,6 +22,9 @@ from app.core.error_handlers import (
     ErrorCategory,
     classify_error
 )
+{% if has_auth %}
+from app.core.auth import decode_token, TokenPayload
+{% endif %}
 
 logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
 
@@ -40,6 +43,67 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     Filters: {{ subscribe_filters | join(', ') }}
     {% endif %}
     """
+    {% if has_auth %}
+    # Authenticate before accepting connection
+    # Extract token from Authorization header: "Bearer <token>"
+    auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]  # Remove "Bearer " prefix
+
+    user: Optional[TokenPayload] = None
+
+    {% if subscribe_required_roles != ["public"] or publish_required_roles != ["public"] %}
+    # Check if authentication is required
+    {% if subscribe_required_roles != ["public"] %}
+    subscribe_requires_auth = True
+    subscribe_roles = {{ subscribe_required_roles }}
+    {% else %}
+    subscribe_requires_auth = False
+    subscribe_roles = []
+    {% endif %}
+    {% if publish_required_roles != ["public"] %}
+    publish_requires_auth = True
+    publish_roles = {{ publish_required_roles }}
+    {% else %}
+    publish_requires_auth = False
+    publish_roles = []
+    {% endif %}
+
+    # Verify token if required
+    if subscribe_requires_auth or publish_requires_auth:
+        if not token:
+            logger.warning("WebSocket connection rejected: No token provided")
+            await websocket.close(code=1008, reason="Authentication required")
+            return
+
+        try:
+            user = decode_token(token)
+            logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
+
+            # Check subscribe permissions
+            {% if subscribe_required_roles != ["public"] %}
+            if subscribe_requires_auth and not user.has_any_role(subscribe_roles):
+                logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for subscribe: {subscribe_roles}")
+                await websocket.close(code=1008, reason="Insufficient permissions for subscribe")
+                return
+            {% endif %}
+
+            # Check publish permissions
+            {% if publish_required_roles != ["public"] %}
+            if publish_requires_auth and not user.has_any_role(publish_roles):
+                logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for publish: {publish_roles}")
+                await websocket.close(code=1008, reason="Insufficient permissions for publish")
+                return
+            {% endif %}
+
+        except Exception as e:
+            logger.warning(f"WebSocket authentication failed: {str(e)}")
+            await websocket.close(code=1008, reason=f"Invalid token: {str(e)}")
+            return
+    {% endif %}
+    {% endif %}
+
     await websocket.accept()
     active_connections.add(websocket)
     logger.info(f"Client connected to {{ ws_channel }}. Total connections: {len(active_connections)}")

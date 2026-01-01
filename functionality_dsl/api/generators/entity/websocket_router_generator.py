@@ -252,6 +252,34 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "publish_is_text": publish_is_text,  # True if text/plain, False if JSON
         })
 
+    # Get permissions for auth
+    subscribe_permissions = ["public"]
+    publish_permissions = ["public"]
+    has_auth = False
+
+    if subscribe_entity:
+        _, config = subscribe_entity
+        permissions = config.get("permissions", {})
+        if "subscribe" in permissions:
+            subscribe_permissions = permissions["subscribe"]
+            has_auth = has_auth or ("public" not in subscribe_permissions)
+
+    if publish_entity:
+        _, config = publish_entity
+        permissions = config.get("permissions", {})
+        if "publish" in permissions:
+            publish_permissions = permissions["publish"]
+            has_auth = has_auth or ("public" not in publish_permissions)
+
+    # Debug output
+    print(f"    Auth config: has_auth={has_auth}, subscribe_roles={subscribe_permissions}, publish_roles={publish_permissions}")
+
+    context.update({
+        "has_auth": has_auth,
+        "subscribe_required_roles": subscribe_permissions,
+        "publish_required_roles": publish_permissions,
+    })
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("combined_websocket_router.py.jinja")

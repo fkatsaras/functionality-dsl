@@ -110,21 +110,26 @@ def build_exposure_map(model):
         parents = [ref.entity for ref in parent_refs] if parent_refs else []
         is_composite = len(parents) > 0
 
+        # Get direct source/target first (needed for exposure check)
+        source_ref = getattr(entity, "source", None)
+        target_list_obj = getattr(entity, "targets", None)
+        has_target = target_list_obj is not None
+
         # Entity must have:
         # - expose block (for WebSocket with explicit operations), OR
-        # - source + access (for REST entities with direct source), OR
+        # - source + access (for REST/WS subscribe entities), OR
+        # - target + access (for WS publish entities), OR
         # - parents + access (for composite/transformation entities)
         # NEW SYNTAX: access can be 'public', [roles], or per-operation rules
         has_access = access is not None
 
-        if not expose and not ((source_ref or is_composite) and has_access):
+        if not expose and not ((source_ref or has_target or is_composite) and has_access):
             continue
 
-        # Get direct source/target or find source through parents
-        source = getattr(entity, "source", None)
+        # Get direct source or find source through parents
+        source = source_ref
 
         # Handle target(s) - can be single or multiple (fan-out)
-        target_list_obj = getattr(entity, "targets", None)
         if target_list_obj:
             # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
             targets_attr = getattr(target_list_obj, "targets", None)
@@ -178,10 +183,38 @@ def build_exposure_map(model):
                     source_op_rules = getattr(source_ops_block, "ops", []) or []
                     operations = [rule.operation for rule in source_op_rules]
 
-            # CRITICAL: Composite entities (with parents) can ONLY have 'read' operation
+            # CRITICAL: For REST composite entities ONLY - limit to 'read' operation
             # Multi-parent entities require data from multiple sources and cannot be created/updated/deleted
-            if is_composite:
+            # WebSocket composites are handled by WS inference below
+            source_type = getattr(source, "kind", None) if source else None
+            if is_composite and source_type != "WS":
                 operations = ['read']
+
+        # CRITICAL: Infer WebSocket operations if no operations found
+        # If entity has access: but no explicit operations, infer from source/target
+        if not operations and has_access:
+            # Check if source is WebSocket
+            source_type = getattr(source, "kind", None) if source else None
+            is_ws_source = source_type == "WS"
+
+            # Check if any target is WebSocket
+            is_ws_target = False
+            if target_list:
+                for tgt in target_list:
+                    if getattr(tgt, "kind", None) == "WS":
+                        is_ws_target = True
+                        break
+
+            # Infer WebSocket operations
+            if is_ws_source and is_ws_target:
+                # Bidirectional WS entity
+                operations = ['subscribe', 'publish']
+            elif is_ws_source:
+                # Subscribe-only WS entity
+                operations = ['subscribe']
+            elif is_ws_target:
+                # Publish-only WS entity
+                operations = ['publish']
 
         # For publish entities, find target in descendants (transformation chain)
         # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
@@ -691,14 +724,20 @@ def _get_declared_operations(entity, source):
     """
     Get list of operations declared for an entity/source.
     For base entities: operations from source
-    For composite entities: [read] only
+    For REST composite entities: [read] only
+    For WS composite entities: infer from source
+    For WS publish-only entities (with target but no source): [publish]
     """
     # Check if entity is composite
     parent_refs = getattr(entity, "parents", []) or []
     is_composite = len(parent_refs) > 0
 
     if is_composite:
-        # Composite entities are read-only by default
+        # For WebSocket composite entities, infer operations from parent's source
+        if source and getattr(source, "kind", None) == "WS":
+            # WebSocket composite - return subscribe (can't publish from composite)
+            return ['subscribe']
+        # REST composite entities are read-only
         return ['read']
 
     # Base entity - get operations from source
@@ -713,5 +752,10 @@ def _get_declared_operations(entity, source):
         if source_ops_block:
             source_op_rules = getattr(source_ops_block, "ops", []) or []
             return [rule.operation for rule in source_op_rules]
+
+    # Check if entity has target (publish-only WS entity)
+    target_list_obj = getattr(entity, "targets", None)
+    if target_list_obj:
+        return ['publish']
 
     return []

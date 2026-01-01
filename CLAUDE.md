@@ -348,14 +348,6 @@ end
 - Only type declarations: `- name: string;` (semicolon!)
 - Cannot reference other entities
 
-**Wrapper Entities** (for array/primitive):
-```fdsl
-Entity ProductListWrapper
-  attributes:
-    - items: array<Product>;
-end
-```
-
 **Transformation Entities** (with expressions):
 ```fdsl
 Entity ProductView(ProductListWrapper)
@@ -364,15 +356,14 @@ Entity ProductView(ProductListWrapper)
     - count: integer = len(ProductListWrapper.items);
 end
 ```
-
-**Type/Schema Rules:**
-1. `type:` must be present in request/response/subscribe/publish blocks
-2. For primitive/array types: entity must have **exactly one attribute**
-3. For object type: entity can have multiple attributes
-
 ---
 
 ## Generated Code
+
+# IMPORTANT - HOW TO GENERATE FDSL CODE:
+cd c:/ffile/functionality-dsl
+venv_WIN/Scripts/fdsl generate <path-to-fdsl-file> --out generated
+
 
 **What Gets Generated:**
 1. **Pydantic Models** - `{Entity}`, `{Entity}Create`, `{Entity}Update`
