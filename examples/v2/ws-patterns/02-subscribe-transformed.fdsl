@@ -9,7 +9,7 @@
 // 1. Source<WS> with channel URL and operations
 // 2. Base entity with source: binding (pure schema, NO expressions, NO access)
 // 3. Composite entity with computed attributes (ALL attrs have expressions)
-// 4. Composite entity uses access: true
+// 4. Composite entity uses access: public
 // 5. Client binds to composite entity
 // =============================================================================
 
@@ -43,7 +43,7 @@ Entity ProcessedMessage(RawMessage)
     - id: string = RawMessage.id;
     - text: string = upper(RawMessage.content);
     - size_kb: number = round(RawMessage.size_bytes / 1024, 2);
-  access: true
+  access: public
   // Auto-generates path: /ws/processedmessage
   // Inherits 'subscribe' from parent chain
 end

@@ -106,9 +106,18 @@ Entity ModeratorPublish
 end
 
 // =============================================================================
-// EXAMPLE: Single entity with per-operation access control
+// EXAMPLE: Single entity with per-operation access control (BIDIRECTIONAL)
 // =============================================================================
 
-// NOTE: Per-operation access on bidirectional entities (source + target)
-// is currently validated incorrectly. Use separate entities for now.
-// TODO: Fix validator to recognize WS operations for entities with both source and target
+// Bidirectional entity with different access per operation
+// - Public subscribe (anyone can listen)
+// - Restricted publish (only users can send)
+// Auto-generates: ws://localhost:8000/ws/publiclistenusersend
+Entity PublicListenUserSend(ChatMessageRaw)
+  attributes:
+    - content: string = ChatMessageRaw.text;
+  target: ChatWS
+  access:
+    subscribe: public
+    publish: [user, moderator, admin]
+end

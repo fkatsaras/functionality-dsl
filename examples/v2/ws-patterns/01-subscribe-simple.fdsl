@@ -8,7 +8,7 @@
 // Requirements:
 // 1. Source<WS> with channel URL and operations
 // 2. Base entity with source: binding (pure schema, NO expressions)
-// 3. Base entity uses access: true (inherits subscribe operation)
+// 3. Base entity uses access: public (inherits subscribe operation)
 // 4. Client binds to exposed entity
 // =============================================================================
 
@@ -32,7 +32,7 @@ Entity MessageFromExternal
     - text: string;
     - timestamp: integer @readonly;
   source: ExternalWS
-  access: true
+  access: public
   // Auto-generates path: /ws/messagefromexternal
   // Inherits 'subscribe' operation from source
 end

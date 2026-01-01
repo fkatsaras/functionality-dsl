@@ -628,23 +628,56 @@ def _validate_entity_access_blocks(model, metamodel=None):
         is_composite = len(parents) > 0
         source = getattr(entity, "source", None)
 
+        # For composite entities, find source through parent chain
+        if is_composite and not source and parents:
+            # Get first parent's source
+            first_parent_ref = parents[0]
+            first_parent = first_parent_ref.entity if hasattr(first_parent_ref, 'entity') else first_parent_ref
+            source = getattr(first_parent, "source", None)
+
         # Determine available operations
         if is_composite:
-            # Composite entities are read-only
-            available_ops = {'read'}
+            # Composite entities are read-only for REST, but can have WS operations
+            # Check if source is WebSocket
+            source_kind = getattr(source, "kind", None) if source else None
+            if source_kind == "WS":
+                # WebSocket composite - can subscribe from parent's source
+                available_ops = {'subscribe'}
+            else:
+                # REST composite - read-only
+                available_ops = {'read'}
+
+            # Also check for target (publish operations)
+            target_list_obj = getattr(entity, "targets", None)
+            if target_list_obj:
+                # Has target - can also publish
+                available_ops.add('publish')
         elif source:
             # Get operations from source
             available_ops = _get_source_operations(source)
+
+            # Also check for target (publish operations)
+            # Base entities can have both source (subscribe) and target (publish)
+            target_list_obj = getattr(entity, "targets", None)
+            if target_list_obj:
+                # Has target - can also publish
+                available_ops.add('publish')
         else:
-            # No source - might be OK if there's an expose block (WS)
-            expose_block = getattr(entity, "expose", None)
-            if expose_block:
-                # WebSocket entity - operations from expose block
-                expose_ops = getattr(expose_block, "operations", []) or []
-                available_ops = set(expose_ops)
+            # No source - check for target (publish-only WS entity) or expose block
+            target_list_obj = getattr(entity, "targets", None)
+            if target_list_obj:
+                # Publish-only WebSocket entity
+                available_ops = {'publish'}
             else:
-                # No source, no expose - entity can't be accessed
-                continue
+                # No source, no target - might have expose block
+                expose_block = getattr(entity, "expose", None)
+                if expose_block:
+                    # WebSocket entity - operations from expose block
+                    expose_ops = getattr(expose_block, "operations", []) or []
+                    available_ops = set(expose_ops)
+                else:
+                    # No source, no target, no expose - entity can't be accessed
+                    continue
 
         # Check access block type and validate operations
         # Type 1: access: all (no validation needed)
@@ -702,6 +735,8 @@ def _get_source_operations(source):
     if not source:
         return set()
 
+    source_kind = getattr(source, "kind", None)
+
     # Check for operations_list (new syntax)
     operations_list = getattr(source, "operations_list", None)
     if operations_list:
@@ -714,8 +749,14 @@ def _get_source_operations(source):
         ops_rules = getattr(operations_block, "ops", []) or []
         return {getattr(rule, "operation", None) for rule in ops_rules if getattr(rule, "operation", None)}
 
-    # Default REST CRUD operations
-    return {'read', 'create', 'update', 'delete', 'list'}
+    # Default operations based on source type
+    if source_kind == "WS":
+        # WebSocket sources support subscribe by default
+        # (publish requires target: on entity, not from source)
+        return {'subscribe'}
+    else:
+        # REST sources support CRUD operations
+        return {'read', 'create', 'update', 'delete', 'list'}
 
 
 def _validate_permissions(model, metamodel=None):

@@ -9,9 +9,9 @@
 // Requirements:
 // 1. Source<WS> with channel URL and operations [subscribe, publish]
 // 2. Subscribe entity with source: binding (can have transformations)
-// 3. Subscribe entity uses access: true
+// 3. Subscribe entity uses access: public
 // 4. Publish entity with target: binding (can have transformations)
-// 5. Publish entity uses access: true
+// 5. Publish entity uses access: public
 // 6. Different client paths for send vs receive
 // =============================================================================
 
@@ -45,7 +45,7 @@ Entity ProcessedTelemetry(RawTelemetry)
     - temperature_f: number = round((RawTelemetry.temp * 9/5) + 32, 1);
     - humidity: integer = RawTelemetry.humidity;
     - timestamp: integer = RawTelemetry.timestamp;
-  access: true
+  access: public
   // Auto-generates path: /ws/processedtelemetry
   // Inherits 'subscribe' from parent chain
 end
@@ -57,7 +57,7 @@ Entity DeviceCommand
   attributes:
     - action: string;
     - value: number;
-  access: true
+  access: public
   // Auto-generates path: /ws/devicecommand
   // Client publishes here (target found in descendant)
 end

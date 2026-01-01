@@ -10,7 +10,7 @@
 // 1. Source<WS> with channel URL and operations [subscribe, publish]
 // 2. Single entity with BOTH source: and target: bindings
 // 3. Entity is pure schema (NO expressions)
-// 4. Entity uses access: true (inherits both operations)
+// 4. Entity uses access: public (inherits both operations)
 // 5. Client can both receive and send via same connection
 // =============================================================================
 
@@ -35,7 +35,7 @@ Entity ChatMessage
     - user: string;
   source: ExternalWS  // Receives messages from external WS
   target: ExternalWS  // Sends messages to external WS
-  access: true
+  access: public
   // Auto-generates path: /ws/chatmessage
   // Inherits both subscribe and publish operations
 end

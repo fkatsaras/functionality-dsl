@@ -72,35 +72,49 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     # Verify token if required
     if subscribe_requires_auth or publish_requires_auth:
-        if not token:
-            logger.warning("WebSocket connection rejected: No token provided")
-            await websocket.close(code=1008, reason="Authentication required")
-            return
-
-        try:
-            user = decode_token(token)
-            logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
-
-            # Check subscribe permissions
-            {% if subscribe_required_roles != ["public"] %}
-            if subscribe_requires_auth and not user.has_any_role(subscribe_roles):
-                logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for subscribe: {subscribe_roles}")
-                await websocket.close(code=1008, reason="Insufficient permissions for subscribe")
+        # Case 1: Both operations require auth - reject if no token
+        if subscribe_requires_auth and publish_requires_auth:
+            if not token:
+                logger.warning("WebSocket connection rejected: No token provided (both subscribe and publish require auth)")
+                await websocket.close(code=1008, reason="Authentication required")
                 return
-            {% endif %}
 
-            # Check publish permissions
-            {% if publish_required_roles != ["public"] %}
-            if publish_requires_auth and not user.has_any_role(publish_roles):
-                logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for publish: {publish_roles}")
-                await websocket.close(code=1008, reason="Insufficient permissions for publish")
+        # Case 2: Only subscribe requires auth - reject if no token
+        elif subscribe_requires_auth:
+            if not token:
+                logger.warning("WebSocket connection rejected: No token provided (subscribe requires auth)")
+                await websocket.close(code=1008, reason="Authentication required for subscribe")
                 return
-            {% endif %}
 
-        except Exception as e:
-            logger.warning(f"WebSocket authentication failed: {str(e)}")
-            await websocket.close(code=1008, reason=f"Invalid token: {str(e)}")
-            return
+        # Case 3: Only publish requires auth - accept connection, but validate token if provided
+        # (user can subscribe without auth, but needs auth to publish)
+
+        # Decode token if present
+        if token:
+            try:
+                user = decode_token(token)
+                logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
+
+                # Check subscribe permissions
+                {% if subscribe_required_roles != ["public"] %}
+                if subscribe_requires_auth and not user.has_any_role(subscribe_roles):
+                    logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for subscribe: {subscribe_roles}")
+                    await websocket.close(code=1008, reason="Insufficient permissions for subscribe")
+                    return
+                {% endif %}
+
+                # Check publish permissions
+                {% if publish_required_roles != ["public"] %}
+                if publish_requires_auth and not user.has_any_role(publish_roles):
+                    logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for publish: {publish_roles}")
+                    await websocket.close(code=1008, reason="Insufficient permissions for publish")
+                    return
+                {% endif %}
+
+            except Exception as e:
+                logger.warning(f"WebSocket authentication failed: {str(e)}")
+                await websocket.close(code=1008, reason=f"Invalid token: {str(e)}")
+                return
     {% endif %}
     {% endif %}
 
@@ -180,6 +194,22 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             """Publish task: Receive data from client and send to external target."""
             while True:
                 try:
+                    {% if has_auth and publish_required_roles != ["public"] %}
+                    # Runtime check: Verify user has publish permissions
+                    if not user or not user.has_any_role(publish_roles):
+                        # User tried to publish without proper auth/permissions
+                        error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
+                        logger.warning(f"Publish rejected: {error_msg}")
+                        await WebSocketErrorHandler.send_error(
+                            websocket,
+                            Exception(error_msg),
+                            ErrorCategory.FORBIDDEN,
+                            logger,
+                            close_connection=True
+                        )
+                        return
+                    {% endif %}
+
                     # Receive message based on content type
                     {% if publish_is_text %}
                     # Content type is text/plain - receive as text
@@ -429,6 +459,22 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         {% endif %}
 
         while True:
+            {% if has_auth and publish_required_roles != ["public"] %}
+            # Runtime check: Verify user has publish permissions
+            if not user or not user.has_any_role(publish_roles):
+                # User tried to publish without proper auth/permissions
+                error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
+                logger.warning(f"Publish rejected: {error_msg}")
+                await WebSocketErrorHandler.send_error(
+                    websocket,
+                    Exception(error_msg),
+                    ErrorCategory.FORBIDDEN,
+                    logger,
+                    close_connection=True
+                )
+                break
+            {% endif %}
+
             # Receive message based on content type
             {% if publish_is_text %}
             # Content type is text/plain - receive as text
