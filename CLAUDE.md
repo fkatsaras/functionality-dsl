@@ -275,57 +275,73 @@ end
 
 **WebSocket Source:**
 ```fdsl
-Source<WS> EchoWS
-  channel: "wss://echo.example.com/ws"
-  subscribe:
-    type: object
-    entity: EchoMessage
-  publish:
-    type: object
-    entity: EchoMessage
+Source<WS> ExternalWS
+  channel: "ws://host:port/path"
 end
 ```
 
 **Key Points:**
-- **No `operations:` field** - operations inferred from entities
-- `subscribe:` defines incoming message schema
-- `publish:` defines outgoing message schema
+- **Just the URL** - no operations, no subscribe/publish blocks
+- Operations inferred from entities that bind to this source
 
-### 7. **WebSocket Entities**
+### 7. **WebSocket Patterns**
 
-**Subscribe Entity** (External WS → Client):
+**SUBSCRIBE** (External WS → Client):
 ```fdsl
-Entity ChatIncoming(EchoRaw)
+// Base entity binds to source
+Entity RawMessage
   attributes:
-    - text: string = lower(EchoRaw.text);
-  expose:
-    channel: "/api/chat"
-    operations: [subscribepublic
+    - text: string;
+  source: ExternalWS
+end
+
+// Composite transforms and exposes
+Entity ProcessedMessage(RawMessage)
+  attributes:
+    - content: string = lower(RawMessage.text);
+  access: public
+  // Auto-generates: ws://localhost:8000/ws/processedmessage
 end
 ```
 
-**Publish Entity** (Client → External WS):
+**PUBLISH** (Client → External WS):
 ```fdsl
-Entity ChatOutgoing
+// Base entity exposed to client
+Entity Command
   attributes:
-    - value: string(3..);
+    - action: string;
+  access: public
+  // Auto-generates: ws://localhost:8000/ws/command
 end
 
-Entity ChatOutgoingProcessed(ChatOutgoing)
+// Composite transforms and sends
+Entity FormattedCommand(Command)
   attributes:
-    - text: string = upper(ChatOutgoing.value);
-  target: EchoWS
-  expose:
-    channel: "/api/chat"
-    operations: [publishpublic
+    - cmd: string = upper(Command.action);
+  target: ExternalWS
+end
+```
+
+**BIDIRECTIONAL** (Both directions, per-operation access):
+```fdsl
+Entity Chat(RawMessage)
+  attributes:
+    - message: string = RawMessage.text;
+  target: ExternalWS
+  access:
+    subscribe: public           // Anyone can listen
+    publish: [user, admin]      // Only users can send
+  // Auto-generates: ws://localhost:8000/ws/chat (bidirectional)
 end
 ```
 
 **Key Points:**
-- Use `channel:` in expose block for WebSocket path
-- `target:` specifies external WS to publish to
-- Same channel, different entities for bidirectional communication
-- Use `access:` in expose block for WebSocket authorization (see Access Control section)
+- `source:` = subscribe from external WS
+- `target:` = publish to external WS
+- `access: public` or `access: [roles]` for all operations
+- `access: subscribe: ... publish: ...` for per-operation control
+- Paths auto-generated from entity name
+- See `examples/v2/ws-patterns/WEBSOCKET-SIMPLE-GUIDE.md` for detailed patterns
 
 ### 8. **Components**
 
@@ -571,35 +587,23 @@ fdsl generate main.fdsl --out generated/
 
 ---
 
-## WebSocket Pattern Rules
+## WebSocket Patterns - Quick Reference
 
-**Canonical patterns documented in**: `examples/v2/ws-patterns/`
+**Full guide**: `examples/v2/ws-patterns/WEBSOCKET-SIMPLE-GUIDE.md`
 
-### Source Definition
-```fdsl
-Source<WS> SourceName
-  channel: "ws://host:port/path"
-end
-```
-- **NO** `subscribe:` or `publish:` blocks
-- Operations inferred from entity usage
+### Three Core Patterns
 
-### Subscribe Flow
-**Pattern**: `External WS → Base Entity (source:) → [Compositepublic → Client`
+1. **SUBSCRIBE**: External WS → Client (receive messages)
+   - Base entity: `source: ExternalWS`
+   - Composite (optional): All computed fields, `access: public`
 
-1. Base entity: Pure schema + `source:` binding
-2. Optional composite: ALL attrs have expressions
-3. Exposed entity: `operations: [subscribepublic`
+2. **PUBLISH**: Client → External WS (send messages)
+   - Base entity: `access: public`
+   - Composite (optional): All computed fields, `target: ExternalWS`
 
-### Publish Flow
-**Pattern**: `Client → Base Entity → [Composite (target:)public → External WS`
-
-1. Client-facing entity: Pure schema + `operations: [publishpublic`
-2. Optional composite: ALL attrs have expressions + `target:` binding
-
-### Bidirectional
-- **Option 1**: Single entity with `source:` + `target:` + `operations: [subscribe, publishpublic`
-- **Option 2**: Separate entities for subscribe/publish
+3. **BIDIRECTIONAL**: Both directions on same endpoint
+   - Composite with: `source:` from parent + `target: ExternalWS`
+   - Per-operation access: `subscribe: public, publish: [roles]`
 
 ### Testing WebSocket Patterns
 

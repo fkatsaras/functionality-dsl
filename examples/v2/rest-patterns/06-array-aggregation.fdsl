@@ -37,7 +37,7 @@ Entity Order
     - createdAt: string @readonly;
   source: OrderAPI
   filters: [userId, status]
-  access: true
+  access: public
 end
 
 Entity OrderItem
@@ -49,7 +49,7 @@ Entity OrderItem
     - price: number;
   source: OrderItemAPI
   filters: [orderId, productId]
-  access: true
+  access: public
   // Filter by orderId enables array aggregation
 end
 
@@ -67,7 +67,7 @@ Entity OrderWithItems(Order, OrderItem[])
     - subtotal: number = sum(map(OrderItem, i => i["quantity"] * i["price"]));
     - avgItemPrice: number = round(subtotal / itemCount, 2) if itemCount > 0 else 0;
     - hasExpensiveItems: boolean = any(map(OrderItem, i => i["price"] > 100));
-  access: true
+  access: public
   // Composite entity - read-only
   // GET /api/orders/{orderId}/orderwithitems
 end
@@ -84,7 +84,7 @@ Entity OrderStats(Order, OrderItem[])
     - averageItemValue: number = round(orderValue / totalItems, 2) if totalItems > 0 else 0;
     - maxPrice: number = max(map(OrderItem, i => i["price"])) if len(OrderItem) > 0 else 0;
     - minPrice: number = min(map(OrderItem, i => i["price"])) if len(OrderItem) > 0 else 0;
-  access: true
+  access: public
   // Composite entity - read-only
   // GET /api/orders/{orderId}/orderstats
 end

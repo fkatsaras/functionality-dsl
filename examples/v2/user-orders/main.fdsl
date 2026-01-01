@@ -16,14 +16,17 @@ end
 
 Source<REST> UserDB
   base_url: "http://dummy-user-orders-service:9001/users"
+  operations: [read, create, update, delete]
 end
 
 Source<REST> OrderDB
   base_url: "http://dummy-user-orders-service:9001/orders"
+  operations: [read, create, update, delete]
 end
 
 Source<REST> OrderItemDB
   base_url: "http://dummy-user-orders-service:9001/items"
+  operations: [read, create, update, delete]
 end
 
 // ============================================================================
@@ -58,7 +61,6 @@ Entity Order
     - createdAt: string?;
   source: OrderDB
   expose:
-    operations: [list, read, create, update, delete]
     readonly_fields: ["createdAt"]
     filters: ["status", "userId"]
 end
