@@ -6,7 +6,7 @@
 // Requirements:
 // 1. Source<REST> with base URL and operations list
 // 2. Entity with @id marker on one field
-// 3. Entity has source: binding and access: true
+// 3. Entity has source: binding and access: public
 // 4. Source declares operations: [read, create, update, delete]
 // 5. Paths auto-generated from entity name
 // 6. No AccessControl = public access (free for all)
@@ -33,7 +33,7 @@ Entity User
     - email: string;
     - age: integer;
   source: UserAPI
-  access: true
+  access: public
   // Auto-generates (all public):
   // GET    /api/users           (collection)
   // GET    /api/users/{id}      (read)

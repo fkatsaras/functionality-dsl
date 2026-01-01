@@ -32,7 +32,7 @@ Entity AppConfig
     - features: array;
     - maintenanceMode: boolean;
   source: ConfigAPI
-  access: true
+  access: public
   // Auto-generates: GET /api/appconfig (no {id} parameter)
   // Cannot use list (would fail validation - not a collection)
 end
@@ -51,7 +51,7 @@ Entity UserProfile
     - preferences: object;
     - notifications: boolean;
   source: UserProfileAPI
-  access: true
+  access: public
   // Auto-generates:
   // GET    /api/userprofile  (read)
   // POST   /api/userprofile  (create)
@@ -66,7 +66,7 @@ Entity EnrichedProfile(UserProfile)
     - email: string = lower(UserProfile.email);
     - displayName: string = upper(UserProfile.username);
     - isNotified: boolean = UserProfile.notifications;
-  access: true
+  access: public
   // Auto-generates: GET /api/enrichedprofile
   // Singleton-derived composite (also singleton, read-only)
 end
