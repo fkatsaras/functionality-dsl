@@ -182,7 +182,9 @@
       "Bash(timeout 15 python:*)",
       "Bash(pkill:*)",
       "Bash(timeout 10 python3:*)",
-      "Bash(venv_WSL/bin/python:*)"
+      "Bash(venv_WSL/bin/python:*)",
+      "Bash(timeout 15 docker compose:*)",
+      "Bash(timeout 10 docker compose:*)"
     ],
     "deny": [],
     "ask": []

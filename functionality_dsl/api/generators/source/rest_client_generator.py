@@ -36,12 +36,18 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     # Infer operations from entities that bind to this source
     operations = set()
+    is_singleton = False  # Will be set based on entity info
+
     if exposure_map:
         for entity_name, config in exposure_map.items():
             entity_source = config.get("source")
             if entity_source and entity_source.name == source.name:
                 entity_ops = config.get("operations", [])
                 operations.update(entity_ops)
+                # Check if ANY entity using this source is a singleton
+                # Singleton = entity without @id field (identity from context)
+                if config.get("is_singleton", False):
+                    is_singleton = True
 
     # If no operations found, skip
     if not operations:
@@ -50,9 +56,6 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     operations = list(operations)
     op_names = operations
-
-    # Check if this is a singleton source (read-only without update/delete)
-    is_singleton = "read" in op_names and not any(op in op_names for op in ["update", "delete"])
 
     # Infer standard REST patterns for each operation
     crud_config = {}
@@ -70,17 +73,27 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         elif op_name == "create":
             crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
         elif op_name == "update":
-            crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+            # Singleton update: no ID parameter (PUT to base_url)
+            # Item update: requires ID parameter (PUT to base_url/{id})
+            if is_singleton:
+                crud_config[op_name] = {"method": "PUT", "path": "", "url": base_url}
+            else:
+                crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
         elif op_name == "delete":
-            crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
+            # Singleton delete: no ID parameter (DELETE to base_url)
+            # Item delete: requires ID parameter (DELETE to base_url/{id})
+            if is_singleton:
+                crud_config[op_name] = {"method": "DELETE", "path": "", "url": base_url}
+            else:
+                crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
 
     # Build operation method configs
     operation_methods = []
     for op_name in operations:
         config = crud_config.get(op_name, {})
         # Determine if operation has ID parameter
-        # Note: 'read' might not have ID if it's a singleton
-        has_id = op_name in ['read', 'update', 'delete'] and not (op_name == 'read' and is_singleton)
+        # Singleton operations never have ID parameter
+        has_id = not is_singleton and op_name in ['read', 'update', 'delete']
         operation_methods.append({
             "name": op_name,
             "method": config.get("method", "GET"),

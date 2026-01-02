@@ -51,7 +51,7 @@ Entity ThessalonikiForecast
     - hourly: object;
     - hourly_units: object?;
   source: ThessalonikiAPI
-  access: true
+  access: public
 end
 
 Entity NewYorkForecast
@@ -66,7 +66,7 @@ Entity NewYorkForecast
     - hourly: object;
     - hourly_units: object?;
   source: NewYorkAPI
-  access: true
+  access: public
 end
 
 Entity TokyoForecast
@@ -81,7 +81,7 @@ Entity TokyoForecast
     - hourly: object;
     - hourly_units: object?;
   source: TokyoAPI
-  access: true
+  access: public
 end
 
 // =============================================================================
@@ -132,7 +132,7 @@ Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
         )
       }
     ];
-  access: true
+  access: public
 end
 
 // =============================================================================
@@ -156,7 +156,7 @@ Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
           "tokyo": point[3]
         }
       );
-  access: true
+  access: public
 end
 
 // =============================================================================

@@ -181,7 +181,8 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             continue
 
         # Regular operations (create, update, delete)
-        is_item_op = is_item_operation(op, entity_type) and not (op == "read" and id_field is None)
+        # Singleton entities (no id_field) don't have item operations for read/update/delete
+        is_item_op = is_item_operation(op, entity_type) and not (op in ["read", "update", "delete"] and id_field is None)
 
         # Calculate path suffix for this operation
         if has_path_params and is_item_op:

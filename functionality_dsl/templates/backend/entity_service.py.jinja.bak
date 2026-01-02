@@ -301,7 +301,6 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "update" %}
-    {%- if id_field %}
     async def update_{{ entity_name | lower }}(self, {{ id_field }}: str, data) -> Optional[{{ entity_name }}]:
         """Update an existing {{ entity_name }}"""
         logger.debug(f"Updating {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
@@ -319,42 +318,14 @@ class {{ entity_name }}Service:
         {% else %}
         return {{ entity_name }}(**updated)
         {% endif %}
-    {%- else %}
-    async def update_{{ entity_name | lower }}(self, data) -> Optional[{{ entity_name }}]:
-        """Update the singleton {{ entity_name }} instance"""
-        logger.debug(f"Updating {{ entity_name }} (singleton)")
-
-        # Call source update operation
-        updated = await self.source.update(data.dict())
-
-        if not updated:
-            return None
-
-        {% if has_computed_attrs %}
-        # Transform updated entity
-        transformed = self._transform_entity(updated)
-        return {{ entity_name }}(**transformed)
-        {% else %}
-        return {{ entity_name }}(**updated)
-        {% endif %}
-    {%- endif %}
 
     {%- elif op.operation == "delete" %}
-    {%- if id_field %}
     async def delete_{{ entity_name | lower }}(self, {{ id_field }}: str) -> None:
         """Delete a {{ entity_name }}"""
         logger.debug(f"Deleting {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
 
         # Call source delete operation
         await self.source.delete({{ id_field }})
-    {%- else %}
-    async def delete_{{ entity_name | lower }}(self) -> None:
-        """Delete the singleton {{ entity_name }} instance"""
-        logger.debug("Deleting {{ entity_name }} (singleton)")
-
-        # Call source delete operation
-        await self.source.delete()
-    {%- endif %}
 
     {%- endif %}
 

@@ -62,8 +62,9 @@ def get_operation_path_suffix(operation, id_field="id", entity_type="object"):
     if operation == "read" and entity_type == "array":
         return ""
 
-    # Singleton read pattern: read operation without id_field
-    if operation == "read" and id_field is None:
+    # Singleton pattern: operations without id_field (singleton entities)
+    # Singleton entities don't have ID parameters for read/update/delete
+    if operation in ["read", "update", "delete"] and id_field is None:
         return ""
 
     suffix = OPERATION_PATH_SUFFIX.get(operation, "")

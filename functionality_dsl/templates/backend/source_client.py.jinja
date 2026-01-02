@@ -152,10 +152,17 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "update" %}
+    {%- if op.has_id %}
     async def update(self, id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update an existing item in {{ source_name }}"""
         url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
         logger.debug(f"Updating item at {url}")
+    {%- else %}
+    async def update(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update the singleton {{ source_name }} instance"""
+        url = f"{self.base_url}{{ op.path }}"
+        logger.debug(f"Updating singleton at {url}")
+    {%- endif %}
 
         try:
             client = get_http_client()
@@ -201,10 +208,17 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "delete" %}
+    {%- if op.has_id %}
     async def delete(self, id: str) -> None:
         """Delete an item from {{ source_name }}"""
         url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
         logger.debug(f"Deleting item at {url}")
+    {%- else %}
+    async def delete(self) -> None:
+        """Delete the singleton {{ source_name }} instance"""
+        url = f"{self.base_url}{{ op.path }}"
+        logger.debug(f"Deleting singleton at {url}")
+    {%- endif %}
 
         client = get_http_client()
         response = await client.request(
