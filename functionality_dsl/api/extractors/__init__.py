@@ -2,8 +2,6 @@
 
 from .model_extractor import (
     get_entities,
-    get_rest_endpoints,
-    get_ws_endpoints,
     get_all_source_names,
     extract_server_config,
     find_source_for_entity,
@@ -25,8 +23,6 @@ from .schema_extractor import (
 
 __all__ = [
     "get_entities",
-    "get_rest_endpoints",
-    "get_ws_endpoints",
     "get_all_source_names",
     "extract_server_config",
     "find_source_for_entity",

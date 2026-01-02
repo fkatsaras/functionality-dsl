@@ -8,16 +8,6 @@ def get_entities(model):
     return list(get_children_of_type("Entity", model))
 
 
-def get_rest_endpoints(model):
-    """Extract all Endpoint<REST> nodes from the model."""
-    return list(get_children_of_type("EndpointREST", model))
-
-
-def get_ws_endpoints(model):
-    """Extract all Endpoint<WS> nodes from the model."""
-    return list(get_children_of_type("EndpointWS", model))
-
-
 def get_all_source_names(model):
     """Extract all Source<REST> and Source<WS> names for expression compilation."""
     sources = []

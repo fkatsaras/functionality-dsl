@@ -12,8 +12,6 @@ FDSLModel:
         roles+=Role
     |   auth+=Auth
     |   servers+=Server
-    |   apirest+=EndpointREST
-    |   apiws+=EndpointWS
     |   externalrest+=SourceREST
     |   externalws+=SourceWS
     |   entities+=Entity

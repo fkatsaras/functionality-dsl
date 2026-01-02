@@ -183,111 +183,28 @@ ExposeAccessBlock:
 
 // Entity sources / targets -------------------
 Source:
-    EndpointREST
-  | EndpointWS
-  | SourceREST
+    SourceREST
   | SourceWS
-;
-
-// Unified Endpoint type for component references
-Endpoint:
-    EndpointREST
-  | EndpointWS
 ;
 
 // ---------- SOURCE (integration) ----------
 SourceREST:
   'Source<' kind='REST' '>' name=ID
-  (
-    ('url:' url=STRING
-    'method:' method=HttpVerb
-    (parameters=ParametersBlock)?
-    (request=RequestBlock)?
-    (response=ResponseBlock)?)
-    |
-    ('base_url:' base_url=STRING
-    (operations=SourceOperationsBlock | operations_list=SourceOperationsList)?)
-  )
+  'base_url:' base_url=STRING
+  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
   'end'
-;
-
-// Subscribe/Publish blocks for WebSocket (similar to Request/Response)
-SubscribeBlock:
-  'subscribe:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' message=SchemaRef
-;
-
-PublishBlock:
-  'publish:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' message=SchemaRef
-      ('onConnect:' onConnect=BOOL)?
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
-  (
-    'channel:' url=STRING
-    (parameters=ParametersBlock)?
-    (subscribe=SubscribeBlock)?
-    (publish=PublishBlock)?
-    (operations=SourceOperationsBlock | operations_list=SourceOperationsList)?
-  )
+  'channel:' url=STRING
+  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
   'end'
 ;
 
-// ---------- API (presentation) ----------
+// ---------- COMMON ----------
 
-// Parameter definition for path/query params
-// Can now include expressions for explicit mapping: - userId: string = GetUserOrders.userId
-ParamDef:
-  '-' name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'?
-;
-
-// Header parameter definition - allows dashes in names (e.g., X-Session-ID)
-HeaderParamDef:
-  '-' name=/[A-Za-z][A-Za-z0-9\-]*/ ':' type=TypeSpec ('=' expr=Expr)? ';'?
-;
-
-PathParamsBlock:
-  'path:' params+=ParamDef*
-;
-
-QueryParamsBlock:
-  'query:' params+=ParamDef*
-;
-
-HeaderParamsBlock:
-  'headers:' params+=HeaderParamDef*
-;
-
-ParametersBlock:
-  'parameters:'
-    (path_params=PathParamsBlock)?
-    (query_params=QueryParamsBlock)?
-    (header_params=HeaderParamsBlock)?
-;
-
-// WebSocket connection scoping configuration
-ConnectionBlock:
-  'connection:'
-    'mode:' mode=ConnectionMode
-    ('key:' key=ParamRef)?
-;
-
-ConnectionMode: 'shared' | 'scoped' ;
-
-// Parameter reference for connection key (e.g., path.sessionId, query.region, headers["X-Session-ID"])
-ParamRef:
-  category=ParamCategory ('.' name=ID | '[' name=STRING ']')
-;
-
-ParamCategory: 'path' | 'query' | 'headers' ;
-
-// Content type can be specified, defaults to application/json
+// Content type can be specified for entities, defaults to application/json
 ContentType:
     'application/json'
   | 'text/plain'
@@ -305,134 +222,6 @@ ContentType:
   | 'video/mp4'
 ;
 
-// Schema reference: either inline type or Entity reference
-// Try inline types first (primitive types), then entity references
-SchemaRef:
-    inline_type=InlineTypeSpec                // Inline type (integer, string, array<Entity>, etc.)
-  | entity=[Entity]                           // Reference to Entity (must be uppercase first letter by convention)
-;
-
-// Inline type specification for request/response schemas
-// Supports: integer, string, array<Product>, array<string>, etc.
-InlineTypeSpec:
-    'array' '<' itemType=[Entity] '>' constraint=TypeConstraint? nullable='?'?     // array<Product>
-  | 'array' '<' primitive=AttrType '>' constraint=TypeConstraint? nullable='?'?     // array<string>
-  | 'array' constraint=TypeConstraint? nullable='?'?                                // array (untyped)
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?  // string, integer, string<email>, etc.
-;
-
-RequestBlock:
-  'request:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' schema=SchemaRef
-;
-
-ResponseBlock:
-  'response:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' schema=SchemaRef
-;
-
-// HTTP Status Codes (comprehensive list for REST endpoints)
-HttpStatusCode:
-    // 1xx Informational
-    '100' | '101' | '102' | '103' |
-    // 2xx Success
-    '200' | '201' | '202' | '203' | '204' | '205' | '206' | '207' | '208' | '226' |
-    // 3xx Redirection
-    '300' | '301' | '302' | '303' | '304' | '305' | '307' | '308' |
-    // 4xx Client Error
-    '400' | '401' | '402' | '403' | '404' | '405' | '406' | '407' | '408' | '409' |
-    '410' | '411' | '412' | '413' | '414' | '415' | '416' | '417' | '418' | '421' |
-    '422' | '423' | '424' | '425' | '426' | '428' | '429' | '431' | '451' |
-    // 5xx Server Error
-    '500' | '501' | '502' | '503' | '504' | '505' | '506' | '507' | '508' | '510' | '511'
-;
-
-// WebSocket Close Codes (RFC 6455 + common extensions)
-WebSocketCloseCode:
-    // Standard codes
-    '1000' |  // Normal Closure
-    '1001' |  // Going Away
-    '1002' |  // Protocol Error
-    '1003' |  // Unsupported Data
-    '1005' |  // No Status Received (reserved)
-    '1006' |  // Abnormal Closure (reserved)
-    '1007' |  // Invalid frame payload data
-    '1008' |  // Policy Violation
-    '1009' |  // Message Too Big
-    '1010' |  // Mandatory Extension
-    '1011' |  // Internal Server Error
-    '1012' |  // Service Restart
-    '1013' |  // Try Again Later
-    '1014' |  // Bad Gateway
-    '1015' |  // TLS handshake (reserved)
-    // Custom application codes (3000-3999)
-    '3000' | '3001' | '3002' | '3003' | '3004' | '3005' | '3006' | '3007' | '3008' | '3009' |
-    // Library/framework codes (4000-4999)
-    '4000' | '4001' | '4002' | '4003' | '4004' | '4005' | '4006' | '4007' | '4008' | '4009'
-;
-
-// Error/Event mapping for REST endpoints
-ErrorMapping:
-  '-' status_code=HttpStatusCode ':'
-    'condition:' condition=Expr
-    'message:' message=STRING
-  ';'?
-;
-
-// Event mapping for WebSocket endpoints
-EventMapping:
-  '-' close_code=WebSocketCloseCode ':'
-    'condition:' condition=Expr
-    'message:' message=STRING
-    ('close:' close=BOOL)?
-  ';'?
-;
-
-// Error block for REST endpoints
-ErrorsBlock:
-  'errors:'
-    mappings+=ErrorMapping+
-;
-
-// Events block for WebSocket endpoints
-EventsBlock:
-  'events:'
-    mappings+=EventMapping+
-;
-
-EndpointREST:
-  'Endpoint<' kind='REST' '>' name=ID
-  (
-    'path:' path=STRING
-    'method:' method=HttpVerb
-    (parameters=ParametersBlock)?
-    (request=RequestBlock)?
-    (response=ResponseBlock)?
-    ('summary:' summary=STRING)?
-    (errors=ErrorsBlock)?
-  )
-  'end'
-;
-
-EndpointWS:
-  'Endpoint<' kind='WS' '>' name=ID
-  (
-    'channel:' path=STRING
-    (parameters=ParametersBlock)?
-    (connection=ConnectionBlock)?
-    (publish=PublishBlock)?
-    (subscribe=SubscribeBlock)?
-    ('summary:' summary=STRING)?
-    (events=EventsBlock)?
-  )
-  'end'
-;
-
-// ---------- COMMON ----------
 HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 
 StringList: '[' (items+=STRING (',' items+=STRING)*)? ']' ;

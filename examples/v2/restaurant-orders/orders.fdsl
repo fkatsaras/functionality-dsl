@@ -1,0 +1,176 @@
+// ============================================
+// Restaurant Order System (Singleton-Based)
+// Demonstrates: Singleton CRUD + WebSocket live updates + RBAC
+// Use case: Small restaurant with current active orders state
+// ============================================
+
+// ============================================
+// ROLES & AUTH
+// ============================================
+
+Role customer
+Role kitchen
+Role manager
+
+Auth RestaurantAuth
+  type: jwt
+  secret: "secret-change-in-prod"
+end
+
+// ============================================
+// SERVER
+// ============================================
+
+Server RestaurantAPI
+  host: "0.0.0.0"
+  port: 8080
+  cors: "*"
+  loglevel: info
+  auth: RestaurantAuth
+end
+
+// ============================================
+// SOURCES (External APIs)
+// ============================================
+
+// Current menu state (singleton)
+Source<REST> MenuState
+  base_url: "http://dummy-restaurant:9001/menu"
+  operations: [read, update]
+end
+
+// Current active orders (singleton)
+Source<REST> ActiveOrdersState
+  base_url: "http://dummy-restaurant:9001/active-orders"
+  operations: [read, update]
+end
+
+// Kitchen dashboard state (singleton)
+Source<REST> KitchenDashboard
+  base_url: "http://dummy-restaurant:9001/kitchen"
+  operations: [read]
+end
+
+// Live order events
+Source<WS> OrderEventsWS
+  channel: "ws://dummy-restaurant:9001/ws/events"
+  operations: [subscribe, publish]
+end
+
+// ============================================
+// BASE ENTITIES (Singletons - no @id)
+// ============================================
+
+Entity RawMenu
+  attributes:
+    - items: array;
+    - lastUpdated: string @readonly;
+  source: MenuState
+  access: public
+end
+
+Entity RawActiveOrders
+  attributes:
+    - orders: array;
+    - totalActive: integer;
+    - lastOrderTime: string @readonly;
+  source: ActiveOrdersState
+  access:
+    read: public
+    update: [kitchen, manager]
+end
+
+Entity RawKitchen
+  attributes:
+    - pendingCount: integer;
+    - preparingCount: integer;
+    - readyCount: integer;
+    - avgPrepTime: number;
+  source: KitchenDashboard
+  access: [kitchen, manager]
+end
+
+Entity RawOrderEvent
+  attributes:
+    - eventType: string;
+    - orderNumber: integer;
+    - customerName: string;
+    - items: array;
+    - timestamp: string;
+  source: OrderEventsWS
+  access: public
+end
+
+// ============================================
+// COMPUTED ENTITIES (Transformations)
+// ============================================
+
+Entity Menu(RawMenu)
+  attributes:
+    - items: array = RawMenu.items;
+    - lastUpdated: string = RawMenu.lastUpdated;
+    - totalItems: integer = len(RawMenu.items);
+    - availableItems: array = filter(RawMenu.items, item => item["available"]);
+    - availableCount: integer = len(filter(RawMenu.items, item => item["available"]));
+  access: public
+end
+
+Entity ActiveOrders(RawActiveOrders)
+  attributes:
+    - orders: array = RawActiveOrders.orders;
+    - totalActive: integer = RawActiveOrders.totalActive;
+    - lastOrderTime: string = RawActiveOrders.lastOrderTime;
+    - pendingOrders: array = filter(RawActiveOrders.orders, o => o["status"] == "pending");
+    - preparingOrders: array = filter(RawActiveOrders.orders, o => o["status"] == "preparing");
+    - readyOrders: array = filter(RawActiveOrders.orders, o => o["status"] == "ready");
+    - totalRevenue: number = sum(map(RawActiveOrders.orders, o => o["total"]));
+  access: public
+end
+
+Entity KitchenStats(RawKitchen)
+  attributes:
+    - pendingCount: integer = RawKitchen.pendingCount;
+    - preparingCount: integer = RawKitchen.preparingCount;
+    - readyCount: integer = RawKitchen.readyCount;
+    - avgPrepTime: number = RawKitchen.avgPrepTime;
+    - totalOrders: integer = RawKitchen.pendingCount + RawKitchen.preparingCount + RawKitchen.readyCount;
+    - isSlammed: boolean = KitchenStats.totalOrders > 10;
+    - statusSummary: string = toString(RawKitchen.pendingCount) + " pending, " + toString(RawKitchen.preparingCount) + " cooking, " + toString(RawKitchen.readyCount) + " ready";
+  access: [kitchen, manager]
+end
+
+Entity OrderEvent(RawOrderEvent)
+  attributes:
+    - eventType: string = RawOrderEvent.eventType;
+    - orderNumber: integer = RawOrderEvent.orderNumber;
+    - customerName: string = RawOrderEvent.customerName;
+    - items: array = RawOrderEvent.items;
+    - timestamp: string = RawOrderEvent.timestamp;
+    - itemCount: integer = len(RawOrderEvent.items);
+    - displayMessage: string = RawOrderEvent.eventType + ": Order #" + toString(RawOrderEvent.orderNumber) + " - " + RawOrderEvent.customerName;
+  access: public
+  // Auto-generates: /ws/orderevent (subscribe from external)
+end
+
+// ============================================
+// COMMAND ENTITY (Client → System via WS)
+// ============================================
+
+Entity OrderCommand
+  attributes:
+    - action: string;
+    - orderNumber: integer;
+    - data: object;
+  access: [customer, kitchen, manager]
+  // Auto-generates: /ws/ordercommand (publish from client)
+end
+
+Entity FormattedOrderCommand(OrderCommand)
+  attributes:
+    - command: string = upper(OrderCommand.action);
+    - orderId: integer = OrderCommand.orderNumber;
+    - payload: object = OrderCommand.data;
+    - timestamp: string = toString(time());
+  target: OrderEventsWS
+  // Sends to external WS
+end

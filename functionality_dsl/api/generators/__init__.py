@@ -2,17 +2,10 @@
 Code generators for FDSL.
 
 Organized into:
-- legacy/: OLD SYNTAX (v1 - endpoint-based)
-- entity/: NEW SYNTAX (v2 - entity-centric exposure)
+- entity/: Entity-centric API exposure (v2 syntax)
 - source/: External API clients (REST/WebSocket)
 - core/: Domain models, infrastructure, OpenAPI
 """
-
-# Legacy generators (v1 syntax)
-from .legacy import (
-    generate_rest_endpoint,
-    generate_websocket_router,
-)
 
 # Entity-centric generators (v2 syntax)
 from .entity import (
@@ -37,9 +30,6 @@ from .core import (
 )
 
 __all__ = [
-    # Legacy (v1)
-    "generate_rest_endpoint",
-    "generate_websocket_router",
     # Entity (v2)
     "generate_entity_router",
     "generate_entity_service",

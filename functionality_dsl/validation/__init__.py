@@ -57,6 +57,10 @@ from functionality_dsl.validation.rbac_validators import (
     validate_server_auth_reference,
 )
 
+from functionality_dsl.validation.source_validators import (
+    validate_source_syntax,
+)
+
 __all__ = [
     # Expression validators
     "_loop_var_names",

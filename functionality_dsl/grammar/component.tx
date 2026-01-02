@@ -58,7 +58,7 @@ TableComponent:
 
 LiveTableComponent:
   'Component' '<' 'LiveTable' '>' name=ID
-  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
+  'entity:' entity_ref=[entity.Entity]
   ('arrayField:' arrayField=STRING)?
   'keyField:' keyField=STRING
   (
@@ -72,7 +72,7 @@ LiveTableComponent:
 
 ObjectViewComponent:
   'Component' '<' 'ObjectView' '>' name=ID
-  'endpoint:' endpoint=[entity.Endpoint]
+  'entity:' entity_ref=[entity.Entity]
   'fields:' fields=StringList                // explicit list of attributes to display
   ('label:' label=STRING)?
   'end'
@@ -144,7 +144,7 @@ ActionOperation:
 QueryFormComponent:
   'Component' '<' 'QueryForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('submitLabel:' submitLabel=STRING)?
   )#
@@ -154,7 +154,7 @@ QueryFormComponent:
 TextFormComponent:
   'Component' '<' 'TextForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('label:' label=STRING)?
     ('placeholder:' placeholder=STRING)?
     ('submitLabel:' submitLabel=STRING)?
@@ -165,7 +165,7 @@ TextFormComponent:
 FileUploadFormComponent:
   'Component' '<' 'FileUploadForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('label:' label=STRING)?
     ('accept:' accept=STRING)?
     ('maxSize:' maxSize=INT)?
@@ -176,7 +176,7 @@ FileUploadFormComponent:
 
 InputComponent:
   'Component' '<' 'Input' '>' name=ID
-  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
+  'entity:' entity_ref=[entity.Entity]
   ( ('label:' label=STRING)
   | ('placeholder:' placeholder=STRING)
   | ('initial:' initial=STRING)
@@ -187,7 +187,7 @@ InputComponent:
 
 LiveViewComponent:
   'Component' '<' 'LiveView' '>' name=ID
-  ('entity:' entity_ref=[entity.Entity] | 'endpoint:' endpoint=[EndpointWS])
+  'entity:' entity_ref=[entity.Entity]
   'fields:' fields=StringList
   ( ('label:' label=STRING)
   )*
@@ -207,7 +207,7 @@ ToggleComponent:
 
 CameraComponent:
   'Component' '<' 'Camera' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity' ':' entity_ref=[entity.Entity]
   ( ('label:' label=STRING)
   )*
   'end'
@@ -216,7 +216,7 @@ CameraComponent:
 DownloadFormComponent:
   'Component' '<' 'DownloadForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('filename:' filename=STRING)?
     ('buttonText:' buttonText=STRING)?
     ('params:' '[' params+=ID (',' params+=ID)* ']')?
@@ -228,7 +228,7 @@ DownloadFormComponent:
 
 LiveMetricsComponent:
   'Component' '<' 'LiveMetrics' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity' ':' entity_ref=[entity.Entity]
   'metrics:' '[' metrics+=STRING (',' metrics+=STRING)* ']'
   ( ('label:' label=STRING)
   )*
@@ -237,7 +237,7 @@ LiveMetricsComponent:
 
 MapComponent:
   'Component' '<' 'Map' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity' ':' entity_ref=[entity.Entity]
   'warehouseLat:' warehouseLat=FLOAT
   'warehouseLon:' warehouseLon=FLOAT
   (

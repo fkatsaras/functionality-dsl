@@ -41,6 +41,7 @@ from functionality_dsl.validation import (
     validate_accesscontrol_dependencies,
     validate_role_references,
     validate_server_auth_reference,
+    validate_source_syntax,
 )
 
 # Import object processors
@@ -377,7 +378,8 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(_validate_crud_blocks)
     mm.register_model_processor(_validate_entity_crud_rules)  # NEW: Validate CRUD rules
     mm.register_model_processor(_validate_permissions)  # OLD SYNTAX: Validate permissions/RBAC in expose blocks
-    mm.register_model_processor(_validate_source_operations)  # NEW SYNTAX: Validate source operations
+    mm.register_model_processor(validate_source_syntax)  # NEW: Validate source syntax (before RBAC validation)
+    mm.register_model_processor(_validate_source_operations)  # NEW SYNTAX: Validate source operations (RBAC)
     mm.register_model_processor(_validate_entity_access_blocks)  # NEW SYNTAX: Validate entity access blocks
 
     return mm
