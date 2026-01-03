@@ -2,12 +2,12 @@
 // Multi-Crypto Price Ticker - WebSocket with Latest Tick Synchronization
 // =============================================================================
 // Demonstrates:
-// - Multiple WebSocket sources (BTC, ETH, SOL from Binance)
+// - Multiple WebSocket sources (ETH, BNB, SOL from Binance)
 // - Composite inbound entity aggregating multiple WS streams
 // - Latest tick synchronization strategy (show most recent from each)
-// - Real-time chart with multiple series
-// - Market data: OHLC candles, 24h stats (REST)
-// - Order book snapshots and deltas (REST + WebSocket)
+// - Advanced functional programming: filter(), map(), any(), all(), len(), sum()
+// - Real-time UI components: LiveChart + LiveTable
+// - Market analysis with computed metrics and sentiment detection
 // =============================================================================
 
 Server CryptoTicker
@@ -21,14 +21,17 @@ end
 // =============================================================================
 // EXTERNAL WEBSOCKET SOURCES (Binance real-time ticker streams)
 // =============================================================================
-
-Source<WS> BinanceBTC
-  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
-  operations: [subscribe]
-end
+// Using coins with similar price ranges for better comparison:
+// - ETH (~$3,500), BNB (~$600), SOL (~$200)
+// =============================================================================
 
 Source<WS> BinanceETH
   channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BinanceBNB
+  channel: "wss://stream.binance.com:9443/ws/bnbusdt@ticker"
   operations: [subscribe]
 end
 
@@ -42,17 +45,17 @@ end
 // BASE ENTITIES (Raw ticks from external WebSocket sources)
 // =============================================================================
 
-Entity BTCTick
+Entity ETHTick
   type: inbound
-  source: BinanceBTC
+  source: BinanceETH
   attributes:
     - c: string;  // Current price (Binance sends as string)
     - E: integer; // Event time (milliseconds)
 end
 
-Entity ETHTick
+Entity BNBTick
   type: inbound
-  source: BinanceETH
+  source: BinanceBNB
   attributes:
     - c: string;
     - E: integer;
@@ -76,25 +79,84 @@ end
 // - This is handled automatically by the generated WebSocket router
 // =============================================================================
 
-Entity CryptoPrices(BTCTick, ETHTick, SOLTick)
+Entity CryptoPrices(ETHTick, BNBTick, SOLTick)
   type: inbound
   attributes:
-    - timestamp: integer = BTCTick.E;
-    - btc_price: number = toNumber(BTCTick.c);
+    - timestamp: integer = ETHTick.E;
     - eth_price: number = toNumber(ETHTick.c);
+    - bnb_price: number = toNumber(BNBTick.c);
     - sol_price: number = toNumber(SOLTick.c);
   access: public
   // Auto-generates: ws://localhost:8080/ws/cryptoprices
 end
 
 // =============================================================================
-// UI COMPONENT (Multi-series real-time chart)
+// ADVANCED COMPOSITE - Price Movement Analysis
+// =============================================================================
+// Demonstrates: filter(), any(), all(), map(), len(), sum(), round()
+// Analyzes which coins are above/below market average
+// Identifies market-wide trends (bull/bear signals)
 // =============================================================================
 
+Entity MarketAnalysis(CryptoPrices)
+  type: inbound
+  attributes:
+    - timestamp: integer = CryptoPrices.timestamp;
+    - coins: array = [
+        {"name": "ETH", "price": CryptoPrices.eth_price, "symbol": "Ethereum"},
+        {"name": "BNB", "price": CryptoPrices.bnb_price, "symbol": "Binance Coin"},
+        {"name": "SOL", "price": CryptoPrices.sol_price, "symbol": "Solana"}
+      ];
+    - total_coins: integer = len(coins);
+    - prices: array = map(coins, c => c["price"]);
+    - average_price: number = round(sum(prices) / total_coins, 2);
+    - above_average: array = filter(coins, c => c["price"] > average_price);
+    - below_average: array = filter(coins, c => c["price"] <= average_price);
+    - above_avg_count: integer = len(above_average);
+    - below_avg_count: integer = len(below_average);
+    - above_avg_names: array = map(above_average, c => c["name"]);
+    - below_avg_names: array = map(below_average, c => c["name"]);
+    - all_above_200: boolean = all(map(prices, p => p > 200));
+    - any_below_100: boolean = any(map(prices, p => p < 100));
+    - market_sentiment: string = "bullish" if above_avg_count >= 2 else "bearish";
+    - price_spread: number = round(max(prices) - min(prices), 2);
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/marketanalysis
+end
+
+// =============================================================================
+// UI COMPONENTS - Dashboard Layout
+// =============================================================================
+
+// Main price chart - shows all three coins
 Component<LiveChart> CryptoChart
   entity: CryptoPrices
-  seriesLabels: ["Bitcoin", "Ethereum", "Solana"]
+  seriesLabels: ["Ethereum", "Binance Coin", "Solana"]
   xLabel: "Time"
-  yLabel: "Price (USDT / 100)"
+  yLabel: "Price (USDT)"
   windowSize: 50
+end
+
+// Market metrics cards - displays key computed statistics
+Component<LiveMetrics> MarketMetrics
+  entity: MarketAnalysis
+  metrics: ["average_price", "price_spread", "above_avg_count", "below_avg_count"]
+  label: "Market Analysis Dashboard"
+end
+
+// Individual price cards
+Component<LiveMetrics> PriceMetrics
+  entity: CryptoPrices
+  metrics: ["eth_price", "bnb_price", "sol_price"]
+  label: "Live Crypto Prices"
+end
+
+// Market sentiment gauge
+Component<Gauge> SentimentGauge
+  entity: MarketAnalysis
+  value: "above_avg_count"
+  min: 0
+  max: 3
+  label: "Coins Above Average"
+  unit: "coins"
 end 

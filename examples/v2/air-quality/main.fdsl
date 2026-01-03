@@ -48,6 +48,7 @@ end
 // =============================================================================
 
 Entity LondonAir
+  source: LondonAirQuality
   attributes:
     - latitude: number;
     - longitude: number;
@@ -58,11 +59,11 @@ Entity LondonAir
     - elevation: number?;
     - hourly_units: object;
     - hourly: object;  // { time: [], pm10: [], pm2_5: [], carbon_monoxide: [], ... }
-  source: LondonAirQuality
   access: public
 end
 
 Entity ParisAir
+  source: ParisAirQuality
   attributes:
     - latitude: number;
     - longitude: number;
@@ -73,11 +74,11 @@ Entity ParisAir
     - elevation: number?;
     - hourly_units: object;
     - hourly: object;
-  source: ParisAirQuality
   access: public
 end
 
 Entity BeijingAir
+  source: BeijingAirQuality
   attributes:
     - latitude: number;
     - longitude: number;
@@ -88,11 +89,11 @@ Entity BeijingAir
     - elevation: number?;
     - hourly_units: object;
     - hourly: object;
-  source: BeijingAirQuality
   access: public
 end
 
 Entity LosAngelesAir
+  source: LosAngelesAirQuality
   attributes:
     - latitude: number;
     - longitude: number;
@@ -103,7 +104,6 @@ Entity LosAngelesAir
     - elevation: number?;
     - hourly_units: object;
     - hourly: object;
-  source: LosAngelesAirQuality
   access: public 
 end
 
@@ -144,7 +144,7 @@ Entity CityComparison(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
         "uv_index": get(LosAngelesAir.hourly, "uv_index", [])[0]
       }
     ];
-  operations: [read]
+  access: public
 end
 
 // =============================================================================
@@ -170,7 +170,7 @@ Entity PM25Trends(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
           "los_angeles": point[4]
         }
       );
-  operations: [read]
+  access: public
 end
 
 // =============================================================================
@@ -230,7 +230,7 @@ Entity PollutionStats(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
         )
       }
     ];
-  operations: [read]
+  access: public
 end
 
 // =============================================================================
