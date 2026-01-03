@@ -25,18 +25,22 @@ end
 
 Source<REST> LondonAirQuality
   base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=51.51&longitude=-0.13&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  operations: [read]
 end
 
 Source<REST> ParisAirQuality
   base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=48.85&longitude=2.35&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  operations: [read]
 end
 
 Source<REST> BeijingAirQuality
   base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=39.90&longitude=116.40&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  operations: [read]
 end
 
 Source<REST> LosAngelesAirQuality
   base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=34.05&longitude=-118.24&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  operations: [read]
 end
 
 // =============================================================================
@@ -55,8 +59,7 @@ Entity LondonAir
     - hourly_units: object;
     - hourly: object;  // { time: [], pm10: [], pm2_5: [], carbon_monoxide: [], ... }
   source: LondonAirQuality
-  expose:
-    operations: [read]
+  access: public
 end
 
 Entity ParisAir
@@ -71,8 +74,7 @@ Entity ParisAir
     - hourly_units: object;
     - hourly: object;
   source: ParisAirQuality
-  expose:
-    operations: [read]
+  access: public
 end
 
 Entity BeijingAir
@@ -87,8 +89,7 @@ Entity BeijingAir
     - hourly_units: object;
     - hourly: object;
   source: BeijingAirQuality
-  expose:
-    operations: [read]
+  access: public
 end
 
 Entity LosAngelesAir
@@ -103,8 +104,7 @@ Entity LosAngelesAir
     - hourly_units: object;
     - hourly: object;
   source: LosAngelesAirQuality
-  expose:
-    operations: [read]
+  access: public 
 end
 
 // =============================================================================
@@ -144,9 +144,7 @@ Entity CityComparison(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
         "uv_index": get(LosAngelesAir.hourly, "uv_index", [])[0]
       }
     ];
-
-  expose:
-    operations: [read]
+  operations: [read]
 end
 
 // =============================================================================
@@ -172,9 +170,7 @@ Entity PM25Trends(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
           "los_angeles": point[4]
         }
       );
-
-  expose:
-    operations: [read]
+  operations: [read]
 end
 
 // =============================================================================
@@ -234,9 +230,7 @@ Entity PollutionStats(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
         )
       }
     ];
-
-  expose:
-    operations: [read]
+  operations: [read]
 end
 
 // =============================================================================

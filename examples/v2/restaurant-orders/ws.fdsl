@@ -1,0 +1,48 @@
+// ============================================
+// WebSocket API - Live Order Tracking
+// Real-time order status updates (subscribe + publish)
+// ============================================
+
+// ============================================
+// SOURCES (WebSocket)
+// ============================================
+
+// Live order status updates
+Source<WS> OrderStatusWS
+  channel: "ws://dummy-restaurant:9001/ws/orders"
+  operations: [publish, subscribe]
+end
+
+// ============================================
+// SUBSCRIBE: External WS → Client
+// Receive order status updates from kitchen
+// ============================================
+
+Entity RawOrderUpdate
+  attributes:
+    - orderId: string;
+    - customerName: string;
+    - status: string;
+    - items: array;
+    - total: number;
+    - timestamp: string;
+  source: OrderStatusWS
+  access: public
+end
+
+Entity OrderUpdate(RawOrderUpdate)
+  attributes:
+    - orderId: string = RawOrderUpdate.orderId;
+    - customerName: string = RawOrderUpdate.customerName;
+    - status: string = RawOrderUpdate.status;
+    - items: array = RawOrderUpdate.items;
+    - total: number = RawOrderUpdate.total;
+    - timestamp: string = RawOrderUpdate.timestamp;
+    - itemCount: integer = len(RawOrderUpdate.items);
+    - displayMessage: string = RawOrderUpdate.status + " Order #" + RawOrderUpdate.orderId + " - " + RawOrderUpdate.customerName + " (" + RawOrderUpdate.status + ")";
+  target: OrderStatusWS
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/orderupdate
+  // Subscribe: receives updates from external WS
+  // Publish: sends status changes to external WS
+end
