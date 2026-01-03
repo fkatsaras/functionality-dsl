@@ -1,52 +1,100 @@
-// Cryptocurrency Price Ticker - NEW SYNTAX (Entity-Centric WebSocket)
-// Demonstrates: Real-time WebSocket streaming with entity exposure
+// =============================================================================
+// Multi-Crypto Price Ticker - WebSocket with Latest Tick Synchronization
+// =============================================================================
+// Demonstrates:
+// - Multiple WebSocket sources (BTC, ETH, SOL from Binance)
+// - Composite inbound entity aggregating multiple WS streams
+// - Latest tick synchronization strategy (show most recent from each)
+// - Real-time chart with multiple series
+// - Market data: OHLC candles, 24h stats (REST)
+// - Order book snapshots and deltas (REST + WebSocket)
+// =============================================================================
 
-Server BinanceWS
+Server CryptoTicker
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
 end
 
-// ============================================
-// Base Schema Entity (from external WebSocket)
-// ============================================
 
-// Raw price tick from Binance (schema-only, from external WS)
-Entity BTCRaw
-  attributes:
-    - c: number;  // Current price
-  source: BinanceBTCUSDT
-end
+// =============================================================================
+// EXTERNAL WEBSOCKET SOURCES (Binance real-time ticker streams)
+// =============================================================================
 
-// ============================================
-// Transformation Entity (with computed timestamp)
-// ============================================
-
-// Price with timestamp - exposes WebSocket channel
-Entity Prices(BTCRaw)
-  attributes:
-    - t: string = formatDate(now(), "YYYY-MM-DD HH:mm:ss");
-    - btc: number = BTCRaw.c;
-  expose:
-    operations: [subscribe]
-end
-
-// ============================================
-// External WebSocket Source (Binance ticker)
-// ============================================
-
-Source<WS> BinanceBTCUSDT
+Source<WS> BinanceBTC
   channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe]
 end
 
-// ============================================
-// UI Component
-// ============================================
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
 
-// Component<LiveChart> BitcoinPrice
-//   entity: Prices
-//   seriesLabels: ["BTC Price"]
-//   xLabel: string<datetime> "Time"
-//   yLabel: number "USDT"
-// end
+Source<WS> BinanceSOL
+  channel: "wss://stream.binance.com:9443/ws/solusdt@ticker"
+  operations: [subscribe]
+end
+
+
+// =============================================================================
+// BASE ENTITIES (Raw ticks from external WebSocket sources)
+// =============================================================================
+
+Entity BTCTick
+  type: inbound
+  source: BinanceBTC
+  attributes:
+    - c: string;  // Current price (Binance sends as string)
+    - E: integer; // Event time (milliseconds)
+end
+
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - c: string;
+    - E: integer;
+end
+
+Entity SOLTick
+  type: inbound
+  source: BinanceSOL
+  attributes:
+    - c: string;
+    - E: integer;
+end
+
+// =============================================================================
+// COMPOSITE ENTITY (Aggregates latest prices from all 3 sources)
+// =============================================================================
+// Strategy: Latest Tick Synchronization
+// - Each WebSocket source emits independently
+// - Composite entity maintains latest value from each source
+// - Client receives update whenever ANY source emits (with all latest values)
+// - This is handled automatically by the generated WebSocket router
+// =============================================================================
+
+Entity CryptoPrices(BTCTick, ETHTick, SOLTick)
+  type: inbound
+  attributes:
+    - timestamp: integer = BTCTick.E;
+    - btc_price: number = toNumber(BTCTick.c);
+    - eth_price: number = toNumber(ETHTick.c);
+    - sol_price: number = toNumber(SOLTick.c);
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/cryptoprices
+end
+
+// =============================================================================
+// UI COMPONENT (Multi-series real-time chart)
+// =============================================================================
+
+Component<LiveChart> CryptoChart
+  entity: CryptoPrices
+  seriesLabels: ["Bitcoin", "Ethereum", "Solana"]
+  xLabel: "Time"
+  yLabel: "Price (USDT / 100)"
+  windowSize: 50
+end 

@@ -4,7 +4,7 @@ Builds a mapping from entities to their API exposure configuration.
 """
 
 from textx import get_children_of_type
-from functionality_dsl.validation.exposure_validators import get_id_field_from_path, _find_target_in_descendants
+from functionality_dsl.validation.exposure_validators import get_id_field_from_path
 from pluralizer import Pluralizer
 
 pluralizer = Pluralizer()
@@ -110,52 +110,36 @@ def build_exposure_map(model):
         parents = [ref.entity for ref in parent_refs] if parent_refs else []
         is_composite = len(parents) > 0
 
-        # Get direct source/target first (needed for exposure check)
-        source_ref = getattr(entity, "source", None)
-        target_list_obj = getattr(entity, "targets", None)
-        has_target = target_list_obj is not None
-
         # Entity must have:
-        # - expose block (for WebSocket with explicit operations), OR
-        # - source + access (for REST/WS subscribe entities), OR
-        # - target + access (for WS publish entities), OR
+        # - source + access (for REST/WS entities), OR
         # - parents + access (for composite/transformation entities)
         # NEW SYNTAX: access can be 'public', [roles], or per-operation rules
         has_access = access is not None
 
-        if not expose and not ((source_ref or has_target or is_composite) and has_access):
+        if not expose and not ((source_ref or is_composite) and has_access):
             continue
 
         # Get direct source or find source through parents
         source = source_ref
 
-        # Handle target(s) - can be single or multiple (fan-out)
-        if target_list_obj:
-            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
-            targets_attr = getattr(target_list_obj, "targets", None)
-            if targets_attr:
-                # List form
-                target_list = targets_attr if isinstance(targets_attr, list) else [targets_attr]
-            else:
-                # Single form - the attribute itself is the target reference
-                target_list = [target_list_obj]
-
-            # For backward compatibility, store first target as 'target'
-            target = target_list[0] if target_list else None
-        else:
-            target = None
-            target_list = []
-
         # For transformation entities, find source from parent chain
         if not source and parents:
             source = _find_source_in_parents(parents)
 
-        # Get operations list from:
-        # 1. Expose block operations (WebSocket entities), OR
-        # 2. Source operations (REST entities with access: true)
+        # Get operations list
         operations = []
 
-        if expose:
+        # PRIORITY 1: Check for WebSocket type: field (NEW SYNTAX - takes precedence)
+        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        if ws_flow_type and has_access:
+            if ws_flow_type == "inbound":
+                # Inbound: subscribe from external WS
+                operations = ['subscribe']
+            elif ws_flow_type == "outbound":
+                # Outbound: publish to external WS
+                operations = ['publish']
+        # PRIORITY 2: Expose block operations (WebSocket entities with explicit operations)
+        elif expose:
             # Expose block: explicit operations list (for WebSocket or old syntax)
             # Check if expose is boolean (expose: true) or has operations
             expose_value = getattr(expose, "expose_value", None)
@@ -170,6 +154,7 @@ def build_exposure_map(model):
             else:
                 # Old syntax: expose block with operations list
                 operations = getattr(expose, "operations", []) or []
+        # PRIORITY 3: Source operations (REST entities with access: true)
         elif source and has_access:
             # New syntax: get operations from source
             # Try new syntax first (operations_list)
@@ -190,46 +175,8 @@ def build_exposure_map(model):
             if is_composite and source_type != "WS":
                 operations = ['read']
 
-        # CRITICAL: Infer WebSocket operations if no operations found
-        # If entity has access: but no explicit operations, infer from source/target
-        if not operations and has_access:
-            # Check if source is WebSocket
-            source_type = getattr(source, "kind", None) if source else None
-            is_ws_source = source_type == "WS"
-
-            # Check if any target is WebSocket
-            is_ws_target = False
-            if target_list:
-                for tgt in target_list:
-                    if getattr(tgt, "kind", None) == "WS":
-                        is_ws_target = True
-                        break
-
-            # Infer WebSocket operations
-            if is_ws_source and is_ws_target:
-                # Bidirectional WS entity
-                operations = ['subscribe', 'publish']
-            elif is_ws_source:
-                # Subscribe-only WS entity
-                operations = ['subscribe']
-            elif is_ws_target:
-                # Publish-only WS entity
-                operations = ['publish']
-
-        # For publish entities, find target in descendants (transformation chain)
-        # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
-        has_publish = "publish" in operations
-
-        if not target_list and has_publish:
-            # Try to find target in descendants
-            descendant_target = _find_target_in_descendants(entity, model)
-            if descendant_target:
-                target = descendant_target
-                target_list = [descendant_target]
-
-        # If entity has neither source nor target, skip it
-        if not source and not target:
-            # No source or target found (validation should catch this)
+        # If entity has no source, skip it (unless it's a composite)
+        if not source and not is_composite:
             continue
 
         # DSL Semantic: 'read' operation means BOTH list and read
@@ -306,8 +253,6 @@ def build_exposure_map(model):
             "ws_channel": ws_channel,
             "operations": operations,
             "source": source,
-            "target": target,  # Primary target (first in list)
-            "targets": target_list,  # All targets (for fan-out)
             "id_field": id_field,
             "is_singleton": is_singleton,  # True if singleton (no @id, identity from context)
             "path_params": path_params,

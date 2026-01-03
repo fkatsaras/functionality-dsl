@@ -69,48 +69,6 @@ def _find_source_in_parents(parents):
     return None
 
 
-def _find_target_in_descendants(entity, model):
-    """
-    Find a target by traversing composite descendants of the given entity.
-    Returns the first target found in descendants.
-
-    For publish flows: Client → Base Entity (expose) → Composite (target:) → External WS
-    """
-    from collections import deque
-
-    # Get all entities in the model
-    all_entities = get_children_of_type("Entity", model)
-
-    # BFS to find descendants
-    queue = deque([entity])
-    visited = set()
-
-    while queue:
-        current = queue.popleft()
-        current_id = id(current)
-
-        if current_id in visited:
-            continue
-        visited.add(current_id)
-
-        # Check if current entity has target(s)
-        target_list_obj = getattr(current, "targets", None)
-        if target_list_obj:
-            # Extract targets from TargetList object
-            targets = getattr(target_list_obj, "targets", []) or []
-            if targets:
-                return targets[0]  # Return first target for compatibility
-
-        # Find entities that have current as parent
-        for candidate in all_entities:
-            parent_refs = getattr(candidate, "parents", []) or []
-            for parent_ref in parent_refs:
-                parent_entity = parent_ref.entity if hasattr(parent_ref, "entity") else parent_ref
-                if id(parent_entity) == current_id:
-                    queue.append(candidate)
-
-    return None
-
 
 def _validate_exposure_blocks(model, metamodel=None):
     """
@@ -129,34 +87,22 @@ def _validate_exposure_blocks(model, metamodel=None):
         if not expose:
             continue
 
-        # Entity with expose must have a source OR target (direct or inherited from parents)
+        # Entity with expose must have a source (direct or inherited from parents)
         source = getattr(entity, "source", None)
-        target = getattr(entity, "target", None)
         parent_entities = _get_parent_entities(entity)
 
         # For transformation entities, find source in parent chain
         if not source and parent_entities:
             source = _find_source_in_parents(parent_entities)
 
-        # For publish entities, check for target in descendants (transformation chain)
-        operations = getattr(expose, "operations", [])
-        has_publish = "publish" in operations
-        is_publish_only = "publish" in operations and "subscribe" not in operations and len(operations) == 1
-
-        if not target and has_publish:
-            target = _find_target_in_descendants(entity, model)
-
-        if not source and not target:
+        if not source:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'expose' block but no 'source:' or 'target:' binding. "
-                f"Exposed entities must be bound to a Source or Target (directly or through parent entities/descendants).",
+                f"Entity '{entity.name}' has 'expose' block but no 'source:' binding. "
+                f"Exposed entities must be bound to a Source (directly or through parent entities).",
                 **get_location(entity),
             )
 
-        # If entity is publish-only with target but no source, that's valid
-        if not source and target and is_publish_only:
-            # Skip source validation for publish-only entities with target
-            continue
+        operations = getattr(expose, "operations", [])
 
         # Infer REST or WebSocket based on operations
         rest_ops = {'list', 'read', 'create', 'update', 'delete'}
@@ -318,77 +264,42 @@ def _validate_rest_expose(entity, expose, source):
 
 def _validate_ws_expose(entity, expose, source, model):
     """
-    Validate WebSocket exposure configuration (NEW SYNTAX - auto-generated paths).
+    Validate WebSocket exposure configuration (NEW SYNTAX - type-based flow direction).
+
+    WebSocket entities must have:
+    - type: inbound (subscribe from external WS)
+    - type: outbound (publish to external WS)
 
     Channels are ALWAYS auto-generated from entity name.
     Path pattern: /ws/{entity_name_lowercase}
-    No manual channel: field needed (fully symmetric with REST).
     """
-    # WebSocket channels are auto-generated - no validation needed for channel field
+    # Get the WebSocket flow type
+    ws_flow_type = getattr(entity, "ws_flow_type", None)
 
-    # Get operations
-    operations = getattr(expose, "operations", [])
-    if not operations:
+    if not ws_flow_type:
         raise TextXSemanticError(
-            f"Entity '{entity.name}' expose block must define 'operations: [...]'.",
-            **get_location(expose),
+            f"WebSocket entity '{entity.name}' must declare 'type: inbound' or 'type: outbound'.\n\n"
+            f"Example (inbound - subscribe from external WS):\n"
+            f"  Entity {entity.name}\n"
+            f"    type: inbound\n"
+            f"    source: MyWebSocketSource\n"
+            f"    attributes: ...\n"
+            f"  end\n\n"
+            f"Example (outbound - publish to external WS):\n"
+            f"  Entity {entity.name}\n"
+            f"    type: outbound\n"
+            f"    source: MyWebSocketSource\n"
+            f"    attributes: ...\n"
+            f"  end",
+            **get_location(entity),
         )
 
-    # Check that operations are valid for WebSocket
-    ws_ops = {'subscribe', 'publish'}
-    for op in operations:
-        if op not in ws_ops:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' WebSocket expose has invalid operation '{op}'. "
-                f"Valid WebSocket operations: {ws_ops}",
-                **get_location(expose),
-            )
-
-    # CRITICAL: Validate publish operations require target
-    # Publish flow: Client → Entity (expose) → Composite (target:) → External WS
-    # Target can be on exposed entity OR on any composite descendant
-    if "publish" in operations:
-        # Handle new targets field (can be list)
-        target_list_obj = getattr(entity, "targets", None)
-        if target_list_obj:
-            targets = getattr(target_list_obj, "targets", []) or []
-            has_target = len(targets) > 0
-        else:
-            has_target = False
-            targets = []
-
-        # If no direct target, check composite descendants
-        if not has_target:
-            descendant_target = _find_target_in_descendants(entity, model)
-            has_target = descendant_target is not None
-
-        if not has_target:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'publish' operation but no 'target:' binding. "
-                f"Publish operations require a target WebSocket source (directly or in composite descendants).\n\n"
-                f"Example (direct target):\n"
-                f"  Entity {entity.name}\n"
-                f"    attributes: ...\n"
-                f"    target: MyWebSocketTarget\n"
-                f"    access: true\n"
-                f"  end\n\n"
-                f"Example (multiple targets for fan-out):\n"
-                f"  Entity {entity.name}\n"
-                f"    attributes: ...\n"
-                f"    target: [TargetA, TargetB]\n"
-                f"    access: true\n"
-                f"  end\n\n"
-                f"Example (target in composite):\n"
-                f"  Entity {entity.name}\n"
-                f"    attributes: ...\n"
-                f"    access: true\n"
-                f"  end\n\n"
-                f"  Entity Processed{entity.name}({entity.name})\n"
-                f"    attributes: ...\n"
-                f"    target: MyWebSocketTarget\n"
-                f"  end",
-                **get_location(expose),
-            )
+    # Validate that entity has a source
+    if not source:
+        raise TextXSemanticError(
+            f"WebSocket entity '{entity.name}' must have 'source:' field pointing to a Source<WS>.",
+            **get_location(entity),
+        )
 
 
 def _infer_id_field(entity_name, attributes):

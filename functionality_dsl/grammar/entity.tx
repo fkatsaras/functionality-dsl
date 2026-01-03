@@ -48,14 +48,13 @@ Attribute:
 Entity:
   'Entity' name=ID
   ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
-  ('type:' entity_type=EntityType)?
+  ('type:' ws_flow_type=WSFlowType)?
+  ('source:' source=[Source])?
   ('contentType:' content_type=ContentType)?
   (relationships=RelationshipsBlock)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
-  ('source:' source=[Source])?
-  ('target:' targets=TargetList)?
   (filters=FiltersBlock)?
   (expose=ExposeBlock)?
   (access=AccessBlock)?
@@ -68,9 +67,9 @@ ParentRef:
   (alias=ID ':')? entity=[Entity] is_array?='[]'?
 ;
 
-// Entity type declaration (defaults to 'object' if not specified)
-EntityType:
-  'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean'
+// WebSocket flow direction (for WebSocket entities only)
+WSFlowType:
+  'inbound' | 'outbound'
 ;
 
 // Relationships block for composite entities
@@ -119,11 +118,6 @@ ExposePathParamsBlock:
 
 FiltersBlock:
   'filters:' '[' fields+=ID (',' fields+=ID)* ']'
-;
-
-// Target list - single source or array of sources for fan-out
-TargetList:
-  ('[' targets+=[Source] (',' targets+=[Source])* ']') | targets=[Source]
 ;
 
 // Permissions block for RBAC (deprecated - use source operations instead)

@@ -59,10 +59,16 @@ class _BaseComponent:
         return None
     
     def _endpoint_path(self, suffix: str | None = None) -> str:
-        # Get path from entity's expose block (REST or WebSocket)
+        # NEW SYNTAX: Check for type: inbound/outbound (WebSocket flow type)
+        ws_flow_type = getattr(self.entity_ref, "ws_flow_type", None)
+        if ws_flow_type:
+            # WebSocket entity - auto-generate path
+            return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
+
+        # Get path from entity's expose block (REST or WebSocket - old syntax)
         expose = getattr(self.entity_ref, "expose", None)
         if expose:
-            # NEW SYNTAX: Check for operations and channel
+            # OLD SYNTAX: Check for operations and channel
             operations = getattr(expose, "operations", []) or []
             channel = getattr(expose, "channel", None)
 
@@ -520,6 +526,7 @@ class LiveChartComponent(_BaseComponent):
         xLabel=None,
         yLabel=None,
         seriesLabels=None,
+        yScale=None,
         windowSize=None,
         height=None,
     ):
@@ -533,6 +540,7 @@ class LiveChartComponent(_BaseComponent):
         self.yLabel = _strip_quotes(yLabel) if yLabel else None
 
         self.seriesLabels = [_strip_quotes(l) for l in (seriesLabels or [])]
+        self.yScale = float(yScale) if yScale is not None else 1.0  # Global Y-axis scale (zoom)
         self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
         self.height = int(height) if height is not None else 300
 
@@ -540,12 +548,20 @@ class LiveChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
-        # NEW SYNTAX: Validate entity has WebSocket subscribe operation
+        # NEW SYNTAX: Validate entity is inbound WebSocket
         if entity_ref:
+            # Check if entity has type: inbound (new WebSocket syntax)
+            ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+
+            # Also check old syntax (expose with operations)
             expose = getattr(entity_ref, "expose", None)
             operations = getattr(expose, "operations", []) if expose else []
-            if 'subscribe' not in operations:
-                raise ValueError(f"Component '{name}': LiveChart requires entity with 'subscribe' operation for real-time streaming, got {operations}")
+
+            # Valid if either: type: inbound OR has subscribe operation
+            is_valid = ws_flow_type == 'inbound' or 'subscribe' in operations
+
+            if not is_valid:
+                raise ValueError(f"Component '{name}': LiveChart requires entity with 'type: inbound' or 'subscribe' operation for real-time streaming. Entity has type={ws_flow_type}, operations={operations}")
 
         # LEGACY: Validate endpoint type
         if endpoint and endpoint.__class__.__name__ != "EndpointWS":
@@ -558,6 +574,7 @@ class LiveChartComponent(_BaseComponent):
             "xField": self.xField,
             "yField": self.yField,
             "seriesLabels": self.seriesLabels,
+            "yScale": self.yScale,
             "xLabel": self.xLabel,
             "yLabel": self.yLabel,
             "windowSize": self.windowSize,

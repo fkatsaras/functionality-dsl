@@ -108,6 +108,7 @@ LiveChartComponent:
     ('xField:' xField=ID)?
     ('yField:' yField=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
+    ('yScale:' yScale=FLOAT)?
     ('xLabel:' xLabel=STRING)?
     ('yLabel:' yLabel=STRING)?
     ('windowSize:' windowSize=INT)?

@@ -21,6 +21,7 @@
         yMeta?: { type?: string; format?: string; text?: string } | null;
         seriesLabels?: string[] | null;
         seriesColors?: string[] | null;
+        yScale?: number;  // Y-axis scale factor (e.g., 0.01 to divide by 100)
         // Bind to attribute name (like Chart component's 'values: data')
         values?: string;  // Attribute name containing the value to plot
     }>();
@@ -73,10 +74,21 @@
             }
         }
 
-        // Add timestamp and push the row
+        // Add timestamp and apply yScale to numeric fields
         const timestamp = Date.now();
-        const enrichedRow = { ...row, __timestamp: timestamp };
-        series = pushRow(enrichedRow, xKey, yKeys, series, props.windowSize, props.xMeta);
+        const scaleFactor = props.yScale ?? 1.0;
+
+        // Apply scale factor to all Y-axis values
+        const scaledRow: any = { ...row, __timestamp: timestamp };
+        if (scaleFactor !== 1.0) {
+            for (const key of yKeys) {
+                if (typeof scaledRow[key] === 'number') {
+                    scaledRow[key] = scaledRow[key] * scaleFactor;
+                }
+            }
+        }
+
+        series = pushRow(scaledRow, xKey, yKeys, series, props.windowSize, props.xMeta);
     }
 
     onMount(() => {
@@ -138,7 +150,7 @@
             yKeys={yKeys}
         />
 
-        {#if allPoints().length} 
+        {#if allPoints().length}
             <ChartArea
                 {series}
                 {yKeys}
@@ -148,6 +160,7 @@
                 yLabel={props.yLabel}
                 xMeta={props.xMeta}
                 yMeta={props.yMeta}
+                yScale={props.yScale}
                 on:legend={handleLegend}
             />
         {:else}

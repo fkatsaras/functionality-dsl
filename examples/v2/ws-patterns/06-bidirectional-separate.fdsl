@@ -1,45 +1,41 @@
 // =============================================================================
-// PATTERN 6: Bidirectional (Separate Subscribe/Publish Entities)
+// PATTERN 6 (REFINED): Bitypeal with Explicit type
 // =============================================================================
-// RULE: Separate entities for each direction (more control)
 //
-// Subscribe Flow: External WS → SubscribeEntity (source:) → Client
-// Publish Flow:   Client → PublishEntity (target:) → External WS
-//
-// Requirements:
-// 1. Source<WS> with channel URL and operations [subscribe, publish]
-// 2. Subscribe entity with source: binding (can have transformations)
-// 3. Subscribe entity uses access: public
-// 4. Publish entity with target: binding (can have transformations)
-// 5. Publish entity uses access: public
-// 6. Different client paths for send vs receive
+// RULES APPLIED:
+// - Entities declare type: inbound | outbound
+// - Entities declare source: only
+// - inbound entities may be composed
+// - outbound entities may NOT be composed
 // =============================================================================
 
-Server BidirectionalSeparate
+Server BitypealSeparate
   host: "localhost"
   port: 8000
   cors: "*"
   loglevel: debug
 end
 
-// External WebSocket (bidirectional)
+// External WebSocket (bitypeal)
 Source<WS> DeviceWS
   channel: "ws://dummy-ws-patterns:9200/telemetry"
   operations: [subscribe, publish]
 end
 
-// ============== SUBSCRIBE SIDE ==============
-// Receives telemetry data from device
+// ============== INBOUND (SUBSCRIBE) SIDE ==============
+// External WS → Server → Client
 
 Entity RawTelemetry
+  type: inbound
+  source: DeviceWS
   attributes:
     - temp: number;
     - humidity: integer;
-    - timestamp: integer @readonly;
-  source: DeviceWS
+    - timestamp: integer;
 end
 
 Entity ProcessedTelemetry(RawTelemetry)
+  type: inbound
   attributes:
     - temperature_c: number = RawTelemetry.temp;
     - temperature_f: number = round((RawTelemetry.temp * 9/5) + 32, 1);
@@ -47,42 +43,21 @@ Entity ProcessedTelemetry(RawTelemetry)
     - timestamp: integer = RawTelemetry.timestamp;
   access: public
   // Auto-generates path: /ws/processedtelemetry
-  // Inherits 'subscribe' from parent chain
 end
 
-// ============== PUBLISH SIDE ==============
-// Sends commands to device
+// ============== OUTBOUND (PUBLISH) SIDE ==============
+// Client → Server → External WS
 
 Entity DeviceCommand
+  type: outbound
+  source: DeviceWS
   attributes:
     - action: string;
     - value: number;
   access: public
   // Auto-generates path: /ws/devicecommand
-  // Client publishes here (target found in descendant)
 end
 
-Entity FormattedCommand(DeviceCommand)
-  attributes:
-    - command: string = upper(DeviceCommand.action);
-    - parameter: number = DeviceCommand.value;
-    - timestamp: integer = toInt(time());
-  target: DeviceWS
-  // Internal transformation before sending
-end
-
-// Clients use different paths:
-// Subscribe: ws://localhost:8000/ws/processedtelemetry (receive data)
-// Publish: ws://localhost:8000/ws/devicecommand (send commands)
-
-Component<LiveView> TelemetryFeed
-  entity: ProcessedTelemetry
-  fields: ["temperature_c", "temperature_f", "humidity", "timestamp"]
-  label: "Device Telemetry"
-end
-
-Component<Input> CommandInput
-  entity: DeviceCommand
-  label: "Device Control"
-  submitLabel: "Send Command"
-end
+// X NOT ALLOWED (by rule)
+// Entity FormattedCommand(DeviceCommand) { ... }
+// outbound entities cannot be composed

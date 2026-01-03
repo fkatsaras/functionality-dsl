@@ -14,6 +14,9 @@
   {%- if props.get('yLabel') %}
   yLabel="{{ props.get('yLabel') if props.get('yLabel') is string else (props.get('yLabel').get('text') if props.get('yLabel') else '') }}"
   {%- endif %}
+  {%- if props.get('yScale') %}
+  yScale={{ props.get('yScale') }}
+  {%- endif %}
   {%- if props.get('windowSize') %}
   windowSize={{ props.get('windowSize') }}
   {%- endif %}

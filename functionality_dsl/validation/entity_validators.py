@@ -217,37 +217,11 @@ def _validate_computed_attrs(model, metamodel=None):
             # Entity is bound to a source, so it's a schema entity
             schema_entities.add(ent.name)
 
-        # Also check for entities that are parents of entities with target directive
-        # These receive data from WebSocket publish and should be schema entities
-        target_list_obj = getattr(ent, "targets", None)
-        has_target = False
-        if target_list_obj:
-            # TargetList can be: targets+=[Source] (list) OR targets=[Source] (single)
-            targets_attr = getattr(target_list_obj, "targets", None)
-            has_target = targets_attr is not None or target_list_obj is not None
-
-        if has_target:
-            # This entity publishes to external source
-            # If it has parents, add them as schema entities
-            parent_entities = _get_parent_entities(ent)
-            for parent in parent_entities:
-                schema_entities.add(parent.name)
-
-            # If it has NO parents, the entity itself is a schema entity (direct publish)
-            if not parent_entities:
-                schema_entities.add(ent.name)
-
-        # Also check if entity has access: true and a descendant with target
-        # This is for publish flows: Client -> Base (access: true) -> Composite (target:)
-        access = getattr(ent, "access", None)
-        has_access = getattr(access, "access", False) if access else False
-        if has_access and not has_target:
-            # Check if any descendant has target
-            from functionality_dsl.validation.exposure_validators import _find_target_in_descendants
-            descendant_target = _find_target_in_descendants(ent, model)
-            if descendant_target:
-                # This entity receives from client and passes to descendant for publishing
-                schema_entities.add(ent.name)
+        # For WebSocket outbound entities, they are schema entities
+        # (they receive data from client to publish to external WS)
+        ws_flow_type = getattr(ent, "ws_flow_type", None)
+        if ws_flow_type == "outbound":
+            schema_entities.add(ent.name)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is
@@ -984,36 +958,43 @@ def _validate_websocket_entity_relationships(model):
         if not parent_refs:
             continue
 
-        # Count WebSocket parents
+        # Count WebSocket parents and check their types
         from functionality_dsl.api.extractors import find_source_for_entity
         ws_parents = []
+        ws_parent_types = []  # Track the ws_flow_type of each WS parent
 
         for parent in parent_entities:
             source, source_type = find_source_for_entity(parent, model)
             if source_type == "WS":
                 ws_parents.append(parent.name)
+                parent_ws_flow_type = getattr(parent, "ws_flow_type", None)
+                ws_parent_types.append(parent_ws_flow_type)
 
-        # MVP RESTRICTION: Disallow multiple WebSocket parents
+        # RULE: Multiple WebSocket parents are allowed ONLY if they're all the same type (inbound)
         if len(ws_parents) > 1:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has multiple WebSocket parents: {ws_parents}.\n\n"
-                f"MVP RESTRICTION: Multi-source WebSocket aggregation is not supported.\n\n"
-                f"WebSocket messages arrive asynchronously from different sources, making merge semantics complex.\n"
-                f"For aggregating multiple WebSocket streams:\n\n"
-                f"1. Create separate entities for each WebSocket source:\n"
-                f"   Entity SensorAData\n"
-                f"     source: SensorAWS\n"
-                f"     access: true  # Client subscribes to /ws/sensoradata\n"
-                f"   end\n\n"
-                f"   Entity SensorBData\n"
-                f"     source: SensorBWS\n"
-                f"     access: true  # Client subscribes to /ws/sensorbdata\n"
-                f"   end\n\n"
-                f"2. Connect to both WebSocket endpoints from client\n"
-                f"3. Merge streams client-side with your desired logic\n\n"
-                f"This will be supported in a future version with explicit merge strategies.",
-                **get_location(entity)
-            )
+            # Check if all WS parents have the same ws_flow_type
+            unique_types = set(ws_parent_types)
+
+            if len(unique_types) > 1:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has multiple WebSocket parents with different types: {dict(zip(ws_parents, ws_parent_types))}.\n\n"
+                    f"RULE: When aggregating multiple WebSocket sources, all parents must have the same type.\n\n"
+                    f"Valid patterns:\n"
+                    f"- Multiple 'type: inbound' parents (latest-tick synchronization)\n"
+                    f"- Single parent only for other patterns\n\n"
+                    f"Mixed inbound/outbound aggregation is not supported.",
+                    **get_location(entity)
+                )
+
+            # If all parents are NOT inbound, disallow multiple parents
+            if unique_types != {'inbound'}:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has multiple WebSocket parents: {ws_parents}.\n\n"
+                    f"RULE: Multiple WebSocket parents are only allowed for 'type: inbound' aggregation.\n\n"
+                    f"Current parent types: {dict(zip(ws_parents, ws_parent_types))}\n\n"
+                    f"For aggregating multiple inbound streams, ensure all parents have 'type: inbound'.",
+                    **get_location(entity)
+                )
 
         # WebSocket entities should NOT have relationship blocks
         relationships_block = getattr(entity, "relationships", None)
@@ -1025,6 +1006,44 @@ def _validate_websocket_entity_relationships(model):
                     f"Relationships are for REST entities with foreign-key based fetching.\n"
                     f"WebSocket entities use message streaming - remove the 'relationships:' block.",
                     **get_location(relationships_block)
+                )
+
+
+def _validate_outbound_entities_not_composed(model):
+    """
+    Validate that outbound WebSocket entities cannot be composed.
+
+    RULE: Entities with type: outbound CANNOT have children (composite entities).
+
+    Rationale:
+    - Outbound entities receive data from client and forward to external WS
+    - Composition doesn't make sense for publish flow (client sends directly)
+    - Only inbound entities (subscribe flow) can have transformations via composition
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_refs = _get_parent_refs(entity)
+
+        # Skip if no parents
+        if not parent_refs:
+            continue
+
+        # Check if any parent is outbound
+        parent_entities = _get_parent_entities(entity)
+        for parent in parent_entities:
+            parent_ws_flow_type = getattr(parent, "ws_flow_type", None)
+
+            if parent_ws_flow_type == "outbound":
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' cannot extend '{parent.name}' because '{parent.name}' is outbound.\n\n"
+                    f"RULE: Outbound WebSocket entities (type: outbound) cannot be composed.\n\n"
+                    f"Outbound entities receive data from clients and publish to external WebSocket.\n"
+                    f"Composition is only allowed for inbound entities (type: inbound) to transform incoming messages.\n\n"
+                    f"If you need to transform data before publishing:\n"
+                    f"1. Apply transformations client-side before sending\n"
+                    f"2. Or use computed fields in the outbound entity itself",
+                    **get_location(entity)
                 )
 
 
@@ -1352,5 +1371,6 @@ def verify_entities(model):
     # Separate REST and WebSocket relationship validation
     _validate_rest_entity_relationships(model)  # REST: requires relationship blocks for multi-parent
     _validate_websocket_entity_relationships(model)  # WebSocket: join semantics, no relationships needed
+    _validate_outbound_entities_not_composed(model)  # WebSocket: outbound entities cannot be composed
 
     _validate_array_parents(model)  # Validate array parent syntax
