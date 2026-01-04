@@ -34,6 +34,7 @@ end
 // ============================================
 
 Entity RawProfile
+  source: ProfileStore
   attributes:
     - name: string;
     - email: string;
@@ -41,7 +42,6 @@ Entity RawProfile
     - location: string;
     - website: string;
     - joined_date: string @readonly;
-  source: ProfileStore
   access: public
 end
 

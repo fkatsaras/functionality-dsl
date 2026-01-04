@@ -36,14 +36,13 @@ end
 // ============================================================================
 
 Entity User
+  source: UserDB
   attributes:
     - userId: string @id;
     - name: string;
     - email: string;
-  source: UserDB
-  expose:
-    operations: [list, read, create, update, delete]
-    filters: ["email"]
+  // filters: ["email"]
+  access: public
 end
 
 // ============================================================================
@@ -53,16 +52,15 @@ end
 // ============================================================================
 
 Entity Order
+  source: OrderDB
   attributes:
     - orderId: string @id;
     - userId: string;
     - total: number;
     - status: string;
-    - createdAt: string?;
-  source: OrderDB
-  expose:
-    readonly_fields: ["createdAt"]
-    filters: ["status", "userId"]
+    - createdAt: string? @readonly;
+  // filters: ["status", "userId"]
+  access: public
 end
 
 // ============================================================================
@@ -71,68 +69,17 @@ end
 // ============================================================================
 
 Entity OrderItem
+  source: OrderItemDB
   attributes:
     - itemId: string @id;
     - orderId: string;
     - productName: string;
     - quantity: integer;
     - price: number;
-  source: OrderItemDB
-  expose:
-    operations: [list, read, create, update, delete]
-    filters: ["orderId"]
+  // filters: ["orderId"]
+  access: public
 end
 
-// ============================================================================
-// COMPOSITE VIEWS WITH TRANSFORMATIONS (Read-only, no source)
-// Demonstrates: Real business logic and meaningful data transformations
-// ============================================================================
-
-// OrderInvoice - Complete invoice with tax, customer info, and payment details
-// Path: /api/orders/{orderId}/invoice
-// Use Case: Generate invoice for order with calculated tax and totals
-Entity OrderInvoice(Order, User)
-  relationships:
-    - User: Order.userId
-  attributes:
-    - invoiceNumber: string = "INV-" + Order.orderId;
-    - orderId: string = Order.orderId;
-    - orderDate: string = Order.createdAt;
-    - customerName: string = User.name;
-    - customerEmail: string = User.email;
-    - subtotal: number = Order.total;
-    - taxRate: number = 0.08;
-    - taxAmount: number = round(Order.total * 0.08, 2);
-    - grandTotal: number = round(Order.total * 1.08, 2);
-    - status: string = Order.status;
-    - isPaid: boolean = Order.status == "completed";
-    - amountDue: number = round(Order.total * 1.08, 2) if Order.status != "completed" else 0;
-  expose:
-    operations: [read]
-end
-
-// UserOrderHistory - Aggregate statistics about user's ordering behavior
-// Path: /api/users/{userId}/orderhistory
-// Use Case: Customer analytics dashboard showing ordering patterns
-Entity UserOrderHistory(User, Order[])
-  relationships:
-    - Order: User.userId
-  attributes:
-    - userId: string = User.userId;
-    - customerName: string = User.name;
-    - customerEmail: string = User.email;
-    - totalOrders: integer = len(Order);
-    - totalSpent: number = round(sum(map(Order, o => o["total"])), 2);
-    - averageOrderValue: number = round(sum(map(Order, o => o["total"])) / len(Order), 2) if len(Order) > 0 else 0;
-    - pendingOrders: integer = len(filter(Order, o => o["status"] == "pending"));
-    - completedOrders: integer = len(filter(Order, o => o["status"] == "completed"));
-    - cancelledOrders: integer = len(filter(Order, o => o["status"] == "cancelled"));
-    - hasActiveOrders: boolean = len(filter(Order, o => o["status"] == "pending")) > 0;
-    - customerTier: string = "VIP" if sum(map(Order, o => o["total"])) > 1000 else ("Gold" if sum(map(Order, o => o["total"])) > 500 else "Silver");
-    - isFrequentBuyer: boolean = len(Order) >= 5;
-  expose:
-    operations: [read]
-end
 
 // ============================================================================
 // ARRAY PARENT EXAMPLES: Order with all its items (one-to-many)
@@ -140,7 +87,7 @@ end
 // ============================================================================
 
 // OrderFulfillment - Warehouse/logistics view with packing information
-// Path: /api/orders/{orderId}/fulfillment
+// Path: /api/orders/{orderId}/orderfulfillment
 // Use Case: Warehouse dashboard showing what needs to be packed and shipped
 Entity OrderFulfillment(Order, User, OrderItem[])
   relationships:
@@ -161,33 +108,5 @@ Entity OrderFulfillment(Order, User, OrderItem[])
     - needsSpecialHandling: boolean = any(map(OrderItem, i => i["price"] > 100));
     - packingComplexity: string = "High" if len(OrderItem) > 10 else ("Medium" if len(OrderItem) > 5 else "Low");
     - readyToShip: boolean = Order.status == "pending";
-  expose:
-    operations: [read]
-end
-
-// OrderAnalytics - Business intelligence view with profit margins and insights
-// Path: /api/orders/{orderId}/analytics
-// Use Case: Management dashboard showing profitability and business metrics
-Entity OrderAnalytics(Order, OrderItem[])
-  relationships:
-    - OrderItem: Order.orderId
-  attributes:
-    - orderId: string = Order.orderId;
-    - orderDate: string = Order.createdAt;
-    - orderTotal: number = Order.total;
-    - itemCount: integer = len(OrderItem);
-    - uniqueProducts: integer = len(OrderItem);
-    - averageItemPrice: number = round(sum(map(OrderItem, i => i["price"])) / len(OrderItem), 2) if len(OrderItem) > 0 else 0;
-    - totalQuantity: integer = sum(map(OrderItem, i => i["quantity"]));
-    - bulkItemsCount: integer = len(filter(OrderItem, i => i["quantity"] > 5));
-    - highValueItemsCount: integer = len(filter(OrderItem, i => i["price"] > 100));
-    - itemsSubtotal: number = sum(map(OrderItem, i => i["quantity"] * i["price"]));
-    - calculatedTotal: number = round(sum(map(OrderItem, i => i["quantity"] * i["price"])), 2);
-    - discrepancy: number = round(Order.total - sum(map(OrderItem, i => i["quantity"] * i["price"])), 2);
-    - hasDiscrepancy: boolean = abs(Order.total - sum(map(OrderItem, i => i["quantity"] * i["price"]))) > 0.01;
-    - assumedMargin: number = 0.3;
-    - estimatedProfit: number = round(sum(map(OrderItem, i => i["quantity"] * i["price"])) * 0.3, 2);
-    - profitability: string = "Excellent" if sum(map(OrderItem, i => i["quantity"] * i["price"])) > 300 else ("Good" if sum(map(OrderItem, i => i["quantity"] * i["price"])) > 100 else "Low");
-  expose:
-    operations: [read]
+  access: public
 end

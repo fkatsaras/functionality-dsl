@@ -114,36 +114,21 @@ end
 Entity CityComparison(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
   attributes:
     // Current air quality snapshot for each city (latest reading)
-    - cities: array = [
-      {
-        "city": "London",
-        "pm2_5": get(LondonAir.hourly, "pm2_5", [])[0],
-        "pm10": get(LondonAir.hourly, "pm10", [])[0],
-        "ozone": get(LondonAir.hourly, "ozone", [])[0],
-        "uv_index": get(LondonAir.hourly, "uv_index", [])[0]
-      },
-      {
-        "city": "Paris",
-        "pm2_5": get(ParisAir.hourly, "pm2_5", [])[0],
-        "pm10": get(ParisAir.hourly, "pm10", [])[0],
-        "ozone": get(ParisAir.hourly, "ozone", [])[0],
-        "uv_index": get(ParisAir.hourly, "uv_index", [])[0]
-      },
-      {
-        "city": "Beijing",
-        "pm2_5": get(BeijingAir.hourly, "pm2_5", [])[0],
-        "pm10": get(BeijingAir.hourly, "pm10", [])[0],
-        "ozone": get(BeijingAir.hourly, "ozone", [])[0],
-        "uv_index": get(BeijingAir.hourly, "uv_index", [])[0]
-      },
-      {
-        "city": "Los Angeles",
-        "pm2_5": get(LosAngelesAir.hourly, "pm2_5", [])[0],
-        "pm10": get(LosAngelesAir.hourly, "pm10", [])[0],
-        "ozone": get(LosAngelesAir.hourly, "ozone", [])[0],
-        "uv_index": get(LosAngelesAir.hourly, "uv_index", [])[0]
-      }
-    ];
+    - cities: array = map(
+        [
+          {"name": "London", "data": LondonAir},
+          {"name": "Paris", "data": ParisAir},
+          {"name": "Beijing", "data": BeijingAir},
+          {"name": "Los Angeles", "data": LosAngelesAir}
+        ],
+        city => {
+          "city": city["name"],
+          "pm2_5": get(city["data"].hourly, "pm2_5", [])[0],
+          "pm10": get(city["data"].hourly, "pm10", [])[0],
+          "ozone": get(city["data"].hourly, "ozone", [])[0],
+          "uv_index": get(city["data"].hourly, "uv_index", [])[0]
+        }
+      );
   access: public
 end
 
@@ -180,56 +165,26 @@ end
 Entity PollutionStats(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
   attributes:
     // Statistics per city
-    - stats: array = [
-      {
-        "city": "London",
-        "avg_pm2_5": round(
-          sum(get(LondonAir.hourly, "pm2_5", [])) /
-          len(get(LondonAir.hourly, "pm2_5", [])), 1
-        ),
-        "max_pm2_5": max(get(LondonAir.hourly, "pm2_5", [])),
-        "avg_ozone": round(
-          sum(get(LondonAir.hourly, "ozone", [])) /
-          len(get(LondonAir.hourly, "ozone", [])), 1
-        )
-      },
-      {
-        "city": "Paris",
-        "avg_pm2_5": round(
-          sum(get(ParisAir.hourly, "pm2_5", [])) /
-          len(get(ParisAir.hourly, "pm2_5", [])), 1
-        ),
-        "max_pm2_5": max(get(ParisAir.hourly, "pm2_5", [])),
-        "avg_ozone": round(
-          sum(get(ParisAir.hourly, "ozone", [])) /
-          len(get(ParisAir.hourly, "ozone", [])), 1
-        )
-      },
-      {
-        "city": "Beijing",
-        "avg_pm2_5": round(
-          sum(get(BeijingAir.hourly, "pm2_5", [])) /
-          len(get(BeijingAir.hourly, "pm2_5", [])), 1
-        ),
-        "max_pm2_5": max(get(BeijingAir.hourly, "pm2_5", [])),
-        "avg_ozone": round(
-          sum(get(BeijingAir.hourly, "ozone", [])) /
-          len(get(BeijingAir.hourly, "ozone", [])), 1
-        )
-      },
-      {
-        "city": "Los Angeles",
-        "avg_pm2_5": round(
-          sum(get(LosAngelesAir.hourly, "pm2_5", [])) /
-          len(get(LosAngelesAir.hourly, "pm2_5", [])), 1
-        ),
-        "max_pm2_5": max(get(LosAngelesAir.hourly, "pm2_5", [])),
-        "avg_ozone": round(
-          sum(get(LosAngelesAir.hourly, "ozone", [])) /
-          len(get(LosAngelesAir.hourly, "ozone", [])), 1
-        )
-      }
-    ];
+    - stats: array = map(
+        [
+          {"name": "London", "data": LondonAir},
+          {"name": "Paris", "data": ParisAir},
+          {"name": "Beijing", "data": BeijingAir},
+          {"name": "Los Angeles", "data": LosAngelesAir}
+        ],
+        city => {
+          "city": city["name"],
+          "avg_pm2_5": round(
+            sum(get(city["data"].hourly, "pm2_5", [])) /
+            len(get(city["data"].hourly, "pm2_5", [])), 1
+          ),
+          "max_pm2_5": max(get(city["data"].hourly, "pm2_5", [])),
+          "avg_ozone": round(
+            sum(get(city["data"].hourly, "ozone", [])) /
+            len(get(city["data"].hourly, "ozone", [])), 1
+          )
+        }
+      );
   access: public
 end
 
@@ -246,7 +201,7 @@ Component<Chart> PM25TrendsChart
   entity: PM25Trends
   values: data
   xLabel: "Time"
-  yLabel: "PM2.5 (µg/m³)"
+  yLabel: "PM2.5 (ug/m^3)"
   height: 400
 end
 

@@ -993,22 +993,25 @@ class CameraComponent(_BaseComponent):
 class LiveMetricsComponent(_BaseComponent):
     """
     <Component<LiveMetrics> ...>
-      endpoint: <Endpoint<WS>>
+      entity: <Entity>
       metrics: ["totalDeliveries", "activeDeliveries", ...]
       label: optional string label
 
-    Displays real-time metrics from a WebSocket endpoint.
+    Displays real-time metrics from a WebSocket entity.
     Metrics can be simple keys or nested paths (e.g., "stats.total").
     """
-    def __init__(self, parent=None, name=None, endpoint=None, metrics=None, label=None):
-        super().__init__(parent, name, endpoint)
+    def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None, metrics=None, label=None):
+        # Support both entity_ref (new) and endpoint (old) for backwards compatibility
+        entity = entity_ref or endpoint
+        super().__init__(parent, name, entity)
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+        if entity is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
-        # Validate: LiveMetrics only works with WebSocket endpoints
-        if endpoint.__class__.__name__ != "EndpointWS":
-            raise ValueError(f"Component '{name}': LiveMetrics component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+        # Validate: LiveMetrics only works with WebSocket entities
+        # Check if entity has 'type' attribute and is 'inbound' (WebSocket)
+        if hasattr(entity, 'type') and entity.type != 'inbound':
+            raise ValueError(f"Component '{name}': LiveMetrics requires WebSocket entity (type: inbound), got type: {entity.type}")
 
         # Parse metrics list - strip quotes from each metric key
         self.metrics = [_strip_quotes(m) for m in (metrics or [])]

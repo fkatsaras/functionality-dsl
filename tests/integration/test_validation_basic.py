@@ -116,3 +116,41 @@ def test_syntax_error_detected():
     # Should raise syntax error
     with pytest.raises((TextXSyntaxError, TextXSemanticError)):
         build_model(fdsl_code)
+
+
+def test_reserved_role_name_public_fails():
+    """Test that defining a role named 'public' fails validation."""
+    fdsl_code = """
+    Server TestServer
+      host: "localhost"
+      port: 8080
+    end
+
+    Auth MyAuth
+      type: jwt
+      secret_env: "JWT_SECRET"
+      roles_claim: "roles"
+    end
+
+    Role public
+
+    Source<REST> UserDB
+      base_url: "http://api.example.com/users"
+    end
+
+    Entity User
+      attributes:
+        - id: string @id;
+        - name: string;
+      source: UserDB
+      access: [public]
+    end
+    """
+
+    # Should raise semantic error for reserved role name
+    with pytest.raises(TextXSemanticError) as exc_info:
+        build_model(fdsl_code)
+
+    # Verify the error message mentions the reserved keyword
+    assert "reserved" in str(exc_info.value).lower()
+    assert "public" in str(exc_info.value)

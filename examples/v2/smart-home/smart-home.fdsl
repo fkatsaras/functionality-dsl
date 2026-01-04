@@ -63,6 +63,7 @@ end
 // ============================================
 
 Entity RawThermostat
+  source: ThermostatAPI
   attributes:
     - current_temp_f: number @readonly;
     - target_temp_f: number;
@@ -70,11 +71,11 @@ Entity RawThermostat
     - fan_speed: string;
     - humidity_percent: number @readonly;
     - power_watts: number @readonly;
-  source: ThermostatAPI
   access: [homeowner]
 end
 
 Entity RawLighting
+  source: LightsAPI
   attributes:
     - living_room: integer;
     - bedroom: integer;
@@ -82,11 +83,11 @@ Entity RawLighting
     - bathroom: integer;
     - outdoor: integer;
     - power_watts: number @readonly;
-  source: LightsAPI
   access: [homeowner, guest]
 end
 
 Entity RawSecurity
+  source: SecurityAPI
   attributes:
     - armed: boolean;
     - mode: string;
@@ -95,11 +96,11 @@ Entity RawSecurity
     - motion_detected: boolean @readonly;
     - camera_count: integer @readonly;
     - last_event_time: string @readonly;
-  source: SecurityAPI
   access: [homeowner]
 end
 
 Entity RawEnergy
+  source: EnergyAPI
   attributes:
     - hvac_watts: number @readonly;
     - lighting_watts: number @readonly;
@@ -108,11 +109,11 @@ Entity RawEnergy
     - solar_watts: number @readonly;
     - battery_percent: integer @readonly;
     - grid_watts: number @readonly;
-  source: EnergyAPI
   access: [homeowner]
 end
 
 Entity RawAirQuality
+  source: AirQualityAPI
   attributes:
     - indoor_temp_f: number @readonly;
     - outdoor_temp_f: number @readonly;
@@ -121,11 +122,11 @@ Entity RawAirQuality
     - pm25: number @readonly;
     - purifier_on: boolean;
     - purifier_speed: string;
-  source: AirQualityAPI
   access: [homeowner]
 end
 
 Entity RawAppliances
+  source: AppliancesAPI
   attributes:
     - oven_temp_f: number @readonly;
     - oven_on: boolean;
@@ -134,7 +135,6 @@ Entity RawAppliances
     - dryer_running: boolean @readonly;
     - dishwasher_running: boolean @readonly;
     - coffee_maker_on: boolean;
-  source: AppliancesAPI
   access: [homeowner]
 end
 

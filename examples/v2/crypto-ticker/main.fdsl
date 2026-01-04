@@ -107,19 +107,19 @@ Entity MarketAnalysis(CryptoPrices)
         {"name": "BNB", "price": CryptoPrices.bnb_price, "symbol": "Binance Coin"},
         {"name": "SOL", "price": CryptoPrices.sol_price, "symbol": "Solana"}
       ];
-    - total_coins: integer = len(coins);
-    - prices: array = map(coins, c => c["price"]);
-    - average_price: number = round(sum(prices) / total_coins, 2);
-    - above_average: array = filter(coins, c => c["price"] > average_price);
-    - below_average: array = filter(coins, c => c["price"] <= average_price);
-    - above_avg_count: integer = len(above_average);
-    - below_avg_count: integer = len(below_average);
-    - above_avg_names: array = map(above_average, c => c["name"]);
-    - below_avg_names: array = map(below_average, c => c["name"]);
-    - all_above_200: boolean = all(map(prices, p => p > 200));
-    - any_below_100: boolean = any(map(prices, p => p < 100));
-    - market_sentiment: string = "bullish" if above_avg_count >= 2 else "bearish";
-    - price_spread: number = round(max(prices) - min(prices), 2);
+    - total_coins: integer = len(MarketAnalysis.coins);
+    - prices: array = map(MarketAnalysis.coins, c => c["price"]);
+    - average_price: number = round(sum(MarketAnalysis.prices) / MarketAnalysis.total_coins, 2);
+    - above_average: array = filter(MarketAnalysis.coins, c => c["price"] > MarketAnalysis.average_price);
+    - below_average: array = filter(MarketAnalysis.coins, c => c["price"] <= MarketAnalysis.average_price);
+    - above_avg_count: integer = len(MarketAnalysis.above_average);
+    - below_avg_count: integer = len(MarketAnalysis.below_average);
+    - above_avg_names: array = map(MarketAnalysis.above_average, c => c["name"]);
+    - below_avg_names: array = map(MarketAnalysis.below_average, c => c["name"]);
+    - all_above_200: boolean = all(map(MarketAnalysis.prices, p => p > 200));
+    - any_below_100: boolean = any(map(MarketAnalysis.prices, p => p < 100));
+    - market_sentiment: string = "bullish" if MarketAnalysis.above_avg_count >= 2 else "bearish";
+    - price_spread: number = round(max(MarketAnalysis.prices) - min(MarketAnalysis.prices), 2);
   access: public
   // Auto-generates: ws://localhost:8080/ws/marketanalysis
 end
@@ -151,12 +151,9 @@ Component<LiveMetrics> PriceMetrics
   label: "Live Crypto Prices"
 end
 
-// Market sentiment gauge
-Component<Gauge> SentimentGauge
-  entity: MarketAnalysis
-  value: "above_avg_count"
-  min: 0
-  max: 3
-  label: "Coins Above Average"
-  unit: "coins"
-end 
+// // Market sentiment display
+// Component<ObjectView> MarketSentiment
+//   entity: MarketAnalysis
+//   fields: ["market_sentiment", "above_avg_names", "below_avg_names", "all_above_200", "any_below_100"]
+//   label: "Market Sentiment Analysis"
+// end 

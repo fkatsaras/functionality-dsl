@@ -1,70 +1,91 @@
 // ============================================
-// REST API - Menu & Kitchen Stats
-// Simple read-only endpoints for restaurant data
+// REST API - Restaurant Management
+// Full CRUD operations for menu items, orders, and reservations
 // ============================================
 
 // ============================================
 // SOURCES (External REST APIs)
 // ============================================
 
-// Current menu state (singleton)
-Source<REST> MenuState
-  base_url: "http://dummy-restaurant:9001/menu"
-  operations: [read]
+// Menu items management (full CRUD)
+Source<REST> MenuItemsAPI
+  base_url: "http://dummy-restaurant:9001/menu/items"
+  operations: [read, create, update, delete]
 end
 
-// Kitchen dashboard state (singleton)
+// Orders management (full CRUD)
+Source<REST> OrdersAPI
+  base_url: "http://dummy-restaurant:9001/orders"
+  operations: [read, create, update, delete]
+end
+
+// Reservations management (full CRUD)
+Source<REST> ReservationsAPI
+  base_url: "http://dummy-restaurant:9001/reservations"
+  operations: [read, create, update, delete]
+end
+
+// Kitchen dashboard state (singleton, read-only)
 Source<REST> KitchenDashboard
   base_url: "http://dummy-restaurant:9001/kitchen"
   operations: [read]
 end
 
 // ============================================
-// BASE ENTITIES
+// CRUD ENTITIES - Menu Items
 // ============================================
 
-Entity RawMenu
+Entity MenuItem
+  source: MenuItemsAPI
   attributes:
-    - items: array;
-    - lastUpdated: string @readonly;
-  source: MenuState
+    - id: string @id;
+    - name: string;
+    - category: string;
+    - price: number;
+    - description: string;
+    - available: boolean;
+    - createdAt: string @readonly;
+  access: public
+  // Auto-generates:
+  // GET /api/menuitems/{id}
+  // POST /api/menuitems
+  // PUT /api/menuitems/{id}
+  // DELETE /api/menuitems/{id}
 end
 
-Entity RawKitchen
+// ============================================
+// CRUD ENTITIES - Reservations
+// ============================================
+
+Entity Reservation
+  source: ReservationsAPI
+  attributes:
+    - id: string @id;
+    - guestName: string;
+    - phoneNumber: string;
+    - partySize: integer;
+    - reservationTime: string;
+    - specialRequests: string?;
+    - status: string;
+    - createdAt: string @readonly;
+  access: public
+  // Auto-generates full CRUD for reservations
+end
+
+// ============================================
+// READ-ONLY SINGLETON - Kitchen Dashboard
+// ============================================
+
+Entity KitchenStats
+  source: KitchenDashboard
   attributes:
     - pendingCount: integer;
     - preparingCount: integer;
     - readyCount: integer;
     - completedCount: integer;
     - avgPrepTime: number;
-  source: KitchenDashboard
-end
-
-// ============================================
-// COMPUTED ENTITIES (Add useful transformations)
-// ============================================
-
-Entity Menu(RawMenu)
-  attributes:
-    - items: array = RawMenu.items;
-    - lastUpdated: string = RawMenu.lastUpdated;
-    - totalItems: integer = len(RawMenu.items);
-    - availableItems: array = filter(RawMenu.items, item => item["available"]);
-    - availableCount: integer = len(filter(RawMenu.items, item => item["available"]));
-    - pizzas: array = filter(RawMenu.items, item => item["category"] == "Pizza");
-    - desserts: array = filter(RawMenu.items, item => item["category"] == "Dessert");
+    - totalActive: integer;
+    - isSlammed: boolean;
   access: public
-end
-
-Entity KitchenStats(RawKitchen)
-  attributes:
-    - pendingCount: integer = RawKitchen.pendingCount;
-    - preparingCount: integer = RawKitchen.preparingCount;
-    - readyCount: integer = RawKitchen.readyCount;
-    - completedCount: integer = RawKitchen.completedCount;
-    - avgPrepTime: number = RawKitchen.avgPrepTime;
-    - totalActive: integer = RawKitchen.pendingCount + RawKitchen.preparingCount + RawKitchen.readyCount;
-    - isSlammed: boolean = KitchenStats.totalActive > 10;
-    - statusSummary: string = toString(RawKitchen.pendingCount) + " pending, " + toString(RawKitchen.preparingCount) + " cooking, " + toString(RawKitchen.readyCount) + " ready";
-  access: public
+  // Auto-generates: GET /api/kitchenstats
 end

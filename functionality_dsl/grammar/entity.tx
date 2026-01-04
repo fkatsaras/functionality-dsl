@@ -50,13 +50,11 @@ Entity:
   ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
   ('type:' ws_flow_type=WSFlowType)?
   ('source:' source=[Source])?
-  ('contentType:' content_type=ContentType)?
   (relationships=RelationshipsBlock)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
   (filters=FiltersBlock)?
-  (expose=ExposeBlock)?
   (access=AccessBlock)?
   'end'
 ;

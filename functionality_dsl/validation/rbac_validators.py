@@ -117,6 +117,15 @@ def validate_role_references(model):
         if not role_name:
             continue
 
+        # Check for reserved keywords
+        if role_name == "public":
+            raise TextXSemanticError(
+                f"Role name 'public' is reserved and cannot be used as a role name.\n"
+                f"'public' is a special keyword for unrestricted access (e.g., access: public).\n"
+                f"Choose a different role name (e.g., 'public_user', 'guest', 'visitor').",
+                **get_location(role),
+            )
+
         if role_name in seen_roles:
             raise TextXSemanticError(
                 f"Duplicate role declaration: '{role_name}'.\n"

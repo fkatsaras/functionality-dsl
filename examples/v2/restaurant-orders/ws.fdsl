@@ -1,24 +1,31 @@
 // ============================================
 // WebSocket API - Live Order Tracking
-// Real-time order status updates (subscribe + publish)
+// Separate subscribe and publish flows
 // ============================================
 
 // ============================================
 // SOURCES (WebSocket)
 // ============================================
 
-// Live order status updates
-Source<WS> OrderStatusWS
-  channel: "ws://dummy-restaurant:9001/ws/orders"
-  operations: [publish, subscribe]
+// WebSocket source for receiving order updates from kitchen
+Source<WS> KitchenOrdersWS
+  channel: "ws://dummy-restaurant:9001/ws/orders/updates"
+end
+
+// WebSocket source for sending order commands to kitchen
+Source<WS> KitchenCommandsWS
+  channel: "ws://dummy-restaurant:9001/ws/orders/commands"
 end
 
 // ============================================
-// SUBSCRIBE: External WS → Client
-// Receive order status updates from kitchen
+// SUBSCRIBE FLOW: External WS → Client
+// Receive real-time order status updates from kitchen
 // ============================================
 
+// Base entity - receives raw updates from kitchen WebSocket
 Entity RawOrderUpdate
+  type: inbound
+  source: KitchenOrdersWS
   attributes:
     - orderId: string;
     - customerName: string;
@@ -26,11 +33,11 @@ Entity RawOrderUpdate
     - items: array;
     - total: number;
     - timestamp: string;
-  source: OrderStatusWS
-  access: public
 end
 
+// Composite entity - transforms and exposes updates to client
 Entity OrderUpdate(RawOrderUpdate)
+  type: inbound
   attributes:
     - orderId: string = RawOrderUpdate.orderId;
     - customerName: string = RawOrderUpdate.customerName;
@@ -39,10 +46,37 @@ Entity OrderUpdate(RawOrderUpdate)
     - total: number = RawOrderUpdate.total;
     - timestamp: string = RawOrderUpdate.timestamp;
     - itemCount: integer = len(RawOrderUpdate.items);
-    - displayMessage: string = RawOrderUpdate.status + " Order #" + RawOrderUpdate.orderId + " - " + RawOrderUpdate.customerName + " (" + RawOrderUpdate.status + ")";
-  target: OrderStatusWS
+    - displayMessage: string = RawOrderUpdate.customerName + " - Order #" + RawOrderUpdate.orderId + " (" + RawOrderUpdate.status + ")";
   access: public
   // Auto-generates: ws://localhost:8080/ws/orderupdate
-  // Subscribe: receives updates from external WS
-  // Publish: sends status changes to external WS
+  // Client subscribes here to receive kitchen updates
+end
+
+// ============================================
+// PUBLISH FLOW: Client → External WS
+// Send order status change commands to kitchen
+// ============================================
+
+// Base entity - accepts commands from client
+Entity OrderCommand
+  type: outbound
+  attributes:
+    - orderId: string;
+    - newStatus: string;
+    - reason: string;
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/ordercommand
+  // Client publishes commands here
+end
+
+// Composite entity - transforms and sends to kitchen WebSocket
+Entity KitchenCommand(OrderCommand)
+  type: outbound
+  attributes:
+    - orderId: string = OrderCommand.orderId;
+    - status: string = OrderCommand.newStatus;
+    - reason: string = OrderCommand.reason;
+    - timestamp: string = toString(OrderCommand.orderId);
+  source: KitchenCommandsWS
+  // Sends transformed commands to kitchen
 end
