@@ -55,8 +55,8 @@ ITEMS = {
 
 @app.route('/users', methods=['GET'])
 def list_users():
-    """List all users"""
-    return jsonify(list(USERS.values()))
+    """List all users - returns as singleton with array"""
+    return jsonify({"users": list(USERS.values())})
 
 @app.route('/users/<user_id>', methods=['GET'])
 def get_user(user_id):
@@ -67,10 +67,30 @@ def get_user(user_id):
 @app.route('/users', methods=['POST'])
 def create_user():
     data = request.json
-    new_id = f"usr-{len(USERS) + 1:03d}"
-    user = {"userId": new_id, **data}
-    USERS[new_id] = user
-    return jsonify(user), 201
+    # Expect {"users": [...]} format
+    if "users" in data:
+        created = []
+        for user_data in data["users"]:
+            new_id = f"usr-{len(USERS) + 1:03d}"
+            user = {"userId": new_id, **user_data}
+            USERS[new_id] = user
+            created.append(user)
+        return jsonify({"users": created}), 201
+    return jsonify({"error": "Invalid format"}), 400
+
+@app.route('/users', methods=['PUT'])
+def update_users():
+    data = request.json
+    # Expect {"users": [...]} format
+    if "users" in data:
+        updated = []
+        for user_data in data["users"]:
+            user_id = user_data.get("userId")
+            if user_id and user_id in USERS:
+                USERS[user_id].update(user_data)
+                updated.append(USERS[user_id])
+        return jsonify({"users": updated})
+    return jsonify({"error": "Invalid format"}), 400
 
 @app.route('/users/<user_id>', methods=['PUT'])
 def update_user(user_id):
@@ -79,6 +99,16 @@ def update_user(user_id):
         USERS[user_id].update(data)
         return jsonify(USERS[user_id])
     return jsonify({"error": "User not found"}), 404
+
+@app.route('/users', methods=['DELETE'])
+def delete_users():
+    # Delete all users or specific ones if userIds provided
+    data = request.json or {}
+    if "userIds" in data:
+        for user_id in data["userIds"]:
+            if user_id in USERS:
+                del USERS[user_id]
+    return '', 204
 
 @app.route('/users/<user_id>', methods=['DELETE'])
 def delete_user(user_id):
@@ -93,7 +123,7 @@ def delete_user(user_id):
 
 @app.route('/orders', methods=['GET'])
 def list_orders():
-    """List orders with optional user filter"""
+    """List orders - returns as singleton with array"""
     user_id = request.args.get('userId')
 
     results = list(ORDERS.values())
@@ -101,7 +131,7 @@ def list_orders():
     if user_id:
         results = [o for o in results if o["userId"] == user_id]
 
-    return jsonify(results)
+    return jsonify({"orders": results})
 
 @app.route('/orders/<order_id>', methods=['GET'])
 def get_order(order_id):
@@ -112,10 +142,30 @@ def get_order(order_id):
 @app.route('/orders', methods=['POST'])
 def create_order():
     data = request.json
-    new_id = f"ord-{len(ORDERS) + 1:03d}"
-    order = {"orderId": new_id, **data}
-    ORDERS[new_id] = order
-    return jsonify(order), 201
+    # Expect {"orders": [...]} format
+    if "orders" in data:
+        created = []
+        for order_data in data["orders"]:
+            new_id = f"ord-{len(ORDERS) + 1:03d}"
+            order = {"orderId": new_id, **order_data}
+            ORDERS[new_id] = order
+            created.append(order)
+        return jsonify({"orders": created}), 201
+    return jsonify({"error": "Invalid format"}), 400
+
+@app.route('/orders', methods=['PUT'])
+def update_orders():
+    data = request.json
+    # Expect {"orders": [...]} format
+    if "orders" in data:
+        updated = []
+        for order_data in data["orders"]:
+            order_id = order_data.get("orderId")
+            if order_id and order_id in ORDERS:
+                ORDERS[order_id].update(order_data)
+                updated.append(ORDERS[order_id])
+        return jsonify({"orders": updated})
+    return jsonify({"error": "Invalid format"}), 400
 
 @app.route('/orders/<order_id>', methods=['PUT'])
 def update_order(order_id):
@@ -124,6 +174,16 @@ def update_order(order_id):
         ORDERS[order_id].update(data)
         return jsonify(ORDERS[order_id])
     return jsonify({"error": "Order not found"}), 404
+
+@app.route('/orders', methods=['DELETE'])
+def delete_orders():
+    # Delete all orders or specific ones if orderIds provided
+    data = request.json or {}
+    if "orderIds" in data:
+        for order_id in data["orderIds"]:
+            if order_id in ORDERS:
+                del ORDERS[order_id]
+    return '', 204
 
 @app.route('/orders/<order_id>', methods=['DELETE'])
 def delete_order(order_id):
@@ -138,7 +198,7 @@ def delete_order(order_id):
 
 @app.route('/items', methods=['GET'])
 def list_items():
-    """List items with optional order filter"""
+    """List items - returns as singleton with array"""
     order_id = request.args.get('orderId')
 
     results = list(ITEMS.values())
@@ -146,7 +206,7 @@ def list_items():
     if order_id:
         results = [i for i in results if i["orderId"] == order_id]
 
-    return jsonify(results)
+    return jsonify({"items": results})
 
 @app.route('/items/<item_id>', methods=['GET'])
 def get_item(item_id):
@@ -157,10 +217,30 @@ def get_item(item_id):
 @app.route('/items', methods=['POST'])
 def create_item():
     data = request.json
-    new_id = f"itm-{len(ITEMS) + 1:03d}"
-    item = {"itemId": new_id, **data}
-    ITEMS[new_id] = item
-    return jsonify(item), 201
+    # Expect {"items": [...]} format
+    if "items" in data:
+        created = []
+        for item_data in data["items"]:
+            new_id = f"itm-{len(ITEMS) + 1:03d}"
+            item = {"itemId": new_id, **item_data}
+            ITEMS[new_id] = item
+            created.append(item)
+        return jsonify({"items": created}), 201
+    return jsonify({"error": "Invalid format"}), 400
+
+@app.route('/items', methods=['PUT'])
+def update_items():
+    data = request.json
+    # Expect {"items": [...]} format
+    if "items" in data:
+        updated = []
+        for item_data in data["items"]:
+            item_id = item_data.get("itemId")
+            if item_id and item_id in ITEMS:
+                ITEMS[item_id].update(item_data)
+                updated.append(ITEMS[item_id])
+        return jsonify({"items": updated})
+    return jsonify({"error": "Invalid format"}), 400
 
 @app.route('/items/<item_id>', methods=['PUT'])
 def update_item(item_id):
@@ -169,6 +249,16 @@ def update_item(item_id):
         ITEMS[item_id].update(data)
         return jsonify(ITEMS[item_id])
     return jsonify({"error": "Item not found"}), 404
+
+@app.route('/items', methods=['DELETE'])
+def delete_items():
+    # Delete all items or specific ones if itemIds provided
+    data = request.json or {}
+    if "itemIds" in data:
+        for item_id in data["itemIds"]:
+            if item_id in ITEMS:
+                del ITEMS[item_id]
+    return '', 204
 
 @app.route('/items/<item_id>', methods=['DELETE'])
 def delete_item(item_id):
