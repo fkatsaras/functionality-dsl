@@ -166,90 +166,9 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "read" %}
-    {%- if op.is_item_op %}
-    async def get_{{ entity_name | lower }}(self, {{ id_field }}: str) -> Optional[{{ entity_name }}]:
-        """Get a single {{ entity_name }} by ID"""
-        logger.debug(f"Getting {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
-
-        {% if has_parent_services %}
-        # Fetch parent entity data via services (composition pattern)
-        parent_data = {}
-        {%- for ps in parent_services %}
-        {%- if loop.first %}
-        # First parent: fetch using the endpoint's ID parameter
-        {%- if ps.is_array %}
-        # Array parent: use list operation with filter
-        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(filters={"{{ ps.id_field }}": {{ id_field }}})
-        {%- else %}
-        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ id_field }})
-        # Fail fast if first parent not found
-        if not parent_data["{{ ps.name }}"]:
-            return None
-        {%- endif %}
-        {%- else %}
-        # Subsequent parent: fetch using ID field from first parent
-        {%- set first_parent = parent_services[0] %}
-        {%- if ps.is_array %}
-        # Array parent: use list operation with filter
-        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(filters={"{{ ps.id_field }}": parent_data["{{ first_parent.name }}"].{{ ps.id_field }}})
-        {%- else %}
-        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(parent_data["{{ first_parent.name }}"].{{ ps.id_field }})
-        # Fail fast if parent not found
-        if not parent_data["{{ ps.name }}"]:
-            return None
-        {%- endif %}
-        {%- endif %}
-        {%- endfor %}
-        {% elif has_multiple_parent_sources %}
-        # Fetch from multiple parent sources
-        # First, fetch the primary parent (first in list)
-        parent_data = {}
-        {%- set first_source = parent_sources[0] %}
-        {%- if first_source.is_array %}
-        # First parent is array: use list operation with filter
-        first_parent = await self.{{ first_source.source_name | lower }}_source.list(filters={"{{ first_source.id_field }}": {{ id_field }}})
-        parent_data["{{ first_source.entity_name }}"] = first_parent
-        {%- else %}
-        first_parent = await self.{{ first_source.source_name | lower }}_source.read({{ id_field }})
-        if not first_parent:
-            return None
-        parent_data["{{ first_source.entity_name }}"] = first_parent
-
-        # Then fetch other parents using the appropriate ID fields
-        {%- for ps in parent_sources[1:] %}
-        {%- if ps.is_array %}
-        # Array parent: use list operation with filter
-        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.list(filters={"{{ ps.id_field }}": first_parent.get("{{ ps.id_field }}")})
-        {%- else %}
-        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(first_parent.get("{{ ps.id_field }}"))
-        {%- endif %}
-        {%- endfor %}
-        if not all(parent_data.values()):
-            return None
-        {%- endif %}
-        {% else %}
-        # Fetch from source
-        raw_data = await self.source.read({{ id_field }})
-
-        if not raw_data:
-            return None
-        {% endif %}
-
-        {% if has_computed_attrs %}
-        # Transform entity
-        {% if has_parent_services or has_multiple_parent_sources %}
-        transformed = self._transform_entity(parent_data)
-        {% else %}
-        transformed = self._transform_entity(raw_data)
-        {% endif %}
-        return {{ entity_name }}(**transformed)
-        {% else %}
-        return {{ entity_name }}(**raw_data)
-        {% endif %}
-    {%- else %}
     async def get_{{ entity_name | lower }}(self) -> {{ entity_name }}:
-        """Get the singleton {{ entity_name }} instance"""
-        logger.debug("Getting {{ entity_name }} (singleton)")
+        """Get the {{ entity_name }} snapshot"""
+        logger.debug("Getting {{ entity_name }} snapshot")
 
         {% if has_parent_services %}
         # Fetch parent entity data via services (composition pattern)
@@ -282,7 +201,6 @@ class {{ entity_name }}Service:
         {% else %}
         return {{ entity_name }}(**raw_data)
         {% endif %}
-    {%- endif %}
 
     {%- elif op.operation == "create" %}
     async def create_{{ entity_name | lower }}(self, data) -> {{ entity_name }}:
@@ -301,28 +219,9 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "update" %}
-    {%- if id_field %}
-    async def update_{{ entity_name | lower }}(self, {{ id_field }}: str, data) -> Optional[{{ entity_name }}]:
-        """Update an existing {{ entity_name }}"""
-        logger.debug(f"Updating {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
-
-        # Call source update operation
-        updated = await self.source.update({{ id_field }}, data.dict())
-
-        if not updated:
-            return None
-
-        {% if has_computed_attrs %}
-        # Transform updated entity
-        transformed = self._transform_entity(updated)
-        return {{ entity_name }}(**transformed)
-        {% else %}
-        return {{ entity_name }}(**updated)
-        {% endif %}
-    {%- else %}
     async def update_{{ entity_name | lower }}(self, data) -> Optional[{{ entity_name }}]:
-        """Update the singleton {{ entity_name }} instance"""
-        logger.debug(f"Updating {{ entity_name }} (singleton)")
+        """Update the {{ entity_name }} snapshot"""
+        logger.debug(f"Updating {{ entity_name }} snapshot")
 
         # Call source update operation
         updated = await self.source.update(data.dict())
@@ -337,24 +236,14 @@ class {{ entity_name }}Service:
         {% else %}
         return {{ entity_name }}(**updated)
         {% endif %}
-    {%- endif %}
 
     {%- elif op.operation == "delete" %}
-    {%- if id_field %}
-    async def delete_{{ entity_name | lower }}(self, {{ id_field }}: str) -> None:
-        """Delete a {{ entity_name }}"""
-        logger.debug(f"Deleting {{ entity_name }}: {{'{'}}{{ id_field }}{{'}'}}")
-
-        # Call source delete operation
-        await self.source.delete({{ id_field }})
-    {%- else %}
     async def delete_{{ entity_name | lower }}(self) -> None:
-        """Delete the singleton {{ entity_name }} instance"""
-        logger.debug("Deleting {{ entity_name }} (singleton)")
+        """Delete the {{ entity_name }} snapshot"""
+        logger.debug("Deleting {{ entity_name }} snapshot")
 
         # Call source delete operation
         await self.source.delete()
-    {%- endif %}
 
     {%- endif %}
 

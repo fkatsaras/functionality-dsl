@@ -72,22 +72,19 @@ def _find_source_in_parents(parents):
 
 def _validate_exposure_blocks(model, metamodel=None):
     """
-    Validate entity exposure blocks:
-    - Entity with expose must have a source binding
-    - Operations must match source CRUD capabilities
-    - id_field must exist in entity attributes
-    - path_params must reference valid attributes
-    - REST operations require valid path templates
-    - WebSocket operations require valid channel paths
+    Validate entity exposure (access-based, no expose blocks).
+
+    Validates that entities with access blocks have proper source bindings.
+    All exposure is now controlled via `access:` field on entities.
     """
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        expose = getattr(entity, "expose", None)
-        if not expose:
+        access = getattr(entity, "access", None)
+        if not access:
             continue
 
-        # Entity with expose must have a source (direct or inherited from parents)
+        # Entity with access must have a source (direct or inherited from parents)
         source = getattr(entity, "source", None)
         parent_entities = _get_parent_entities(entity)
 
@@ -97,28 +94,10 @@ def _validate_exposure_blocks(model, metamodel=None):
 
         if not source:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'expose' block but no 'source:' binding. "
+                f"Entity '{entity.name}' has 'access:' field but no 'source:' binding. "
                 f"Exposed entities must be bound to a Source (directly or through parent entities).",
                 **get_location(entity),
             )
-
-        operations = getattr(expose, "operations", [])
-
-        # Infer REST or WebSocket based on operations
-        # REST operations: read, create, update, delete (NO list)
-        rest_ops = {'read', 'create', 'update', 'delete'}
-        ws_ops = {'subscribe', 'publish'}
-
-        has_rest_ops = any(op in rest_ops for op in operations)
-        has_ws_ops = any(op in ws_ops for op in operations)
-
-        # Validate REST exposure
-        if has_rest_ops:
-            _validate_rest_expose(entity, expose, source)
-
-        # Validate WebSocket exposure
-        if has_ws_ops:
-            _validate_ws_expose(entity, expose, source, model)
 
 
 def _validate_rest_expose(entity, expose, source):

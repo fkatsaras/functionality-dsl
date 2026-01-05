@@ -39,15 +39,8 @@ end
 Entity Users
   source: UsersAPI
   attributes:
-    - users: array<User>;
+    - users: array;
   access: public
-end
-
-Entity User
-  attributes:
-    - userId: string;
-    - name: string;
-    - email: string;
 end
 
 Entity Orders

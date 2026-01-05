@@ -6,11 +6,16 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 
 ## Core Concept
 
-**Entity-centric API design** with singleton resources. Entities represent single resources (device state, user profile, dashboard) where identity comes from context (auth, session, device ID).
+**Command-based API composition** - not an ORM, not a database modeler. FDSL is an API orchestration layer where:
+
+- **Entities describe data shapes** (snapshots), not resources with identity
+- **Sources describe interaction capabilities**, not data stores
+- **Mutations are commands** sent to external systems, not local state changes
+- **Identity resolution** is delegated to backing services (via auth, headers, query params)
 
 **Key Components:**
-- **Entities** - Data models with optional transformation logic (schema → computed attributes)
-- **Sources** - External REST/WebSocket APIs that provide/consume entity data
+- **Entities** - Data snapshots with optional transformation logic (schema → computed attributes)
+- **Sources** - Capability providers that define interaction contracts (read/create/update/delete)
 - **Components** - UI elements (Table, Chart) that bind to entities
 - **Access Control** - Entity-level authorization
 
@@ -18,6 +23,30 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 - **REST**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
 - **WS Subscribe**: `External WS → Entity → Client`
 - **WS Publish**: `Client → Entity → External WS`
+
+### Philosophy: Snapshot-Based Mutations
+
+**Traditional REST (resource-oriented):**
+```
+PUT /users/{id}    # Update user with specific ID
+```
+
+**FDSL (command-oriented):**
+```
+PUT /users         # Send snapshot to update users based on context
+```
+
+The backing service decides which user(s) to update based on:
+- Auth claims (JWT user_id)
+- Request headers
+- Query parameters
+- Business rules
+
+This enables:
+- ✅ Singleton systems (config, device state)
+- ✅ Context-based mutations
+- ✅ WebSocket command channels
+- ✅ No database coupling
 
 ---
 
@@ -51,7 +80,9 @@ end
 
 ---
 
-## 2. Sources (External APIs)
+## 2. Sources (Capability Providers)
+
+Sources are **not** databases or data stores - they are **interaction contracts** with external systems.
 
 **REST Source:**
 ```fdsl
@@ -61,6 +92,11 @@ Source<REST> ThermostatAPI
 end
 ```
 
+**What this means:**
+- `read` → `GET http://devices:9001/thermostat` (no ID)
+- `update` → `PUT http://devices:9001/thermostat` (no ID)
+- The backing service determines identity from context
+
 **WebSocket Source:**
 ```fdsl
 Source<WS> BinanceETH
@@ -68,15 +104,15 @@ Source<WS> BinanceETH
 end
 ```
 
-**Key Points:**
-- `base_url:` for REST endpoints
-- `channel:` for WebSocket URLs
-- `operations:` list defines what the source supports
-- Entities inherit operations from their source
+**Key Principles:**
+- Sources define **what actions are possible**, not where data lives
+- Operations are **commands**, not entity methods
+- Identity/persistence is **external** - delegated to backing services
+- Entities define **payload structure** for these commands
 
 ---
 
-## 3. Entities (Singleton Resources)
+## 3. Entities (Snapshot Resources)
 
 ### Base REST Entity
 
@@ -176,9 +212,17 @@ Generates: `ws://localhost:8080/ws/ordercommand` (client publishes)
 **REST Entities:**
 1. **Base entities** with `source:` inherit operations from source
 2. **Composite entities** (with parents) are **read-only** - no mutations
-3. **No `@id` field** - all entities are singletons
+3. **No `@id` field** - all entities are snapshots (fixed shape, no collections)
 4. REST paths auto-generated: `/api/{entityname}` (lowercase)
-5. Operations from source: `read`, `create`, `update`, `delete`
+5. Operations from source: `read`, `create`, `update`, `delete` - all operate on snapshots
+6. **Sources called without IDs**: `GET base_url`, `PUT base_url`, etc.
+
+**Mutation Semantics (Critical Concept):**
+- `POST /api/entity` = Send snapshot to source, let it create according to its rules
+- `PUT /api/entity` = Send snapshot to source, let it update based on context (auth, headers, etc.)
+- `DELETE /api/entity` = Request deletion from source, let it determine what to delete
+- **Identity is never in the URL** - it's in auth claims, headers, or request body
+- **State ownership is external** - sources decide how to interpret snapshots
 
 **WebSocket Entities:**
 1. Must have `type: inbound` or `type: outbound`
@@ -474,7 +518,7 @@ wscat -c ws://localhost:8080/ws/cryptoprices
 ## 12. Key Patterns
 
 ### Multi-Source Aggregation (REST)
-Combine multiple singleton sources into a dashboard:
+Combine multiple snapshot sources into a dashboard:
 ```fdsl
 Entity Dashboard(Source1, Source2, Source3)
   attributes:
@@ -530,9 +574,9 @@ end
 | `access: true` | `access: public` |
 | `expose: operations: [read]` | Removed - operations from source |
 | `rest: "/api/path"` | Removed - paths auto-generated |
-| `@id` field | Removed - singleton entities only |
+| `@id` field | Removed - snapshot entities only |
 | `list` operation | Not supported - no collections |
-| `/{id}` paths | Not generated - singleton resources |
+| `/{id}` paths | Not generated - snapshot resources |
 | `filters:` field | Not needed - no list endpoints |
 
-**Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are singletons representing single resources where identity comes from context.
+**Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET base_url`, `PUT base_url`, etc.).

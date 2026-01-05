@@ -38,11 +38,10 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "read" %}
-    {%- if op.path and "{id}" in op.path %}
-    async def read(self, id: str) -> Optional[Dict[str, Any]]:
-        """Get a single item by ID from {{ source_name }}"""
-        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
-        logger.debug(f"Fetching item from {url}")
+    async def read(self) -> Optional[Dict[str, Any]]:
+        """Get snapshot from {{ source_name }}"""
+        url = f"{self.base_url}{{ op.path }}"
+        logger.debug(f"Fetching snapshot from {url}")
 
         try:
             client = get_http_client()
@@ -85,57 +84,6 @@ class {{ source_name }}Source:
         except Exception as e:
             logger.error(f"Unexpected error fetching from {{ source_name }}: {e}", exc_info=True)
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
-    {%- else %}
-    async def read(self, id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Get singleton resource or item by ID from {{ source_name }}"""
-        if id:
-            url = f"{self.base_url}{{ op.path }}".replace("{id}", id) if "{{ op.path }}" else f"{self.base_url}/{id}"
-        else:
-            url = f"{self.base_url}{{ op.path }}"
-        logger.debug(f"Fetching from {url}")
-
-        try:
-            client = get_http_client()
-            response = await client.request(
-                method="{{ op.method }}",
-                url=url
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout fetching from {{ source_name }}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "message": f"Request to external service '{{ source_name }}' timed out",
-                    "category": "timeout_error",
-                    "details": {"service": "{{ source_name }}", "url": url}
-                }
-            )
-        except httpx.ConnectError as e:
-            logger.error(f"Connection failed to {{ source_name }}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "message": f"External service '{{ source_name }}' is unavailable",
-                    "category": "service_unavailable",
-                    "details": {"service": "{{ source_name }}", "url": url, "reason": "Connection failed"}
-                }
-            )
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error from {{ source_name }}: {e.response.status_code}")
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail={
-                    "message": f"External service '{{ source_name }}' returned error: {e.response.status_code}",
-                    "category": "gateway_error",
-                    "details": {"service": "{{ source_name }}", "status_code": e.response.status_code}
-                }
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error fetching from {{ source_name }}: {e}", exc_info=True)
-            raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
-    {%- endif %}
 
     {%- elif op.name == "create" %}
     async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,17 +100,10 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "update" %}
-    {%- if op.has_id %}
-    async def update(self, id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Update an existing item in {{ source_name }}"""
-        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
-        logger.debug(f"Updating item at {url}")
-    {%- else %}
     async def update(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Update the singleton {{ source_name }} instance"""
+        """Update the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
-        logger.debug(f"Updating singleton at {url}")
-    {%- endif %}
+        logger.debug(f"Updating snapshot at {url}")
 
         try:
             client = get_http_client()
@@ -208,17 +149,10 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "delete" %}
-    {%- if op.has_id %}
-    async def delete(self, id: str) -> None:
-        """Delete an item from {{ source_name }}"""
-        url = f"{self.base_url}{{ op.path }}".replace("{id}", id)
-        logger.debug(f"Deleting item at {url}")
-    {%- else %}
     async def delete(self) -> None:
-        """Delete the singleton {{ source_name }} instance"""
+        """Delete the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
-        logger.debug(f"Deleting singleton at {url}")
-    {%- endif %}
+        logger.debug(f"Deleting snapshot at {url}")
 
         client = get_http_client()
         response = await client.request(

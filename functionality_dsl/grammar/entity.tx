@@ -68,43 +68,9 @@ WSFlowType:
 ;
 
 
-// ---------- EXPOSE BLOCK ----------
-// Supports two syntaxes:
-// 1. NEW: expose: true (simple boolean for composite entities)
-// 2. OLD: expose: operations: [...] (for WebSocket with explicit operations)
-ExposeBlock:
-    'expose:' expose_value=BOOL                           // NEW: expose: true
-  | 'expose:'                                              // OLD: expose block with fields
-    ('channel:' channel=STRING)?
-    ('operations:' '[' operations+=Operation (',' operations+=Operation)* ']')?
-    ('id_field:' id_field=STRING)?
-    (path_params=ExposePathParamsBlock)?
-    (permissions=PermissionsBlock)?
-    (access=ExposeAccessBlock)?
-;
-
+// Operation types (used in access control and source definitions)
 Operation:
   'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
-;
-
-// Path params for expose block (explicit mapping)
-ExposePathParam:
-  '-' name=ID ':' type=TypeSpec '->' target=Expr ';'?
-;
-
-ExposePathParamsBlock:
-  'path_params:' params+=ExposePathParam+
-;
-
-
-// Permissions block for RBAC (deprecated - use source operations instead)
-PermissionsBlock:
-  'permissions:'
-    ('-' perms+=PermissionRule)+
-;
-
-PermissionRule:
-  operation=Operation ':' '[' roles+=STRING (',' roles+=STRING)* ']'
 ;
 
 // DEPRECATED: Source operations block with inline permissions (OLD SYNTAX)
@@ -142,14 +108,6 @@ AccessBlock:
 // Example: read: public  or  create: [admin, librarian]
 AccessRule:
   operation=Operation ':' (public_keyword='public' | '[' roles+=ID (',' roles+=ID)* ']')
-;
-
-// Expose access block (for WebSocket entities in expose block)
-// Same structure as AccessBlock but nested in expose
-ExposeAccessBlock:
-    'access:' public_keyword='public'                             // Public access
-  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list
-  | 'access:' access_rules+=AccessRule+                           // Per-operation
 ;
 
 // Entity sources / targets -------------------

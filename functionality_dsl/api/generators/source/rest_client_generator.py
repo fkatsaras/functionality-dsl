@@ -36,7 +36,6 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     # Infer operations from entities that bind to this source
     operations = set()
-    is_singleton = False  # Will be set based on entity info
 
     if exposure_map:
         for entity_name, config in exposure_map.items():
@@ -44,10 +43,6 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
             if entity_source and entity_source.name == source.name:
                 entity_ops = config.get("operations", [])
                 operations.update(entity_ops)
-                # Check if ANY entity using this source is a singleton
-                # Singleton = entity without @id field (identity from context)
-                if config.get("is_singleton", False):
-                    is_singleton = True
 
     # If no operations found, skip
     if not operations:
@@ -55,53 +50,47 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         return
 
     operations = list(operations)
-    op_names = operations
 
-    # Infer standard REST patterns for each operation
-    crud_config = {}
-    for op_name in operations:
-        # Infer standard HTTP method and path for each operation
-        if op_name == "list":
-            crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
-        elif op_name == "read":
-            # Singleton read: no ID parameter, just fetch base_url
-            # Item read: requires ID parameter
-            if is_singleton:
-                crud_config[op_name] = {"method": "GET", "path": "", "url": base_url}
-            else:
-                crud_config[op_name] = {"method": "GET", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-        elif op_name == "create":
-            crud_config[op_name] = {"method": "POST", "path": "", "url": base_url}
-        elif op_name == "update":
-            # Singleton update: no ID parameter (PUT to base_url)
-            # Item update: requires ID parameter (PUT to base_url/{id})
-            if is_singleton:
-                crud_config[op_name] = {"method": "PUT", "path": "", "url": base_url}
-            else:
-                crud_config[op_name] = {"method": "PUT", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-        elif op_name == "delete":
-            # Singleton delete: no ID parameter (DELETE to base_url)
-            # Item delete: requires ID parameter (DELETE to base_url/{id})
-            if is_singleton:
-                crud_config[op_name] = {"method": "DELETE", "path": "", "url": base_url}
-            else:
-                crud_config[op_name] = {"method": "DELETE", "path": "/{id}", "url": f"{base_url}/{{id}}"}
-
+    # All entities are snapshots - no ID parameters ever
     # Build operation method configs
     operation_methods = []
     for op_name in operations:
-        config = crud_config.get(op_name, {})
-        # Determine if operation has ID parameter
-        # Singleton operations never have ID parameter
-        has_id = not is_singleton and op_name in ['read', 'update', 'delete']
-        operation_methods.append({
-            "name": op_name,
-            "method": config.get("method", "GET"),
-            "url": config.get("url", base_url),
-            "path": config.get("path", "/"),
-            "has_id": has_id,
-            "has_body": op_name in ['create', 'update'],
-        })
+        if op_name == "read":
+            operation_methods.append({
+                "name": "read",
+                "method": "GET",
+                "url": base_url,
+                "path": "",
+                "has_id": False,
+                "has_body": False,
+            })
+        elif op_name == "create":
+            operation_methods.append({
+                "name": "create",
+                "method": "POST",
+                "url": base_url,
+                "path": "",
+                "has_id": False,
+                "has_body": True,
+            })
+        elif op_name == "update":
+            operation_methods.append({
+                "name": "update",
+                "method": "PUT",
+                "url": base_url,
+                "path": "",
+                "has_id": False,
+                "has_body": True,
+            })
+        elif op_name == "delete":
+            operation_methods.append({
+                "name": "delete",
+                "method": "DELETE",
+                "url": base_url,
+                "path": "",
+                "has_id": False,
+                "has_body": False,
+            })
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))

@@ -1,7 +1,7 @@
 """
 Build entity exposure configuration (API routes, operations, permissions).
 
-All entities are now singletons (no @id field, no collections).
+All entities are snapshots (no @id field, no collections).
 REST paths are flat: /api/{entity_name_lower}
 Operations: read, create, update, delete (NO list operation)
 """
@@ -11,8 +11,8 @@ from textx import get_children_of_type
 
 def _generate_rest_path(entity):
     """
-    Generate REST path for singleton entity.
-    All entities are singletons: /api/{entity_name_lower}
+    Generate REST path for snapshot entity.
+    All entities are snapshots: /api/{entity_name_lower}
     """
     entity_name = entity.name.lower()
     return f"/api/{entity_name}"
@@ -43,7 +43,6 @@ def build_exposure_map(model):
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        expose = getattr(entity, "expose", None)
         access = getattr(entity, "access", None)
         source_ref = getattr(entity, "source", None)
 
@@ -52,12 +51,11 @@ def build_exposure_map(model):
         parents = [ref.entity for ref in parent_refs] if parent_refs else []
         is_composite = len(parents) > 0
 
-        # Entity must have:
-        # - source + access (for REST/WS entities), OR
-        # - parents + access (for composite/transformation entities)
+        # Entity must have access block to be exposed
+        # Required: (source OR parents) + access
         has_access = access is not None
 
-        if not expose and not ((source_ref or is_composite) and has_access):
+        if not ((source_ref or is_composite) and has_access):
             continue
 
         # Get direct source or find source through parents
@@ -70,32 +68,16 @@ def build_exposure_map(model):
         # Get operations list
         operations = []
 
-        # PRIORITY 1: Check for WebSocket type: field (NEW SYNTAX - takes precedence)
+        # PRIORITY 1: Check for WebSocket type: field (for WebSocket entities)
         ws_flow_type = getattr(entity, "ws_flow_type", None)
-        if ws_flow_type and has_access:
+        if ws_flow_type:
             if ws_flow_type == "inbound":
                 # Inbound: subscribe from external WS
                 operations = ['subscribe']
             elif ws_flow_type == "outbound":
                 # Outbound: publish to external WS
                 operations = ['publish']
-        # PRIORITY 2: Expose block operations (WebSocket entities with explicit operations)
-        elif expose:
-            # Expose block: explicit operations list (for WebSocket or old syntax)
-            # Check if expose is boolean (expose: true) or has operations
-            expose_value = getattr(expose, "expose_value", None)
-            if expose_value is not None:
-                # New syntax: expose: true (get operations from parent's source)
-                if parents and expose_value:
-                    parent_source = _find_source_in_parents(parents)
-                    if parent_source:
-                        source_ops_list = getattr(parent_source, "operations_list", None)
-                        if source_ops_list:
-                            operations = getattr(source_ops_list, "operations", []) or []
-            else:
-                # Old syntax: expose block with operations list
-                operations = getattr(expose, "operations", []) or []
-        # PRIORITY 3: Source operations (REST entities with access: public/[roles])
+        # PRIORITY 2: Source operations (REST entities with access control)
         elif source and has_access:
             # New syntax: get operations from source
             # Try new syntax first (operations_list)
@@ -140,10 +122,6 @@ def build_exposure_map(model):
         if has_ws_ops:
             ws_channel = f"/ws/{entity.name.lower()}"
 
-        # Get path_params
-        path_params_block = getattr(expose, "path_params", None) if expose else None
-        path_params = getattr(path_params_block, "params", []) if path_params_block else []
-
         # Extract readonly fields from attributes with @readonly marker
         readonly_fields = []
         for attr in getattr(entity, "attributes", []) or []:
@@ -153,8 +131,8 @@ def build_exposure_map(model):
                 if getattr(attr_type, "readonlyMarker", None):
                     readonly_fields.append(attr.name)
 
-        # Extract permissions from AccessControl block or entity access field
-        permissions = _extract_permissions(model, entity, source, expose)
+        # Extract permissions from entity access field
+        permissions = _extract_permissions(model, entity, source)
 
         # CRITICAL: Filter operations based on access control permissions
         # If permissions defined, ONLY those operations are allowed
@@ -169,7 +147,6 @@ def build_exposure_map(model):
             "ws_channel": ws_channel,
             "operations": operations,
             "source": source,
-            "path_params": path_params,
             "readonly_fields": readonly_fields,
             "permissions": permissions,  # Operation -> roles mapping
             "is_transformation": len(parents) > 0,  # Has parent entities
@@ -219,35 +196,26 @@ def extract_path_params(path_template):
     return re.findall(r'\{(\w+)\}', path_template)
 
 
-def _extract_permissions(model, entity, source, expose):
+def _extract_permissions(model, entity, source):
     """
-    Extract permissions from standalone Role blocks (NEW SYNTAX) or fallback to old syntax.
-
-    NEW SYNTAX (standalone roles):
-    Role admin
-      on AuthorsAPI: [*]
-      on BookDetails: [read]
-    end
-
-    Returns operation -> roles mapping by inverting role -> operations.
+    Extract permissions from entity access block or fallback to old syntax.
 
     Priority order:
-    1. Entity-level access block (NEWEST SYNTAX: access: public / access: [roles] / access: read: public ...)
-    2. Standalone Role blocks (NEW)
+    1. Entity-level access block (access: public / access: [roles] / access: read: public ...)
+    2. Standalone Role blocks
     3. Old syntax: AccessControl block role-centric rules
     4. Old syntax: AccessControl entity-level rules
     5. Old syntax: AccessControl source-level rules
-    6. Old syntax: expose block permissions
-    7. Old syntax: source operations with inline permissions
+    6. Old syntax: source operations with inline permissions
 
     Returns:
         dict: {operation: [roles...]}
     """
     permissions = {}
 
-    # PRIORITY 1: Entity-level access block (NEWEST SYNTAX)
+    # PRIORITY 1: Entity-level access block
     # Handles: access: public, access: [role1, role2], access: read: public create: [admin]
-    access_block = getattr(entity, "access", None) or (getattr(expose, "access", None) if expose else None)
+    access_block = getattr(entity, "access", None)
     if access_block:
         # Get list of all valid operations for this entity
         declared_ops = _get_declared_operations(entity, source)
@@ -533,18 +501,8 @@ def _extract_permissions(model, entity, source, expose):
                         if permissions:
                             return permissions  # Source-level rules from AccessControl
 
-    # Fallback to OLDEST SYNTAX
-    if expose:
-        # Expose block: permissions from expose block (deprecated)
-        perms_block = getattr(expose, "permissions", None)
-        if perms_block:
-            perm_rules = getattr(perms_block, "perms", []) or []
-            for rule in perm_rules:
-                op = getattr(rule, "operation", None)
-                roles = getattr(rule, "roles", [])
-                if op and roles:
-                    permissions[op] = roles
-    elif source:
+    # Fallback to OLD SYNTAX
+    if source:
         # Old syntax: permissions from source operations block
         source_ops_block = getattr(source, "operations", None)
         if source_ops_block:
