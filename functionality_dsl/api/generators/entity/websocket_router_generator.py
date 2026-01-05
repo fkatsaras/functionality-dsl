@@ -195,9 +195,6 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             collect_intermediate_services(entity, intermediate_services)
             is_chained_composite = len(intermediate_services) > 0
 
-        # Get filters from config
-        subscribe_filters = config.get("filters", [])
-
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
@@ -205,7 +202,6 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "subscribe_ws_sources": ws_sources,  # NEW: List of all WS sources
             "is_chained_composite": is_chained_composite,
             "intermediate_services": intermediate_services,  # Ordered list of services to chain through
-            "subscribe_filters": subscribe_filters,  # Filter fields for query parameters
         })
 
     # Add publish entity details

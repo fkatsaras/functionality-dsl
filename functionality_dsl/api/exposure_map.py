@@ -1,81 +1,21 @@
 """
-Exposure map builder for NEW SYNTAX (entity-centric API exposure).
-Builds a mapping from entities to their API exposure configuration.
+Build entity exposure configuration (API routes, operations, permissions).
+
+All entities are now singletons (no @id field, no collections).
+REST paths are flat: /api/{entity_name_lower}
+Operations: read, create, update, delete (NO list operation)
 """
 
 from textx import get_children_of_type
-from functionality_dsl.validation.exposure_validators import get_id_field_from_path
-from pluralizer import Pluralizer
-
-pluralizer = Pluralizer()
-
-
-def _find_id_attribute(entity):
-    """Find the attribute marked with @id marker."""
-    attrs = getattr(entity, "attributes", []) or []
-    for attr in attrs:
-        type_spec = getattr(attr, "type", None)
-        if not type_spec:
-            continue
-        # Check for @id marker on the type spec
-        if getattr(type_spec, "idMarker", None) == "@id":
-            return attr.name
-    return None
 
 
 def _generate_rest_path(entity):
     """
-    Auto-generate REST path for an entity (simplified - flat paths only).
-
-    Rules:
-    - Base entity (no parents): /api/{plural}/{id_field}
-    - Singleton entity (no parents, no @id): /api/{entity_name_lower}
-    - Composite entity (has parents): /api/{base_plural}/{base_id}/{entity_name_lower}
-    - Composite of singleton: /api/{entity_name_lower}
-
-    Examples:
-    - User (base) → /api/users/{userId}
-    - Order (base) → /api/orders/{orderId}
-    - Forecast (singleton) → /api/forecast
-    - Analytics (composite of Forecast singleton) → /api/analytics
-    - OrderDetails (composite of Order) → /api/orders/{orderId}/orderdetails
+    Generate REST path for singleton entity.
+    All entities are singletons: /api/{entity_name_lower}
     """
-    # Check if entity has identity anchor (computed during validation)
-    identity_anchor = getattr(entity, "_identity_anchor", None)
-    identity_field = getattr(entity, "_identity_field", None)
-    is_composite = getattr(entity, "_is_composite", False)
-    is_singleton = getattr(entity, "_is_singleton", False)
-
-    # Singleton entity (no @id, no parents)
-    if is_singleton:
-        return f"/api/{entity.name.lower()}"
-
-    # Composite of singleton entity
-    if is_composite and not identity_anchor:
-        # Check if any parent is singleton
-        parent_refs = getattr(entity, "parents", []) or []
-        if parent_refs:
-            first_parent = parent_refs[0].entity
-            first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
-            if first_parent_is_singleton:
-                # Composite of singleton gets its own singleton path
-                return f"/api/{entity.name.lower()}"
-
-    if not identity_anchor or not identity_field:
-        return None  # Entity has no REST identity
-
-    # Base entity (no parents, has @id and source)
-    if identity_anchor == entity and not is_composite:
-        plural = pluralizer.pluralize(entity.name.lower())
-        return f"/api/{plural}/{{{identity_field}}}"
-
-    # Composite entity (has parents with @id)
-    # Path format: /api/{base_plural}/{base_id}/{composite_name}
-    base_plural = pluralizer.pluralize(identity_anchor.name.lower())
-    base_id_field = identity_anchor._identity_field
-    composite_suffix = entity.name.lower()
-
-    return f"/api/{base_plural}/{{{base_id_field}}}/{composite_suffix}"
+    entity_name = entity.name.lower()
+    return f"/api/{entity_name}"
 
 
 def build_exposure_map(model):
@@ -86,13 +26,15 @@ def build_exposure_map(model):
     {
         "EntityName": {
             "entity": Entity object,
-            "rest_path": "/api/path" or None,
-            "ws_channel": "/ws/channel" or None,
-            "operations": ["list", "read", ...],
+            "rest_path": "/api/entityname" or None,
+            "ws_channel": "/ws/entityname" or None,
+            "operations": ["read", "create", "update", "delete"],
             "source": Source object,
-            "id_field": field name (REQUIRED, no inference),
             "path_params": [param objects],
             "readonly_fields": ["field1", ...],
+            "permissions": {operation: [roles...]},
+            "is_transformation": bool,
+            "parents": [parent entities],
         },
         ...
     }
@@ -113,7 +55,6 @@ def build_exposure_map(model):
         # Entity must have:
         # - source + access (for REST/WS entities), OR
         # - parents + access (for composite/transformation entities)
-        # NEW SYNTAX: access can be 'public', [roles], or per-operation rules
         has_access = access is not None
 
         if not expose and not ((source_ref or is_composite) and has_access):
@@ -154,7 +95,7 @@ def build_exposure_map(model):
             else:
                 # Old syntax: expose block with operations list
                 operations = getattr(expose, "operations", []) or []
-        # PRIORITY 3: Source operations (REST entities with access: true)
+        # PRIORITY 3: Source operations (REST entities with access: public/[roles])
         elif source and has_access:
             # New syntax: get operations from source
             # Try new syntax first (operations_list)
@@ -170,7 +111,7 @@ def build_exposure_map(model):
 
             # CRITICAL: For REST composite entities ONLY - limit to 'read' operation
             # Multi-parent entities require data from multiple sources and cannot be created/updated/deleted
-            # WebSocket composites are handled by WS inference below
+            # WebSocket composites are handled by WS inference above
             source_type = getattr(source, "kind", None) if source else None
             if is_composite and source_type != "WS":
                 operations = ['read']
@@ -179,21 +120,10 @@ def build_exposure_map(model):
         if not source and not is_composite:
             continue
 
-        # DSL Semantic: 'read' operation means BOTH list and read
-        # For entities with @id field (collections), expand 'read' to include 'list'
-        # For singleton entities (no @id), keep only 'read'
-        id_field = getattr(entity, "_identity_field", None)
-        is_collection = id_field is not None
-
-        if "read" in operations and is_collection and "list" not in operations:
-            # Expand 'read' to include 'list' for collection resources
-            operations = list(operations)  # Make a copy
-            operations.append("list")
-
         # Infer REST or WebSocket based on operations
-        # REST operations: list, read, create, update, delete
+        # REST operations: read, create, update, delete (NO list)
         # WS operations: subscribe, publish
-        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
+        rest_ops = {'read', 'create', 'update', 'delete'}
         ws_ops = {'subscribe', 'publish'}
 
         has_rest_ops = any(op in rest_ops for op in operations)
@@ -206,46 +136,32 @@ def build_exposure_map(model):
 
         # Auto-generate WebSocket channel if WS operations are exposed
         # Pattern: /ws/{entity_name_lowercase}
-        # Channel is ALWAYS auto-generated (no manual override needed)
         ws_channel = None
         if has_ws_ops:
             ws_channel = f"/ws/{entity.name.lower()}"
-
-        # id_field already retrieved above for read->list expansion
 
         # Get path_params
         path_params_block = getattr(expose, "path_params", None) if expose else None
         path_params = getattr(path_params_block, "params", []) if path_params_block else []
 
-        # Get filters from entity level (new syntax) or expose block (old syntax fallback)
-        filters_block = getattr(entity, "filters", None) or (getattr(expose, "filters", None) if expose else None)
-        filters = getattr(filters_block, "fields", []) if filters_block else []
-
-        # Extract readonly fields from attributes with @id or @readonly markers
+        # Extract readonly fields from attributes with @readonly marker
         readonly_fields = []
         for attr in getattr(entity, "attributes", []) or []:
             attr_type = getattr(attr, "type", None)
             if attr_type:
-                # Check for @id marker (always readonly)
-                if getattr(attr_type, "idMarker", None):
-                    readonly_fields.append(attr.name)
                 # Check for @readonly marker
-                elif getattr(attr_type, "readonlyMarker", None):
+                if getattr(attr_type, "readonlyMarker", None):
                     readonly_fields.append(attr.name)
 
-        # Extract permissions from AccessControl block or fallback to old syntax
+        # Extract permissions from AccessControl block or entity access field
         permissions = _extract_permissions(model, entity, source, expose)
 
-        # CRITICAL: Filter operations based on AccessControl permissions
-        # If AccessControl defines entity-level or source-level permissions,
-        # ONLY those operations are allowed (not all source operations)
+        # CRITICAL: Filter operations based on access control permissions
+        # If permissions defined, ONLY those operations are allowed
         if permissions:
             # Filter operations to only include those with permissions defined
             allowed_ops = set(permissions.keys())
             operations = [op for op in operations if op in allowed_ops]
-
-        # Check if entity is a singleton (no @id field, identity from context)
-        is_singleton = getattr(entity, "_is_singleton", False)
 
         exposure_map[entity.name] = {
             "entity": entity,
@@ -253,11 +169,8 @@ def build_exposure_map(model):
             "ws_channel": ws_channel,
             "operations": operations,
             "source": source,
-            "id_field": id_field,
-            "is_singleton": is_singleton,  # True if singleton (no @id, identity from context)
             "path_params": path_params,
-            "filters": filters,
-            "readonly_fields": readonly_fields,  # Fields marked with @id or @readonly
+            "readonly_fields": readonly_fields,
             "permissions": permissions,  # Operation -> roles mapping
             "is_transformation": len(parents) > 0,  # Has parent entities
             "parents": parents,
@@ -306,20 +219,6 @@ def extract_path_params(path_template):
     return re.findall(r'\{(\w+)\}', path_template)
 
 
-def _apply_read_list_expansion(permissions, entity):
-    """
-    Apply DSL semantic: 'read' operation includes 'list' for collection resources.
-    If permissions include 'read' for a collection resource, also include 'list'.
-    """
-    if "read" in permissions and "list" not in permissions:
-        id_field = getattr(entity, "_identity_field", None)
-        is_collection = id_field is not None
-        if is_collection:
-            # Copy the 'read' roles to 'list'
-            permissions["list"] = permissions["read"].copy() if isinstance(permissions["read"], list) else permissions["read"]
-    return permissions
-
-
 def _extract_permissions(model, entity, source, expose):
     """
     Extract permissions from standalone Role blocks (NEW SYNTAX) or fallback to old syntax.
@@ -362,13 +261,13 @@ def _extract_permissions(model, entity, source, expose):
             # Form 1: access: public - all operations are public
             for op in declared_ops:
                 permissions[op] = ["public"]
-            return _apply_read_list_expansion(permissions, entity)
+            return permissions
         elif roles_list:
             # Form 2: access: [role1, role2] - all operations require these roles
             role_names = [r for r in roles_list]
             for op in declared_ops:
                 permissions[op] = role_names
-            return _apply_read_list_expansion(permissions, entity)
+            return permissions
         elif access_rules:
             # Form 3: access: read: public create: [admin] - per-operation rules
             for rule in access_rules:
@@ -380,7 +279,7 @@ def _extract_permissions(model, entity, source, expose):
                     permissions[op] = ["public"]
                 elif rule_roles:
                     permissions[op] = [r for r in rule_roles]
-            return _apply_read_list_expansion(permissions, entity)
+            return permissions
 
     # NEW SYNTAX: Get standalone Role declarations
     roles = get_children_of_type("Role", model)
@@ -491,7 +390,7 @@ def _extract_permissions(model, entity, source, expose):
 
     # If we found new syntax permissions, return them
     if permissions:
-        return _apply_read_list_expansion(permissions, entity)
+        return permissions
 
     # OLD SYNTAX fallback (keep for backward compatibility)
     # Get AccessControl blocks for old syntax
@@ -580,7 +479,7 @@ def _extract_permissions(model, entity, source, expose):
     expand_and_merge(entity_permissions_old, permissions_old)
 
     if permissions_old:
-        return _apply_read_list_expansion(permissions_old, entity)
+        return permissions_old
 
     # Check for entity-level permissions in AccessControl (OLDEST SYNTAX)
     for ac in access_controls:
@@ -605,7 +504,7 @@ def _extract_permissions(model, entity, source, expose):
                                 if role_name:
                                     role_list.append(role_name)
                         permissions[op] = role_list
-                    return _apply_read_list_expansion(permissions, entity)  # Entity-level rules override everything
+                    return permissions  # Entity-level rules override everything
 
     # Check for source-level permissions in AccessControl (OLD SYNTAX)
     if source:
@@ -632,7 +531,7 @@ def _extract_permissions(model, entity, source, expose):
                                         role_list.append(role_name)
                             permissions[op] = role_list
                         if permissions:
-                            return _apply_read_list_expansion(permissions, entity)  # Source-level rules from AccessControl
+                            return permissions  # Source-level rules from AccessControl
 
     # Fallback to OLDEST SYNTAX
     if expose:
@@ -662,13 +561,13 @@ def _extract_permissions(model, entity, source, expose):
                         role_list.append(role)
                 permissions[op] = role_list
 
-    return _apply_read_list_expansion(permissions, entity)
+    return permissions
 
 
 def _get_declared_operations(entity, source):
     """
     Get list of operations declared for an entity/source.
-    For base entities: operations from source
+    For base entities: operations from source (read, create, update, delete)
     For REST composite entities: [read] only
     For WS composite entities: infer from source
     For WS publish-only entities (with target but no source): [publish]

@@ -66,11 +66,8 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     entity = config["entity"]
     operations = config["operations"]
     source = config["source"]
-    id_field = config["id_field"]
-
-    # Normalize empty string to None (TextX returns "" for optional attributes)
-    if id_field == "":
-        id_field = None
+    # All entities are singletons now - no id_field
+    id_field = None
 
     print(f"  Generating service for {entity_name}")
 

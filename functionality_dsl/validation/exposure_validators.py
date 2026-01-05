@@ -105,7 +105,8 @@ def _validate_exposure_blocks(model, metamodel=None):
         operations = getattr(expose, "operations", [])
 
         # Infer REST or WebSocket based on operations
-        rest_ops = {'list', 'read', 'create', 'update', 'delete'}
+        # REST operations: read, create, update, delete (NO list)
+        rest_ops = {'read', 'create', 'update', 'delete'}
         ws_ops = {'subscribe', 'publish'}
 
         has_rest_ops = any(op in rest_ops for op in operations)
@@ -122,10 +123,10 @@ def _validate_exposure_blocks(model, metamodel=None):
 
 def _validate_rest_expose(entity, expose, source):
     """Validate REST exposure configuration."""
-    # REST paths are now auto-generated from identity anchor OR as singleton
-    # Validation of identity anchor happens in entity_validators.py
+    # All entities are now singletons - REST paths are flat: /api/{entity_name}
+    # No @id field, no path parameters, no collections
 
-    # Get operations first to check for singleton pattern
+    # Get operations
     operations = getattr(expose, "operations", [])
     if not operations:
         raise TextXSemanticError(
@@ -133,62 +134,9 @@ def _validate_rest_expose(entity, expose, source):
             **get_location(expose),
         )
 
-    identity_anchor = getattr(entity, "_identity_anchor", None)
-    identity_field = getattr(entity, "_identity_field", None)
-    is_singleton = getattr(entity, "_is_singleton", False)
-    is_composite = getattr(entity, "_is_composite", False)
-
-    # Check if this is a composite of a singleton parent
-    is_singleton_derived = False
-    if is_composite and not identity_anchor:
-        # Composite with no anchor might be derived from singleton
-        parent_refs = getattr(entity, "parents", []) or []
-        if parent_refs:
-            first_parent = parent_refs[0].entity if hasattr(parent_refs[0], "entity") else parent_refs[0]
-            first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
-            if first_parent_is_singleton:
-                is_singleton_derived = True
-
-    # Singleton entities (no @id) generate endpoints without path parameters
-    # Examples: GET /api/profile, PUT /api/profile, DELETE /api/profile
-    # They support any operations except 'list' (which requires collection)
-    if is_singleton or is_singleton_derived:
-        # Singleton entities cannot have 'list' operation (list requires a collection with IDs)
-        if 'list' in operations:
-            entity_type = "Singleton-derived composite" if is_singleton_derived else "Singleton"
-            raise TextXSemanticError(
-                f"{entity_type} entity '{entity.name}' cannot have 'list' operation.\n"
-                f"Singleton entities (without @id field) represent a single resource, not a collection.\n"
-                f"Supported singleton operations: read, create, update, delete\n"
-                f"To use 'list', add an @id field to make this a standard collection resource.",
-                **get_location(expose),
-            )
-
-        # Singleton-derived composites (read-only transformations) can only have 'read'
-        if is_singleton_derived:
-            invalid_ops = [op for op in operations if op not in ['read']]
-            if invalid_ops:
-                raise TextXSemanticError(
-                    f"Singleton-derived composite entity '{entity.name}' cannot have operations: {invalid_ops}.\n"
-                    f"Composite entities derived from singletons are read-only transformations.\n"
-                    f"Only 'read' operation is allowed.",
-                    **get_location(expose),
-                )
-
-        # Singleton entities are valid - skip identity anchor check
-        return
-
-    # Standard REST entities need identity anchor
-    if not identity_anchor or not identity_field:
-        raise TextXSemanticError(
-            f"Entity '{entity.name}' has REST expose but no identity anchor. "
-            f"Entities must have an @id field (base entity) or inherit from an entity with @id (composite entity).\n"
-            f"For singleton endpoints (no path parameter), remove all operations except 'read' and omit the @id field.",
-            **get_location(expose),
-        )
-
     # Check that operations are valid for REST
-    rest_ops = {'list', 'read', 'create', 'update', 'delete'}
+    # Valid operations: read, create, update, delete (NO list)
+    rest_ops = {'read', 'create', 'update', 'delete'}
     for op in operations:
         if op not in rest_ops:
             raise TextXSemanticError(
@@ -208,58 +156,6 @@ def _validate_rest_expose(entity, expose, source):
                     f"Readonly field '{field}' not found in entity '{entity.name}' attributes.",
                     **get_location(readonly_block),
                 )
-
-    # Validate filters if present
-    filters_block = getattr(expose, "filters", None)
-    if filters_block:
-        filters = getattr(filters_block, "fields", []) or []
-        operations = getattr(expose, "operations", [])
-
-        # Rule 1: Filters only allowed if 'list' operation is exposed
-        if 'list' not in operations:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'filters:' but does not expose 'list' operation. "
-                f"Filters can only be used with the 'list' operation.",
-                **get_location(filters_block),
-            )
-
-        # Rule 2: Filters only allowed on base entities (entities with source, no parents)
-        parent_refs = getattr(entity, "parents", []) or []
-        if parent_refs:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' is a composite entity and cannot have 'filters:'. "
-                f"Only base entities (entities with 'source:' and no parents) may define filters. "
-                f"Composite entities are projections and should not support filtering.",
-                **get_location(filters_block),
-            )
-
-        if not source:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'filters:' but no 'source:' field. "
-                f"Only base entities with a source can define filters.",
-                **get_location(filters_block),
-            )
-
-        # Rule 3: Filter fields must exist in entity attributes
-        attrs = {a.name for a in getattr(entity, "attributes", []) or []}
-        for field in filters:
-            if field not in attrs:
-                raise TextXSemanticError(
-                    f"Filter field '{field}' not found in entity '{entity.name}' attributes.",
-                    **get_location(filters_block),
-                )
-
-        # Rule 4: Filter fields must be schema fields (not computed)
-        attributes = getattr(entity, "attributes", []) or []
-        for attr in attributes:
-            if attr.name in filters:
-                expr = getattr(attr, "expr", None)
-                if expr is not None:
-                    raise TextXSemanticError(
-                        f"Filter field '{attr.name}' in entity '{entity.name}' is a computed attribute. "
-                        f"Only schema fields (attributes without expressions) can be used as filters.",
-                        **get_location(filters_block),
-                    )
 
 
 def _validate_ws_expose(entity, expose, source, model):
@@ -403,11 +299,10 @@ def _validate_crud_operation(source, op_name, op):
 
 def _validate_entity_crud_rules(model, metamodel=None):
     """
-    Validate CRUD operation rules for entities (simplified - no nested resources):
+    Validate CRUD operation rules for entities (all entities are singletons):
     1. Mutations (create/update/delete) require source entity
     2. Composite entities (with parents) CANNOT have source (enforced in entity_validators)
-    3. Composite entities can only expose 'list' and 'read' (read-only)
-    4. Array type entities can only expose 'list' and 'read'
+    3. Composite entities can only expose 'read' (read-only)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -418,7 +313,6 @@ def _validate_entity_crud_rules(model, metamodel=None):
 
         source = getattr(entity, "source", None)
         parent_entities = _get_parent_entities(entity)
-        entity_type = getattr(entity, "entity_type", None) or "object"  # Default to object
         operations = getattr(expose, "operations", [])
 
         # Rule 1: Mutations require source entity
@@ -430,7 +324,7 @@ def _validate_entity_crud_rules(model, metamodel=None):
                 f"Entity '{entity.name}' exposes mutation operations {mutation_ops & set(operations)} "
                 f"but has no 'source:' field. Only base entities (entities with 'source:') can expose "
                 f"create/update/delete operations. "
-                f"Composite entities (with parents) can only use 'list' and 'read' operations.",
+                f"Composite entities (with parents) can only use 'read' operation.",
                 **get_location(expose),
             )
 
@@ -440,25 +334,14 @@ def _validate_entity_crud_rules(model, metamodel=None):
         # - WebSocket subscribe: read-only streaming (transformation before client)
         # - WebSocket publish: transformation before sending to target (valid use case)
         if parent_entities:
-            # Allow: list, read (REST read-only), subscribe, publish (WebSocket with transformations)
-            invalid_ops = set(operations) - {'list', 'read', 'subscribe', 'publish'}
+            # Allow: read (REST read-only), subscribe, publish (WebSocket with transformations)
+            invalid_ops = set(operations) - {'read', 'subscribe', 'publish'}
             if invalid_ops:
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' is a composite entity (has parents: {[p.name for p in parent_entities]}) "
                     f"and exposes invalid operations: {invalid_ops}. "
-                    f"Composite entities can ONLY expose 'list', 'read', 'subscribe', or 'publish' operations. "
+                    f"Composite entities can ONLY expose 'read', 'subscribe', or 'publish' operations. "
                     f"To create/update/delete REST data, create a base entity without parents and add 'source:' field.",
-                    **get_location(expose),
-                )
-
-        # Rule 3: Array type entities can only expose 'list' and 'read'
-        if entity_type == "array":
-            invalid_ops = set(operations) - {'list', 'read'}
-            if invalid_ops:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' has type: array and exposes invalid operations: {invalid_ops}. "
-                    f"Array entities (collection wrappers) can only expose 'list' and 'read' operations. "
-                    f"To create/update/delete items, expose operations on the item entity (type: object) instead.",
                     **get_location(expose),
                 )
 
@@ -666,8 +549,8 @@ def _get_source_operations(source):
         # (publish requires target: on entity, not from source)
         return {'subscribe'}
     else:
-        # REST sources support CRUD operations
-        return {'read', 'create', 'update', 'delete', 'list'}
+        # REST sources support CRUD operations (NO list)
+        return {'read', 'create', 'update', 'delete'}
 
 
 def _validate_permissions(model, metamodel=None):

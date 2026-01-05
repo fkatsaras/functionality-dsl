@@ -17,11 +17,11 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
-// Extended to support @id marker for identity fields and @readonly marker for read-only fields
+// Extended to support @readonly marker for read-only fields
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?
 ;
 
 TypeConstraint:
@@ -50,19 +50,16 @@ Entity:
   ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
   ('type:' ws_flow_type=WSFlowType)?
   ('source:' source=[Source])?
-  (relationships=RelationshipsBlock)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
-  (filters=FiltersBlock)?
   (access=AccessBlock)?
   'end'
 ;
 
 // Parent reference: either plain (Product) or aliased (thessForecast: Forecast)
-// Optional [] suffix indicates one-to-many relationship (array parent)
 ParentRef:
-  (alias=ID ':')? entity=[Entity] is_array?='[]'?
+  (alias=ID ':')? entity=[Entity]
 ;
 
 // WebSocket flow direction (for WebSocket entities only)
@@ -70,20 +67,6 @@ WSFlowType:
   'inbound' | 'outbound'
 ;
 
-// Relationships block for composite entities
-// Specifies how to fetch each parent entity
-RelationshipsBlock:
-  'relationships:'
-    '-' relationships+=Relationship ('-' relationships+=Relationship)*
-;
-
-Relationship:
-  parentAlias=ID ':' fetchExpr=AttrRef
-;
-
-AttrRef:
-  entityOrAlias=ID '.' attr=ID
-;
 
 // ---------- EXPOSE BLOCK ----------
 // Supports two syntaxes:
@@ -96,13 +79,12 @@ ExposeBlock:
     ('operations:' '[' operations+=Operation (',' operations+=Operation)* ']')?
     ('id_field:' id_field=STRING)?
     (path_params=ExposePathParamsBlock)?
-    (filters=FiltersBlock)?
     (permissions=PermissionsBlock)?
     (access=ExposeAccessBlock)?
 ;
 
 Operation:
-  'read' | 'create' | 'update' | 'delete' | 'list' | 'subscribe' | 'publish'
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;
 
 // Path params for expose block (explicit mapping)
@@ -114,9 +96,6 @@ ExposePathParamsBlock:
   'path_params:' params+=ExposePathParam+
 ;
 
-FiltersBlock:
-  'filters:' '[' fields+=ID (',' fields+=ID)* ']'
-;
 
 // Permissions block for RBAC (deprecated - use source operations instead)
 PermissionsBlock:
