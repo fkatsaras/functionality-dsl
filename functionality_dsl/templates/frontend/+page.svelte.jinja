@@ -10,11 +10,79 @@
 {% endfor %}
 
 <script lang="ts">
+    {% if auth %}
+    import { authStore } from "$lib/stores/authStore";
+    import Login from "$lib/components/Login.svelte";
+    import Unauthorized from "$lib/components/Unauthorized.svelte";
+    {% endif %}
     {% for k in uniq.kinds %}
     import {{ k }} from "$lib/components/{{ k }}.svelte";
     {% endfor %}
+    {% if auth %}
+
+    let authState = $state({ token: null, userId: null, roles: [] });
+    authStore.subscribe((state) => {
+        authState = state;
+    });
+
+    function canAccessComponent(componentName: string): boolean {
+        const perm = componentPermissions[componentName];
+        if (!perm) return true;
+
+        const roles = perm.roles;
+        if (roles.includes("public")) return true;
+
+        return roles.some(role => authState.roles.includes(role));
+    }
+
+    function getComponentPermission(componentName: string) {
+        return componentPermissions[componentName];
+    }
+
+    const componentPermissions: Record<string, {entity: string, operation: string, roles: string[]}> = {{ component_permissions | tojson }};
+    {% endif %}
 </script>
 
+{% if auth %}
+{% raw %}{#if !authState.token}{% endraw %}
+    <Login secret="{{ auth.secret }}" roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
+{% raw %}{:else}{% endraw %}
+    <div class="dashboard-container mx-auto max-w-[1800px] px-10 py-12">
+        <div class="dashboard-header mb-6">
+            <h1 class="text-2xl font-bold">Dashboard</h1>
+            <div class="auth-info">
+                <span class="text-sm text-[var(--text-muted)]">
+                    Logged in as <strong>{% raw %}{authState.userId}{% endraw %}</strong>
+                    (Roles: {% raw %}{authState.roles.join(", ")}{% endraw %})
+                </span>
+                <button
+                    class="logout-button"
+                    onclick={% raw %}{() => authStore.logout()}{% endraw %}
+                >
+                    Logout
+                </button>
+            </div>
+        </div>
+        <div class="dashboard-grid">
+            {% for cmp in components %}
+                <div class="dashboard-item">
+                    <div class="dashboard-card">
+                        {% raw %}{#if canAccessComponent("{% endraw %}{{ cmp.name }}{% raw %}")}{% endraw %}
+                            {{ macros.render_component(cmp) }}
+                        {% raw %}{:else}{% endraw %}
+                            {% raw %}{@const perm = getComponentPermission("{% endraw %}{{ cmp.name }}{% raw %}")}{% endraw %}
+                            <Unauthorized
+                                requiredRoles={% raw %}{perm.roles}{% endraw %}
+                                operation={% raw %}{perm.operation}{% endraw %}
+                            />
+                        {% raw %}{/if}{% endraw %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+{% raw %}{/if}{% endraw %}
+{% else %}
 <div class="dashboard-container mx-auto max-w-[1800px] px-10 py-12">
     <div class="dashboard-grid">
         {% for cmp in components %}
@@ -26,3 +94,4 @@
         {% endfor %}
     </div>
 </div>
+{% endif %}

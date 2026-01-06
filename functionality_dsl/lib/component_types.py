@@ -618,11 +618,16 @@ class ActionFormComponent(_BaseComponent):
         if self.entity_ref is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
-        # Validate that entity exposes the requested operation
+        # Validate that entity exposes the requested operation (optional validation)
+        # OLD SYNTAX: Check expose block if present
         expose = getattr(self.entity_ref, "expose", None)
-        operations = getattr(expose, "operations", []) if expose else []
-        if self.operation not in operations:
-            raise ValueError(f"Component '{name}': Entity '{self.entity_ref.name}' does not expose '{self.operation}' operation. Available operations: {operations}")
+        if expose:
+            operations = getattr(expose, "operations", []) if expose else []
+            if operations and self.operation not in operations:
+                raise ValueError(f"Component '{name}': Entity '{self.entity_ref.name}' does not expose '{self.operation}' operation. Available operations: {operations}")
+
+        # NEW SYNTAX: Entity with source - operations will be validated by backend
+        # Skip validation here since source.operations may not be resolved yet
 
     def to_props(self):
         """

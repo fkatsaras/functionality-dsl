@@ -4,6 +4,7 @@
     import KeyValue from "$lib/primitives/KeyValue.svelte";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
+    import ErrorState from "../primitives/icons/ErrorState.svelte";
 
     const props = $props<{
         url: string;
@@ -84,11 +85,11 @@
     {#if loading}
         <div class="state-container">
             <EmptyState />
-            <p class="text-sm text-[var(--text-muted)]">Loading...</p>
+            
         </div>
     {:else if error}
         <div class="state-container">
-            <p class="text-sm text-[var(--red-text)]">Error: {error}</p>
+            <ErrorState message={error} />
         </div>
     {:else if data}
         <div class="fields-container">

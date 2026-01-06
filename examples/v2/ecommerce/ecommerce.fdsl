@@ -5,20 +5,20 @@
 // Thesis Focus: REST orchestration + Real-time order tracking
 // ============================================
 
-Role customer
-Role warehouse
+// Role customer
+// Role warehouse
 
-Auth ShopAuth
-  type: jwt
-  secret: "ecommerce-secret-key-change-in-production"
-end
+// Auth ShopAuth
+//   type: jwt
+//   secret: "ecommerce-secret-key-change-in-production"
+// end
 
 Server ECommerceAPI
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: ShopAuth
+  // auth: ShopAuth
 end
 
 // ============================================
@@ -26,32 +26,18 @@ end
 // ============================================
 
 Source<REST> CartAPI
-  base_url: "http://cart-service:9001/cart"
+  base_url: "http://dummy-ecomm-service:9001/cart"
   operations: [read, create, update, delete]
 end
 
 Source<REST> InventoryAPI
-  base_url: "http://inventory-service:9002/stock"
+  base_url: "http://dummy-ecomm-service:9001/stock"
   operations: [read]
 end
 
 Source<REST> OrderAPI
-  base_url: "http://order-service:9003/current-order"
+  base_url: "http://dummy-ecomm-service:9001/current-order"
   operations: [read, create]
-end
-
-// ============================================
-// WEBSOCKET SOURCES - Real-time Updates
-// ============================================
-
-Source<WS> OrderUpdatesWS
-  channel: "ws://order-service:9003/ws/order/updates"
-  operations: [subscribe]
-end
-
-Source<WS> InventoryAlertsWS
-  channel: "ws://inventory-service:9002/ws/stock/alerts"
-  operations: [subscribe]
 end
 
 // ============================================
@@ -63,9 +49,9 @@ Entity Cart
   source: CartAPI
   attributes:
     - items: array;
-    - item_count: integer @readonly;
     - updated_at: string @readonly;
-  access: [customer]
+  // access: [customer]
+  access: public
 end
 
 // Inventory Status - Stock availability
@@ -86,7 +72,8 @@ Entity Order
     - status: string @readonly;
     - created_at: string @readonly;
     - cart_snapshot: array;  // Writable: items from cart when placing order
-  access: [customer]
+  // access: [customer]
+  access: public
 end
 
 // ============================================
@@ -97,26 +84,28 @@ end
 Entity CheckoutSummary(Cart)
   attributes:
     - items: array = Cart.items;
-    - item_count: integer = Cart.item_count;
+    - item_count: integer = len(Cart.items);
     - subtotal: number = round(sum(map(Cart.items, i => i["price"] * i["quantity"])), 2);
     - tax: number = round(CheckoutSummary.subtotal * 0.08, 2);
     - shipping: number = 10.0 if CheckoutSummary.subtotal < 50 else 0.0;
     - discount: number = 5.0 if CheckoutSummary.subtotal > 100 else 0.0;
     - total: number = round(CheckoutSummary.subtotal + CheckoutSummary.tax + CheckoutSummary.shipping - CheckoutSummary.discount, 2);
-    - has_items: boolean = Cart.item_count > 0;
-  access: [customer]
+    - has_items: boolean = len(Cart.items) > 0;
+  // access: [customer]
+  access: public
 end
 
 // Inventory Validation - Cart + Inventory check
 Entity InventoryCheck(Cart, Inventory)
   attributes:
-    - total_items: integer = Cart.item_count;
+    - total_items: integer = len(Cart.items);
     - low_stock_count: integer = len(Inventory.low_stock_items);
     - out_of_stock_count: integer = len(Inventory.out_of_stock_items);
     - has_stock_issues: boolean = InventoryCheck.low_stock_count > 0 or InventoryCheck.out_of_stock_count > 0;
-    - can_checkout: boolean = InventoryCheck.out_of_stock_count == 0 and Cart.item_count > 0;
+    - can_checkout: boolean = InventoryCheck.out_of_stock_count == 0 and len(Cart.items) > 0;
     - warning_message: string = "Some items are low in stock" if InventoryCheck.low_stock_count > 0 and InventoryCheck.out_of_stock_count == 0 else ("Cannot checkout - items out of stock" if InventoryCheck.out_of_stock_count > 0 else "All items available");
-  access: [customer]
+  // access: [customer]
+  access: public
 end
 
 // Order Status - Order with calculated totals
@@ -132,76 +121,8 @@ Entity OrderStatus(Order)
     - is_pending: boolean = Order.status == "pending";
     - is_processing: boolean = Order.status == "processing";
     - is_completed: boolean = Order.status == "completed";
-  access: [customer]
-end
-
-// ============================================
-// WEBSOCKET ENTITIES - Real-time Analytics
-// ============================================
-
-// Base WebSocket Entity - Raw order updates
-Entity RawOrderUpdate
-  type: inbound
-  source: OrderUpdatesWS
-  attributes:
-    - order_id: string;
-    - status: string;
-    - timestamp: integer;
-    - location: string;
-    - estimated_delivery: integer;
-    - processing_time_mins: integer;
-end
-
-// Order Tracking - Real-time delivery predictions and delay detection
-Entity OrderTracking(RawOrderUpdate)
-  type: inbound
-  attributes:
-    - order_id: string = RawOrderUpdate.order_id;
-    - status: string = RawOrderUpdate.status;
-    - current_location: string = RawOrderUpdate.location;
-    - timestamp: integer = RawOrderUpdate.timestamp;
-    - estimated_delivery: integer = RawOrderUpdate.estimated_delivery;
-    - time_until_delivery_hours: integer = toInt((RawOrderUpdate.estimated_delivery - RawOrderUpdate.timestamp) / 3600);
-    - is_delayed: boolean = RawOrderUpdate.processing_time_mins > 120;
-    - is_express: boolean = OrderTracking.time_until_delivery_hours < 24;
-    - priority_level: string = "urgent" if OrderTracking.is_delayed else ("express" if OrderTracking.is_express else "normal");
-    - status_message: string = "DELAYED: Processing took " + toString(RawOrderUpdate.processing_time_mins) + " mins" if OrderTracking.is_delayed else ("Express delivery in " + toString(OrderTracking.time_until_delivery_hours) + "h" if OrderTracking.is_express else "On track");
-    - eta_readable: string = toString(OrderTracking.time_until_delivery_hours) + " hours remaining";
+  // access: [customer]
   access: public
-end
-
-// Base WebSocket Entity - Raw inventory alerts
-Entity RawInventoryAlert
-  type: inbound
-  source: InventoryAlertsWS
-  attributes:
-    - product_id: string;
-    - product_name: string;
-    - stock_level: integer;
-    - threshold: integer;
-    - restock_quantity: integer;
-    - units_sold_per_hour: number;
-    - timestamp: integer;
-end
-
-// Stock Alerts - Real-time stockout prediction and reorder automation
-Entity StockAlerts(RawInventoryAlert)
-  type: inbound
-  attributes:
-    - product_id: string = RawInventoryAlert.product_id;
-    - product_name: string = RawInventoryAlert.product_name;
-    - current_stock: integer = RawInventoryAlert.stock_level;
-    - timestamp: integer = RawInventoryAlert.timestamp;
-    - sales_velocity: number = RawInventoryAlert.units_sold_per_hour;
-    - hours_until_stockout: number = round(RawInventoryAlert.stock_level / RawInventoryAlert.units_sold_per_hour, 1) if RawInventoryAlert.units_sold_per_hour > 0 else 999.0;
-    - stockout_today: boolean = StockAlerts.hours_until_stockout < 24;
-    - is_critical: boolean = RawInventoryAlert.stock_level == 0;
-    - is_urgent: boolean = StockAlerts.stockout_today and RawInventoryAlert.stock_level > 0;
-    - reorder_needed: boolean = StockAlerts.hours_until_stockout < 48;
-    - reorder_quantity: integer = RawInventoryAlert.restock_quantity;
-    - alert_level: string = "critical" if StockAlerts.is_critical else ("urgent" if StockAlerts.is_urgent else ("warning" if StockAlerts.reorder_needed else "normal"));
-    - alert_message: string = "CRITICAL: OUT OF STOCK - " + RawInventoryAlert.product_name if StockAlerts.is_critical else ("URGENT: " + toString(StockAlerts.hours_until_stockout) + "h until stockout - Reorder " + toString(StockAlerts.reorder_quantity) + " units" if StockAlerts.is_urgent else ("Reorder recommended: " + toString(StockAlerts.hours_until_stockout) + "h remaining" if StockAlerts.reorder_needed else "Stock healthy"));
-  access: [warehouse]
 end
 
 // ============================================
@@ -222,6 +143,29 @@ end
 // ============================================
 // UI COMPONENTS
 // ============================================
+
+// Cart Management - Create new cart
+Component<ActionForm> CreateCart
+  entity: Cart
+  operation: create
+  fields: [items]
+  submitLabel: "Create Cart"
+end
+
+// Cart Management - Update cart
+Component<ActionForm> UpdateCart
+  entity: Cart
+  operation: update
+  fields: [items]
+  submitLabel: "Update Cart"
+end
+
+// Cart Management - Delete cart (no fields needed for delete)
+Component<ActionForm> DeleteCart
+  entity: Cart
+  operation: delete
+  submitLabel: "Clear Cart"
+end
 
 // Single-value metrics
 Component<Metric> TotalCartValue

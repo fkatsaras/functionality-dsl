@@ -251,3 +251,48 @@ div::-webkit-scrollbar-thumb:hover {
     border: none;
     margin: 0;
 }
+
+/* -------------------------------------------------------
+     Auth Components
+------------------------------------------------------- */
+
+/* Dashboard header with auth info */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.auth-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logout-button {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--edge);
+    border-radius: 0.5rem;
+    background: var(--card);
+    color: var(--text);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.logout-button:hover {
+    background: var(--surface);
+    border-color: var(--edge-light);
+}
+
+/* Color variables for auth components */
+:root {
+    --bg-primary: var(--canvas);
+    --bg-secondary: var(--surface);
+    --bg-tertiary: var(--card);
+    --text-primary: var(--text);
+    --border: var(--edge-soft);
+    --accent-light: rgba(124, 131, 255, 0.1);
+    --red-bg: var(--red-tint);
+}

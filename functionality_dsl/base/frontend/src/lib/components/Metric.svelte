@@ -4,6 +4,8 @@
     import Card from "$lib/primitives/Card.svelte";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
+    import UnauthorizedState from "../primitives/icons/UnauthorizedState.svelte";
+    import ErrorState from "../primitives/icons/ErrorState.svelte";
 
     const props = $props<{
         url: string;
@@ -82,12 +84,12 @@
     {#if loading}
         <div class="loading-state">
             <EmptyState />
-            <p class="text-sm text-[var(--text-muted)]">Loading...</p>
+            
         </div>
+    {:else if error === "401"}
+        <UnauthorizedState />
     {:else if error}
-        <div class="error-state">
-            <p class="text-sm text-[var(--red-text)]">Error: {error}</p>
-        </div>
+        <ErrorState message={error} />
     {:else if data}
         <Metric value={displayValue} label={displayLabel} />
     {:else}

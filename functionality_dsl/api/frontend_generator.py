@@ -36,14 +36,29 @@ def _get_server_ctx(model):
     cors_val = getattr(s, "cors", None)
     if isinstance(cors_val, (list, tuple)) and len(cors_val) == 1:
         cors_val = cors_val[0]
-        
+
     env_val = getattr(s, "env", None)
     env_val = (env_val or "").lower()
     if env_val not in {"dev", ""}:
         # treat anything not 'dev' as production
         env_val = ""
-        
-    
+
+    # Extract auth configuration
+    auth_config = None
+    auth = getattr(s, "auth", None)
+    if auth:
+        auth_type = getattr(auth, "type", None)
+        if auth_type == "jwt":
+            jwt_config = getattr(auth, "jwt_config", None)
+            secret = getattr(jwt_config, "secret", None) if jwt_config else None
+            auth_config = {
+                "type": "jwt",
+                "secret": secret,
+            }
+
+    # Extract roles
+    roles = [r.name for r in get_children_of_type("Role", model)]
+
     return {
         "server": {
             "name": s.name,
@@ -51,7 +66,9 @@ def _get_server_ctx(model):
             "port": int(getattr(s, "port", 8080)),
             "cors": cors_val or "http://localhost:3000",
             "env": env_val,
-        }
+        },
+        "auth": auth_config,
+        "roles": roles,
     }
 
 def _jinja_env(*, loader):
@@ -101,11 +118,44 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
     )
 
     components = _components(model)
+    ctx = _get_server_ctx(model)
 
     ws_entities = {e.name for e in get_children_of_type("Entity", model) if _is_ws_entity(e)}
     computed_ws_entities = {
         e.name for e in get_children_of_type("Entity", model) if _is_computed_with_ws(e)
     }
+
+    # Extract per-operation access permissions for components
+    from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
+
+    component_permissions = {}
+    for cmp in components:
+        entity_name = cmp.entity_ref.name
+        entity = cmp.entity_ref
+
+        # Get the operation for this component (if it's an ActionForm)
+        operation = getattr(cmp, "operation", None)
+
+        # Get all permission dependencies for this entity
+        perm_deps = get_permission_dependencies(entity, model)
+
+        # Store per-component: either specific operation or default to "read"
+        if operation:
+            # ActionForm - specific operation
+            roles = perm_deps.get(operation, ["public"])
+            component_permissions[cmp.name] = {
+                "entity": entity_name,
+                "operation": operation,
+                "roles": roles
+            }
+        else:
+            # Other components - use "read" operation by default
+            roles = perm_deps.get("read", ["public"])
+            component_permissions[cmp.name] = {
+                "entity": entity_name,
+                "operation": "read",
+                "roles": roles
+            }
 
     (out_dir / "src" / "routes").mkdir(parents=True, exist_ok=True)
     page_tpl = env.get_template("+page.svelte.jinja")
@@ -114,6 +164,9 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
             components=components,
             ws_entities=ws_entities,
             computed_ws_entities=computed_ws_entities,
+            auth=ctx.get("auth"),
+            roles=ctx.get("roles", []),
+            component_permissions=component_permissions,
         ),
         encoding="utf-8",
     )
