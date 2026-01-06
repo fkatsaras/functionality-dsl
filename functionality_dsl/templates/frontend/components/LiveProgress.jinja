@@ -1,0 +1,12 @@
+{# components/LiveProgress.jinja #}
+<LiveProgress
+    name="{{ common.name }}"
+    wsUrl="{{ props.get('wsUrl') }}"
+    field="{{ props.get('field') }}"
+    min={{ props.get('min', 0) }}
+    max={{ props.get('max', 100) }}
+    {% if props.get('threshold') is not none %}
+    threshold={{ props.get('threshold') }}
+    {% endif %}
+    label="{{ props.get('label') or props.get('field') }}"
+/>

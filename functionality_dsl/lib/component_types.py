@@ -1232,6 +1232,235 @@ class BarChartComponent(_BaseComponent):
 
 
 @register_component
+class ProgressComponent(_BaseComponent):
+    """
+    <Component<Progress> ...>
+      entity: Entity
+      field: string (attribute name)
+      min: number (optional, default 0)
+      max: number (optional, default 100)
+      threshold: number (optional, show warning if value exceeds threshold)
+      label: string (optional)
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        min=None,
+        max=None,
+        threshold=None,
+        label=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.min = float(min) if min is not None else 0.0
+        self.max = float(max) if max is not None else 100.0
+        self.threshold = float(threshold) if threshold is not None else None
+        self.label = _strip_quotes(label)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "min": self.min,
+            "max": self.max,
+            "threshold": self.threshold,
+            "label": self.label or self.field,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class LiveProgressComponent(_BaseComponent):
+    """
+    <Component<LiveProgress> ...>
+      entity: Entity (WebSocket entity)
+      field: string (attribute name)
+      min: number (optional, default 0)
+      max: number (optional, default 100)
+      threshold: number (optional, show warning if value exceeds threshold)
+      label: string (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        min=None,
+        max=None,
+        threshold=None,
+        label=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.min = float(min) if min is not None else 0.0
+        self.max = float(max) if max is not None else 100.0
+        self.threshold = float(threshold) if threshold is not None else None
+        self.label = _strip_quotes(label)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "field": self.field,
+            "min": self.min,
+            "max": self.max,
+            "threshold": self.threshold,
+            "label": self.label or self.field,
+        }
+
+
+@register_component
+class AlertComponent(_BaseComponent):
+    """
+    <Component<Alert> ...>
+      entity: Entity
+      condition: string (field name that should be truthy to show alert)
+      message: string (alert message)
+      severity: string (optional: "info", "warning", "error", default "info")
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        condition=None,
+        message=None,
+        severity=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.condition = _strip_quotes(condition)
+        self.message = _strip_quotes(message)
+        self.severity = _strip_quotes(severity) if severity else "info"
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.condition:
+            raise ValueError(f"Component '{name}': 'condition:' cannot be empty.")
+        if not self.message:
+            raise ValueError(f"Component '{name}': 'message:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "condition": self.condition,
+            "message": self.message,
+            "severity": self.severity,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class LiveAlertComponent(_BaseComponent):
+    """
+    <Component<LiveAlert> ...>
+      entity: Entity (WebSocket entity)
+      condition: string (field name that should be truthy to show alert)
+      message: string (alert message)
+      severity: string (optional: "info", "warning", "error", default "info")
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        condition=None,
+        message=None,
+        severity=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.condition = _strip_quotes(condition)
+        self.message = _strip_quotes(message)
+        self.severity = _strip_quotes(severity) if severity else "info"
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.condition:
+            raise ValueError(f"Component '{name}': 'condition:' cannot be empty.")
+        if not self.message:
+            raise ValueError(f"Component '{name}': 'message:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "condition": self.condition,
+            "message": self.message,
+            "severity": self.severity,
+        }
+
+
+@register_component
+class ToggleComponent(_BaseComponent):
+    """
+    <Component<Toggle> ...>
+      entity: Entity
+      field: string (boolean field to toggle)
+      label: string (optional)
+      onLabel: string (optional, for backward compatibility)
+      offLabel: string (optional, for backward compatibility)
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        label=None,
+        onLabel=None,
+        offLabel=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.label = _strip_quotes(label)
+        self.onLabel = _strip_quotes(onLabel)  # Accept but don't use
+        self.offLabel = _strip_quotes(offLabel)  # Accept but don't use
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "label": self.label or self.field,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
 class DownloadFormComponent(_BaseComponent):
     """
     <Component<DownloadForm> ...>

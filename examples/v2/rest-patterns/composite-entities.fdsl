@@ -1,0 +1,64 @@
+// =============================================================================
+// COMPOSITE ENTITIES
+// Demonstrates: Combining multiple base entities into read-only composites
+// =============================================================================
+
+Server CompositeDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Sources: Two separate REST APIs
+// -----------------------------------------------------------------------------
+Source<REST> TemperatureAPI
+  base_url: "http://dummy:9001/temperature"
+  operations: [read]
+end
+
+Source<REST> HumidityAPI
+  base_url: "http://dummy:9001/humidity"
+  operations: [read]
+end
+
+// -----------------------------------------------------------------------------
+// Base Entities: Raw data from sources
+// -----------------------------------------------------------------------------
+Entity Temperature
+  source: TemperatureAPI
+  attributes:
+    - value_f: number;
+    - location: string;
+    - timestamp: string @readonly;
+  access: public
+end
+
+Entity Humidity
+  source: HumidityAPI
+  attributes:
+    - percent: number;
+    - location: string;
+    - timestamp: string @readonly;
+  access: public
+end
+
+// -----------------------------------------------------------------------------
+// Composite Entity: Combines and transforms data from multiple sources
+// Note: Composite entities are always READ-ONLY (no mutations)
+// -----------------------------------------------------------------------------
+Entity Climate(Temperature, Humidity)
+  attributes:
+    - temp_celsius: number = round((Temperature.value_f - 32) * 5 / 9, 1);
+    - temp_fahrenheit: number = Temperature.value_f;
+    - humidity: number = Humidity.percent;
+    - location: string = Temperature.location;
+    - feels_like_c: number = round((Temperature.value_f - 32) * 5 / 9 - (100 - Humidity.percent) * 0.05, 1);
+  access: public
+end
+
+// Generated endpoints:
+// GET /api/temperature   - Raw temperature data
+// GET /api/humidity      - Raw humidity data
+// GET /api/climate       - Combined & transformed data (read-only)

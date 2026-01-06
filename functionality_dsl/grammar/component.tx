@@ -28,6 +28,10 @@ Component:
   | DataCardComponent
   | PieChartComponent
   | BarChartComponent
+  | ProgressComponent
+  | LiveProgressComponent
+  | AlertComponent
+  | LiveAlertComponent
 ;
 
 // Column definition with type specification
@@ -202,11 +206,13 @@ LiveViewComponent:
 ToggleComponent:
   'Component' '<' 'Toggle' '>' name=ID
   'entity:' entity_ref=[entity.Entity]
-  ( ('label:' label=STRING)
-  | ('onLabel:' onLabel=STRING)
-  | ('offLabel:' offLabel=STRING)
-  | ('field:' field=STRING)
-  )*
+  (
+    ('label:' label=STRING)?
+    ('onLabel:' onLabel=STRING)?
+    ('offLabel:' offLabel=STRING)?
+    ('field:' field=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
   'end'
 ;
 
@@ -312,6 +318,56 @@ BarChartComponent:
     ('height:' height=INT)?
     ('width:' width=INT)?
     ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+ProgressComponent:
+  'Component' '<' 'Progress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveProgressComponent:
+  'Component' '<' 'LiveProgress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+  )#
+  'end'
+;
+
+AlertComponent:
+  'Component' '<' 'Alert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveAlertComponent:
+  'Component' '<' 'LiveAlert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
   )#
   'end'
 ;

@@ -70,7 +70,7 @@ Entity Order
     - order_id: string @readonly;
     - status: string @readonly;
     - created_at: string @readonly;
-    - cart_snapshot: array;  // Writable: items from cart when placing order
+    - items: array;  // Writable: items from cart when placing order
   access: [customer]
 end
 
@@ -99,9 +99,9 @@ Entity OrderStatus(Order)
     - order_id: string = Order.order_id;
     - status: string = Order.status;
     - created_at: string = Order.created_at;
-    - items: array = Order.cart_snapshot;
-    - item_count: integer = len(Order.cart_snapshot);
-    - subtotal: number = round(sum(map(Order.cart_snapshot, i => i["price"] * i["quantity"])), 2);
+    - items: array = Order.items;
+    - item_count: integer = len(Order.items);
+    - subtotal: number = round(sum(map(Order.items, i => i["price"] * i["quantity"])), 2);
     - total_amount: number = round(OrderStatus.subtotal * 1.08 + (10.0 if OrderStatus.subtotal < 50 else 0.0), 2);
     - is_pending: boolean = Order.status == "pending";
     - is_processing: boolean = Order.status == "processing";

@@ -4,12 +4,16 @@ Dummy Smart Home Devices Service
 Simulates various smart home devices with realistic data
 """
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_sock import Sock
 import random
 import time
+import json
 from datetime import datetime
+import threading
 
 app = Flask(__name__)
+sock = Sock(app)
 
 # Simulated device states
 class SmartHomeState:
@@ -74,6 +78,15 @@ def get_thermostat():
         "power_watts": round(2500 + 500 * random.random(), 1) if state.thermostat_mode != "off" else 0
     })
 
+@app.route('/thermostat', methods=['PUT'])
+def update_thermostat():
+    data = request.get_json()
+    if 'target_temp_f' in data:
+        state.thermostat_target = float(data['target_temp_f'])
+    if 'mode' in data:
+        state.thermostat_mode = data['mode']
+    return get_thermostat()
+
 @app.route('/lights', methods=['GET'])
 def get_lights():
     return jsonify({
@@ -84,6 +97,14 @@ def get_lights():
         "outdoor": state.lights["outdoor"],
         "power_watts": state.get_total_lights_power()
     })
+
+@app.route('/lights', methods=['PUT'])
+def update_lights():
+    data = request.get_json()
+    for key in ['living_room', 'bedroom', 'kitchen', 'bathroom', 'outdoor']:
+        if key in data:
+            state.lights[key] = int(data[key])
+    return get_lights()
 
 @app.route('/security', methods=['GET'])
 def get_security():
@@ -96,6 +117,16 @@ def get_security():
         "camera_count": 4,
         "last_event_time": datetime.now().isoformat()
     })
+
+@app.route('/security', methods=['PUT'])
+def update_security():
+    data = request.get_json()
+    if 'armed' in data:
+        state.security_armed = bool(data['armed'])
+        state.security_mode = "armed" if state.security_armed else "disarmed"
+    if 'door_locked' in data:
+        state.door_locked = bool(data['door_locked'])
+    return get_security()
 
 @app.route('/energy', methods=['GET'])
 def get_energy():
@@ -179,9 +210,70 @@ def get_appliances():
         "coffee_maker_on": state.coffee_maker
     })
 
+@app.route('/appliances', methods=['PUT'])
+def update_appliances():
+    data = request.get_json()
+    if 'oven_on' in data:
+        state.oven_on = bool(data['oven_on'])
+        if state.oven_on:
+            state.oven_temp = 350  # Preheat to 350F
+        else:
+            state.oven_temp = 0
+    return get_appliances()
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "service": "smart-home-devices"})
+
+# WebSocket endpoint: Security events stream
+@sock.route('/ws/security/events')
+def security_events(ws):
+    """Stream security events every 2 seconds"""
+    print("Client connected to /ws/security/events")
+    try:
+        while True:
+            # Simulate security state changes
+            if random.random() < 0.1:  # 10% chance to toggle door lock
+                state.door_locked = not state.door_locked
+
+            if random.random() < 0.05:  # 5% chance to toggle armed state
+                state.security_armed = not state.security_armed
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "armed": state.security_armed,
+                "door_locked": state.door_locked,
+                "motion_detected": state.get_motion_detected()
+            }
+            ws.send(json.dumps(event))
+            time.sleep(2)
+    except Exception as e:
+        print(f"Security events WebSocket error: {e}")
+
+# WebSocket endpoint: Climate monitoring stream
+@sock.route('/ws/climate/monitor')
+def climate_monitor(ws):
+    """Stream climate data every 3 seconds"""
+    print("Client connected to /ws/climate/monitor")
+    try:
+        while True:
+            current_temp = state.get_current_temp()
+            humidity = round(45 + 10 * random.random(), 1)
+
+            # Simulate temperature drift
+            if random.random() < 0.2:  # 20% chance to change target temp
+                state.thermostat_target += random.choice([-1, 1])
+                state.thermostat_target = max(65, min(80, state.thermostat_target))
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "temp_f": current_temp,
+                "humidity": humidity
+            }
+            ws.send(json.dumps(event))
+            time.sleep(3)
+    except Exception as e:
+        print(f"Climate monitor WebSocket error: {e}")
 
 if __name__ == '__main__':
     print("🏠 Smart Home Devices Service starting on port 9001...")

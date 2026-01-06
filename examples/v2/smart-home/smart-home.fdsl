@@ -172,6 +172,73 @@ end
 // UI COMPONENTS
 // ============================================
 
+// REST Components - Device Controls
+Component<DataCard> ThermostatCard
+  entity: Thermostat
+  fields: ["current_temp_f", "target_temp_f", "mode", "humidity_percent"]
+  title: "Thermostat Status"
+  highlight: "current_temp_f"
+  // refreshMs: 5000
+end
+
+Component<DataCard> ClimateCard
+  entity: Climate
+  fields: ["current_temp_c", "target_temp_c", "humidity", "is_comfortable"]
+  title: "Climate Summary"
+  highlight: "is_comfortable"
+  // refreshMs: 5000
+end
+
+Component<Progress> HumidityProgress
+  entity: Thermostat
+  field: "humidity_percent"
+  min: 0
+  max: 100
+  threshold: 60
+  label: "Humidity Level"
+  // refreshMs: 5000
+end
+
+Component<Progress> OvenTempProgress
+  entity: Appliances
+  field: "oven_temp_f"
+  min: 0
+  max: 500
+  threshold: 400
+  label: "Oven Temperature"
+  // refreshMs: 3000
+end
+
+// Component<Alert> ComfortAlert
+//   entity: Climate
+//   condition: "is_comfortable"
+//   message: "Climate is comfortable!"
+//   severity: "info"
+//   // refreshMs: 5000
+// end
+
+Component<Toggle> SecurityArmedToggle
+  entity: Security
+  field: "armed"
+  label: "Security System"
+  // refreshMs: 3000
+end
+
+Component<Toggle> DoorLockToggle
+  entity: Security
+  field: "door_locked"
+  label: "Front Door Lock"
+  // refreshMs: 3000
+end
+
+Component<Toggle> OvenToggle
+  entity: Appliances
+  field: "oven_on"
+  label: "Oven Power"
+  // refreshMs: 3000
+end
+
+// WebSocket Components - Real-time Monitoring
 Component<LiveMetrics> SecurityMonitor
   entity: SecurityAlerts
   metrics: ["alert_level", "alert_message"]
@@ -182,4 +249,34 @@ Component<LiveMetrics> ClimateMonitor
   entity: ClimateAlerts
   metrics: ["temp_c", "alert_level", "alert_message"]
   label: "Climate Monitor"
+end
+
+// Component<LiveAlert> SecurityBreachAlert
+//   entity: SecurityAlerts
+//   condition: "breach_detected"
+//   message: "SECURITY BREACH: Door is unlocked!"
+//   severity: "error"
+// end
+
+// Component<LiveAlert> MotionAlert
+//   entity: SecurityAlerts
+//   condition: "suspicious_activity"
+//   message: "Motion detected while system armed"
+//   severity: "warning"
+// end
+
+// Component<LiveAlert> TempWarning
+//   entity: ClimateAlerts
+//   condition: "too_hot"
+//   message: "Temperature too high!"
+//   severity: "warning"
+// end
+
+Component<LiveProgress> LiveHumidity
+  entity: ClimateAlerts
+  field: "humidity"
+  min: 0
+  max: 100
+  threshold: 60
+  label: "Live Humidity"
 end

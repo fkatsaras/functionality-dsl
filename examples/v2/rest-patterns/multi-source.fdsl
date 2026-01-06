@@ -1,0 +1,95 @@
+// =============================================================================
+// MULTI-SOURCE AGGREGATION
+// Demonstrates: Dashboard pattern - aggregating data from many sources
+// =============================================================================
+
+Server MultiSourceDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Sources: Multiple independent REST APIs
+// -----------------------------------------------------------------------------
+Source<REST> CPUMetricsAPI
+  base_url: "http://dummy:9001/metrics/cpu"
+  operations: [read]
+end
+
+Source<REST> MemoryMetricsAPI
+  base_url: "http://dummy:9001/metrics/memory"
+  operations: [read]
+end
+
+Source<REST> DiskMetricsAPI
+  base_url: "http://dummy:9001/metrics/disk"
+  operations: [read]
+end
+
+Source<REST> NetworkMetricsAPI
+  base_url: "http://dummy:9001/metrics/network"
+  operations: [read]
+end
+
+// -----------------------------------------------------------------------------
+// Base Entities: Raw metrics from each source
+// -----------------------------------------------------------------------------
+Entity CPUMetrics
+  source: CPUMetricsAPI
+  attributes:
+    - usage_percent: number;
+    - cores: integer;
+    - load_avg: number;
+  access: public
+end
+
+Entity MemoryMetrics
+  source: MemoryMetricsAPI
+  attributes:
+    - used_mb: integer;
+    - total_mb: integer;
+    - swap_used_mb: integer;
+  access: public
+end
+
+Entity DiskMetrics
+  source: DiskMetricsAPI
+  attributes:
+    - used_gb: number;
+    - total_gb: number;
+    - read_ops: integer;
+    - write_ops: integer;
+  access: public
+end
+
+Entity NetworkMetrics
+  source: NetworkMetricsAPI
+  attributes:
+    - bytes_in: integer;
+    - bytes_out: integer;
+    - packets_dropped: integer;
+  access: public
+end
+
+// -----------------------------------------------------------------------------
+// Composite: System Dashboard aggregating all metrics
+// -----------------------------------------------------------------------------
+Entity SystemDashboard(CPUMetrics, MemoryMetrics, DiskMetrics, NetworkMetrics)
+  attributes:
+    - cpu_usage: number = CPUMetrics.usage_percent;
+    - memory_percent: number = round(MemoryMetrics.used_mb / MemoryMetrics.total_mb * 100, 1);
+    - disk_percent: number = round(DiskMetrics.used_gb / DiskMetrics.total_gb * 100, 1);
+    - network_total_bytes: integer = NetworkMetrics.bytes_in + NetworkMetrics.bytes_out;
+    - system_healthy: boolean = CPUMetrics.usage_percent < 80 and MemoryMetrics.used_mb < MemoryMetrics.total_mb * 0.9;
+    - status: string = "healthy" if CPUMetrics.usage_percent < 80 else "warning";
+  access: public
+end
+
+// Generated endpoints:
+// GET /api/cpumetrics       - CPU data
+// GET /api/memorymetrics    - Memory data
+// GET /api/diskmetrics      - Disk data
+// GET /api/networkmetrics   - Network data
+// GET /api/systemdashboard  - Aggregated dashboard (read-only)

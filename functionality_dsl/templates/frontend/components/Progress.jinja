@@ -1,8 +1,13 @@
-{# components/Toggle.jinja #}
-<Toggle
+{# components/Progress.jinja #}
+<Progress
     name="{{ common.name }}"
     url="{{ props.get('endpointPath') }}"
     field="{{ props.get('field') }}"
+    min={{ props.get('min', 0) }}
+    max={{ props.get('max', 100) }}
+    {% if props.get('threshold') is not none %}
+    threshold={{ props.get('threshold') }}
+    {% endif %}
     label="{{ props.get('label') or props.get('field') }}"
     {% if props.get('refreshMs') %}
     refreshMs={{ props.get('refreshMs') }}
