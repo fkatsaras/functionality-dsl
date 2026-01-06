@@ -1,5 +1,6 @@
 <script lang="ts">
     import { preventDefault } from "svelte/legacy";
+    import { authStore } from "$lib/stores/authStore";
 
     import Card from "$lib/primitives/Card.svelte";
     import Input from "$lib/primitives/Input.svelte";
@@ -27,6 +28,12 @@
     let busy = $state(false);
     let error = $state<string | null>(null);
     let ok = $state<string | null>(null);
+    let authToken = $state<string | null>(null);
+
+    // Subscribe to auth store to get token
+    authStore.subscribe((state) => {
+        authToken = state.token;
+    });
 
     function endpoint(): string {
         const base = url.replace(/\/+$/, "");
@@ -50,11 +57,31 @@
             const body = structuredClone(model);
             if (pathKey) delete body[pathKey];
 
+            // Parse JSON fields: detect strings that look like JSON and parse them
+            for (const [key, value] of Object.entries(body)) {
+                if (typeof value === 'string' && value.trim()) {
+                    const trimmed = value.trim();
+                    // Check if it looks like JSON (starts with [ or {)
+                    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+                        try {
+                            body[key] = JSON.parse(trimmed);
+                        } catch (e) {
+                            // If parsing fails, keep as string (might be intentional string value)
+                        }
+                    }
+                }
+            }
+
             const finalUrl = endpoint();
+
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
 
             const res = await fetch(finalUrl, {
                 method,
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body:
                     method === "DELETE" || method === "GET"
                         ? undefined

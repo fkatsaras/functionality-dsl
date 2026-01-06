@@ -5,20 +5,20 @@
 // Thesis Focus: REST orchestration + Real-time order tracking
 // ============================================
 
-// Role customer
-// Role warehouse
+Role customer
+Role warehouse
 
-// Auth ShopAuth
-//   type: jwt
-//   secret: "ecommerce-secret-key-change-in-production"
-// end
+Auth ShopAuth
+  type: jwt
+  secret: "ecommerce-secret-key-change-in-production"
+end
 
 Server ECommerceAPI
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  // auth: ShopAuth
+  auth: ShopAuth
 end
 
 // ============================================
@@ -50,8 +50,7 @@ Entity Cart
   attributes:
     - items: array;
     - updated_at: string @readonly;
-  // access: [customer]
-  access: public
+  access: [customer]
 end
 
 // Inventory Status - Stock availability
@@ -61,7 +60,7 @@ Entity Inventory
     - in_stock_items: array @readonly;
     - low_stock_items: array @readonly;
     - out_of_stock_items: array @readonly;
-  access: public
+  access: [warehouse]
 end
 
 // Current Order - Active order snapshot
@@ -72,8 +71,7 @@ Entity Order
     - status: string @readonly;
     - created_at: string @readonly;
     - cart_snapshot: array;  // Writable: items from cart when placing order
-  // access: [customer]
-  access: public
+  access: [customer]
 end
 
 // ============================================
@@ -87,26 +85,13 @@ Entity CheckoutSummary(Cart)
     - item_count: integer = len(Cart.items);
     - subtotal: number = round(sum(map(Cart.items, i => i["price"] * i["quantity"])), 2);
     - tax: number = round(CheckoutSummary.subtotal * 0.08, 2);
-    - shipping: number = 10.0 if CheckoutSummary.subtotal < 50 else 0.0;
+    - shipping: number = 10.0 if CheckoutSummary.subtotal < 50 and CheckoutSummary.item_count != 0 else 0.0;
     - discount: number = 5.0 if CheckoutSummary.subtotal > 100 else 0.0;
     - total: number = round(CheckoutSummary.subtotal + CheckoutSummary.tax + CheckoutSummary.shipping - CheckoutSummary.discount, 2);
     - has_items: boolean = len(Cart.items) > 0;
-  // access: [customer]
-  access: public
+  access: [customer]
 end
 
-// Inventory Validation - Cart + Inventory check
-Entity InventoryCheck(Cart, Inventory)
-  attributes:
-    - total_items: integer = len(Cart.items);
-    - low_stock_count: integer = len(Inventory.low_stock_items);
-    - out_of_stock_count: integer = len(Inventory.out_of_stock_items);
-    - has_stock_issues: boolean = InventoryCheck.low_stock_count > 0 or InventoryCheck.out_of_stock_count > 0;
-    - can_checkout: boolean = InventoryCheck.out_of_stock_count == 0 and len(Cart.items) > 0;
-    - warning_message: string = "Some items are low in stock" if InventoryCheck.low_stock_count > 0 and InventoryCheck.out_of_stock_count == 0 else ("Cannot checkout - items out of stock" if InventoryCheck.out_of_stock_count > 0 else "All items available");
-  // access: [customer]
-  access: public
-end
 
 // Order Status - Order with calculated totals
 Entity OrderStatus(Order)
@@ -121,8 +106,7 @@ Entity OrderStatus(Order)
     - is_pending: boolean = Order.status == "pending";
     - is_processing: boolean = Order.status == "processing";
     - is_completed: boolean = Order.status == "completed";
-  // access: [customer]
-  access: public
+  access: [customer]
 end
 
 // ============================================
@@ -137,7 +121,7 @@ Entity InventoryHealth(Inventory)
     - out_of_stock_count: integer = len(Inventory.out_of_stock_items);
     - total_items: integer = InventoryHealth.in_stock_count + InventoryHealth.low_stock_count + InventoryHealth.out_of_stock_count;
     - health_score: number = round((InventoryHealth.in_stock_count / InventoryHealth.total_items) * 100, 1) if InventoryHealth.total_items > 0 else 0.0;
-  access: public
+  access: [warehouse]
 end
 
 // ============================================
@@ -173,7 +157,7 @@ Component<Metric> TotalCartValue
   field: "total"
   label: "Cart Total"
   format: "currency"
-  refreshMs: 3000
+  // refreshMs: 3000
 end
 
 Component<Metric> ItemsInCart
@@ -181,7 +165,7 @@ Component<Metric> ItemsInCart
   field: "item_count"
   label: "Items in Cart"
   format: "number"
-  refreshMs: 3000
+  // refreshMs: 3000
 end
 
 Component<Metric> InventoryHealthScore
@@ -189,7 +173,7 @@ Component<Metric> InventoryHealthScore
   field: "health_score"
   label: "Inventory Health"
   format: "percent"
-  refreshMs: 5000
+  // refreshMs: 5000
 end
 
 // Multi-field cards
@@ -198,7 +182,7 @@ Component<DataCard> CheckoutDetails
   fields: ["subtotal", "tax", "shipping", "discount", "total"]
   title: "Checkout Summary"
   highlight: "total"
-  refreshMs: 3000
+  // refreshMs: 3000
 end
 
 Component<DataCard> OrderDetails
@@ -206,7 +190,7 @@ Component<DataCard> OrderDetails
   fields: ["order_id", "status", "item_count", "total_amount", "created_at"]
   title: "Current Order"
   highlight: "status"
-  refreshMs: 5000
+  // refreshMs: 5000
 end
 
 Component<DataCard> StockOverview
@@ -214,7 +198,7 @@ Component<DataCard> StockOverview
   fields: ["in_stock_count", "low_stock_count", "out_of_stock_count", "health_score"]
   title: "Inventory Overview"
   highlight: "out_of_stock_count"
-  refreshMs: 5000
+  // refreshMs: 5000
 end
 
 // Pie chart - Inventory distribution
@@ -226,7 +210,7 @@ Component<PieChart> InventoryDistribution
     - field: "out_of_stock_count" label: "Out of Stock" color: "#ef4444"
   title: "Inventory Status Distribution"
   size: 250
-  refreshMs: 5000
+  // refreshMs: 5000
 end
 
 // Bar chart - Inventory status comparison
@@ -241,5 +225,5 @@ Component<BarChart> InventoryStatusChart
   yLabel: "Item Count"
   height: 350
   width: 600
-  refreshMs: 5000
+  // refreshMs: 5000
 end

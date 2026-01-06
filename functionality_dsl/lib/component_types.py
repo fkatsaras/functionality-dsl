@@ -632,29 +632,14 @@ class ActionFormComponent(_BaseComponent):
     def to_props(self):
         """
         Build frontend props for ActionForm.
-        - Get path from entity's expose block (identity anchor)
-        - For create: use base path without {id}
-        - For update/delete: use path with {id}
-        - Expose pathKey so the frontend knows which field to use
+        Uses _endpoint_path() to get the correct path for the entity.
+        This handles both singleton and collection-based entities correctly.
         """
-        # Get the entity's identity anchor
-        identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
+        # Use _endpoint_path() to get the correct API path (respects singleton vs collection)
+        # Pass empty string to get the base path without any suffix
+        path = self._endpoint_path("")
 
-        if self.operation == 'create':
-            # For create (POST), use list path without {id}
-            if identity_anchor and isinstance(identity_anchor, str):
-                # Remove /{id} suffix from identity anchor
-                # e.g., "/api/students/{id}" -> "/api/students"
-                path = identity_anchor.rsplit('/', 1)[0] if '/{' in identity_anchor else identity_anchor
-            else:
-                path = f"/api/{self.entity_ref.name.lower()}s"
-        else:
-            # For update/delete (PUT/DELETE), use path with {id}
-            if identity_anchor and isinstance(identity_anchor, str):
-                path = identity_anchor
-            else:
-                path = f"/api/{self.entity_ref.name.lower()}s/{{id}}"
-
+        # Extract pathKey from the path if it contains a parameter like {id}
         import re
         match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
         path_key = self.pathKey or (match.group(1) if match else None)

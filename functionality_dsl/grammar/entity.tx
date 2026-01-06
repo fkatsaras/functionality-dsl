@@ -50,6 +50,7 @@ Entity:
   ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
   ('type:' ws_flow_type=WSFlowType)?
   ('source:' source=[Source])?
+  ('strict:' strict=Bool)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?

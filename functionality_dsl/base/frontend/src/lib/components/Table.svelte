@@ -1,5 +1,6 @@
 <script lang="ts">
         import { onMount } from "svelte";
+        import { authStore } from "$lib/stores/authStore";
         import RefreshButton from "$lib/primitives/RefreshButton.svelte";
         import Badge from "$lib/primitives/Badge.svelte";
         import Card from "$lib/primitives/Card.svelte";
@@ -33,6 +34,12 @@
         let loading = $state(false);
         let error = $state<string | null>(null);
         let entityKeys = $state<string[]>([]);
+        let authToken = $state<string | null>(null);
+
+        // Subscribe to auth store to get token
+        authStore.subscribe((state) => {
+                authToken = state.token;
+        });
 
         async function load() {
                 const finalUrl = url || "";
@@ -45,7 +52,12 @@
                 error = null;
 
                 try {
-                    const response = await fetch(finalUrl);
+                    const headers: Record<string, string> = {};
+                    if (authToken) {
+                        headers['Authorization'] = `Bearer ${authToken}`;
+                    }
+
+                    const response = await fetch(finalUrl, { headers });
                     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
                     const json = await response.json();

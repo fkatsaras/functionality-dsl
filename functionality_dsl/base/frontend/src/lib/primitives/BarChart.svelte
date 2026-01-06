@@ -17,7 +17,7 @@
         class?: string;
     }>();
 
-    const padding = { top: 40, right: 20, bottom: 60, left: 60 };
+    const padding = { top: 40, right: 40, bottom: 80, left: 60 };
     const defaultColor = "var(--primary)";
 
     function calculateBars(data: typeof bars) {
@@ -144,15 +144,39 @@
                 {bar.value}
             </text>
 
-            <!-- Bar label on X-axis -->
-            <text
-                x={bar.labelX}
-                y={bar.labelY}
-                text-anchor="middle"
-                class="bar-label"
-            >
-                {bar.label}
-            </text>
+            <!-- Bar label on X-axis with wrapping -->
+            {#if bar.label.length > 12}
+                <!-- Split long labels into two lines -->
+                {@const words = bar.label.split(' ')}
+                {@const midpoint = Math.ceil(words.length / 2)}
+                {@const line1 = words.slice(0, midpoint).join(' ')}
+                {@const line2 = words.slice(midpoint).join(' ')}
+                <text
+                    x={bar.labelX}
+                    y={bar.labelY}
+                    text-anchor="middle"
+                    class="bar-label"
+                >
+                    {line1}
+                </text>
+                <text
+                    x={bar.labelX}
+                    y={bar.labelY + 12}
+                    text-anchor="middle"
+                    class="bar-label"
+                >
+                    {line2}
+                </text>
+            {:else}
+                <text
+                    x={bar.labelX}
+                    y={bar.labelY}
+                    text-anchor="middle"
+                    class="bar-label"
+                >
+                    {bar.label}
+                </text>
+            {/if}
         {/each}
 
         <!-- Y-axis label -->

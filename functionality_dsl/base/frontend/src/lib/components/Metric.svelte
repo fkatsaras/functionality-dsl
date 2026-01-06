@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { authStore } from "$lib/stores/authStore";
     import Metric from "$lib/primitives/Metric.svelte";
     import Card from "$lib/primitives/Card.svelte";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
@@ -19,12 +20,23 @@
     let error = $state<string | null>(null);
     let loading = $state(true);
     let interval: ReturnType<typeof setInterval> | null = null;
+    let authToken = $state<string | null>(null);
+
+    // Subscribe to auth store to get token
+    authStore.subscribe((state) => {
+        authToken = state.token;
+    });
 
     async function fetchData() {
         if (!props.url) return;
 
         try {
-            const res = await fetch(props.url);
+            const headers: Record<string, string> = {};
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            const res = await fetch(props.url, { headers });
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }

@@ -27,7 +27,11 @@ class {{ ent.name }}(BaseModel):
     {% endif %}
     {% endfor %}
 
+    {% if ent.strict %}
     model_config = ConfigDict(extra="forbid")
+    {% else %}
+    model_config = ConfigDict(extra="ignore")
+    {% endif %}
 
 {% endfor %}
 

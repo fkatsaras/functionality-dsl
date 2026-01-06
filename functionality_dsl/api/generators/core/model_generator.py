@@ -65,10 +65,16 @@ def generate_domain_models(model, templates_dir, output_dir):
         if has_self_reference:
             models_needing_rebuild.add(entity.name)
 
+        # Get strict flag (default to False if not specified)
+        strict = getattr(entity, "strict", False)
+        if strict is None:
+            strict = False
+
         entities_context.append({
             "name": entity.name,
             "has_parents": bool(getattr(entity, "parents", None)),
             "attributes": attribute_configs,
+            "strict": strict,
         })
 
     # Render template
