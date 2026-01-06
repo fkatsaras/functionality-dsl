@@ -186,7 +186,8 @@
       "Bash(timeout 15 docker compose:*)",
       "Bash(timeout 10 docker compose:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(venv_WIN/Scripts/python -m functionality_dsl.cli generate:*)"
+      "Bash(venv_WIN/Scripts/python -m functionality_dsl.cli generate:*)",
+      "Bash(venv_WIN/Scripts/python -m functionality_dsl.cli.cli visualize-model:*)"
     ],
     "deny": [],
     "ask": []

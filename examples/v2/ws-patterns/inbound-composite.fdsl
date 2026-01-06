@@ -16,14 +16,17 @@ end
 // -----------------------------------------------------------------------------
 Source<WS> PriceStreamA
   channel: "ws://dummy:9001/ws/price/btc"
+  operations: [subscribe]
 end
 
 Source<WS> PriceStreamB
   channel: "ws://dummy:9001/ws/price/eth"
+  operations: [subscribe]
 end
 
 Source<WS> PriceStreamC
   channel: "ws://dummy:9001/ws/price/sol"
+  operations: [subscribe]
 end
 
 // -----------------------------------------------------------------------------
