@@ -24,6 +24,10 @@ Component:
   | ObjectViewComponent
   | CameraComponent
   | DownloadFormComponent
+  | MetricComponent
+  | DataCardComponent
+  | PieChartComponent
+  | BarChartComponent
 ;
 
 // Column definition with type specification
@@ -247,6 +251,67 @@ MapComponent:
     ('label:' label=STRING)?
     ('width:' width=INT)?
     ('height:' height=INT)?
+  )#
+  'end'
+;
+
+MetricComponent:
+  'Component' '<' 'Metric' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('label:' label=STRING)?
+    ('format:' format=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+DataCardComponent:
+  'Component' '<' 'DataCard' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('fields:' '[' fields+=STRING (',' fields+=STRING)* ']')?
+    ('title:' title=STRING)?
+    ('highlight:' highlight=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+// SliceField defines a mapping from entity field to pie chart slice
+SliceField:
+  'field:' field=STRING 'label:' label=STRING 'color:' color=STRING
+;
+
+PieChartComponent:
+  'Component' '<' 'PieChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('slices:' '-' slices+=SliceField ('-' slices+=SliceField)*)?
+    ('title:' title=STRING)?
+    ('size:' size=INT)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+// BarField defines a mapping from entity field to bar chart bar
+BarField:
+  'field:' field=STRING 'label:' label=STRING ('color:' color=STRING)?
+;
+
+BarChartComponent:
+  'Component' '<' 'BarChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('bars:' '-' bars+=BarField ('-' bars+=BarField)*)?
+    ('title:' title=STRING)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
+    ('height:' height=INT)?
+    ('width:' width=INT)?
+    ('refreshMs:' refreshMs=INT)?
   )#
   'end'
 ;

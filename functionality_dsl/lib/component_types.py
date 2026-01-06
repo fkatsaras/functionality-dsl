@@ -1085,6 +1085,163 @@ class MapComponent(_BaseComponent):
         }
 
 @register_component
+class MetricComponent(_BaseComponent):
+    """
+    <Component<Metric> ...>
+      entity: <Entity> (REST entity)
+      field: required string (field name to display)
+      label: optional string label
+      format: optional string ("number" | "currency" | "percent")
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, field=None, label=None, format=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field) if field else None
+        self.label = _strip_quotes(label)
+        self.format = _strip_quotes(format)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' is required.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "label": self.label or self.field,
+            "format": self.format or "number",
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class DataCardComponent(_BaseComponent):
+    """
+    <Component<DataCard> ...>
+      entity: <Entity> (REST entity)
+      fields: required list of field names to display
+      title: optional string title
+      highlight: optional string (field name to highlight)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, fields=None, title=None, highlight=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.fields = [_strip_quotes(f) for f in (fields or [])]
+        self.title = _strip_quotes(title)
+        self.highlight = _strip_quotes(highlight)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.fields:
+            raise ValueError(f"Component '{name}': 'fields:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "fields": self.fields,
+            "title": self.title or self.entity_ref.name,
+            "highlight": self.highlight,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class PieChartComponent(_BaseComponent):
+    """
+    <Component<PieChart> ...>
+      entity: <Entity> (REST entity)
+      slices: required list of SliceField definitions
+      title: optional string title
+      size: optional int (chart diameter in pixels)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, slices=None, title=None, size=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse slices from SliceField definitions
+        self.slices = []
+        for slice_def in (slices or []):
+            self.slices.append({
+                "field": _strip_quotes(getattr(slice_def, "field", None)),
+                "label": _strip_quotes(getattr(slice_def, "label", None)),
+                "color": _strip_quotes(getattr(slice_def, "color", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.size = int(size) if size is not None else 200
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.slices:
+            raise ValueError(f"Component '{name}': 'slices:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "slices": self.slices,
+            "title": self.title or self.entity_ref.name,
+            "size": self.size,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class BarChartComponent(_BaseComponent):
+    """
+    <Component<BarChart> ...>
+      entity: <Entity> (REST entity)
+      bars: required list of BarField definitions
+      title: optional string title
+      xLabel: optional string (x-axis label)
+      yLabel: optional string (y-axis label)
+      height: optional int (chart height in pixels)
+      width: optional int (chart width in pixels)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, bars=None, title=None, xLabel=None, yLabel=None, height=None, width=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse bars from BarField definitions
+        self.bars = []
+        for bar_def in (bars or []):
+            self.bars.append({
+                "field": _strip_quotes(getattr(bar_def, "field", None)),
+                "label": _strip_quotes(getattr(bar_def, "label", None)),
+                "color": _strip_quotes(getattr(bar_def, "color", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.xLabel = _strip_quotes(xLabel)
+        self.yLabel = _strip_quotes(yLabel)
+        self.height = int(height) if height is not None else 300
+        self.width = int(width) if width is not None else 500
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.bars:
+            raise ValueError(f"Component '{name}': 'bars:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "bars": self.bars,
+            "title": self.title or self.entity_ref.name,
+            "xLabel": self.xLabel or "",
+            "yLabel": self.yLabel or "",
+            "height": self.height,
+            "width": self.width,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
 class DownloadFormComponent(_BaseComponent):
     """
     <Component<DownloadForm> ...>
