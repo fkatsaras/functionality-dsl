@@ -342,9 +342,8 @@ def _validate_computed_attrs(model, metamodel=None):
                 # If it matches a known entity/source/endpoint name but used as bare variable, error
                 if var_name in all_known_names:
                     raise TextXSemanticError(
-                        f"Bare entity reference '{var_name}' is not allowed. "
-                        f"Entity references must include attribute access, e.g., '{var_name}.attributeName'. "
-                        f"Entities cannot be used as collections - use entity attributes instead.",
+                        f"Bare reference '{var_name}' is not allowed. "
+                        f"Use attribute access syntax: '{var_name}.attributeName'.",
                         **get_location(node)
                     )
 
