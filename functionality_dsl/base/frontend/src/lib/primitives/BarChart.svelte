@@ -18,7 +18,7 @@
     }>();
 
     const padding = { top: 40, right: 40, bottom: 80, left: 60 };
-    const defaultColor = "var(--primary)";
+    const defaultColor = "var(--accent)";
 
     function calculateBars(data: typeof bars) {
         if (data.length === 0) return { bars: [], maxValue: 0, yTicks: [] };

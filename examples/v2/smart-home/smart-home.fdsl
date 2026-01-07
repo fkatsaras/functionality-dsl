@@ -1,24 +1,15 @@
 // ============================================
-// Smart Home Control System - Production Grade
-// Demonstrates: Control + Monitoring + Real-time Alerts
+// Smart Home Control System
+// Demonstrates: Device Control + Climate/Energy Monitoring
 //
-// Thesis Focus: Minimal FDSL code for production features
+// Focus: Complex data aggregation with minimal FDSL code
 // ============================================
-
-Role homeowner
-Role guest
-
-Auth HomeAuth
-  type: jwt
-  secret: "smart-home-secret-key-change-in-production"
-end
 
 Server SmartHome
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: HomeAuth
 end
 
 // ============================================
@@ -35,11 +26,6 @@ Source<REST> LightsAPI
   operations: [read, update]
 end
 
-Source<REST> SecurityAPI
-  base_url: "http://dummy-smart-home-devices:9001/security"
-  operations: [read, update]
-end
-
 Source<REST> AppliancesAPI
   base_url: "http://dummy-smart-home-devices:9001/appliances"
   operations: [read, update]
@@ -49,8 +35,8 @@ end
 // WEBSOCKET SOURCES - Real-time Monitoring
 // ============================================
 
-Source<WS> SecurityEventsWS
-  channel: "ws://dummy-smart-home-devices:9001/ws/security/events"
+Source<WS> EnergyMonitorWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/energy"
   operations: [subscribe]
 end
 
@@ -60,7 +46,7 @@ Source<WS> ClimateMonitorWS
 end
 
 // ============================================
-// REST ENTITIES - Device Control Knobs
+// REST ENTITIES - Device Controls
 // ============================================
 
 // Thermostat Control - Temperature settings
@@ -71,27 +57,17 @@ Entity Thermostat
     - target_temp_f: number;
     - mode: string;
     - humidity_percent: number @readonly;
-  access: [homeowner]
+  access: public
 end
 
-// Lighting Control - Room light switches
+// Lighting Control - Room brightness (0-100)
 Entity Lights
   source: LightsAPI
   attributes:
     - living_room: integer;
     - bedroom: integer;
     - kitchen: integer;
-  access: [homeowner, guest]
-end
-
-// Security Control - Locks and alarm
-Entity Security
-  source: SecurityAPI
-  attributes:
-    - armed: boolean;
-    - door_locked: boolean;
-    - motion_detected: boolean @readonly;
-  access: [homeowner]
+  access: public
 end
 
 // Appliances Control - Kitchen devices
@@ -100,52 +76,65 @@ Entity Appliances
   attributes:
     - oven_on: boolean;
     - oven_temp_f: number @readonly;
-  access: [homeowner]
+  access: public
 end
 
 // ============================================
-// COMPOSITE ENTITY - Climate Monitoring
+// COMPOSITE ENTITIES - Aggregated Views
 // ============================================
 
-// Climate Dashboard - Aggregated temperature view (Fahrenheit to Celsius)
+// Climate Dashboard - Temperature conversion & comfort analysis
 Entity Climate(Thermostat)
   attributes:
     - current_temp_c: number = round((Thermostat.current_temp_f - 32) * 5 / 9, 1);
     - target_temp_c: number = round((Thermostat.target_temp_f - 32) * 5 / 9, 1);
     - humidity: number = Thermostat.humidity_percent;
     - is_comfortable: boolean = Thermostat.current_temp_f >= 68 and Thermostat.current_temp_f <= 76 and Thermostat.humidity_percent >= 30 and Thermostat.humidity_percent <= 60;
+    - comfort_status: string = "Comfortable" if Climate.is_comfortable else "Adjust settings";
+  access: public
+end
+
+// Home Status - Aggregated device state
+Entity HomeStatus(Thermostat, Lights, Appliances)
+  attributes:
+    - climate_active: boolean = Thermostat.mode != "off";
+    - any_lights_on: boolean = Lights.living_room > 0 or Lights.bedroom > 0 or Lights.kitchen > 0;
+    - total_lights_brightness: integer = Lights.living_room + Lights.bedroom + Lights.kitchen;
+    - oven_active: boolean = Appliances.oven_on;
+    - active_devices: integer = (1 if HomeStatus.climate_active else 0) + (1 if HomeStatus.any_lights_on else 0) + (1 if HomeStatus.oven_active else 0);
   access: public
 end
 
 // ============================================
-// WEBSOCKET ENTITIES - Real-time Alerts
+// WEBSOCKET ENTITIES - Real-time Energy & Climate
 // ============================================
 
-// Base WebSocket Entity - Raw security events
-Entity RawSecurityEvent
+// Raw energy consumption data from smart meter
+Entity EnergyTick
   type: inbound
-  source: SecurityEventsWS
+  source: EnergyMonitorWS
   attributes:
     - timestamp: integer;
-    - armed: boolean;
-    - door_locked: boolean;
-    - motion_detected: boolean;
+    - hvac_kwh: number;
+    - lighting_kwh: number;
+    - appliances_kwh: number;
 end
 
-// Security Alerts - Real-time breach detection
-Entity SecurityAlerts(RawSecurityEvent)
+// Energy metrics - Real-time consumption tracking
+Entity EnergyMetrics(EnergyTick)
   type: inbound
   attributes:
-    - timestamp: integer = RawSecurityEvent.timestamp;
-    - breach_detected: boolean = not RawSecurityEvent.door_locked;
-    - suspicious_activity: boolean = RawSecurityEvent.motion_detected and RawSecurityEvent.armed;
-    - alert_level: string = "critical" if SecurityAlerts.breach_detected else ("warning" if SecurityAlerts.suspicious_activity else "normal");
-    - alert_message: string = "BREACH: Door unlocked!" if SecurityAlerts.breach_detected else ("WARNING: Motion while armed" if SecurityAlerts.suspicious_activity else "All clear");
+    - timestamp: integer = EnergyTick.timestamp;
+    - hvac_kwh: number = round(EnergyTick.hvac_kwh, 2);
+    - lighting_kwh: number = round(EnergyTick.lighting_kwh, 2);
+    - appliances_kwh: number = round(EnergyTick.appliances_kwh, 2);
+    - total_kwh: number = round(EnergyTick.hvac_kwh + EnergyTick.lighting_kwh + EnergyTick.appliances_kwh, 2);
+    - estimated_cost: number = round(EnergyMetrics.total_kwh * 0.12, 2);
   access: public
 end
 
-// Base WebSocket Entity - Raw climate monitoring
-Entity RawClimateEvent
+// Raw climate monitoring data
+Entity ClimateEvent
   type: inbound
   source: ClimateMonitorWS
   attributes:
@@ -154,129 +143,89 @@ Entity RawClimateEvent
     - humidity: number;
 end
 
-// Climate Alerts - Real-time temperature monitoring
-Entity ClimateAlerts(RawClimateEvent)
+// Climate alerts - Real-time temperature monitoring
+Entity ClimateAlerts(ClimateEvent)
   type: inbound
   attributes:
-    - timestamp: integer = RawClimateEvent.timestamp;
-    - temp_c: number = round((RawClimateEvent.temp_f - 32) * 5 / 9, 1);
-    - too_hot: boolean = RawClimateEvent.temp_f > 78;
-    - too_cold: boolean = RawClimateEvent.temp_f < 65;
-    - humidity_issue: boolean = RawClimateEvent.humidity < 30 or RawClimateEvent.humidity > 60;
-    - alert_level: string = "warning" if ClimateAlerts.too_hot or ClimateAlerts.too_cold or ClimateAlerts.humidity_issue else "normal";
-    - alert_message: string = "Too hot!" if ClimateAlerts.too_hot else ("Too cold!" if ClimateAlerts.too_cold else ("Check humidity" if ClimateAlerts.humidity_issue else "Climate optimal"));
+    - timestamp: integer = ClimateEvent.timestamp;
+    - temp_c: number = round((ClimateEvent.temp_f - 32) * 5 / 9, 1);
+    - temp_f: number = ClimateEvent.temp_f;
+    - humidity: number = ClimateEvent.humidity;
+    - too_hot: boolean = ClimateEvent.temp_f > 78;
+    - too_cold: boolean = ClimateEvent.temp_f < 65;
+    - status: string = "Too Hot" if ClimateAlerts.too_hot else ("Too Cold" if ClimateAlerts.too_cold else "Normal");
   access: public
 end
 
 // ============================================
-// UI COMPONENTS
+// UI COMPONENTS - Device Controls
 // ============================================
 
-// REST Components - Device Controls
 Component<DataCard> ThermostatCard
   entity: Thermostat
   fields: ["current_temp_f", "target_temp_f", "mode", "humidity_percent"]
-  title: "Thermostat Status"
+  title: "Thermostat"
   highlight: "current_temp_f"
-  // refreshMs: 5000
 end
 
 Component<DataCard> ClimateCard
   entity: Climate
-  fields: ["current_temp_c", "target_temp_c", "humidity", "is_comfortable"]
+  fields: ["current_temp_c", "target_temp_c", "humidity", "comfort_status"]
   title: "Climate Summary"
-  highlight: "is_comfortable"
-  // refreshMs: 5000
+  highlight: "comfort_status"
 end
 
-Component<Progress> HumidityProgress
-  entity: Thermostat
-  field: "humidity_percent"
-  min: 0
-  max: 100
-  threshold: 60
-  label: "Humidity Level"
-  // refreshMs: 5000
-end
-
-Component<Progress> OvenTempProgress
-  entity: Appliances
-  field: "oven_temp_f"
-  min: 0
-  max: 500
-  threshold: 400
-  label: "Oven Temperature"
-  // refreshMs: 3000
-end
-
-// Component<Alert> ComfortAlert
-//   entity: Climate
-//   condition: "is_comfortable"
-//   message: "Climate is comfortable!"
-//   severity: "info"
-//   // refreshMs: 5000
-// end
-
-Component<Toggle> SecurityArmedToggle
-  entity: Security
-  field: "armed"
-  label: "Security System"
-  // refreshMs: 3000
-end
-
-Component<Toggle> DoorLockToggle
-  entity: Security
-  field: "door_locked"
-  label: "Front Door Lock"
-  // refreshMs: 3000
+Component<DataCard> HomeStatusCard
+  entity: HomeStatus
+  fields: ["active_devices", "climate_active", "any_lights_on", "oven_active"]
+  title: "Home Status"
+  highlight: "active_devices"
 end
 
 Component<Toggle> OvenToggle
   entity: Appliances
   field: "oven_on"
   label: "Oven Power"
-  // refreshMs: 3000
 end
 
-// WebSocket Components - Real-time Monitoring
-Component<LiveMetrics> SecurityMonitor
-  entity: SecurityAlerts
-  metrics: ["alert_level", "alert_message"]
-  label: "Security Monitor"
+// ============================================
+// UI COMPONENTS - Real-time Energy Monitoring
+// ============================================
+
+Component<LiveChart> EnergyConsumptionChart
+  entity: EnergyMetrics
+  seriesLabels: ["HVAC", "Lighting", "Appliances", "Total"]
+  xLabel: "Time"
+  yLabel: "kWh"
+  windowSize: 60
+end
+
+Component<LiveMetrics> EnergyMonitor
+  entity: EnergyMetrics
+  metrics: ["total_kwh", "estimated_cost", "hvac_kwh", "lighting_kwh"]
+  label: "Energy Consumption"
 end
 
 Component<LiveMetrics> ClimateMonitor
   entity: ClimateAlerts
-  metrics: ["temp_c", "alert_level", "alert_message"]
+  metrics: ["temp_c", "humidity", "status"]
   label: "Climate Monitor"
 end
 
-// Component<LiveAlert> SecurityBreachAlert
-//   entity: SecurityAlerts
-//   condition: "breach_detected"
-//   message: "SECURITY BREACH: Door is unlocked!"
-//   severity: "error"
-// end
-
-// Component<LiveAlert> MotionAlert
-//   entity: SecurityAlerts
-//   condition: "suspicious_activity"
-//   message: "Motion detected while system armed"
-//   severity: "warning"
-// end
-
-// Component<LiveAlert> TempWarning
-//   entity: ClimateAlerts
-//   condition: "too_hot"
-//   message: "Temperature too high!"
-//   severity: "warning"
-// end
-
-Component<LiveProgress> LiveHumidity
+Component<Gauge> LiveHumidityGauge
   entity: ClimateAlerts
-  field: "humidity"
+  value: "humidity"
   min: 0
   max: 100
-  threshold: 60
   label: "Live Humidity"
+  unit: "%"
+end
+
+Component<Gauge> LiveTemperatureGauge
+  entity: ClimateAlerts
+  value: "temp_f"
+  min: 50
+  max: 100
+  label: "Live Temperature"
+  unit: "°F"
 end

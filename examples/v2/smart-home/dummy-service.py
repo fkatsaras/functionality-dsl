@@ -275,6 +275,40 @@ def climate_monitor(ws):
     except Exception as e:
         print(f"Climate monitor WebSocket error: {e}")
 
+# WebSocket endpoint: Energy consumption stream
+@sock.route('/ws/energy')
+def energy_stream(ws):
+    """Stream energy consumption data every 2 seconds"""
+    print("Client connected to /ws/energy")
+    try:
+        while True:
+            # HVAC consumption varies with mode
+            if state.thermostat_mode == "off":
+                hvac_kwh = 0
+            elif state.thermostat_mode == "eco":
+                hvac_kwh = round(1.5 + 0.5 * random.random(), 2)
+            else:
+                hvac_kwh = round(2.0 + 1.0 * random.random(), 2)
+
+            # Lighting based on actual light levels
+            lighting_kwh = round(state.get_total_lights_power() / 1000, 3)
+
+            # Appliances - oven is big consumer
+            base_appliances = 0.15  # Fridge, standby, etc.
+            oven_kwh = 3.5 if state.oven_on else 0
+            appliances_kwh = round(base_appliances + oven_kwh + 0.2 * random.random(), 2)
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "hvac_kwh": hvac_kwh,
+                "lighting_kwh": lighting_kwh,
+                "appliances_kwh": appliances_kwh
+            }
+            ws.send(json.dumps(event))
+            time.sleep(2)
+    except Exception as e:
+        print(f"Energy stream WebSocket error: {e}")
+
 if __name__ == '__main__':
     print("🏠 Smart Home Devices Service starting on port 9001...")
     app.run(host='0.0.0.0', port=9001, debug=True)

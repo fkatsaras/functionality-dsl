@@ -155,7 +155,7 @@
 
     .progress-bar-fill {
         height: 100%;
-        background-color: var(--primary);
+        background-color: var(--accent);
         transition: width 0.3s ease;
     }
 
@@ -170,7 +170,7 @@
     }
 
     .accent-text {
-        color: var(--primary);
+        color: var(--accent);
     }
 
     .warning-text-header {

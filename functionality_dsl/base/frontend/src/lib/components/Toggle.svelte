@@ -149,10 +149,10 @@
 
 <style>
     button.active {
-        background-color: var(--primary);
+        background-color: var(--accent);
     }
 
     .active-text {
-        color: var(--primary);
+        color: var(--accent);
     }
 </style>

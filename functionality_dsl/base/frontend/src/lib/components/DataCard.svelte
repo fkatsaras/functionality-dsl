@@ -88,9 +88,7 @@
             {#if props.title}
                 <h3 class="text-lg font-medium text-[var(--text)]">{props.title}</h3>
             {/if}
-            {#if props.refreshMs}
-                <RefreshButton onclick={fetchData} />
-            {/if}
+            <RefreshButton onRefresh={fetchData} {loading} />
         </div>
     </svelte:fragment>
 

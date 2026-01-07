@@ -55,6 +55,7 @@ Entity ThessalonikiForecast
 end
 
 Entity NewYorkForecast
+  source: NewYorkAPI
   attributes:
     - latitude: number;
     - longitude: number;
@@ -65,11 +66,11 @@ Entity NewYorkForecast
     - elevation: number?;
     - hourly: object;
     - hourly_units: object?;
-  source: NewYorkAPI
   access: public
 end
 
 Entity TokyoForecast
+  source: TokyoAPI
   attributes:
     - latitude: number;
     - longitude: number;
@@ -80,7 +81,6 @@ Entity TokyoForecast
     - elevation: number?;
     - hourly: object;
     - hourly_units: object?;
-  source: TokyoAPI
   access: public
 end
 
@@ -90,50 +90,21 @@ end
 
 Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   attributes:
-    // Simple computed statistics array for table display
-    - stats: array = [
-      {
-        "city": "Thessaloniki",
-        "avg_temp": round(
-          sum(ThessalonikiForecast.hourly["temperature_2m"]) /
-          len(ThessalonikiForecast.hourly["temperature_2m"]), 1
-        ),
-        "max_temp": max(ThessalonikiForecast.hourly["temperature_2m"]),
-        "min_temp": min(ThessalonikiForecast.hourly["temperature_2m"]),
-        "avg_humidity": round(
-          sum(ThessalonikiForecast.hourly["relative_humidity_2m"]) /
-          len(ThessalonikiForecast.hourly["relative_humidity_2m"]), 1
-        )
-      },
-      {
-        "city": "New York",
-        "avg_temp": round(
-          sum(NewYorkForecast.hourly["temperature_2m"]) /
-          len(NewYorkForecast.hourly["temperature_2m"]), 1
-        ),
-        "max_temp": max(NewYorkForecast.hourly["temperature_2m"]),
-        "min_temp": min(NewYorkForecast.hourly["temperature_2m"]),
-        "avg_humidity": round(
-          sum(NewYorkForecast.hourly["relative_humidity_2m"]) /
-          len(NewYorkForecast.hourly["relative_humidity_2m"]), 1
-        )
-      },
-      {
-        "city": "Tokyo",
-        "avg_temp": round(
-          sum(TokyoForecast.hourly["temperature_2m"]) /
-          len(TokyoForecast.hourly["temperature_2m"]), 1
-        ),
-        "max_temp": max(TokyoForecast.hourly["temperature_2m"]),
-        "min_temp": min(TokyoForecast.hourly["temperature_2m"]),
-        "avg_humidity": round(
-          sum(TokyoForecast.hourly["relative_humidity_2m"]) /
-          len(TokyoForecast.hourly["relative_humidity_2m"]), 1
-        )
-      }
-    ];
+    - forecasts: array = [
+        {"city": "Thessaloniki", "hourly": ThessalonikiForecast.hourly},
+        {"city": "New York", "hourly": NewYorkForecast.hourly},
+        {"city": "Tokyo", "hourly": TokyoForecast.hourly}
+      ];
+    - stats: array = map(CityComparison.forecasts, f => {
+        "city": f["city"],
+        "avg_temp": round(sum(f["hourly"]["temperature_2m"]) / len(f["hourly"]["temperature_2m"]), 1),
+        "max_temp": max(f["hourly"]["temperature_2m"]),
+        "min_temp": min(f["hourly"]["temperature_2m"]),
+        "avg_humidity": round(sum(f["hourly"]["relative_humidity_2m"]) / len(f["hourly"]["relative_humidity_2m"]), 1)
+      });
   access: public
 end
+
 
 // =============================================================================
 // TEMPERATURE TRENDS - Chart Data (Time Series with 3 Cities)
