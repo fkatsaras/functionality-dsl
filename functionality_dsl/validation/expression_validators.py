@@ -157,24 +157,29 @@ def _collect_refs(expr, loop_vars: set[str] | None = None):
 
 def _collect_bare_vars(expr, loop_vars: set[str] | None = None):
     """
-    Collect bare variable references (Var nodes that are NOT part of PostfixExpr).
+    Collect bare variable references (Var nodes that are NOT part of PostfixExpr with tails).
     These are truly bare identifiers without attribute access.
-    PostfixExpr with base.var (like Entity.attr) should NOT be caught here.
+    PostfixExpr with base.var AND tails (like Entity.attr) should NOT be caught here.
+    PostfixExpr with base.var but NO tails (like bare EntityB) SHOULD be caught.
     """
     lvs = loop_vars or set()
     constants = {"None", "null", "True", "False", "true", "false"}
 
-    # Collect all Var nodes that are part of PostfixExpr (these are OK - they have attribute access)
-    postfix_base_vars = set()
+    # Collect Var nodes that are part of PostfixExpr WITH tails (these have attribute access, so OK)
+    # Only skip vars that have actual member/index access (non-empty tails)
+    postfix_base_vars_with_access = set()
     for n in _walk(expr):
         if n.__class__.__name__ == "PostfixExpr":
-            base = getattr(n, "base", None)
-            if base and getattr(base, "var", None) is not None:
-                var_name = _as_id_str(base.var)
-                if var_name:
-                    postfix_base_vars.add(id(base.var))  # Track by object ID
+            tails = getattr(n, "tails", None) or []
+            # Only mark as having access if there are actual tails (attribute/index access)
+            if tails:
+                base = getattr(n, "base", None)
+                if base and getattr(base, "var", None) is not None:
+                    var_name = _as_id_str(base.var)
+                    if var_name:
+                        postfix_base_vars_with_access.add(id(base.var))  # Track by object ID
 
-    # Now collect bare Var nodes that are NOT part of PostfixExpr
+    # Now collect bare Var nodes that are NOT part of PostfixExpr with tails
     for n in _walk(expr):
         nname = n.__class__.__name__
 
@@ -184,12 +189,12 @@ def _collect_bare_vars(expr, loop_vars: set[str] | None = None):
             # - It's a loop var
             # - It's a reserved word
             # - It's a constant
-            # - It's part of a PostfixExpr (Entity.attr syntax)
+            # - It's part of a PostfixExpr WITH tails (Entity.attr syntax)
             if (var_name and
                 var_name not in lvs and
                 var_name not in RESERVED and
                 var_name not in constants and
-                id(n) not in postfix_base_vars):
+                id(n) not in postfix_base_vars_with_access):
                 yield var_name, n
 
 
