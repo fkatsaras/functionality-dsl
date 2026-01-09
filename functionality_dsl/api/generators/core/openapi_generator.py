@@ -28,7 +28,7 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
     Args:
         model: The parsed FDSL model
         output_dir: Path to output directory
-        server_config: Server configuration (host, port, etc.)
+        server_config: Server configuration (host, port, auth, etc.)
     """
     exposure_map = build_exposure_map(model)
 
@@ -44,10 +44,14 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
 
     # Default server config
     if not server_config:
-        server_config = {"host": "localhost", "port": 8080}
+        server_config = {"server": {"host": "localhost", "port": 8080}}
 
-    host = server_config.get("host", "localhost")
-    port = server_config.get("port", 8080)
+    server_info = server_config.get("server", server_config)
+    host = server_info.get("host", "localhost")
+    port = server_info.get("port", 8080)
+
+    # Extract auth configuration
+    auth_config = server_config.get("auth")
 
     # Build OpenAPI spec
     spec = {
@@ -68,6 +72,10 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
             "schemas": {},
         },
     }
+
+    # Add security schemes if auth is configured
+    if auth_config:
+        spec["components"]["securitySchemes"] = _generate_security_schemes(auth_config)
 
     # Generate schemas for all entities
     all_entities = {entity.name: entity for entity in get_entities(model)}
@@ -108,7 +116,7 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
         for operation in operations:
             http_method = get_operation_http_method(operation).lower()
             spec["paths"][rest_path][http_method] = _generate_operation_spec(
-                operation, entity_name, config
+                operation, entity_name, config, auth_config
             )
 
     # Write to file in app/api/ directory
@@ -186,7 +194,7 @@ def _generate_request_schema(entity, readonly_fields: List[str], optional_fields
     return schema
 
 
-def _generate_operation_spec(operation: str, entity_name: str, config: Dict) -> Dict[str, Any]:
+def _generate_operation_spec(operation: str, entity_name: str, config: Dict, auth_config: Dict = None) -> Dict[str, Any]:
     """Generate OpenAPI operation specification for snapshot entity."""
     spec = {
         "summary": f"{operation.capitalize()} {entity_name}",
@@ -194,6 +202,28 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict) -> 
         "tags": [entity_name],
         "responses": {},
     }
+
+    # Add security requirements based on entity access control
+    access_rules = config.get("access_rules", {})
+    is_public = config.get("is_public", False)
+
+    if auth_config and not is_public:
+        # Get required roles for this operation (or all roles if not per-operation)
+        required_roles = access_rules.get(operation, access_rules.get("_all", []))
+        security_scheme_name = _get_security_scheme_name(auth_config)
+
+        if security_scheme_name:
+            # Add security requirement with roles as scopes (if roles defined)
+            spec["security"] = [{security_scheme_name: required_roles if required_roles else []}]
+
+            # Add 401/403 error responses for secured endpoints
+            spec["responses"]["401"] = {
+                "description": "Unauthorized - authentication required"
+            }
+            if required_roles:
+                spec["responses"]["403"] = {
+                    "description": f"Forbidden - requires one of roles: {', '.join(required_roles)}"
+                }
 
     # Snapshot entities have no path parameters (no /{id})
 
@@ -232,3 +262,51 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict) -> 
     }
 
     return spec
+
+
+def _generate_security_schemes(auth_config: Dict) -> Dict[str, Any]:
+    """Generate OpenAPI security schemes from auth configuration."""
+    schemes = {}
+    auth_type = auth_config.get("type")
+
+    if auth_type == "jwt":
+        jwt_config = auth_config.get("jwt", {})
+        scheme = jwt_config.get("scheme") or "Bearer"  # Handle empty string
+        schemes["bearerAuth"] = {
+            "type": "http",
+            "scheme": scheme.lower(),
+            "bearerFormat": "JWT",
+            "description": f"JWT authentication using {scheme} scheme",
+        }
+    elif auth_type == "api_key":
+        apikey_config = auth_config.get("api_key", {})
+        header = apikey_config.get("header") or "X-API-Key"  # Handle empty string
+        schemes["apiKeyAuth"] = {
+            "type": "apiKey",
+            "in": "header",
+            "name": header,
+            "description": f"API Key authentication via {header} header",
+        }
+    elif auth_type == "session":
+        session_config = auth_config.get("session", {})
+        cookie = session_config.get("cookie") or "session"  # Handle empty string
+        schemes["cookieAuth"] = {
+            "type": "apiKey",
+            "in": "cookie",
+            "name": cookie,
+            "description": f"Session authentication via {cookie} cookie",
+        }
+
+    return schemes
+
+
+def _get_security_scheme_name(auth_config: Dict) -> str:
+    """Get the security scheme name based on auth type."""
+    auth_type = auth_config.get("type")
+    if auth_type == "jwt":
+        return "bearerAuth"
+    elif auth_type == "api_key":
+        return "apiKeyAuth"
+    elif auth_type == "session":
+        return "cookieAuth"
+    return None

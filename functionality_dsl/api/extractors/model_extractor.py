@@ -113,7 +113,7 @@ def find_target_for_entity(entity, model):
 def extract_server_config(model):
     """
     Extract server configuration from the model.
-    Returns dict with server name, host, port, CORS, loglevel, timeout and environment.
+    Returns dict with server name, host, port, CORS, loglevel, timeout, environment, and auth.
     """
     servers = list(get_children_of_type("Server", model))
     if not servers:
@@ -142,6 +142,9 @@ def extract_server_config(model):
     timeout_value = getattr(server, "timeout", None)
     timeout_value = int(timeout_value) if timeout_value else 10
 
+    # Extract auth configuration (if referenced by server)
+    auth_config = extract_auth_config(server)
+
     return {
         "server": {
             "name": server.name,
@@ -151,5 +154,57 @@ def extract_server_config(model):
             "env": env_value,
             "loglevel": loglvl_value,
             "timeout": timeout_value,
-        }
+        },
+        "auth": auth_config,
     }
+
+
+def extract_auth_config(server):
+    """
+    Extract authentication configuration from the server's auth reference.
+    Returns dict with auth type and configuration details.
+    """
+    auth = getattr(server, "auth", None)
+    if not auth:
+        return None
+
+    auth_type = getattr(auth, "type", None)
+    if not auth_type:
+        return None
+
+    config = {
+        "name": auth.name,
+        "type": auth_type,
+    }
+
+    # Extract type-specific configuration
+    # Note: Use `or` to convert empty strings to defaults (textX returns "" for unset strings)
+    if auth_type == "jwt":
+        jwt_config = getattr(auth, "jwt_config", None)
+        if jwt_config:
+            config["jwt"] = {
+                "secret": getattr(jwt_config, "secret", None) or None,
+                "secret_env": getattr(jwt_config, "secret_env", None) or None,
+                "header": getattr(jwt_config, "header", None) or "Authorization",
+                "scheme": getattr(jwt_config, "scheme", None) or "Bearer",
+                "algorithm": getattr(jwt_config, "algorithm", None) or "HS256",
+                "user_id_claim": getattr(jwt_config, "user_id_claim", None) or "sub",
+                "roles_claim": getattr(jwt_config, "roles_claim", None) or "roles",
+            }
+    elif auth_type == "session":
+        session_config = getattr(auth, "session_config", None)
+        if session_config:
+            config["session"] = {
+                "cookie": getattr(session_config, "cookie", None) or "session",
+                "redis_url_env": getattr(session_config, "redis_url_env", None) or None,
+                "store_env": getattr(session_config, "store_env", None) or None,
+            }
+    elif auth_type == "api_key":
+        apikey_config = getattr(auth, "apikey_config", None)
+        if apikey_config:
+            config["api_key"] = {
+                "lookup_env": getattr(apikey_config, "lookup_env", None) or None,
+                "header": getattr(apikey_config, "header", None) or "X-API-Key",
+            }
+
+    return config

@@ -127,6 +127,20 @@ def build_exposure_map(model):
             allowed_ops = set(permissions.keys())
             operations = [op for op in operations if op in allowed_ops]
 
+        # Determine if entity is public (all operations are public)
+        is_public = all(
+            perm == ["public"]
+            for perm in permissions.values()
+        ) if permissions else False
+
+        # Build access rules for OpenAPI security (role names per operation)
+        access_rules = {}
+        for op, roles in permissions.items():
+            if roles != ["public"]:
+                access_rules[op] = roles
+            else:
+                access_rules[op] = []  # Empty list means public
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -136,6 +150,8 @@ def build_exposure_map(model):
             "readonly_fields": readonly_fields,
             "optional_fields": optional_fields,
             "permissions": permissions,
+            "is_public": is_public,
+            "access_rules": access_rules,
             "is_transformation": is_composite,
             "parents": parents,
         }

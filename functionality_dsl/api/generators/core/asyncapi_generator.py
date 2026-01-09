@@ -20,7 +20,7 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
     Args:
         model: The parsed FDSL model
         output_dir: Path to output directory
-        server_config: Server configuration (host, port, etc.)
+        server_config: Server configuration (host, port, auth, etc.)
     """
     exposure_map = build_exposure_map(model)
 
@@ -36,10 +36,14 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
 
     # Default server config
     if not server_config:
-        server_config = {"host": "localhost", "port": 8080}
+        server_config = {"server": {"host": "localhost", "port": 8080}}
 
-    host = server_config.get("host", "localhost")
-    port = server_config.get("port", 8080)
+    server_info = server_config.get("server", server_config)
+    host = server_info.get("host", "localhost")
+    port = server_info.get("port", 8080)
+
+    # Extract auth configuration
+    auth_config = server_config.get("auth")
 
     # Build AsyncAPI spec
     spec = {
@@ -62,6 +66,14 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
             "schemas": {},
         },
     }
+
+    # Add security schemes if auth is configured
+    if auth_config:
+        spec["components"]["securitySchemes"] = _generate_security_schemes(auth_config)
+        # Add security to server definition
+        security_scheme_name = _get_security_scheme_name(auth_config)
+        if security_scheme_name:
+            spec["servers"]["development"]["security"] = [{security_scheme_name: []}]
 
     # Collect all entities referenced by WebSocket channels
     all_entities = {entity.name: entity for entity in get_entities(model)}
@@ -280,3 +292,52 @@ def _map_type_to_json_schema(type_spec) -> Dict[str, Any]:
         return {"type": "object"}
     else:
         return {"type": "string"}  # Default fallback
+
+
+def _generate_security_schemes(auth_config: Dict) -> Dict[str, Any]:
+    """Generate AsyncAPI security schemes from auth configuration."""
+    schemes = {}
+    auth_type = auth_config.get("type")
+
+    if auth_type == "jwt":
+        jwt_config = auth_config.get("jwt", {})
+        scheme = jwt_config.get("scheme") or "Bearer"  # Handle empty string
+        # AsyncAPI uses different format for security schemes
+        schemes["bearerAuth"] = {
+            "type": "http",
+            "scheme": scheme.lower(),
+            "bearerFormat": "JWT",
+            "description": f"JWT authentication using {scheme} scheme. Token can be passed via query parameter 'token' for WebSocket connections.",
+        }
+    elif auth_type == "api_key":
+        apikey_config = auth_config.get("api_key", {})
+        header = apikey_config.get("header") or "X-API-Key"  # Handle empty string
+        schemes["apiKeyAuth"] = {
+            "type": "httpApiKey",
+            "in": "query",  # WebSocket typically uses query params
+            "name": "api_key",
+            "description": f"API Key authentication. Pass key via 'api_key' query parameter for WebSocket connections.",
+        }
+    elif auth_type == "session":
+        session_config = auth_config.get("session", {})
+        cookie = session_config.get("cookie") or "session"  # Handle empty string
+        schemes["cookieAuth"] = {
+            "type": "httpApiKey",
+            "in": "cookie",
+            "name": cookie,
+            "description": f"Session authentication via {cookie} cookie.",
+        }
+
+    return schemes
+
+
+def _get_security_scheme_name(auth_config: Dict) -> str:
+    """Get the security scheme name based on auth type."""
+    auth_type = auth_config.get("type")
+    if auth_type == "jwt":
+        return "bearerAuth"
+    elif auth_type == "api_key":
+        return "apiKeyAuth"
+    elif auth_type == "session":
+        return "cookieAuth"
+    return None
