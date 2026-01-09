@@ -1,15 +1,20 @@
 """
 Auth middleware and dependencies generator.
 Generates FastAPI auth utilities based on Server auth configuration.
+
+Supported auth types:
+- jwt: Stateless token-based authentication (Authorization header)
+- session: Stateful cookie-based authentication (in-memory session store)
 """
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+from textx import get_children_of_type
 
 
 def generate_auth_module(model, templates_dir, out_dir):
     """
-    Generate authentication module with JWT/Session/API Key support.
+    Generate authentication module with JWT or Session support.
 
     Args:
         model: FDSL model
@@ -40,7 +45,7 @@ def generate_auth_module(model, templates_dir, out_dir):
     print(f"  Generating auth module for type: {auth_type}")
 
     # Extract auth configuration
-    auth_config = _extract_auth_config(auth)
+    auth_config = _extract_auth_config(auth, model)
 
     # Render the appropriate auth template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -49,8 +54,6 @@ def generate_auth_module(model, templates_dir, out_dir):
         template = env.get_template("auth_jwt.py.jinja")
     elif auth_type == "session":
         template = env.get_template("auth_session.py.jinja")
-    elif auth_type == "api_key":
-        template = env.get_template("auth_apikey.py.jinja")
     else:
         print(f"  Unknown auth type: {auth_type} - skipping")
         return False
@@ -69,33 +72,37 @@ def generate_auth_module(model, templates_dir, out_dir):
     return True
 
 
-def _extract_auth_config(auth):
+def _extract_auth_config(auth, model):
     """
     Extract auth configuration into template-friendly dict.
 
     Args:
         auth: AuthBlock from FDSL model
+        model: Full FDSL model (to extract Role declarations)
 
     Returns:
         dict: Auth configuration for template rendering
     """
     auth_type = getattr(auth, "type", "jwt")
-    roles = getattr(auth, "roles", [])
+
+    # Collect roles from Role declarations in the model
+    role_blocks = get_children_of_type("Role", model)
+    roles = [r.name for r in role_blocks]
 
     config = {
         "auth_type": auth_type,
         "roles": roles,
     }
 
+    # Helper to get value or default (TextX returns "" for unset optional fields)
+    def get_or_default(obj, attr, default):
+        if not obj:
+            return default
+        val = getattr(obj, attr, None)
+        return val if val and val != "" else default
+
     if auth_type == "jwt":
         jwt_config = getattr(auth, "jwt_config", None)
-
-        # Helper to get value or default (TextX returns "" for unset optional fields)
-        def get_or_default(obj, attr, default):
-            if not obj:
-                return default
-            val = getattr(obj, attr, None)
-            return val if val and val != "" else default
 
         # Handle both direct secret and environment variable reference
         secret_direct = get_or_default(jwt_config, "secret", None)
@@ -116,17 +123,8 @@ def _extract_auth_config(auth):
         session_config = getattr(auth, "session_config", None)
 
         config.update({
-            "cookie": getattr(session_config, "cookie", "session_id") if session_config else "session_id",
-            "redis_url_env": getattr(session_config, "redis_url_env", "REDIS_URL") if session_config else "REDIS_URL",
-            "store_env": getattr(session_config, "store_env", "SESSION_STORE") if session_config else "SESSION_STORE",
-        })
-
-    elif auth_type == "api_key":
-        apikey_config = getattr(auth, "apikey_config", None)
-
-        config.update({
-            "lookup_env": getattr(apikey_config, "lookup_env", "API_KEYS") if apikey_config else "API_KEYS",
-            "header": getattr(apikey_config, "header", "X-API-Key") if apikey_config else "X-API-Key",
+            "cookie": get_or_default(session_config, "cookie", "session_id"),
+            "expiry": get_or_default(session_config, "expiry", 3600),
         })
 
     return config

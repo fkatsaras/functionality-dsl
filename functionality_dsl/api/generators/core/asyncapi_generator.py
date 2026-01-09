@@ -309,18 +309,9 @@ def _generate_security_schemes(auth_config: Dict) -> Dict[str, Any]:
             "bearerFormat": "JWT",
             "description": f"JWT authentication using {scheme} scheme. Token can be passed via query parameter 'token' for WebSocket connections.",
         }
-    elif auth_type == "api_key":
-        apikey_config = auth_config.get("api_key", {})
-        header = apikey_config.get("header") or "X-API-Key"  # Handle empty string
-        schemes["apiKeyAuth"] = {
-            "type": "httpApiKey",
-            "in": "query",  # WebSocket typically uses query params
-            "name": "api_key",
-            "description": f"API Key authentication. Pass key via 'api_key' query parameter for WebSocket connections.",
-        }
     elif auth_type == "session":
         session_config = auth_config.get("session", {})
-        cookie = session_config.get("cookie") or "session"  # Handle empty string
+        cookie = session_config.get("cookie") or "session_id"  # Handle empty string
         schemes["cookieAuth"] = {
             "type": "httpApiKey",
             "in": "cookie",
@@ -336,8 +327,6 @@ def _get_security_scheme_name(auth_config: Dict) -> str:
     auth_type = auth_config.get("type")
     if auth_type == "jwt":
         return "bearerAuth"
-    elif auth_type == "api_key":
-        return "apiKeyAuth"
     elif auth_type == "session":
         return "cookieAuth"
     return None

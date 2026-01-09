@@ -193,7 +193,12 @@
       "Bash(venv_WIN/Scripts/fdsl:*)",
       "Bash(for f in examples/v2/**/*.fdsl)",
       "Bash(do echo \"=== $f ===\")",
-      "Bash(do echo -n \"$f: \")"
+      "Bash(do echo -n \"$f: \")",
+      "Bash(venv_WIN\\\\Scripts\\\\python:*)",
+      "Bash(venv_WIN\\\\Scripts\\\\python.exe:*)",
+      "Bash(.\\\\venv_WIN\\\\Scripts\\\\python.exe:*)",
+      "Bash(cmd /c \"venv_WIN\\\\Scripts\\\\python.exe -m functionality_dsl.cli generate examples/v2/session-auth-demo/main.fdsl --out C:\\\\Users\\\\FotisKatsaras\\\\AppData\\\\Local\\\\Temp\\\\session-demo\")",
+      "Bash(cmd /c:*)"
     ],
     "deny": [],
     "ask": []

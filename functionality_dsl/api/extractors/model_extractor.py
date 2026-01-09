@@ -163,6 +163,10 @@ def extract_auth_config(server):
     """
     Extract authentication configuration from the server's auth reference.
     Returns dict with auth type and configuration details.
+
+    Supported auth types:
+    - jwt: Stateless token-based authentication
+    - session: Stateful cookie-based authentication
     """
     auth = getattr(server, "auth", None)
     if not auth:
@@ -193,18 +197,9 @@ def extract_auth_config(server):
             }
     elif auth_type == "session":
         session_config = getattr(auth, "session_config", None)
-        if session_config:
-            config["session"] = {
-                "cookie": getattr(session_config, "cookie", None) or "session",
-                "redis_url_env": getattr(session_config, "redis_url_env", None) or None,
-                "store_env": getattr(session_config, "store_env", None) or None,
-            }
-    elif auth_type == "api_key":
-        apikey_config = getattr(auth, "apikey_config", None)
-        if apikey_config:
-            config["api_key"] = {
-                "lookup_env": getattr(apikey_config, "lookup_env", None) or None,
-                "header": getattr(apikey_config, "header", None) or "X-API-Key",
-            }
+        config["session"] = {
+            "cookie": getattr(session_config, "cookie", None) or "session_id" if session_config else "session_id",
+            "expiry": getattr(session_config, "expiry", None) or 3600 if session_config else 3600,
+        }
 
     return config

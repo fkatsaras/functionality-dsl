@@ -55,6 +55,16 @@ def _get_server_ctx(model):
                 "type": "jwt",
                 "secret": secret,
             }
+        elif auth_type == "session":
+            session_config = getattr(auth, "session_config", None)
+            cookie = getattr(session_config, "cookie", "session_id") if session_config else "session_id"
+            # Handle empty string from textX
+            if not cookie:
+                cookie = "session_id"
+            auth_config = {
+                "type": "session",
+                "cookie": cookie,
+            }
 
     # Extract roles
     roles = [r.name for r in get_children_of_type("Role", model)]

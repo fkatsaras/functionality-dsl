@@ -1,0 +1,138 @@
+// =============================================================================
+// Session Auth Demo - Using DummyJSON
+// =============================================================================
+// Demonstrates session-based authentication with RBAC
+//
+// Key differences from JWT:
+// - Server stores session data (in-memory)
+// - Client receives session cookie
+// - Easy session revocation (logout deletes server-side session)
+//
+// Uses DummyJSON.com as the backing API for testing
+// =============================================================================
+
+Role user
+Role admin
+
+Auth SessionAuth
+  type: session
+  cookie: "demo_session"
+  expiry: 3600
+end
+
+Server SessionDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+  auth: SessionAuth
+end
+
+// =============================================================================
+// REST SOURCES - DummyJSON API
+// =============================================================================
+
+Source<REST> UsersAPI
+  url: "https://dummyjson.com/users/1"
+  operations: [read]
+end
+
+Source<REST> ProductsAPI
+  url: "https://dummyjson.com/products"
+  operations: [read]
+end
+
+Source<REST> SingleProductAPI
+  url: "https://dummyjson.com/products/1"
+  operations: [read]
+end
+
+// =============================================================================
+// ENTITIES
+// =============================================================================
+
+// User profile - accessible by any authenticated user
+Entity UserProfile
+  source: UsersAPI
+  attributes:
+    - id: integer @readonly;
+    - firstName: string @readonly;
+    - lastName: string @readonly;
+    - email: string @readonly;
+    - phone: string @readonly;
+    - username: string @readonly;
+    - image: string @readonly;
+    - role: string @readonly;
+  access: [user, admin]
+end
+
+// Product listing - only accessible by admin role
+Entity ProductList
+  source: ProductsAPI
+  attributes:
+    - products: array @readonly;
+    - total: integer @readonly;
+    - skip: integer @readonly;
+    - limit: integer @readonly;
+  access: [admin]
+end
+
+// Single product - accessible by users
+Entity Product
+  source: SingleProductAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - description: string @readonly;
+    - price: number @readonly;
+    - brand: string @readonly;
+    - category: string @readonly;
+    - thumbnail: string @readonly;
+  access: [user, admin]
+end
+
+// Public endpoint - no auth required (derived from UserProfile)
+Entity PublicUserInfo(UserProfile)
+  attributes:
+    - display_name: string = UserProfile.firstName + " " + UserProfile.lastName;
+    - username: string = UserProfile.username;
+    - has_image: boolean = UserProfile.image != "";
+  access: public
+end
+
+// Derived product info - public
+Entity ProductSummary(Product)
+  attributes:
+    - name: string = Product.title;
+    - price_usd: string = "$" + toString(Product.price);
+    - category: string = Product.category;
+  access: public
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+// Public info table - no auth required
+Component<Table> PublicInfoTable
+  entity: PublicUserInfo
+  colNames: ["display_name", "username", "has_image"]
+end
+
+// Product summary table - public
+Component<Table> ProductTable
+  entity: ProductSummary
+  colNames: ["name", "price_usd", "category"]
+end
+
+// User profile table - requires user/admin role
+Component<Table> UserProfileTable
+  entity: UserProfile
+  colNames: ["firstName", "lastName", "email", "username", "role"]
+end
+
+// Product details - requires user/admin role
+Component<Table> ProductDetailsTable
+  entity: Product
+  colNames: ["title", "price", "brand", "category", "description"]
+end

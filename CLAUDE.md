@@ -60,10 +60,25 @@ Role guest
 ```
 
 **Authentication** (identity verification):
+
+FDSL supports two authentication types:
+- `jwt` - Stateless token-based auth (recommended for APIs)
+- `session` - Stateful cookie-based auth (traditional web apps)
+
+**JWT Authentication** (stateless, token in header):
 ```fdsl
 Auth HomeAuth
   type: jwt
-  secret: "your-secret-key"
+  secret: "your-secret-key"  // or secret_env: "JWT_SECRET"
+end
+```
+
+**Session Authentication** (stateful, cookie-based):
+```fdsl
+Auth WebAuth
+  type: session
+  cookie: "session_id"
+  expiry: 3600  // Session expiry in seconds (default: 3600)
 end
 ```
 
@@ -77,6 +92,14 @@ Server SmartHome
   auth: HomeAuth
 end
 ```
+
+**JWT vs Session Comparison:**
+| Aspect | JWT | Session |
+|--------|-----|---------|
+| State | Stateless (token contains all info) | Stateful (server stores session) |
+| Storage | Client (localStorage/header) | Server (in-memory) |
+| Revocation | Hard (need blocklist) | Easy (delete session) |
+| Use case | APIs, mobile, microservices | Web apps, browsers |
 
 ---
 
