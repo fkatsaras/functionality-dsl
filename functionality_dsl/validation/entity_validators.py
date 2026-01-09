@@ -686,29 +686,29 @@ def _validate_entity_inheritance_cycles(model):
             raise
 
 
-def _validate_source_base_urls(model):
+def _validate_source_urls(model):
     """
-    Validate that REST source base_urls follow best practices:
+    Validate that REST source urls follow best practices:
     - Should include the resource path, not just the server root
     - Helps prevent common mistakes where one source is used for multiple resource types
 
     Example:
-    ✓ GOOD: base_url: "http://api.example.com/users"
-    ✗ BAD:  base_url: "http://api.example.com"
+    ✓ GOOD: url: "http://api.example.com/users"
+    ✗ BAD:  url: "http://api.example.com"
     """
     sources = get_children_of_type("SourceREST", model)
 
     for source in sources:
 
-        base_url = getattr(source, "base_url", None)
-        if not base_url:
+        url = getattr(source, "url", None)
+        if not url:
             continue
 
         # Parse the URL to check if it has a path component
         # Remove protocol
-        url_without_protocol = base_url
-        if "://" in base_url:
-            url_without_protocol = base_url.split("://", 1)[1]
+        url_without_protocol = url
+        if "://" in url:
+            url_without_protocol = url.split("://", 1)[1]
 
         # Check if there's a path after the host
         # Format: "host:port/path" or "host/path"
@@ -717,8 +717,8 @@ def _validate_source_base_urls(model):
         # If there's only one part (no path after host), warn the user
         if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ""):
             raise TextXSemanticError(
-                f"Source '{source.name}' has base_url '{base_url}' without a resource path.\n"
-                f"REST sources should include the resource path in base_url.\n"
+                f"Source '{source.name}' has url '{url}' without a resource path.\n"
+                f"REST sources should include the resource path in url.\n"
                 f"Example: Instead of 'http://api.example.com', use 'http://api.example.com/users'\n"
                 f"This ensures each source maps to exactly one resource type.",
                 **get_location(source)
@@ -880,6 +880,11 @@ def _validate_composite_entities(model):
     """
     Validate composite entity rules:
     1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
+
+    Rationale:
+    - REST composites are read-only transformations of parent data
+    - WS inbound composites transform incoming messages before sending to clients
+    - WS outbound composites don't make sense (use computed fields on base entity instead)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -890,7 +895,7 @@ def _validate_composite_entities(model):
         if not parent_entities:
             continue
 
-        # Rule 1: Entities with parents CANNOT have source
+        # Rule: Entities with parents CANNOT have source
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
@@ -908,6 +913,60 @@ def _validate_composite_entities(model):
 
 
 # ------------------------------------------------------------------------------
+# Attribute marker validation (@readonly, @optional)
+
+def _validate_attribute_markers(model):
+    """
+    Validate @readonly and @optional attribute markers.
+
+    Rules:
+    1. @optional on computed attributes is invalid (computed = always derived)
+    2. @optional on composite entity attributes is redundant (composites have no input schemas)
+    3. @readonly and @optional are mutually exclusive (grammar enforces this, but double-check)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_entities = _get_parent_entities(entity)
+        is_composite = len(parent_entities) > 0
+
+        attrs = getattr(entity, "attributes", []) or []
+
+        for attr in attrs:
+            attr_type = getattr(attr, "type", None)
+            if not attr_type:
+                continue
+
+            is_optional = getattr(attr_type, "optionalMarker", None)
+            is_readonly = getattr(attr_type, "readonlyMarker", None)
+            has_expr = getattr(attr, "expr", None) is not None
+
+            # Rule 1: @optional on computed attributes is invalid
+            if is_optional and has_expr:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' attribute '{attr.name}': @optional cannot be used on computed attributes.\n"
+                    f"Computed attributes (with '= expression') are always derived from other data.\n"
+                    f"Remove either the @optional marker or the expression.",
+                    **get_location(attr)
+                )
+
+            # Rule 2: @optional on composite entities is redundant (warning, not error)
+            # Composite entities don't have create/update schemas, so @optional has no effect
+            # We could warn here, but for now we'll just silently allow it
+
+            # Rule 3: @readonly and @optional together (grammar already prevents this via alternation)
+            # This is just a safety check
+            if is_optional and is_readonly:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' attribute '{attr.name}': @optional and @readonly cannot be combined.\n"
+                    f"@readonly fields are excluded from request schemas entirely.\n"
+                    f"@optional fields are included but not required.\n"
+                    f"Choose one or the other.",
+                    **get_location(attr)
+                )
+
+
+# ------------------------------------------------------------------------------
 # Main entity validation entry point
 
 def verify_entities(model):
@@ -918,7 +977,8 @@ def verify_entities(model):
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
-    _validate_source_base_urls(model)
+    _validate_source_urls(model)
+    _validate_attribute_markers(model)  # Validate @readonly/@optional markers
 
     # WebSocket validation
     _validate_websocket_entity_relationships(model)  # WebSocket: join semantics

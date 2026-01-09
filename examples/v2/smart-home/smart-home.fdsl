@@ -17,17 +17,17 @@ end
 // ============================================
 
 Source<REST> ThermostatAPI
-  base_url: "http://dummy-smart-home-devices:9001/thermostat"
+  url: "http://dummy-smart-home-devices:9001/thermostat"
   operations: [read, update]
 end
 
 Source<REST> LightsAPI
-  base_url: "http://dummy-smart-home-devices:9001/lights"
+  url: "http://dummy-smart-home-devices:9001/lights"
   operations: [read, update]
 end
 
 Source<REST> AppliancesAPI
-  base_url: "http://dummy-smart-home-devices:9001/appliances"
+  url: "http://dummy-smart-home-devices:9001/appliances"
   operations: [read, update]
 end
 

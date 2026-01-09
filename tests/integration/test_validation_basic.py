@@ -21,7 +21,7 @@ def test_valid_rest_crud_parses():
     end
 
     Source<REST> UserDB
-      base_url: "http://api.example.com/users"
+      url: "http://api.example.com/users"
       operations: [list, read]
     end
 
@@ -135,7 +135,7 @@ def test_reserved_role_name_public_fails():
     Role public
 
     Source<REST> UserDB
-      base_url: "http://api.example.com/users"
+      url: "http://api.example.com/users"
     end
 
     Entity User

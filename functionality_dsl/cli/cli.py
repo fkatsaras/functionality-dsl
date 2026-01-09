@@ -392,11 +392,11 @@ def visualize_model_cmd(context, model_path, output_dir):
         # REST Sources (Source<REST>)
         # -------------------------------
         for s in model.externalrest:
-            base_url = getattr(s, "base_url", "")
+            url = getattr(s, "url", "")
             ops = get_source_operations(s)
             ops_str = ", ".join(ops) if ops else "none"
 
-            label = f"SOURCE REST\\n{s.name}\\n{safe_label(base_url, 40)}\\nops: {ops_str}"
+            label = f"SOURCE REST\\n{s.name}\\n{safe_label(url, 40)}\\nops: {ops_str}"
             dot.node(f"source_{s.name}", label=label,
                      shape="note", style="filled", fillcolor="#d1c4e9")
 

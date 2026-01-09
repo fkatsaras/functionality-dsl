@@ -14,12 +14,12 @@ end
 // Sources: Two separate REST APIs
 // -----------------------------------------------------------------------------
 Source<REST> TemperatureAPI
-  base_url: "http://dummy:9001/temperature"
+  url: "http://dummy:9001/temperature"
   operations: [read]
 end
 
 Source<REST> HumidityAPI
-  base_url: "http://dummy:9001/humidity"
+  url: "http://dummy:9001/humidity"
   operations: [read]
 end
 

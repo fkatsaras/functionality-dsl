@@ -26,17 +26,17 @@ end
 // ============================================
 
 Source<REST> CartAPI
-  base_url: "http://dummy-ecomm-service:9001/cart"
+  url: "http://dummy-ecomm-service:9001/cart"
   operations: [read, create, update, delete]
 end
 
 Source<REST> InventoryAPI
-  base_url: "http://dummy-ecomm-service:9001/stock"
+  url: "http://dummy-ecomm-service:9001/stock"
   operations: [read]
 end
 
 Source<REST> OrderAPI
-  base_url: "http://dummy-ecomm-service:9001/current-order"
+  url: "http://dummy-ecomm-service:9001/current-order"
   operations: [read, create]
 end
 

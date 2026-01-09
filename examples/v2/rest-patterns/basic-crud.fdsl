@@ -14,7 +14,7 @@ end
 // Source: Product API with full CRUD
 // -----------------------------------------------------------------------------
 Source<REST> ProductAPI
-  base_url: "http://dummy:9001/product"
+  url: "http://dummy:9001/product"
   operations: [read, create, update, delete]
 end
 

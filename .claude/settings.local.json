@@ -190,7 +190,10 @@
       "Bash(venv_WIN/Scripts/python -m functionality_dsl.cli.cli visualize-model:*)",
       "Skill(gen)",
       "Skill(gen:*)",
-      "Bash(venv_WIN/Scripts/fdsl:*)"
+      "Bash(venv_WIN/Scripts/fdsl:*)",
+      "Bash(for f in examples/v2/**/*.fdsl)",
+      "Bash(do echo \"=== $f ===\")",
+      "Bash(do echo -n \"$f: \")"
     ],
     "deny": [],
     "ask": []

@@ -17,7 +17,7 @@ def validate_source_syntax(model, metamodel=None):
     Validate that Source syntax is correct (runs before RBAC validation).
 
     Rules:
-    1. REST sources MUST have 'base_url:' and 'operations:' fields
+    1. REST sources MUST have 'url:' and 'operations:' fields
     2. WS sources MUST have 'channel:' and 'operations:' fields
     3. REST operations can only be: create, read, update, delete, list
     4. WS operations can only be: subscribe, publish
@@ -35,14 +35,14 @@ def validate_source_syntax(model, metamodel=None):
 
 def _validate_rest_source(source):
     """Validate a single REST source."""
-    # Check base_url is present (should be enforced by grammar, but double-check)
-    base_url = getattr(source, "base_url", None)
-    if not base_url:
+    # Check url is present (should be enforced by grammar, but double-check)
+    url = getattr(source, "url", None)
+    if not url:
         raise TextXSemanticError(
-            f"Source<REST> '{source.name}': MUST define 'base_url:' field.\n"
+            f"Source<REST> '{source.name}': MUST define 'url:' field.\n"
             f"Correct syntax:\n"
             f"  Source<REST> {source.name}\n"
-            f"    base_url: \"http://api.example.com/resource\"\n"
+            f"    url: \"http://api.example.com/resource\"\n"
             f"    operations: [read, create, update, delete]\n"
             f"  end",
             **get_location(source)
@@ -58,7 +58,7 @@ def _validate_rest_source(source):
             f"Valid REST operations: {', '.join(sorted(VALID_REST_OPERATIONS))}\n"
             f"Example:\n"
             f"  Source<REST> {source.name}\n"
-            f"    base_url: \"{base_url}\"\n"
+            f"    url: \"{url}\"\n"
             f"    operations: [read, create, update, delete]\n"
             f"  end",
             **get_location(source)

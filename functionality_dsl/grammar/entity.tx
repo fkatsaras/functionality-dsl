@@ -17,11 +17,14 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
-// Extended to support @readonly marker for read-only fields
+// Field markers:
+//   @readonly - field excluded from create/update request schemas (response only)
+//   @optional - field not required in create/update request schemas (can be omitted)
+//   ? - nullable (value can be null)
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? readonlyMarker='@readonly'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?
 ;
 
 TypeConstraint:
@@ -120,7 +123,7 @@ Source:
 // ---------- SOURCE (integration) ----------
 SourceREST:
   'Source<' kind='REST' '>' name=ID
-  'base_url:' base_url=STRING
+  'url:' url=STRING
   (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
   'end'
 ;
@@ -128,7 +131,7 @@ SourceREST:
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   'channel:' url=STRING
-  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
+  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)?
   'end'
 ;
 

@@ -87,7 +87,7 @@ Sources are **not** databases or data stores - they are **interaction contracts*
 **REST Source:**
 ```fdsl
 Source<REST> ThermostatAPI
-  base_url: "http://devices:9001/thermostat"
+  url: "http://devices:9001/thermostat"
   operations: [read, update]
 end
 ```
@@ -118,7 +118,7 @@ end
 
 ```fdsl
 Source<REST> ThermostatAPI
-  base_url: "http://devices:9001/thermostat"
+  url: "http://devices:9001/thermostat"
   operations: [read, update]
 end
 
@@ -215,7 +215,7 @@ Generates: `ws://localhost:8080/ws/ordercommand` (client publishes)
 3. **No `@id` field** - all entities are snapshots (fixed shape, no collections)
 4. REST paths auto-generated: `/api/{entityname}` (lowercase)
 5. Operations from source: `read`, `create`, `update`, `delete` - all operate on snapshots
-6. **Sources called without IDs**: `GET base_url`, `PUT base_url`, etc.
+6. **Sources called without IDs**: `GET url`, `PUT url`, etc.
 
 **Mutation Semantics (Critical Concept):**
 - `POST /api/entity` = Send snapshot to source, let it create according to its rules
@@ -234,8 +234,16 @@ Generates: `ws://localhost:8080/ws/ordercommand` (client publishes)
 
 **Field Decorators:**
 - `@readonly` - excludes field from Create/Update request schemas
-- Use for: server timestamps, computed fields, auto-generated values
-- Readonly fields appear in response but NOT in request schemas
+  - Use for: server timestamps, computed fields, auto-generated values
+  - Readonly fields appear in response but NOT in request schemas
+- `@optional` - field not required in Create/Update request schemas
+  - Use for: optional profile fields, metadata, preferences
+  - Optional fields can be omitted from requests entirely
+  - Cannot be combined with `@readonly` (mutually exclusive)
+  - Cannot be used on computed attributes (with `= expression`)
+- `?` (nullable) - field value can be null
+  - Different from `@optional`: nullable fields must be present but can be null
+  - Combine with `@optional` for fields that can be omitted OR sent as null: `bio: string? @optional;`
 
 **Computed Attributes:**
 - Use `=` for computed fields (evaluated server-side)
@@ -369,8 +377,8 @@ generated/
 
 **Generated Schemas:**
 - `{Entity}` - Response schema (all fields)
-- `{Entity}Create` - Create request schema (no @readonly fields)
-- `{Entity}Update` - Update request schema (no @readonly fields)
+- `{Entity}Create` - Create request schema (no @readonly fields, @optional fields not required)
+- `{Entity}Update` - Update request schema (no @readonly fields, @optional fields not required)
 
 ---
 
@@ -385,12 +393,12 @@ Server SmartHome
 end
 
 Source<REST> ThermostatAPI
-  base_url: "http://devices:9001/thermostat"
+  url: "http://devices:9001/thermostat"
   operations: [read, update]
 end
 
 Source<REST> LightsAPI
-  base_url: "http://devices:9001/lights"
+  url: "http://devices:9001/lights"
   operations: [read, update]
 end
 
@@ -579,4 +587,4 @@ end
 | `/{id}` paths | Not generated - snapshot resources |
 | `filters:` field | Not needed - no list endpoints |
 
-**Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET base_url`, `PUT base_url`, etc.).
+**Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET url`, `PUT url`, etc.).

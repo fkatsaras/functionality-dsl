@@ -40,10 +40,7 @@ from functionality_dsl.validation.component_validators import (
 
 from functionality_dsl.validation.exposure_validators import (
     _validate_exposure_blocks,
-    _validate_crud_blocks,
-    _validate_entity_crud_rules,
-    _validate_permissions,
-    _validate_source_operations,
+    _validate_ws_entities,
     _validate_entity_access_blocks,
 )
 
@@ -83,12 +80,9 @@ __all__ = [
     "verify_endpoints",
     # Component validators
     "verify_components",
-    # Exposure validators (NEW SYNTAX)
+    # Exposure validators (v2 syntax)
     "_validate_exposure_blocks",
-    "_validate_crud_blocks",
-    "_validate_entity_crud_rules",
-    "_validate_permissions",
-    "_validate_source_operations",
+    "_validate_ws_entities",
     "_validate_entity_access_blocks",
     # Server validators
     "verify_server",

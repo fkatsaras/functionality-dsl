@@ -14,7 +14,7 @@ end
 // Source: Order API with line items
 // -----------------------------------------------------------------------------
 Source<REST> OrderAPI
-  base_url: "http://dummy:9001/order"
+  url: "http://dummy:9001/order"
   operations: [read, update]
 end
 

@@ -1,8 +1,10 @@
 """
-OpenAPI specification generator for FDSL models.
+OpenAPI specification generator for FDSL models (v2 snapshot entities).
 
 Generates a static openapi.yaml file documenting all exposed entities,
 their operations, schemas, and error responses.
+
+All entities are snapshots - flat paths (/api/{entity}), no /{id} parameters.
 """
 
 import yaml
@@ -13,7 +15,6 @@ from ...exposure_map import build_exposure_map
 from ...extractors import get_entities, map_to_openapi_type
 from ...crud_helpers import (
     get_operation_http_method,
-    get_operation_path_suffix,
     get_operation_status_code,
     requires_request_body,
     derive_request_schema_name,
@@ -79,58 +80,35 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
         entity = config["entity"]
         operations = config["operations"]
         readonly_fields = config.get("readonly_fields", [])
-        id_field = config.get("id_field")
 
-        if id_field and id_field not in readonly_fields:
-            readonly_fields = list(readonly_fields) + [id_field]
+        optional_fields = config.get("optional_fields", [])
 
         # Generate request schemas
         if "create" in operations:
             schema_name = f"{entity_name}Create"
             spec["components"]["schemas"][schema_name] = _generate_request_schema(
-                entity, readonly_fields, "create"
+                entity, readonly_fields, optional_fields, "create"
             )
 
         if "update" in operations:
             schema_name = f"{entity_name}Update"
             spec["components"]["schemas"][schema_name] = _generate_request_schema(
-                entity, readonly_fields, "update"
+                entity, readonly_fields, optional_fields, "update"
             )
 
-    # Generate paths for REST entities
+    # Generate paths for REST entities (all snapshot entities - flat paths)
     for entity_name, config in rest_entities.items():
-        rest_path = config["rest_path"]
+        rest_path = config["rest_path"]  # e.g., "/api/entityname"
         operations = config["operations"]
-        id_field = config.get("id_field", "id")
 
-        # Split rest_path into base prefix and path parameters
-        # Example: "/api/users/{id}" -> base="/api/users", params="/{id}"
-        import re
-        path_params_pattern = r'/\{[^}]+\}'
-        match = re.search(path_params_pattern, rest_path)
-        if match:
-            base_prefix = rest_path[:match.start()]
-            path_with_params = rest_path[len(base_prefix):]
-        else:
-            base_prefix = rest_path
-            path_with_params = ""
+        # All operations go to the same flat path (snapshot entities)
+        if rest_path not in spec["paths"]:
+            spec["paths"][rest_path] = {}
 
-        # Generate operations
         for operation in operations:
             http_method = get_operation_http_method(operation).lower()
-
-            # For operations that need ID, use base_prefix + path_with_params
-            # For operations without ID (create), use just base_prefix
-            if operation in ["read", "update", "delete"] and path_with_params:
-                full_path = base_prefix + path_with_params
-            else:
-                full_path = base_prefix
-
-            if full_path not in spec["paths"]:
-                spec["paths"][full_path] = {}
-
-            spec["paths"][full_path][http_method] = _generate_operation_spec(
-                operation, entity_name, config, id_field
+            spec["paths"][rest_path][http_method] = _generate_operation_spec(
+                operation, entity_name, config
             )
 
     # Write to file in app/api/ directory
@@ -166,7 +144,7 @@ def _generate_entity_schema(entity) -> Dict[str, Any]:
     return schema
 
 
-def _generate_request_schema(entity, readonly_fields: List[str], operation: str) -> Dict[str, Any]:
+def _generate_request_schema(entity, readonly_fields: List[str], optional_fields: List[str], operation: str) -> Dict[str, Any]:
     """Generate OpenAPI schema for Create/Update requests (excludes readonly fields)."""
     schema = {
         "type": "object",
@@ -197,8 +175,9 @@ def _generate_request_schema(entity, readonly_fields: List[str], operation: str)
 
         schema["properties"][attr_name] = openapi_type
 
-        # Mark as required if not optional
-        if not getattr(attr, "optional", False):
+        # Mark as required if not optional (and not nullable for non-optional)
+        # @optional fields can be omitted from the request entirely
+        if attr.name not in optional_fields:
             schema["required"].append(attr_name)
 
     if not schema["required"]:
@@ -207,12 +186,8 @@ def _generate_request_schema(entity, readonly_fields: List[str], operation: str)
     return schema
 
 
-def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_field: str) -> Dict[str, Any]:
-    """Generate OpenAPI operation specification."""
-    # Normalize empty string to None (TextX returns "" for optional attributes)
-    if id_field == "":
-        id_field = None
-
+def _generate_operation_spec(operation: str, entity_name: str, config: Dict) -> Dict[str, Any]:
+    """Generate OpenAPI operation specification for snapshot entity."""
     spec = {
         "summary": f"{operation.capitalize()} {entity_name}",
         "operationId": f"{operation}_{entity_name.lower()}",
@@ -220,32 +195,7 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
         "responses": {},
     }
 
-    # Add parameters for item operations (that require ID)
-    # Singleton read (id_field is None) should NOT have path parameters
-    if operation in {"read", "update", "delete"} and id_field is not None:
-        spec["parameters"] = [
-            {
-                "name": id_field,
-                "in": "path",
-                "required": True,
-                "schema": {"type": "string"},
-                "description": f"The {id_field} of the {entity_name}",
-            }
-        ]
-
-    # Add query parameters for list operations (filters)
-    if operation == "list":
-        filters = config.get("filters", [])
-        if filters:
-            spec["parameters"] = []
-            for filter_field in filters:
-                spec["parameters"].append({
-                    "name": filter_field,
-                    "in": "query",
-                    "required": False,
-                    "schema": {"type": "string"},
-                    "description": f"Filter by {filter_field}",
-                })
+    # Snapshot entities have no path parameters (no /{id})
 
     # Add request body for operations that need it
     if requires_request_body(operation):
@@ -266,18 +216,6 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
         spec["responses"][str(status_code)] = {
             "description": f"{entity_name} deleted successfully"
         }
-    elif operation == "list":
-        spec["responses"][str(status_code)] = {
-            "description": f"List of {entity_name} instances",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "array",
-                        "items": {"$ref": f"#/components/schemas/{entity_name}"}
-                    }
-                }
-            },
-        }
     else:
         spec["responses"][str(status_code)] = {
             "description": f"{operation.capitalize()} successful",
@@ -289,13 +227,6 @@ def _generate_operation_spec(operation: str, entity_name: str, config: Dict, id_
         }
 
     # Add common error responses
-    # Only item operations (with id_field) can have 404 errors
-    # Singleton read should not have 404 (always returns the single instance)
-    if operation in {"read", "update", "delete"} and id_field is not None:
-        spec["responses"]["404"] = {
-            "description": f"{entity_name} not found"
-        }
-
     spec["responses"]["500"] = {
         "description": "Internal server error"
     }

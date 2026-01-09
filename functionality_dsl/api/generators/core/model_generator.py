@@ -95,6 +95,7 @@ def generate_domain_models(model, templates_dir, output_dir):
         entity = config["entity"]
         operations = config["operations"]
         readonly_fields = config.get("readonly_fields", [])
+        optional_fields = config.get("optional_fields", [])
         id_field = config.get("id_field")
 
         # Add id_field to readonly_fields if not already there
@@ -117,9 +118,15 @@ def generate_domain_models(model, templates_dir, output_dir):
                 validator_info = compile_validators_to_pydantic(attr, all_source_names)
                 all_imports.update(validator_info["imports"])
 
+                py_type = map_to_python_type(attr)
+
+                # If field is @optional, wrap in Optional[] if not already
+                if attr.name in optional_fields and not py_type.startswith("Optional["):
+                    py_type = f"Optional[{py_type}]"
+
                 writable_attr_configs.append({
                     "name": attr.name,
-                    "py_type": map_to_python_type(attr),
+                    "py_type": py_type,
                     "field_constraints": validator_info["field_constraints"],
                 })
 

@@ -14,22 +14,22 @@ end
 // Sources: Multiple independent REST APIs
 // -----------------------------------------------------------------------------
 Source<REST> CPUMetricsAPI
-  base_url: "http://dummy:9001/metrics/cpu"
+  url: "http://dummy:9001/metrics/cpu"
   operations: [read]
 end
 
 Source<REST> MemoryMetricsAPI
-  base_url: "http://dummy:9001/metrics/memory"
+  url: "http://dummy:9001/metrics/memory"
   operations: [read]
 end
 
 Source<REST> DiskMetricsAPI
-  base_url: "http://dummy:9001/metrics/disk"
+  url: "http://dummy:9001/metrics/disk"
   operations: [read]
 end
 
 Source<REST> NetworkMetricsAPI
-  base_url: "http://dummy:9001/metrics/network"
+  url: "http://dummy:9001/metrics/network"
   operations: [read]
 end
 

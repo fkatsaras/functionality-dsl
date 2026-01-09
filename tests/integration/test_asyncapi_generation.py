@@ -51,7 +51,7 @@ def test_asyncapi_not_generated_for_rest_only(tmp_path):
     end
 
     Source<REST> UserDB
-      base_url: "http://api.example.com/users"
+      url: "http://api.example.com/users"
       operations: [list]
     end
 

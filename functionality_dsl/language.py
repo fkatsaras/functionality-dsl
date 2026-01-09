@@ -27,10 +27,7 @@ from functionality_dsl.validation import (
     _validate_http_method_constraints,
     _validate_ws_connection_scoping,
     _validate_exposure_blocks,
-    _validate_crud_blocks,
-    _validate_entity_crud_rules,
-    _validate_permissions,
-    _validate_source_operations,
+    _validate_ws_entities,
     _validate_entity_access_blocks,
     verify_unique_endpoint_paths,
     verify_endpoints,
@@ -375,12 +372,9 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     mm.register_model_processor(_validate_http_method_constraints)
     mm.register_model_processor(_validate_ws_connection_scoping)
     mm.register_model_processor(_validate_exposure_blocks)
-    mm.register_model_processor(_validate_crud_blocks)
-    mm.register_model_processor(_validate_entity_crud_rules)  # NEW: Validate CRUD rules
-    mm.register_model_processor(_validate_permissions)  # OLD SYNTAX: Validate permissions/RBAC in expose blocks
-    mm.register_model_processor(validate_source_syntax)  # NEW: Validate source syntax (before RBAC validation)
-    mm.register_model_processor(_validate_source_operations)  # NEW SYNTAX: Validate source operations (RBAC)
-    mm.register_model_processor(_validate_entity_access_blocks)  # NEW SYNTAX: Validate entity access blocks
+    mm.register_model_processor(_validate_ws_entities)
+    mm.register_model_processor(validate_source_syntax)
+    mm.register_model_processor(_validate_entity_access_blocks)
 
     return mm
 

@@ -17,17 +17,17 @@ end
 // ============================================
 
 Source<REST> ProductsAPI
-  base_url: "https://dummyjson.com/products/1"
+  url: "https://dummyjson.com/products/1"
   operations: [read]
 end
 
 Source<REST> CartsAPI
-  base_url: "https://dummyjson.com/carts/1"
+  url: "https://dummyjson.com/carts/1"
   operations: [read]
 end
 
 Source<REST> UsersAPI
-  base_url: "https://dummyjson.com/users/1"
+  url: "https://dummyjson.com/users/1"
   operations: [read]
 end
 

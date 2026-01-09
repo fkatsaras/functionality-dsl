@@ -7,7 +7,7 @@ REST and WebSocket are treated symmetrically:
 - Both use `operations:` to define behavior (REST: list/read/create/update/delete, WS: subscribe/publish)
 - Both auto-generate paths from entity names (no manual URIs)
 - Both support entity transformations (parent entities with computed attributes)
-- Sources declare connection only (REST: base_url, WS: channel)
+- Sources declare connection only (REST: url, WS: channel)
 
 SEPARATION OF CONCERNS:
 =======================

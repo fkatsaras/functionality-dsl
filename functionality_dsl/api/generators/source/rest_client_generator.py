@@ -1,11 +1,10 @@
 """
-Source client generator for NEW SYNTAX (CRUD-based sources).
+Source client generator for v2 syntax (snapshot entities).
 Generates HTTP client classes for Source<REST> with CRUD operations.
 """
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
-from functionality_dsl.api.crud_helpers import generate_standard_crud_config
 
 
 def generate_source_client(source, model, templates_dir, out_dir, exposure_map=None):
@@ -19,17 +18,10 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         out_dir: Output directory path
         exposure_map: Optional exposure map to infer operations from entities
     """
-    # Check if this is a base_url source (standard CRUD) or url source (single operation)
-    base_url = getattr(source, "base_url", None)
+    # Get the URL from the source
     url = getattr(source, "url", None)
 
-    # For single-operation sources (url:, method:), skip client generation
-    # These are handled directly in the service layer
-    if url and not base_url:
-        return
-
-    # For base_url sources, we need to infer operations from entities that bind to this source
-    if not base_url:
+    if not url:
         return
 
     print(f"  Generating source client for {source.name}")
@@ -59,7 +51,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
             operation_methods.append({
                 "name": "read",
                 "method": "GET",
-                "url": base_url,
+                "url": url,
                 "path": "",
                 "has_id": False,
                 "has_body": False,
@@ -68,7 +60,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
             operation_methods.append({
                 "name": "create",
                 "method": "POST",
-                "url": base_url,
+                "url": url,
                 "path": "",
                 "has_id": False,
                 "has_body": True,
@@ -77,7 +69,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
             operation_methods.append({
                 "name": "update",
                 "method": "PUT",
-                "url": base_url,
+                "url": url,
                 "path": "",
                 "has_id": False,
                 "has_body": True,
@@ -86,7 +78,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
             operation_methods.append({
                 "name": "delete",
                 "method": "DELETE",
-                "url": base_url,
+                "url": url,
                 "path": "",
                 "has_id": False,
                 "has_body": False,
@@ -98,7 +90,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     rendered = template.render(
         source_name=source.name,
-        base_url=base_url,
+        base_url=url,
         operations=operation_methods,
     )
 
