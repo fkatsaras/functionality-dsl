@@ -1,5 +1,6 @@
 import utils
 import expression
+import rbac
 
 AttrType:
   'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
@@ -72,27 +73,8 @@ WSFlowType:
 ;
 
 
-// Operation types (used in access control and source definitions)
-Operation:
-  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
-;
-
-// DEPRECATED: Source operations block with inline permissions (OLD SYNTAX)
-// Keep for backward compatibility during migration
-SourceOperationsBlock:
-  'operations:'
-    ('-' ops+=SourceOperationRule)+
-;
-
-SourceOperationRule:
-  operation=Operation ':' '[' roles+=RoleOrWildcard (',' roles+=RoleOrWildcard)* ']'
-;
-
-RoleOrWildcard:
-  STRING | '*'
-;
-
-// NEW SYNTAX: Simple operation list (permissions defined in AccessControl block)
+// Simple operation list (permissions defined in Entity AccessBlock)
+// Note: Operation type is imported from rbac.tx
 SourceOperationsList:
   'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
 ;
@@ -104,14 +86,14 @@ SourceOperationsList:
 // 3. access: read: public create: [admin] (per-operation control)
 AccessBlock:
     'access:' public_keyword='public'                             // Public access: access: public
-  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list: access: [admin, user]
+  | 'access:' '[' roles+=[Role] (',' roles+=[Role])* ']'         // Role list: access: [admin, user]
   | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
 ;
 
 // Access rule for per-operation control
 // Example: read: public  or  create: [admin, librarian]
 AccessRule:
-  operation=Operation ':' (public_keyword='public' | '[' roles+=ID (',' roles+=ID)* ']')
+  operation=Operation ':' (public_keyword='public' | '[' roles+=[Role] (',' roles+=[Role])* ']')
 ;
 
 // Entity sources / targets -------------------
@@ -124,14 +106,14 @@ Source:
 SourceREST:
   'Source<' kind='REST' '>' name=ID
   'url:' url=STRING
-  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
+  operations=SourceOperationsList
   'end'
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   'channel:' url=STRING
-  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)?
+  operations=SourceOperationsList?
   'end'
 ;
 

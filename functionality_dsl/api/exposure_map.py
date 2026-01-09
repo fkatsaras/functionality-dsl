@@ -84,9 +84,9 @@ def build_exposure_map(model):
                 operations = ['publish']
         elif source:
             # REST entity - get operations from source
-            source_ops_list = getattr(source, "operations_list", None)
-            if source_ops_list:
-                operations = list(getattr(source_ops_list, "operations", []) or [])
+            source_ops = getattr(source, "operations", None)
+            if source_ops:
+                operations = list(getattr(source_ops, "operations", []) or [])
             else:
                 # Default REST operations
                 operations = ['read', 'create', 'update', 'delete']
@@ -221,7 +221,8 @@ def _extract_permissions(entity, source):
             permissions[op] = ["public"]
     elif roles_list:
         # Form 2: access: [role1, role2] - all operations require these roles
-        role_names = list(roles_list)
+        # roles_list contains Role objects, extract names
+        role_names = [r.name for r in roles_list]
         for op in declared_ops:
             permissions[op] = role_names
     elif access_rules:
@@ -234,7 +235,8 @@ def _extract_permissions(entity, source):
             if rule_public == "public":
                 permissions[op] = ["public"]
             elif rule_roles:
-                permissions[op] = list(rule_roles)
+                # rule_roles contains Role objects, extract names
+                permissions[op] = [r.name for r in rule_roles]
 
     return permissions
 
@@ -264,9 +266,9 @@ def _get_declared_operations(entity, source):
 
     # Base entity - get operations from source
     if source:
-        source_ops_list = getattr(source, "operations_list", None)
-        if source_ops_list:
-            return list(getattr(source_ops_list, "operations", []) or [])
+        source_ops = getattr(source, "operations", None)
+        if source_ops:
+            return list(getattr(source_ops, "operations", []) or [])
 
         # Default REST operations
         source_kind = getattr(source, "kind", None)

@@ -126,21 +126,9 @@ def _validate_ws_source(source):
 
 
 def _extract_operations(source):
-    """Extract operations list from source (handles both block and list syntax)."""
-    operations = []
-
-    # Check for operations_list (compact syntax: operations: [read, create])
-    operations_list = getattr(source, "operations_list", None)
-    if operations_list:
-        ops = getattr(operations_list, "operations", []) or []
-        operations = [op for op in ops]
-        return operations
-
-    # Check for operations block (verbose syntax: operations: read create end)
-    operations_block = getattr(source, "operations", None)
-    if operations_block:
-        ops = getattr(operations_block, "operations", []) or []
-        operations = [op for op in ops]
-        return operations
-
+    """Extract operations list from source."""
+    operations_obj = getattr(source, "operations", None)
+    if operations_obj:
+        ops = getattr(operations_obj, "operations", []) or []
+        return [op for op in ops]
     return []

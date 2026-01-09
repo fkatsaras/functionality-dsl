@@ -103,13 +103,13 @@ def validate_role_references(model):
     """
     Validate that:
     1. Role names are unique (no duplicate role declarations)
-    2. Roles referenced in access blocks are declared
+    2. 'public' is not used as a role name (reserved keyword)
+
+    Note: Role references in access blocks are now validated by textX grammar
+    via [Role] references - undeclared roles will cause a parse error.
     """
     roles = get_children_of_type("Role", model)
-    entities = get_children_of_type("Entity", model)
 
-    # Build set of declared role names
-    declared_roles = set()
     seen_roles = set()
 
     for role in roles:
@@ -134,59 +134,6 @@ def validate_role_references(model):
             )
 
         seen_roles.add(role_name)
-        declared_roles.add(role_name)
-
-    # Validate role references in entity access blocks
-    for entity in entities:
-        access_block = getattr(entity, "access", None)
-        if not access_block:
-            continue
-
-        # Collect all referenced roles
-        referenced_roles = set()
-
-        # Direct role list: access: [admin, user]
-        roles = getattr(access_block, "roles", []) or []
-        referenced_roles.update(roles)
-
-        # Per-operation access rules
-        access_rules = getattr(access_block, "access_rules", []) or []
-        for rule in access_rules:
-            rule_roles = getattr(rule, "roles", []) or []
-            referenced_roles.update(rule_roles)
-
-        # Check all referenced roles are declared
-        for role_name in referenced_roles:
-            if role_name not in declared_roles:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' references undeclared role '{role_name}'.\n"
-                    f"Declared roles: {', '.join(sorted(declared_roles)) if declared_roles else 'none'}\n"
-                    f"Add Role declaration: Role {role_name}",
-                    **get_location(entity),
-                )
-
-        # Also check expose block access (for WebSocket)
-        expose_block = getattr(entity, "expose", None)
-        if expose_block:
-            expose_access = getattr(expose_block, "access", None)
-            if expose_access:
-                referenced_roles = set()
-                roles = getattr(expose_access, "roles", []) or []
-                referenced_roles.update(roles)
-
-                access_rules = getattr(expose_access, "access_rules", []) or []
-                for rule in access_rules:
-                    rule_roles = getattr(rule, "roles", []) or []
-                    referenced_roles.update(rule_roles)
-
-                for role_name in referenced_roles:
-                    if role_name not in declared_roles:
-                        raise TextXSemanticError(
-                            f"Entity '{entity.name}' expose block references undeclared role '{role_name}'.\n"
-                            f"Declared roles: {', '.join(sorted(declared_roles)) if declared_roles else 'none'}\n"
-                            f"Add Role declaration: Role {role_name}",
-                            **get_location(entity),
-                        )
 
 
 def validate_server_auth_reference(model):

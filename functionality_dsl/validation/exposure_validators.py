@@ -195,10 +195,10 @@ def _get_source_operations(source):
 
     source_kind = getattr(source, "kind", None)
 
-    # Check for operations_list (new syntax)
-    operations_list = getattr(source, "operations_list", None)
-    if operations_list:
-        ops = getattr(operations_list, "operations", []) or []
+    # Get operations from source
+    operations_obj = getattr(source, "operations", None)
+    if operations_obj:
+        ops = getattr(operations_obj, "operations", []) or []
         return set(ops)
 
     # Default operations based on source type

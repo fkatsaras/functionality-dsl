@@ -196,7 +196,9 @@ def get_permission_dependencies(entity, model, operations=None):
             else:
                 operations = ["read", "create", "update", "delete", "list"]
 
-        return {op: roles for op in operations}
+        # roles contains Role objects, extract names
+        role_names = [r.name for r in roles]
+        return {op: role_names for op in operations}
 
     # Type 3: per-operation access rules
     access_rules = getattr(access_block, "access_rules", []) or []
@@ -211,9 +213,10 @@ def get_permission_dependencies(entity, model, operations=None):
             if rule_public == "public":
                 permission_map[operation] = ["public"]
             else:
-                # Get roles for this operation
+                # Get roles for this operation (Role objects, extract names)
                 rule_roles = getattr(rule, "roles", []) or []
-                permission_map[operation] = rule_roles if rule_roles else ["public"]
+                role_names = [r.name for r in rule_roles] if rule_roles else ["public"]
+                permission_map[operation] = role_names
 
         return permission_map
 

@@ -9,7 +9,7 @@ Role:
   'Role' name=ID
 ;
 
-// Operation types (used in entity access blocks)
+// Operation types (used in entity access blocks and source definitions)
 Operation:
-  'read' | 'create' | 'update' | 'delete' | 'list' | 'subscribe' | 'publish'
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
 ;

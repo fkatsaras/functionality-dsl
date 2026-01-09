@@ -339,13 +339,10 @@ def visualize_model_cmd(context, model_path, output_dir):
     from graphviz import Digraph
 
     def get_source_operations(source):
-        """Extract operations list from a v2 source."""
-        ops_list = getattr(source, 'operations_list', None)
-        if ops_list:
-            return getattr(ops_list, 'operations', [])
-        ops_block = getattr(source, 'operations', None)
-        if ops_block:
-            return getattr(ops_block, 'operations', [])
+        """Extract operations list from a source."""
+        ops_obj = getattr(source, 'operations', None)
+        if ops_obj:
+            return getattr(ops_obj, 'operations', [])
         return []
 
     try:
@@ -436,12 +433,13 @@ def visualize_model_cmd(context, model_path, output_dir):
             access = getattr(e, "access", None)
             access_roles_list = []
             if access:
-                access_public = getattr(access, "public", None)
+                access_public = getattr(access, "public_keyword", None)
                 access_roles = getattr(access, "roles", None)
                 if access_public:
                     access_str = "public"
                 elif access_roles:
-                    access_roles_list = list(access_roles)
+                    # access_roles contains Role objects, extract names
+                    access_roles_list = [r.name for r in access_roles]
                     access_str = ", ".join(access_roles_list)
                 else:
                     access_str = "public"
