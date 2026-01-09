@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ecore:EPackage xmlns:xmi="http://www.omg.org/XMI" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    name="functionality_dsl_metamodel" nsURI="http://www.example.org/functionality_dsl_metamodel" nsPrefix="functionality_dsl_metamodel" xmi:version="2.0">
+<?xml version='1.0' encoding='UTF-8'?>
+<ecore:EPackage xmlns:xmi="http://www.omg.org/XMI" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="fdsl" nsURI="http://fdsl.io/metamodel/1.0" nsPrefix="fdsl" xmi:version="2.0">
   <eClassifiers xsi:type="ecore:EEnum" name="AttrType">
     <eLiterals xsi:type="ecore:EEnumLiteral" name="STRING"/>
     <eLiterals xsi:type="ecore:EEnumLiteral" name="INTEGER" value="1"/>
