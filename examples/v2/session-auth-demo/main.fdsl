@@ -110,29 +110,137 @@ Entity ProductSummary(Product)
 end
 
 // =============================================================================
-// UI COMPONENTS
+// UI COMPONENTS - Using DataCard for single-entity snapshots
 // =============================================================================
 
-// Public info table - no auth required
-Component<Table> PublicInfoTable
+// Public info card - no auth required
+Component<DataCard> PublicInfoCard
   entity: PublicUserInfo
-  colNames: ["display_name", "username", "has_image"]
+  fields: ["display_name", "username", "has_image"]
+  title: "Public User Info"
 end
 
-// Product summary table - public
-Component<Table> ProductTable
+// Product summary card - public
+Component<DataCard> ProductCard
   entity: ProductSummary
-  colNames: ["name", "price_usd", "category"]
+  fields: ["name", "price_usd", "category"]
+  title: "Product Summary"
 end
 
-// User profile table - requires user/admin role
-Component<Table> UserProfileTable
+// User profile card - requires user/admin role
+Component<DataCard> UserProfileCard
   entity: UserProfile
-  colNames: ["firstName", "lastName", "email", "username", "role"]
+  fields: ["firstName", "lastName", "email", "username", "role"]
+  title: "User Profile"
 end
 
-// Product details - requires user/admin role
-Component<Table> ProductDetailsTable
+// Product details card - requires user/admin role
+Component<DataCard> ProductDetailsCard
   entity: Product
-  colNames: ["title", "price", "brand", "category", "description"]
+  fields: ["title", "price", "brand", "category", "description"]
+  title: "Product Details"
+end
+
+// Admin-only card - shows product list stats
+Component<DataCard> AdminStatsCard
+  entity: ProductList
+  fields: ["total", "skip", "limit"]
+  title: "Admin Stats (Admin Only)"
+end
+
+// =============================================================================
+// WEBSOCKET SOURCES - Binance Crypto Streams
+// =============================================================================
+
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BinanceBTC
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - With RBAC
+// =============================================================================
+
+// Raw ETH tick from Binance
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - s: string;
+    - c: string;
+    - E: integer;
+end
+
+// Raw BTC tick from Binance
+Entity BTCTick
+  type: inbound
+  source: BinanceBTC
+  attributes:
+    - s: string;
+    - c: string;
+    - E: integer;
+end
+
+// Public crypto prices - anyone can subscribe
+Entity PublicPrices(ETHTick)
+  type: inbound
+  attributes:
+    - symbol: string = ETHTick.s;
+    - price: number = toNumber(ETHTick.c);
+    - timestamp: integer = ETHTick.E;
+  access: public
+end
+
+// User-level prices with more detail - requires user role
+Entity UserPrices(ETHTick, BTCTick)
+  type: inbound
+  attributes:
+    - eth_price: number = toNumber(ETHTick.c);
+    - btc_price: number = toNumber(BTCTick.c);
+    - spread: number = round(toNumber(BTCTick.c) - toNumber(ETHTick.c), 2);
+    - timestamp: integer = ETHTick.E;
+  access: [user, admin]
+end
+
+// Admin-only analytics - requires admin role
+Entity AdminPrices(ETHTick, BTCTick)
+  type: inbound
+  attributes:
+    - eth_raw: string = ETHTick.c;
+    - btc_raw: string = BTCTick.c;
+    - eth_price: number = toNumber(ETHTick.c);
+    - btc_price: number = toNumber(BTCTick.c);
+    - ratio: number = round(toNumber(BTCTick.c) / toNumber(ETHTick.c), 4);
+    - timestamp: integer = ETHTick.E;
+  access: [admin]
+end
+
+// =============================================================================
+// WEBSOCKET UI COMPONENTS
+// =============================================================================
+
+// Public live metrics - no auth required
+Component<LiveMetrics> PublicCryptoMetrics
+  entity: PublicPrices
+  metrics: ["symbol", "price"]
+  label: "Public Crypto (No Auth)"
+end
+
+// User live metrics - requires user role
+Component<LiveMetrics> UserCryptoMetrics
+  entity: UserPrices
+  metrics: ["eth_price", "btc_price", "spread"]
+  label: "User Crypto (User/Admin)"
+end
+
+// Admin live metrics - requires admin role
+Component<LiveMetrics> AdminCryptoMetrics
+  entity: AdminPrices
+  metrics: ["eth_price", "btc_price", "ratio"]
+  label: "Admin Crypto (Admin Only)"
 end

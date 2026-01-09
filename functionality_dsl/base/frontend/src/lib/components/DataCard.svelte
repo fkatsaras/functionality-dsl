@@ -19,11 +19,16 @@
     let error = $state<string | null>(null);
     let loading = $state(true);
     let interval: ReturnType<typeof setInterval> | null = null;
-    let authToken = $state<string | null>(null);
 
-    // Subscribe to auth store to get token
+    // Get initial auth state synchronously
+    const initialAuth = authStore.getState();
+    let authToken = $state<string | null>(initialAuth.token);
+    let authType = $state<string>(initialAuth.authType);
+
+    // Subscribe to auth store for updates
     authStore.subscribe((state) => {
         authToken = state.token;
+        authType = state.authType;
     });
 
     async function fetchData() {
@@ -31,11 +36,17 @@
 
         try {
             const headers: Record<string, string> = {};
-            if (authToken) {
+            const fetchOptions: RequestInit = { headers };
+
+            // For JWT auth, use Authorization header
+            // For session auth, include credentials (cookies)
+            if (authType === 'jwt' && authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;
+            } else if (authType === 'session') {
+                fetchOptions.credentials = 'include';
             }
 
-            const res = await fetch(props.url, { headers });
+            const res = await fetch(props.url, fetchOptions);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }

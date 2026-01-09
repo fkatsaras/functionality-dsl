@@ -34,11 +34,16 @@
         let loading = $state(false);
         let error = $state<string | null>(null);
         let entityKeys = $state<string[]>([]);
-        let authToken = $state<string | null>(null);
 
-        // Subscribe to auth store to get token
+        // Get initial auth state synchronously
+        const initialAuth = authStore.getState();
+        let authToken = $state<string | null>(initialAuth.token);
+        let authType = $state<string>(initialAuth.authType);
+
+        // Subscribe to auth store for updates
         authStore.subscribe((state) => {
                 authToken = state.token;
+                authType = state.authType;
         });
 
         async function load() {
@@ -53,11 +58,17 @@
 
                 try {
                     const headers: Record<string, string> = {};
-                    if (authToken) {
+                    const fetchOptions: RequestInit = { headers };
+
+                    // For JWT auth, use Authorization header
+                    // For session auth, include credentials (cookies)
+                    if (authType === 'jwt' && authToken) {
                         headers['Authorization'] = `Bearer ${authToken}`;
+                    } else if (authType === 'session') {
+                        fetchOptions.credentials = 'include';
                     }
 
-                    const response = await fetch(finalUrl, { headers });
+                    const response = await fetch(finalUrl, fetchOptions);
                     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
                     const json = await response.json();

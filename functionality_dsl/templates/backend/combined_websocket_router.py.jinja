@@ -23,7 +23,14 @@ from app.core.error_handlers import (
     classify_error
 )
 {% if has_auth %}
-from app.core.auth import decode_token, TokenPayload
+# Import auth utilities - supports both JWT and session auth
+try:
+    from app.core.auth import decode_token, TokenPayload
+    AUTH_TYPE = "jwt"
+except ImportError:
+    # Session auth module has different interface
+    from app.core.auth import get_session, TokenPayload, SESSION_COOKIE_NAME
+    AUTH_TYPE = "session"
 {% endif %}
 
 logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
@@ -45,13 +52,26 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     """
     {% if has_auth %}
     # Authenticate before accepting connection
-    # Extract token from Authorization header: "Bearer <token>"
-    auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-    token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:]  # Remove "Bearer " prefix
-
     user: Optional[TokenPayload] = None
+
+    # Extract credentials based on auth type
+    if AUTH_TYPE == "jwt":
+        # JWT auth: Extract token from Authorization header: "Bearer <token>"
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+    else:
+        # Session auth: Extract session cookie
+        # WebSocket cookies come from the Cookie header
+        cookie_header = websocket.headers.get("cookie", "")
+        session_id = None
+        if cookie_header:
+            for cookie in cookie_header.split(";"):
+                cookie = cookie.strip()
+                if cookie.startswith(f"{SESSION_COOKIE_NAME}="):
+                    session_id = cookie[len(SESSION_COOKIE_NAME) + 1:]
+                    break
 
     {% if subscribe_required_roles != ["public"] or publish_required_roles != ["public"] %}
     # Check if authentication is required
@@ -70,29 +90,39 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     publish_roles = []
     {% endif %}
 
-    # Verify token if required
+    # Verify credentials if required
     if subscribe_requires_auth or publish_requires_auth:
-        # Case 1: Both operations require auth - reject if no token
+        has_credentials = (AUTH_TYPE == "jwt" and token) or (AUTH_TYPE == "session" and session_id)
+
+        # Case 1: Both operations require auth - reject if no credentials
         if subscribe_requires_auth and publish_requires_auth:
-            if not token:
-                logger.warning("WebSocket connection rejected: No token provided (both subscribe and publish require auth)")
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (both subscribe and publish require auth)")
                 await websocket.close(code=1008, reason="Authentication required")
                 return
 
-        # Case 2: Only subscribe requires auth - reject if no token
+        # Case 2: Only subscribe requires auth - reject if no credentials
         elif subscribe_requires_auth:
-            if not token:
-                logger.warning("WebSocket connection rejected: No token provided (subscribe requires auth)")
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (subscribe requires auth)")
                 await websocket.close(code=1008, reason="Authentication required for subscribe")
                 return
 
-        # Case 3: Only publish requires auth - accept connection, but validate token if provided
+        # Case 3: Only publish requires auth - accept connection, but validate credentials if provided
         # (user can subscribe without auth, but needs auth to publish)
 
-        # Decode token if present
-        if token:
+        # Validate credentials if present
+        if has_credentials:
             try:
-                user = decode_token(token)
+                if AUTH_TYPE == "jwt":
+                    user = decode_token(token)
+                else:
+                    # Session auth - get session data
+                    session = get_session(session_id)
+                    if not session:
+                        raise Exception("Invalid or expired session")
+                    user = TokenPayload(user_id=session.user_id, roles=session.roles)
+
                 logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
 
                 # Check subscribe permissions
@@ -113,7 +143,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
             except Exception as e:
                 logger.warning(f"WebSocket authentication failed: {str(e)}")
-                await websocket.close(code=1008, reason=f"Invalid token: {str(e)}")
+                await websocket.close(code=1008, reason=f"Authentication failed: {str(e)}")
                 return
     {% endif %}
     {% endif %}
