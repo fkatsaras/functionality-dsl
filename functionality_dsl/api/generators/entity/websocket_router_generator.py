@@ -199,7 +199,7 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
             "subscribe_ws_source_entity": ws_source_entity,
-            "subscribe_ws_sources": ws_sources,  # NEW: List of all WS sources
+            "subscribe_ws_sources": ws_sources,  # List of all WS sources
             "is_chained_composite": is_chained_composite,
             "intermediate_services": intermediate_services,  # Ordered list of services to chain through
         })

@@ -6,7 +6,7 @@
 import logging
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Set, Optional
+from typing import Set, Optional, Union, Tuple
 from pydantic import ValidationError
 import asyncio
 
@@ -39,6 +39,29 @@ router = APIRouter()
 
 # Track active WebSocket connections
 active_connections: Set[WebSocket] = set()
+
+
+def extract_binary_payload(message: Union[dict, bytes]) -> Tuple[bool, Union[bytes, dict]]:
+    """
+    Extract binary payload from message if present.
+    Returns (is_binary, payload) where payload is either raw bytes or the original dict.
+
+    Handles:
+    - Raw bytes: returns (True, bytes)
+    - Dict with single binary value: returns (True, bytes)
+    - Dict with all non-binary values: returns (False, dict)
+    """
+    if isinstance(message, bytes):
+        return True, message
+
+    if isinstance(message, dict):
+        # Check if dict contains a single binary value
+        binary_values = [(k, v) for k, v in message.items() if isinstance(v, bytes)]
+        if len(binary_values) == 1 and len(message) == 1:
+            # Single binary attribute - extract the bytes
+            return True, binary_values[0][1]
+
+    return False, message
 
 
 @router.websocket("{{ ws_channel }}")
@@ -208,6 +231,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     continue
 
                 # Transform raw message through entity service
+                # Note: Binary messages are pre-wrapped by the source client
                 transformed_message = subscribe_service._transform_entity(raw_message)
 
                 # Apply filters if specified
@@ -216,9 +240,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     continue  # Skip this message, doesn't match filters
                 {% endif %}
 
-                # Send to client
-                await websocket.send_json(transformed_message)
-                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+                # Send to client - extract binary payload if present
+                is_binary, payload = extract_binary_payload(transformed_message)
+                if is_binary:
+                    await websocket.send_bytes(payload)
+                    logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                else:
+                    await websocket.send_json(payload)
+                    logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
 
         async def handle_publish():
             """Publish task: Receive data from client and send to external target."""
@@ -336,6 +365,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     if raw_message is None:
                         continue
 
+                    # Note: Binary messages are pre-wrapped by the source client
                     async with message_lock:
                         latest_messages[parent_entity_name] = raw_message
 
@@ -359,9 +389,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                                 continue  # Skip this message, doesn't match filters
                             {% endif %}
 
-                            # Send to client
-                            await websocket.send_json(final_message)
-                            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(final_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
             except Exception as e:
                 error_category = classify_error(e)
                 logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
@@ -386,6 +421,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue
 
             # Chain transformations through all intermediate services
+            # Note: Binary messages are pre-wrapped by the source client
             transformed = raw_message
             {% for service_name in intermediate_services | reverse %}
             transformed = {{ service_name | lower }}_service._transform_entity(transformed)
@@ -395,9 +431,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             # Final transformation through this entity's service
             final_message = subscribe_service._transform_entity(transformed)
 
-            # Send to client
-            await websocket.send_json(final_message)
-            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(final_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
         {% endif %}
         {% elif subscribe_ws_sources | length > 1 %}
         # Multiple WebSocket sources - merge streams
@@ -423,6 +464,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     if raw_message is None:
                         continue
 
+                    # Note: Binary messages are pre-wrapped by the source client
                     async with message_lock:
                         latest_messages[parent_entity_name] = raw_message
 
@@ -438,9 +480,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                                 continue  # Skip this message, doesn't match filters
                             {% endif %}
 
-                            # Send to client
-                            await websocket.send_json(transformed_message)
-                            logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(transformed_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
             except Exception as e:
                 error_category = classify_error(e)
                 logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
@@ -467,6 +514,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue
 
             # Transform raw message through entity service
+            # Note: Binary messages are pre-wrapped by the source client
             transformed_message = subscribe_service._transform_entity(raw_message)
 
             # Apply filters if specified
@@ -475,9 +523,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue  # Skip this message, doesn't match filters
             {% endif %}
 
-            # Send to client
-            await websocket.send_json(transformed_message)
-            logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(transformed_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
         {% endif %}
 
         {% elif has_publish %}

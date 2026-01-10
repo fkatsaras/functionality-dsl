@@ -841,21 +841,22 @@ class ObjectViewComponent(_BaseComponent):
 class CameraComponent(_BaseComponent):
     """
     <Component<Camera> ...>
-      endpoint: <Endpoint<WS>> (subscribe to image frames)
+      entity: <Entity> (WebSocket entity with binary frame attribute)
       label: optional string label
 
-    Displays a live camera feed from a WebSocket endpoint that streams
+    Displays a live camera feed from a WebSocket entity that streams
     binary image frames (JPEG, PNG, etc.)
     """
-    def __init__(self, parent=None, name=None, endpoint=None, label=None):
-        super().__init__(parent, name, endpoint)
+    def __init__(self, parent=None, name=None, entity_ref=None, label=None):
+        super().__init__(parent, name, entity_ref)
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
-        # Validate: Camera only works with WebSocket endpoints
-        if endpoint.__class__.__name__ != "EndpointWS":
-            raise ValueError(f"Component '{name}': Camera component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+        # Validate: Camera requires inbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': Camera requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
 
         self.label = _strip_quotes(label) or "Camera"
 

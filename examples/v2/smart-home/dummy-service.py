@@ -9,11 +9,17 @@ from flask_sock import Sock
 import random
 import time
 import json
+import os
+import glob
 from datetime import datetime
 import threading
 
 app = Flask(__name__)
 sock = Sock(app)
+
+# Camera feed configuration
+CAMERA_FRAME_RATE_MS = 100  # 10 fps
+CAMERA_IMAGE_DIR = os.environ.get('CAMERA_IMAGE_DIR', '/app/camera_frames')
 
 # Simulated device states
 class SmartHomeState:
@@ -309,6 +315,46 @@ def energy_stream(ws):
     except Exception as e:
         print(f"Energy stream WebSocket error: {e}")
 
+# WebSocket endpoint: Security camera feed (binary frames)
+@sock.route('/ws/camera/feed')
+def camera_feed(ws):
+    """Stream binary image frames from security camera"""
+    print("Client connected to /ws/camera/feed")
+
+    # Load image files
+    image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.png')))
+    if not image_files:
+        # Try jpg as fallback
+        image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.jpg')))
+
+    if not image_files:
+        print(f"WARNING: No image files found in {CAMERA_IMAGE_DIR}")
+        # Send a placeholder message and close
+        ws.send(b'NO_IMAGES_AVAILABLE')
+        return
+
+    print(f"Camera feed: Found {len(image_files)} image files")
+    frame_index = 0
+
+    try:
+        while True:
+            # Read current frame as binary
+            frame_file = image_files[frame_index]
+            with open(frame_file, 'rb') as f:
+                frame_data = f.read()
+
+            # Send raw binary frame
+            ws.send(frame_data)
+
+            # Move to next frame (loop)
+            frame_index = (frame_index + 1) % len(image_files)
+
+            # Wait for next frame
+            time.sleep(CAMERA_FRAME_RATE_MS / 1000.0)
+    except Exception as e:
+        print(f"Camera feed WebSocket error: {e}")
+
 if __name__ == '__main__':
     print("🏠 Smart Home Devices Service starting on port 9001...")
+    print(f"📷 Camera frames directory: {CAMERA_IMAGE_DIR}")
     app.run(host='0.0.0.0', port=9001, debug=True)

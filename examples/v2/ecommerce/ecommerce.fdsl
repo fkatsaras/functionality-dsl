@@ -70,7 +70,7 @@ Entity Order
     - order_id: string @readonly;
     - status: string @readonly;
     - created_at: string @readonly;
-    - items: array;  // Writable: items from cart when placing order
+    - items: array;  // Writable:
   access: [customer]
 end
 
@@ -81,7 +81,6 @@ end
 // Checkout Summary - Cart with calculated pricing
 Entity CheckoutSummary(Cart)
   attributes:
-    - items: array = Cart.items;
     - item_count: integer = len(Cart.items);
     - subtotal: number = round(sum(map(Cart.items, i => i["price"] * i["quantity"])), 2);
     - tax: number = round(CheckoutSummary.subtotal * 0.08, 2);
@@ -99,7 +98,6 @@ Entity OrderStatus(Order)
     - order_id: string = Order.order_id;
     - status: string = Order.status;
     - created_at: string = Order.created_at;
-    - items: array = Order.items;
     - item_count: integer = len(Order.items);
     - subtotal: number = round(sum(map(Order.items, i => i["price"] * i["quantity"])), 2);
     - total_amount: number = round(OrderStatus.subtotal * 1.08 + (10.0 if OrderStatus.subtotal < 50 else 0.0), 2);
