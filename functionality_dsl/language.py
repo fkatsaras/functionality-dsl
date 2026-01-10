@@ -22,16 +22,9 @@ from functionality_dsl.lib.component_types import COMPONENT_TYPES
 # Import validation functions
 from functionality_dsl.validation import (
     _validate_computed_attrs,
-    _validate_parameter_expressions,
-    _validate_error_event_conditions,
-    _validate_http_method_constraints,
-    _validate_ws_connection_scoping,
     _validate_exposure_blocks,
     _validate_ws_entities,
     _validate_entity_access_blocks,
-    verify_unique_endpoint_paths,
-    verify_endpoints,
-    verify_path_params,
     verify_entities,
     verify_components,
     verify_server,
@@ -173,9 +166,6 @@ def model_processor(model, metamodel=None):
     validate_server_auth_reference(model)
 
     verify_server(model)
-    verify_unique_endpoint_paths(model)
-    verify_endpoints(model)
-    verify_path_params(model)
     verify_entities(model)
     verify_components(model)
     _populate_aggregates(model)
@@ -367,10 +357,6 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
-    mm.register_model_processor(_validate_parameter_expressions)
-    mm.register_model_processor(_validate_error_event_conditions)
-    mm.register_model_processor(_validate_http_method_constraints)
-    mm.register_model_processor(_validate_ws_connection_scoping)
     mm.register_model_processor(_validate_exposure_blocks)
     mm.register_model_processor(_validate_ws_entities)
     mm.register_model_processor(validate_source_syntax)
