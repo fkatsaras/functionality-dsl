@@ -1352,6 +1352,42 @@ class ToggleComponent(_BaseComponent):
 
 
 @register_component
+class PublishFormComponent(_BaseComponent):
+    """
+    <Component<PublishForm> ...>
+      entity: <Entity> (outbound WebSocket entity)
+      fields: list of field names to include in form
+      submitLabel: optional string for submit button
+      label: optional string label for the form
+
+    PublishForm is for outbound WebSocket entities - it provides a multi-field
+    form that sends JSON payloads to the WebSocket endpoint.
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, fields=None, submitLabel=None, label=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.fields = [str(f) for f in (fields or [])]
+        self.submitLabel = _strip_quotes(submitLabel)
+        self.label = _strip_quotes(label)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Validate: PublishForm requires outbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'outbound':
+            raise ValueError(f"Component '{name}': PublishForm requires entity with 'type: outbound' for WebSocket publishing, got type={ws_flow_type}")
+
+    def to_props(self):
+        return {
+            "wsPath": self._endpoint_path(""),
+            "fields": self.fields,
+            "submitLabel": self.submitLabel or "Send",
+            "label": self.label or self.entity_ref.name,
+        }
+
+
+@register_component
 class DownloadFormComponent(_BaseComponent):
     """
     <Component<DownloadForm> ...>

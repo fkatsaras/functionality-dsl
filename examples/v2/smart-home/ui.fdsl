@@ -1,0 +1,99 @@
+
+// Device Controls
+Component<DataCard> ThermostatCard
+  entity: Thermostat
+  fields: ["current_temp_f", "target_temp_f", "mode", "humidity_percent"]
+  title: "Thermostat"
+  highlight: "current_temp_f"
+end
+
+Component<DataCard> ClimateCard
+  entity: Climate
+  fields: ["current_temp_c", "target_temp_c", "humidity", "comfort_status"]
+  title: "Climate Summary"
+  highlight: "comfort_status"
+end
+
+Component<DataCard> HomeStatusCard
+  entity: HomeStatus
+  fields: ["active_devices", "climate_active", "any_lights_on", "oven_active"]
+  title: "Home Status"
+  highlight: "active_devices"
+end
+
+Component<Toggle> OvenToggle
+  entity: Appliances
+  field: "oven_on"
+  label: "Oven Power"
+end
+
+Component<Toggle> LivingRoomLight
+  entity: Lights
+  field: "living_room"
+  label: "Living Room"
+end
+
+Component<Toggle> BedroomLight
+  entity: Lights
+  field: "bedroom"
+  label: "Bedroom"
+end
+
+Component<Toggle> KitchenLight
+  entity: Lights
+  field: "kitchen"
+  label: "Kitchen"
+end
+
+// Real-time
+
+Component<LiveChart> EnergyConsumptionChart
+  entity: EnergyMetrics
+  seriesLabels: ["HVAC", "Lighting", "Appliances", "Total"]
+  xLabel: "Time"
+  yLabel: "kWh"
+  windowSize: 60
+end
+
+Component<LiveMetrics> EnergyMonitor
+  entity: EnergyMetrics
+  metrics: ["total_kwh", "estimated_cost", "hvac_kwh", "lighting_kwh"]
+  label: "Energy Consumption"
+end
+
+Component<LiveMetrics> ClimateMonitor
+  entity: ClimateAlerts
+  metrics: ["temp_c", "humidity", "status"]
+  label: "Climate Monitor"
+end
+
+Component<Gauge> LiveHumidityGauge
+  entity: ClimateAlerts
+  value: "humidity"
+  min: 0
+  max: 100
+  label: "Live Humidity"
+  unit: "%"
+end
+
+Component<Gauge> LiveTemperatureGauge
+  entity: ClimateAlerts
+  value: "temp_f"
+  min: 50
+  max: 100
+  label: "Live Temperature"
+  unit: "°F"
+end
+
+Component<Camera> SecurityCamera
+  entity: AdaptiveCamera
+  label: "Front Door Camera (Auto Day/Night)"
+end
+
+// Roomba Control
+Component<PublishForm> RoombaControl
+  entity: RoombaCommand
+  fields: [command, room, power]
+  submitLabel: "Send Command"
+  label: "Roomba Control"
+end

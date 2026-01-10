@@ -32,6 +32,7 @@ Component:
   | LiveProgressComponent
   | AlertComponent
   | LiveAlertComponent
+  | PublishFormComponent
 ;
 
 // Column definition with type specification
@@ -368,6 +369,18 @@ LiveAlertComponent:
     ('condition:' condition=STRING)?
     ('message:' message=STRING)?
     ('severity:' severity=STRING)?
+  )#
+  'end'
+;
+
+// PublishForm for outbound WebSocket entities - sends JSON payloads
+PublishFormComponent:
+  'Component' '<' 'PublishForm' '>' name=ID
+  (
+    'entity:' entity_ref=[entity.Entity]
+    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
+    ('submitLabel:' submitLabel=STRING)?
+    ('label:' label=STRING)?
   )#
   'end'
 ;

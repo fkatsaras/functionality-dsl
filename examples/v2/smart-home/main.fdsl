@@ -1,0 +1,15 @@
+// ============================================
+// Smart Home Control System
+// Device Control + Climate/Energy Monitoring
+// ============================================
+
+import sources
+import entities
+import ui
+
+Server SmartHome
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: info
+end
