@@ -169,7 +169,7 @@ def get_permission_dependencies(entity, model, operations=None):
                 operations = getattr(expose, "operations", []) or []
             else:
                 # Default REST operations
-                operations = ["read", "create", "update", "delete", "list"]
+                operations = ["read", "create", "update", "delete"]
 
         return {op: ["public"] for op in operations}
 
@@ -182,7 +182,7 @@ def get_permission_dependencies(entity, model, operations=None):
             if expose:
                 operations = getattr(expose, "operations", []) or []
             else:
-                operations = ["read", "create", "update", "delete", "list"]
+                operations = ["read", "create", "update", "delete"]
 
         return {op: ["public"] for op in operations}
 
@@ -194,7 +194,7 @@ def get_permission_dependencies(entity, model, operations=None):
             if expose:
                 operations = getattr(expose, "operations", []) or []
             else:
-                operations = ["read", "create", "update", "delete", "list"]
+                operations = ["read", "create", "update", "delete"]
 
         # roles contains Role objects, extract names
         role_names = [r.name for r in roles]

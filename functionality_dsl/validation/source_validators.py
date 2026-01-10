@@ -8,7 +8,7 @@ from textx.exceptions import TextXSemanticError
 
 
 # Valid operations for each source type
-VALID_REST_OPERATIONS = {'create', 'read', 'update', 'delete', 'list'}
+VALID_REST_OPERATIONS = {'create', 'read', 'update', 'delete'}
 VALID_WS_OPERATIONS = {'subscribe', 'publish'}
 
 

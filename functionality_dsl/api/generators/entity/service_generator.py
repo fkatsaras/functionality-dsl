@@ -49,7 +49,7 @@ def _validate_mutation_operations(entity_name, operations, has_multiple_parents,
                     f"At least one writable field is required for updates."
                 )
 
-        # 'delete' and read operations ('list', 'read') are always OK
+        # 'delete' and 'read' operations are always OK
 
 
 def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
