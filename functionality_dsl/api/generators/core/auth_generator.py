@@ -226,6 +226,6 @@ def get_permission_dependencies(entity, model, operations=None):
         if expose:
             operations = getattr(expose, "operations", []) or []
         else:
-            operations = ["read", "create", "update", "delete", "list"]
+            operations = ["read", "create", "update", "delete"]
 
     return {op: ["public"] for op in operations}

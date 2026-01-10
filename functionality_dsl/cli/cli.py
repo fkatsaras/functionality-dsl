@@ -326,7 +326,8 @@ def visualize_cmd(context, grammar_path, engine):
 @click.pass_context
 @click.argument("model_path")
 @click.option("--output", "-o", "output_dir", default="docs", help="Output directory for PNG/DOT files (default: docs)")
-def visualize_model_cmd(context, model_path, output_dir):
+@click.option("--no-components", "-nc", is_flag=True, help="Hide UI components from the diagram")
+def visualize_model_cmd(context, model_path, output_dir, no_components):
     """
     Build a GraphViz diagram of an FDSL model (v2 syntax):
     - Server configuration
@@ -334,7 +335,7 @@ def visualize_model_cmd(context, model_path, output_dir):
     - WS Sources (Source<WS>)
     - Entities (base and composite)
     - Generated API endpoints
-    - Components
+    - Components (use --no-components to hide)
     """
     from graphviz import Digraph
 
@@ -347,6 +348,8 @@ def visualize_model_cmd(context, model_path, output_dir):
 
     try:
         model = build_model(model_path)
+
+        show_components = not no_components
 
         dot = Digraph(comment="FDSL Model")
         dot.attr(rankdir="LR", fontsize="10", fontname="Arial")
@@ -544,18 +547,19 @@ def visualize_model_cmd(context, model_path, output_dir):
         # -------------------------------
         # Components
         # -------------------------------
-        for c in model.components:
-            comp_type = c.__class__.__name__.replace("Component", "")
-            label = f"COMPONENT\\n{c.name}\\ntype: {comp_type}"
-            dot.node(f"comp_{c.name}", label=label,
-                     shape="ellipse", style="filled", fillcolor="#f8bbd0")
+        if show_components:
+            for c in model.components:
+                comp_type = c.__class__.__name__.replace("Component", "")
+                label = f"COMPONENT\\n{c.name}\\ntype: {comp_type}"
+                dot.node(f"comp_{c.name}", label=label,
+                         shape="ellipse", style="filled", fillcolor="#f8bbd0")
 
-            # Edge: Component -> Entity
-            entity_ref = getattr(c, "entity_ref", None) or getattr(c, "entity", None)
-            if entity_ref:
-                entity_name = entity_ref.name if hasattr(entity_ref, "name") else str(entity_ref)
-                dot.edge(f"comp_{c.name}", f"entity_{entity_name}",
-                         label="binds", color="#e91e63")
+                # Edge: Component -> Entity
+                entity_ref = getattr(c, "entity_ref", None) or getattr(c, "entity", None)
+                if entity_ref:
+                    entity_name = entity_ref.name if hasattr(entity_ref, "name") else str(entity_ref)
+                    dot.edge(f"comp_{c.name}", f"entity_{entity_name}",
+                             label="binds", color="#e91e63")
 
         # -------------------------------
         # Output
