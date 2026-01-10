@@ -203,7 +203,7 @@ class {{ entity_name }}Service:
         logger.debug(f"Creating {{ entity_name }}: {data}")
 
         # Call source create operation
-        created = await self.source.create(data.dict())
+        created = await self.source.create(data.model_dump())
 
         {% if has_computed_attrs %}
         # Transform created entity
@@ -218,8 +218,8 @@ class {{ entity_name }}Service:
         """Update the {{ entity_name }} snapshot"""
         logger.debug(f"Updating {{ entity_name }} snapshot")
 
-        # Call source update operation
-        updated = await self.source.update(data.dict())
+        # Call source update operation (exclude_none for partial updates)
+        updated = await self.source.update(data.model_dump(exclude_none=True))
 
         if not updated:
             return None

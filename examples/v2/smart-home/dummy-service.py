@@ -30,12 +30,14 @@ class SmartHomeState:
         self.thermostat_fan = "medium"
 
         self.lights = {
-            "living_room": 75,
-            "bedroom": 0,
-            "kitchen": 100,
-            "bathroom": 50,
-            "outdoor": 30
+            "living_room": True,
+            "bedroom": False,
+            "kitchen": True,
         }
+
+        # Roomba state
+        self.roomba_status = "docked"
+        self.roomba_power = 2
 
         self.security_armed = False
         self.security_mode = "disarmed"
@@ -63,11 +65,11 @@ class SmartHomeState:
 
     def get_motion_detected(self):
         # Motion detected if lights are on in living areas
-        return self.lights["living_room"] > 0 or self.lights["kitchen"] > 0
+        return self.lights["living_room"] or self.lights["kitchen"]
 
     def get_total_lights_power(self):
-        # Assume each light at 100% = 10W LED
-        total = sum([v * 0.1 for v in self.lights.values()])
+        # Assume each light on = 10W LED
+        total = sum([10 if v else 0 for v in self.lights.values()])
         return round(total, 1)
 
 state = SmartHomeState()
@@ -99,17 +101,15 @@ def get_lights():
         "living_room": state.lights["living_room"],
         "bedroom": state.lights["bedroom"],
         "kitchen": state.lights["kitchen"],
-        "bathroom": state.lights["bathroom"],
-        "outdoor": state.lights["outdoor"],
         "power_watts": state.get_total_lights_power()
     })
 
 @app.route('/lights', methods=['PUT'])
 def update_lights():
     data = request.get_json()
-    for key in ['living_room', 'bedroom', 'kitchen', 'bathroom', 'outdoor']:
+    for key in ['living_room', 'bedroom', 'kitchen']:
         if key in data:
-            state.lights[key] = int(data[key])
+            state.lights[key] = bool(data[key])
     return get_lights()
 
 @app.route('/security', methods=['GET'])
@@ -354,7 +354,53 @@ def camera_feed(ws):
     except Exception as e:
         print(f"Camera feed WebSocket error: {e}")
 
+# WebSocket endpoint: Roomba commands (receives commands from clients)
+@sock.route('/ws/roomba/commands')
+def roomba_commands(ws):
+    """Receive commands for Roomba vacuum robot"""
+    print("Client connected to /ws/roomba/commands")
+    try:
+        while True:
+            message = ws.receive()
+            if message is None:
+                break
+
+            try:
+                data = json.loads(message)
+                command = data.get('command', '')
+                room = data.get('room', '')
+                power = data.get('power', 2)
+
+                print(f"Roomba command received: {command}, room={room}, power={power}")
+
+                # Update state based on command
+                if command == 'start':
+                    state.roomba_status = 'cleaning'
+                    state.roomba_power = power
+                elif command == 'stop':
+                    state.roomba_status = 'paused'
+                elif command == 'dock':
+                    state.roomba_status = 'docking'
+                elif command == 'clean_room':
+                    state.roomba_status = f'cleaning_{room}'
+                    state.roomba_power = power
+
+                # Send acknowledgment
+                ack = {
+                    "status": "ok",
+                    "roomba_status": state.roomba_status,
+                    "timestamp": int(time.time() * 1000)
+                }
+                ws.send(json.dumps(ack))
+
+            except json.JSONDecodeError as e:
+                print(f"Invalid JSON received: {e}")
+                ws.send(json.dumps({"status": "error", "message": "Invalid JSON"}))
+
+    except Exception as e:
+        print(f"Roomba commands WebSocket error: {e}")
+
 if __name__ == '__main__':
-    print("🏠 Smart Home Devices Service starting on port 9001...")
-    print(f"📷 Camera frames directory: {CAMERA_IMAGE_DIR}")
+    print("Smart Home Devices Service starting on port 9001...")
+    print(f"Camera frames directory: {CAMERA_IMAGE_DIR}")
     app.run(host='0.0.0.0', port=9001, debug=True)

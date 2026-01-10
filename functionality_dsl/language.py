@@ -302,8 +302,8 @@ def _expand_imports(model_path: str, visited=None) -> str:
     if not model_file.exists():
         raise FileNotFoundError(f"File not found: {model_file}")
 
-    # Read the file content
-    content = model_file.read_text()
+    # Read the file content with explicit UTF-8 encoding
+    content = model_file.read_text(encoding="utf-8")
     base_dir = model_file.parent
 
     # Find all import statements

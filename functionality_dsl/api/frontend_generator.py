@@ -118,6 +118,15 @@ def _is_computed_with_ws(ent) -> bool:
             return True
     return False
 
+def _tojson_unicode(value):
+    """
+    Custom tojson filter that preserves unicode characters.
+    Uses ensure_ascii=False to keep special characters like °, ñ, etc.
+    """
+    import json
+    return json.dumps(value, ensure_ascii=False)
+
+
 def render_frontend_files(model, templates_dir: Path, out_dir: Path):
     env = Environment(
         loader=FileSystemLoader([str(templates_dir / "components"), str(templates_dir)]),
@@ -126,6 +135,9 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+
+    # Override tojson filter to preserve unicode characters (°, ñ, etc.)
+    env.filters['tojson'] = _tojson_unicode
 
     components = _components(model)
     ctx = _get_server_ctx(model)

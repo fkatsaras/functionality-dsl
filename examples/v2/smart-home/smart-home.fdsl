@@ -50,6 +50,11 @@ Source<WS> SecurityCameraWS
   operations: [subscribe]
 end
 
+Source<WS> RoombaCommandWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/roomba/commands"
+  operations: [publish]
+end
+
 // ============================================
 // REST ENTITIES - Device Controls
 // ============================================
@@ -65,13 +70,13 @@ Entity Thermostat
   access: public
 end
 
-// Lighting Control - Room brightness (0-100)
+// Lighting Control - Room lights on/off
 Entity Lights
   source: LightsAPI
   attributes:
-    - living_room: integer;
-    - bedroom: integer;
-    - kitchen: integer;
+    - living_room: boolean @optional;
+    - bedroom: boolean @optional;
+    - kitchen: boolean @optional;
   access: public
 end
 
@@ -103,8 +108,8 @@ end
 Entity HomeStatus(Thermostat, Lights, Appliances)
   attributes:
     - climate_active: boolean = Thermostat.mode != "off";
-    - any_lights_on: boolean = Lights.living_room > 0 or Lights.bedroom > 0 or Lights.kitchen > 0;
-    - total_lights_brightness: integer = Lights.living_room + Lights.bedroom + Lights.kitchen;
+    - any_lights_on: boolean = Lights.living_room or Lights.bedroom or Lights.kitchen;
+    - lights_on_count: integer = (1 if Lights.living_room else 0) + (1 if Lights.bedroom else 0) + (1 if Lights.kitchen else 0);
     - oven_active: boolean = Appliances.oven_on;
     - active_devices: integer = (1 if HomeStatus.climate_active else 0) + (1 if HomeStatus.any_lights_on else 0) + (1 if HomeStatus.oven_active else 0);
   access: public
@@ -183,6 +188,22 @@ Entity AdaptiveCamera(CameraFrame)
 end
 
 // ============================================
+// WEBSOCKET ENTITIES - Roomba Commands (Outbound)
+// ============================================
+
+// Roomba command - sends commands to vacuum robot via WebSocket
+// Data flow: Client → FDSL Server → External WS (Roomba)
+Entity RoombaCommand
+  type: outbound
+  source: RoombaCommandWS
+  attributes:
+    - command: string;    // "start", "stop", "dock", "clean_room"
+    - room: string;       // Target room (optional, for clean_room command)
+    - power: integer;     // Suction power level (1-3)
+  access: public
+end
+
+// ============================================
 // UI COMPONENTS - Device Controls
 // ============================================
 
@@ -211,6 +232,24 @@ Component<Toggle> OvenToggle
   entity: Appliances
   field: "oven_on"
   label: "Oven Power"
+end
+
+Component<Toggle> LivingRoomLight
+  entity: Lights
+  field: "living_room"
+  label: "Living Room"
+end
+
+Component<Toggle> BedroomLight
+  entity: Lights
+  field: "bedroom"
+  label: "Bedroom"
+end
+
+Component<Toggle> KitchenLight
+  entity: Lights
+  field: "kitchen"
+  label: "Kitchen"
 end
 
 // ============================================
