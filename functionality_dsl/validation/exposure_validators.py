@@ -177,10 +177,8 @@ def _validate_entity_access_blocks(model, metamodel=None):
             operation = getattr(rule, "operation", None)
             if operation not in available_ops:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' access block references operation '{operation}' "
-                    f"which is not available for this entity.\n"
-                    f"Available operations: {', '.join(sorted(available_ops))}\n"
-                    f"Hint: {'Composite entities only support read operation' if is_composite else f'Check source operations'}",
+                    f"Operation '{operation}' not available on '{entity.name}'. "
+                    f"Available: {', '.join(sorted(available_ops))}",
                     **get_location(rule),
                 )
 

@@ -304,9 +304,8 @@ def _validate_computed_attrs(model, metamodel=None):
 
             if expr is None:
                 raise TextXSemanticError(
-                    f"Attribute '{a.name}' is missing expression. "
-                    f"Entities with computed attributes must have expressions for ALL attributes, "
-                    f"or be pure schema entities (no expressions at all) when used in request/response.",
+                    f"Attribute '{a.name}' is missing an expression. "
+                    f"Either add '= expr' or make all attributes schema-only.",
                     **get_location(a)
                 )
 
@@ -334,8 +333,7 @@ def _validate_computed_attrs(model, metamodel=None):
                 if var_name in entity_attr_names:
                     raise TextXSemanticError(
                         f"Bare identifier '{var_name}' is ambiguous. "
-                        f"Use explicit syntax '{ent.name}.{var_name}' to reference entity attributes. "
-                        f"Entity attributes must always be referenced with the entity name prefix.",
+                        f"Use '{ent.name}.{var_name}' to reference the attribute.",
                         **get_location(node)
                     )
 
@@ -343,7 +341,7 @@ def _validate_computed_attrs(model, metamodel=None):
                 if var_name in all_known_names:
                     raise TextXSemanticError(
                         f"Bare reference '{var_name}' is not allowed. "
-                        f"Use attribute access syntax: '{var_name}.attributeName'.",
+                        f"Use '{var_name}.attributeName' syntax.",
                         **get_location(node)
                     )
 
@@ -371,15 +369,14 @@ def _validate_computed_attrs(model, metamodel=None):
                         # Check if the referenced attribute exists
                         if attr not in attr_order:
                             raise TextXSemanticError(
-                                f"Attribute '{a.name}' references '{ent.name}.{attr}' which does not exist on entity '{ent.name}'.",
+                                f"'{ent.name}.{attr}' does not exist.",
                                 **get_location(node),
                             )
                         # Check that it's referencing an earlier attribute (forward-only)
                         ref_idx = attr_order[attr]
                         if ref_idx >= attr_idx:
                             raise TextXSemanticError(
-                                f"Forward reference: attribute '{a.name}' references '{ent.name}.{attr}' which is defined later. "
-                                f"Move '{attr}' before '{a.name}'.",
+                                f"Forward reference not allowed: '{attr}' must be defined before '{a.name}'.",
                                 **get_location(node),
                             )
                     continue
@@ -400,10 +397,9 @@ def _validate_computed_attrs(model, metamodel=None):
                     parent_names = {p.name for p in parent_entities}
 
                     if alias not in parent_names:
-                        all_parents = sorted(parent_names | {alias})
                         raise TextXSemanticError(
-                            f"Entity '{ent.name}' references '{alias}' but it's not a parent. "
-                            f"Add to parents: Entity {ent.name}({', '.join(all_parents)})",
+                            f"'{alias}' is not a parent of '{ent.name}'. "
+                            f"Add it: Entity {ent.name}(..., {alias})",
                             **get_location(node),
                         )
                     continue
@@ -464,8 +460,7 @@ def _validate_schema_only_entities(model):
         parent_entities = _get_parent_entities(entity)
         if parent_entities and len(parent_entities) > 0:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' is used as a request schema and cannot have parent entities. "
-                f"Request schema entities must be simple, self-contained data structures.",
+                f"Request schema entity '{entity.name}' cannot have parent entities.",
                 **get_location(entity)
             )
 
@@ -475,9 +470,7 @@ def _validate_schema_only_entities(model):
             expr = getattr(attr, "expr", None)
             if expr:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}' has an expression. "
-                    f"Request schema entities must have simple type declarations only (no '= expression' part). "
-                    f"Use: '- {attr.name}: {attr.type}' (without expressions).",
+                    f"Request schema entity '{entity.name}': attribute '{attr.name}' cannot have an expression.",
                     **get_location(attr)
                 )
 
@@ -556,19 +549,8 @@ def _validate_source_response_entities(model):
             for alias, _, node in _collect_refs(expr):
                 if alias == source_name:
                     raise TextXSemanticError(
-                        f"Entity '{entity.name}' attribute '{attr.name}' references Source '{source_name}'. "
-                        f"Entities directly sourced from external Sources (REST/WS) should be pure schema entities "
-                        f"without expressions. Instead, create a transformation entity that inherits from '{entity.name}' "
-                        f"to compute values. Example:\n"
-                        f"  Entity {entity.name}\n"
-                        f"    attributes:\n"
-                        f"      - {attr.name}: {getattr(attr.type, 'typename', 'type')};\n"
-                        f"  end\n"
-                        f"  \n"
-                        f"  Entity {entity.name}Computed({entity.name})\n"
-                        f"    attributes:\n"
-                        f"      - computed: ... = {entity.name}.{attr.name};\n"
-                        f"  end",
+                        f"Source schema entity '{entity.name}' cannot reference its source '{source_name}'. "
+                        f"Create a separate transformation entity instead.",
                         **get_location(attr)
                     )
 
@@ -658,11 +640,8 @@ def _validate_rest_endpoint_entities(model):
         # Validate the response entity
         if not is_rest_sourced_or_computed(entity):
             raise TextXSemanticError(
-                f"Endpoint<REST> '{endpoint.name}' response entity '{entity.name}' is not sourced from a Source<REST> "
-                f"and has no computed attributes. REST response entities must either:\n"
-                f"  1. Be provided by a Source<REST> response block\n"
-                f"  2. Inherit from an entity provided by Source<REST>\n"
-                f"  3. Be a computed entity (with expressions) that transforms data",
+                f"Response entity '{entity.name}' has no data source. "
+                f"Either bind it to a Source<REST> or add computed attributes.",
                 **get_location(endpoint)
             )
 
@@ -717,10 +696,8 @@ def _validate_source_urls(model):
         # If there's only one part (no path after host), warn the user
         if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ""):
             raise TextXSemanticError(
-                f"Source '{source.name}' has url '{url}' without a resource path.\n"
-                f"REST sources should include the resource path in url.\n"
-                f"Example: Instead of 'http://api.example.com', use 'http://api.example.com/users'\n"
-                f"This ensures each source maps to exactly one resource type.",
+                f"Source '{source.name}' url '{url}' is missing a resource path. "
+                f"Use 'http://host/resource' format.",
                 **get_location(source)
             )
 
@@ -800,22 +777,16 @@ def _validate_websocket_entity_relationships(model):
 
             if len(unique_types) > 1:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' has multiple WebSocket parents with different types: {dict(zip(ws_parents, ws_parent_types))}.\n\n"
-                    f"RULE: When aggregating multiple WebSocket sources, all parents must have the same type.\n\n"
-                    f"Valid patterns:\n"
-                    f"- Multiple 'type: inbound' parents (latest-tick synchronization)\n"
-                    f"- Single parent only for other patterns\n\n"
-                    f"Mixed inbound/outbound aggregation is not supported.",
+                    f"Entity '{entity.name}' has WebSocket parents with mixed types. "
+                    f"All WS parents must have the same type.",
                     **get_location(entity)
                 )
 
             # If all parents are NOT inbound, disallow multiple parents
             if unique_types != {'inbound'}:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' has multiple WebSocket parents: {ws_parents}.\n\n"
-                    f"RULE: Multiple WebSocket parents are only allowed for 'type: inbound' aggregation.\n\n"
-                    f"Current parent types: {dict(zip(ws_parents, ws_parent_types))}\n\n"
-                    f"For aggregating multiple inbound streams, ensure all parents have 'type: inbound'.",
+                    f"Entity '{entity.name}' has multiple WebSocket parents. "
+                    f"Only 'type: inbound' entities can have multiple WS parents.",
                     **get_location(entity)
                 )
 
@@ -847,13 +818,8 @@ def _validate_outbound_entities_not_composed(model):
 
             if parent_ws_flow_type == "outbound":
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' cannot extend '{parent.name}' because '{parent.name}' is outbound.\n\n"
-                    f"RULE: Outbound WebSocket entities (type: outbound) cannot be composed.\n\n"
-                    f"Outbound entities receive data from clients and publish to external WebSocket.\n"
-                    f"Composition is only allowed for inbound entities (type: inbound) to transform incoming messages.\n\n"
-                    f"If you need to transform data before publishing:\n"
-                    f"1. Apply transformations client-side before sending\n"
-                    f"2. Or use computed fields in the outbound entity itself",
+                    f"Entity '{entity.name}' cannot extend outbound entity '{parent.name}'. "
+                    f"Outbound entities cannot be composed.",
                     **get_location(entity)
                 )
 
@@ -899,15 +865,8 @@ def _validate_composite_entities(model):
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has parents but also has 'source:' field.\n"
-                f"Entities with parents are composite views (read-only) and CANNOT have a source.\n"
-                f"To create a base resource entity with CRUD operations, remove the parent references.\n"
-                f"Example:\n"
-                f"  Entity {entity.name}  # Remove ({', '.join(p.name for p in parent_entities)})\n"
-                f"    attributes: ...\n"
-                f"    source: {source.name}\n"
-                f"    access: public\n"
-                f"  end",
+                f"Entity '{entity.name}' cannot have both parents and a source. "
+                f"Composite entities are read-only views.",
                 **get_location(entity)
             )
 
@@ -944,9 +903,7 @@ def _validate_attribute_markers(model):
             # Rule 1: @optional on computed attributes is invalid
             if is_optional and has_expr:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}': @optional cannot be used on computed attributes.\n"
-                    f"Computed attributes (with '= expression') are always derived from other data.\n"
-                    f"Remove either the @optional marker or the expression.",
+                    f"'{attr.name}': @optional cannot be used on computed attributes.",
                     **get_location(attr)
                 )
 
@@ -958,10 +915,7 @@ def _validate_attribute_markers(model):
             # This is just a safety check
             if is_optional and is_readonly:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}': @optional and @readonly cannot be combined.\n"
-                    f"@readonly fields are excluded from request schemas entirely.\n"
-                    f"@optional fields are included but not required.\n"
-                    f"Choose one or the other.",
+                    f"'{attr.name}': @optional and @readonly cannot be combined.",
                     **get_location(attr)
                 )
 
