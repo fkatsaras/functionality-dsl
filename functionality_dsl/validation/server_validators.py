@@ -27,14 +27,14 @@ def _validate_auth_config(auth_block):
     if auth_type == "jwt":
         if not auth_block.jwt_config:
             raise TextXSemanticError(
-                "JWT authentication requires 'secret:' or 'secret_env:' field.",
+                "JWT authentication requires 'secret:' field.",
                 **get_location(auth_block),
             )
 
         jwt_config = auth_block.jwt_config
-        if not jwt_config.secret and not jwt_config.secret_env:
+        if not jwt_config.secret:
             raise TextXSemanticError(
-                "JWT configuration must specify 'secret:' or 'secret_env:'.",
+                "JWT configuration must specify 'secret:' (environment variable name).",
                 **get_location(auth_block),
             )
 

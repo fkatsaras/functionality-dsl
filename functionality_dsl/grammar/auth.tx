@@ -21,8 +21,9 @@ AuthType: 'jwt' | 'session' ;
 
 // JWT Authentication - stateless, token in Authorization header
 // Supports RBAC via roles claim in token payload
+// secret: specifies the environment variable name for the JWT secret
 JWTAuthConfig:
-    (('secret:' secret=STRING) | ('secret_env:' secret_env=STRING))
+    'secret:' secret=STRING
     ('header:' header=STRING)?
     ('scheme:' scheme=STRING)?
     ('algorithm:' algorithm=STRING)?

@@ -118,9 +118,9 @@ def create_fdsl_metamodel():
     fdsl.eClassifiers.append(Auth)
 
     # JWTAuthConfig
+    # secret: environment variable name for JWT secret
     JWTAuthConfig = EClass('JWTAuthConfig')
     JWTAuthConfig.eStructuralFeatures.append(EAttribute('secret', EString))
-    JWTAuthConfig.eStructuralFeatures.append(EAttribute('secret_env', EString))
     JWTAuthConfig.eStructuralFeatures.append(EAttribute('header', EString))
     JWTAuthConfig.eStructuralFeatures.append(EAttribute('scheme', EString))
     JWTAuthConfig.eStructuralFeatures.append(EAttribute('algorithm', EString))

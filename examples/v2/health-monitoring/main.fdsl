@@ -1,0 +1,234 @@
+// =============================================================================
+// Health Monitoring System - Full CRUD + Real-time Vitals
+// =============================================================================
+// Demonstrates:
+// - REST CRUD: Patient profiles, health goals, medications
+// - WebSocket inbound: Real-time heart rate from wearables
+// - WebSocket outbound: Emergency SOS alerts from patients
+// - Complex aggregations: BMI, calorie balance, health scores
+//
+// Thesis Focus: Data collection from wearables + processing (BMI, status)
+//               + aggregation (health summaries)
+// =============================================================================
+
+Role patient
+Role doctor
+
+Auth HealthAuth
+  type: jwt
+  secret: "HEALTH_JWT_SECRET"
+end
+
+Server HealthMonitor
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+  auth: HealthAuth
+end
+
+// =============================================================================
+// REST SOURCES - Patient Data Management
+// =============================================================================
+
+Source<REST> PatientAPI
+  url: "http://health-service:9001/patient"
+  operations: [read, update]
+end
+
+Source<REST> GoalsAPI
+  url: "http://health-service:9001/goals"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> MedicationAPI
+  url: "http://health-service:9001/medications"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> VitalsSnapshotAPI
+  url: "http://health-service:9001/vitals"
+  operations: [read]
+end
+
+// =============================================================================
+// WEBSOCKET SOURCES - Real-time Monitoring
+// =============================================================================
+
+Source<WS> WearableHeartRate
+  channel: "ws://wearable-gateway:9002/ws/heartrate"
+end
+
+Source<WS> EmergencyChannel
+  channel: "ws://emergency-service:9003/ws/sos"
+end
+
+// =============================================================================
+// REST ENTITIES - CRUD Operations
+// =============================================================================
+
+// Patient Profile - read/update own data
+Entity PatientProfile
+  source: PatientAPI
+  attributes:
+    - patient_id: string @readonly;
+    - name: string;
+    - age: integer;
+    - weight_kg: number;
+    - height_cm: number;
+    - blood_type: string;
+    - emergency_contact: string @optional;
+    - updated_at: string @readonly;
+  access: [patient, doctor]
+end
+
+// Health Goals - full CRUD
+Entity HealthGoal
+  source: GoalsAPI
+  attributes:
+    - goal_id: string @readonly;
+    - type: string;
+    - target_value: number;
+    - current_value: number @readonly;
+    - deadline: string @optional;
+    - created_at: string @readonly;
+  access: [patient]
+end
+
+// Medications - full CRUD
+Entity Medication
+  source: MedicationAPI
+  attributes:
+    - medication_id: string @readonly;
+    - name: string;
+    - dosage: string;
+    - frequency: string;
+    - time_of_day: string;
+    - active: boolean;
+    - notes: string @optional;
+  access: [patient, doctor]
+end
+
+// Current Vitals Snapshot (read-only)
+Entity VitalsSnapshot
+  source: VitalsSnapshotAPI
+  attributes:
+    - heart_rate: integer @readonly;
+    - blood_pressure_systolic: integer @readonly;
+    - blood_pressure_diastolic: integer @readonly;
+    - temperature_c: number @readonly;
+    - oxygen_saturation: integer @readonly;
+    - recorded_at: string @readonly;
+  access: [patient, doctor]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - Real-time Data
+// =============================================================================
+
+// Inbound: Real-time heart rate from wearable
+Entity HeartRateTick
+  type: inbound
+  source: WearableHeartRate
+  attributes:
+    - bpm: integer;
+    - timestamp: integer;
+    - device_id: string;
+end
+
+// Outbound: Emergency SOS from patient to emergency services
+Entity EmergencyAlert
+  type: outbound
+  source: EmergencyChannel
+  attributes:
+    - cause: string;    // "fall", "chest_pain", "breathing", "other"
+    - severity: string;      // "low", "medium", "high", "critical"
+    - location: string @optional;
+    - message: string @optional;
+  access: [patient]
+end
+
+// =============================================================================
+// COMPOSITE ENTITIES - Aggregations & Analysis
+// =============================================================================
+
+// Real-time heart rate with analysis
+Entity HeartRateMonitor(HeartRateTick)
+  type: inbound
+  attributes:
+    - current_bpm: integer = HeartRateTick.bpm;
+    - timestamp: integer = HeartRateTick.timestamp;
+    - status: string = "critical" if HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50
+        else ("elevated" if HeartRateTick.bpm > 100 else "normal");
+    - needs_attention: boolean = HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50;
+  access: [patient, doctor]
+end
+
+// Health Summary - combines profile + vitals with BMI calculation
+Entity HealthSummary(PatientProfile, VitalsSnapshot)
+  attributes:
+    - patient_name: string = PatientProfile.name;
+    - bmi: number = round(PatientProfile.weight_kg / ((PatientProfile.height_cm / 100) * (PatientProfile.height_cm / 100)), 1);
+    - bmi_category: string = "underweight" if HealthSummary.bmi < 18.5
+        else ("normal" if HealthSummary.bmi < 25
+        else ("overweight" if HealthSummary.bmi < 30 else "obese"));
+    - heart_rate: integer = VitalsSnapshot.heart_rate;
+    - blood_pressure: string = toString(VitalsSnapshot.blood_pressure_systolic) + "/" + toString(VitalsSnapshot.blood_pressure_diastolic);
+    - bp_status: string = "high" if VitalsSnapshot.blood_pressure_systolic > 140 else ("low" if VitalsSnapshot.blood_pressure_systolic < 90 else "normal");
+    - oxygen_level: integer = VitalsSnapshot.oxygen_saturation;
+    - oxygen_status: string = "critical" if VitalsSnapshot.oxygen_saturation < 90 else ("low" if VitalsSnapshot.oxygen_saturation < 95 else "normal");
+    - overall_status: string = "needs_attention" if HealthSummary.bp_status != "normal" or HealthSummary.oxygen_status != "normal" else "stable";
+  access: [patient, doctor]
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+Component<ActionForm> UpdateProfile
+  entity: PatientProfile
+  operation: update
+  fields: [name, weight_kg, height_cm, emergency_contact]
+  submitLabel: "Update Profile"
+end
+
+Component<ActionForm> CreateGoal
+  entity: HealthGoal
+  operation: create
+  fields: [type, target_value, deadline]
+  submitLabel: "Set New Goal"
+end
+
+Component<ActionForm> AddMedication
+  entity: Medication
+  operation: create
+  fields: [name, dosage, frequency, time_of_day, notes]
+  submitLabel: "Add Medication"
+end
+
+Component<LiveMetrics> VitalSigns
+  entity: HeartRateMonitor
+  metrics: ["current_bpm", "status"]
+  label: "Real-time Heart Rate"
+end
+
+Component<DataCard> HealthOverview
+  entity: HealthSummary
+  fields: ["patient_name", "bmi", "bmi_category", "blood_pressure", "bp_status", "oxygen_level", "overall_status"]
+  title: "Health Summary"
+  highlight: "overall_status"
+end
+
+Component<Metric> BMIDisplay
+  entity: HealthSummary
+  field: "bmi"
+  label: "Body Mass Index"
+  format: "number"
+end
+
+Component<Metric> OxygenLevel
+  entity: HealthSummary
+  field: "oxygen_level"
+  label: "Oxygen Saturation"
+  format: "percent"
+end

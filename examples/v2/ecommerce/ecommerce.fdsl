@@ -10,7 +10,7 @@ Role warehouse
 
 Auth ShopAuth
   type: jwt
-  secret: "ecommerce-secret-key-change-in-production"
+  secret: "ECOMMERCE_JWT_SECRET"
 end
 
 Server ECommerceAPI

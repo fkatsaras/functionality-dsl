@@ -69,9 +69,11 @@ FDSL supports two authentication types:
 ```fdsl
 Auth HomeAuth
   type: jwt
-  secret: "your-secret-key"  // or secret_env: "JWT_SECRET"
+  secret: "JWT_SECRET"  // environment variable name
 end
 ```
+
+The `secret:` field specifies the environment variable name for the JWT secret. This variable is automatically added to the generated `.env` file with a random 32-character alphanumeric value.
 
 **Session Authentication** (stateful, cookie-based):
 ```fdsl

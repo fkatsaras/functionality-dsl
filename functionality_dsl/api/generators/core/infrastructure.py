@@ -1,12 +1,20 @@
 """Infrastructure scaffolding and file generation."""
 
 import re
+import secrets
 import shutil
+import string
 from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ...extractors import extract_server_config
+
+
+def generate_random_secret(length: int = 32) -> str:
+    """Generate a random alphanumeric secret string."""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def render_infrastructure_files(context, templates_dir, output_dir):
@@ -20,6 +28,14 @@ def render_infrastructure_files(context, templates_dir, output_dir):
         trim_blocks=True,
         lstrip_blocks=True,
     )
+
+    # Generate JWT secret environment variable
+    auth_config = context.get("auth")
+    if auth_config and auth_config.get("type") == "jwt":
+        jwt_config = auth_config.get("jwt", {})
+        if jwt_config.get("secret"):
+            context["jwt_secret_var"] = jwt_config["secret"]
+            context["jwt_secret_value"] = generate_random_secret(32)
 
     # Map output files to their templates
     file_mappings = {

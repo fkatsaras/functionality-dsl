@@ -104,14 +104,11 @@ def _extract_auth_config(auth, model):
     if auth_type == "jwt":
         jwt_config = getattr(auth, "jwt_config", None)
 
-        # Handle both direct secret and environment variable reference
-        secret_direct = get_or_default(jwt_config, "secret", None)
-        secret_env = get_or_default(jwt_config, "secret_env", None)
+        # secret is the environment variable name
+        secret_env_var = get_or_default(jwt_config, "secret", "JWT_SECRET")
 
-        # Defaults from grammar
         config.update({
-            "secret": secret_direct,  # Direct secret value (if provided)
-            "secret_env": secret_env if secret_env else "JWT_SECRET",  # Env var name (fallback)
+            "secret": secret_env_var,  # Environment variable name
             "header": get_or_default(jwt_config, "header", "Authorization"),
             "scheme": get_or_default(jwt_config, "scheme", "Bearer"),
             "algorithm": get_or_default(jwt_config, "algorithm", "HS256"),

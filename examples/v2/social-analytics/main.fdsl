@@ -1,0 +1,302 @@
+// =============================================================================
+// Social Media Analytics Platform - Campaign Management + Real-time Engagement
+// =============================================================================
+// Demonstrates:
+// - REST CRUD: Campaigns, scheduled posts, audience targeting
+// - WebSocket inbound: Live engagement events (likes, shares, mentions)
+// - WebSocket outbound: Post publishing commands
+// - Cross-platform aggregation and performance metrics
+//
+// Thesis Focus: Multi-source collection (Twitter, Instagram) + processing
+//               (engagement rates) + aggregation (cross-platform dashboard)
+// =============================================================================
+
+Role marketer
+Role analyst
+
+Auth SocialAuth
+  type: jwt
+  secret: "SOCIAL_JWT_SECRET"
+end
+
+Server SocialAnalytics
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+  auth: SocialAuth
+end
+
+// =============================================================================
+// REST SOURCES - Campaign & Content Management
+// =============================================================================
+
+Source<REST> CampaignAPI
+  url: "http://social-service:9001/campaigns"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> PostAPI
+  url: "http://social-service:9001/posts"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> AudienceAPI
+  url: "http://social-service:9001/audiences"
+  operations: [read, create, delete]
+end
+
+Source<REST> TwitterMetricsAPI
+  url: "http://social-service:9001/metrics/twitter"
+  operations: [read]
+end
+
+Source<REST> InstagramMetricsAPI
+  url: "http://social-service:9001/metrics/instagram"
+  operations: [read]
+end
+
+// =============================================================================
+// WEBSOCKET SOURCES - Real-time Engagement
+// =============================================================================
+
+Source<WS> EngagementStream
+  channel: "ws://social-gateway:9002/ws/engagement"
+end
+
+Source<WS> PublishChannel
+  channel: "ws://social-gateway:9002/ws/publish"
+end
+
+// =============================================================================
+// REST ENTITIES - CRUD Operations
+// =============================================================================
+
+// Campaign Management - full CRUD
+Entity Campaign
+  source: CampaignAPI
+  attributes:
+    - campaign_id: string @readonly;
+    - name: string;
+    - description: string @optional;
+    - platform: string;
+    - budget: number;
+    - start_date: string;
+    - end_date: string;
+    - status: string @readonly;
+    - created_at: string @readonly;
+  access: [marketer]
+end
+
+// Scheduled Posts - full CRUD
+Entity ScheduledPost
+  source: PostAPI
+  attributes:
+    - post_id: string @readonly;
+    - campaign_id: string;
+    - content: string;
+    - media_url: string @optional;
+    - platforms: array;
+    - scheduled_time: string;
+    - status: string @readonly;
+    - hashtags: array @optional;
+  access: [marketer]
+end
+
+// Audience Segments - create/read/delete
+Entity AudienceSegment
+  source: AudienceAPI
+  attributes:
+    - segment_id: string @readonly;
+    - name: string;
+    - criteria: object;
+    - estimated_reach: integer @readonly;
+    - created_at: string @readonly;
+  access: [marketer, analyst]
+end
+
+// Platform Metrics (read-only snapshots)
+Entity TwitterMetrics
+  source: TwitterMetricsAPI
+  attributes:
+    - followers: integer @readonly;
+    - following: integer @readonly;
+    - tweets_count: integer @readonly;
+    - impressions: integer @readonly;
+    - engagements: integer @readonly;
+    - likes: integer @readonly;
+    - retweets: integer @readonly;
+    - replies: integer @readonly;
+    - profile_visits: integer @readonly;
+    - period: string @readonly;
+  access: [marketer, analyst]
+end
+
+Entity InstagramMetrics
+  source: InstagramMetricsAPI
+  attributes:
+    - followers: integer @readonly;
+    - following: integer @readonly;
+    - posts_count: integer @readonly;
+    - impressions: integer @readonly;
+    - reach: integer @readonly;
+    - likes: integer @readonly;
+    - comments: integer @readonly;
+    - saves: integer @readonly;
+    - shares: integer @readonly;
+    - period: string @readonly;
+  access: [marketer, analyst]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - Real-time Engagement
+// =============================================================================
+
+// Inbound: Live engagement events
+Entity EngagementEvent
+  type: inbound
+  source: EngagementStream
+  attributes:
+    - event_type: string;
+    - platform: string;
+    - post_id: string;
+    - user_handle: string;
+    - timestamp: integer;
+end
+
+// Outbound: Quick publish post to social platforms
+Entity QuickPost
+  type: outbound
+  source: PublishChannel
+  attributes:
+    - content: string;
+    - platform: string;        // "twitter", "instagram", "both"
+    - media_url: string @optional;
+    - hashtags: array @optional;
+  access: [marketer]
+end
+
+// =============================================================================
+// COMPOSITE ENTITIES - Analytics & Aggregations
+// =============================================================================
+
+// Real-time engagement feed with categorization
+Entity LiveEngagement(EngagementEvent)
+  type: inbound
+  attributes:
+    - event: string = EngagementEvent.event_type;
+    - platform: string = EngagementEvent.platform;
+    - user: string = EngagementEvent.user_handle;
+    - timestamp: integer = EngagementEvent.timestamp;
+    - is_high_value: boolean = EngagementEvent.event_type == "share" or EngagementEvent.event_type == "mention";
+    - engagement_score: integer = 1 if EngagementEvent.event_type == "like"
+        else (2 if EngagementEvent.event_type == "comment"
+        else (3 if EngagementEvent.event_type == "share" else 5));
+  access: [marketer, analyst]
+end
+
+// Cross-platform dashboard - main aggregation entity
+Entity SocialDashboard(TwitterMetrics, InstagramMetrics)
+  attributes:
+    - total_followers: integer = TwitterMetrics.followers + InstagramMetrics.followers;
+    - total_impressions: integer = TwitterMetrics.impressions + InstagramMetrics.impressions;
+    - twitter_engagement_rate: number = round((TwitterMetrics.likes + TwitterMetrics.retweets + TwitterMetrics.replies) / TwitterMetrics.impressions * 100, 2) if TwitterMetrics.impressions > 0 else 0.0;
+    - instagram_engagement_rate: number = round((InstagramMetrics.likes + InstagramMetrics.comments + InstagramMetrics.shares) / InstagramMetrics.reach * 100, 2) if InstagramMetrics.reach > 0 else 0.0;
+    - avg_engagement_rate: number = round((SocialDashboard.twitter_engagement_rate + SocialDashboard.instagram_engagement_rate) / 2, 2);
+    - best_platform: string = "Twitter" if SocialDashboard.twitter_engagement_rate > SocialDashboard.instagram_engagement_rate else "Instagram";
+    - follower_growth_potential: string = "high" if SocialDashboard.avg_engagement_rate > 5 else ("medium" if SocialDashboard.avg_engagement_rate > 2 else "low");
+    - twitter_share: number = round(TwitterMetrics.followers / SocialDashboard.total_followers * 100, 1) if SocialDashboard.total_followers > 0 else 0.0;
+    - instagram_share: number = round(InstagramMetrics.followers / SocialDashboard.total_followers * 100, 1) if SocialDashboard.total_followers > 0 else 0.0;
+  access: [marketer, analyst]
+end
+
+// Platform comparison for charts
+Entity PlatformComparison(TwitterMetrics, InstagramMetrics)
+  attributes:
+    - platforms: array = [
+        {
+          "name": "Twitter",
+          "followers": TwitterMetrics.followers,
+          "engagement_rate": round((TwitterMetrics.likes + TwitterMetrics.retweets) / TwitterMetrics.impressions * 100, 2) if TwitterMetrics.impressions > 0 else 0.0,
+          "total_engagements": TwitterMetrics.likes + TwitterMetrics.retweets + TwitterMetrics.replies
+        },
+        {
+          "name": "Instagram",
+          "followers": InstagramMetrics.followers,
+          "engagement_rate": round((InstagramMetrics.likes + InstagramMetrics.comments) / InstagramMetrics.reach * 100, 2) if InstagramMetrics.reach > 0 else 0.0,
+          "total_engagements": InstagramMetrics.likes + InstagramMetrics.comments + InstagramMetrics.shares + InstagramMetrics.saves
+        }
+      ];
+    - total_engagements: integer = sum(map(PlatformComparison.platforms, p => p["total_engagements"]));
+  access: [analyst]
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+Component<ActionForm> CreateCampaign
+  entity: Campaign
+  operation: create
+  fields: [name, description, platform, budget, start_date, end_date]
+  submitLabel: "Launch Campaign"
+end
+
+Component<ActionForm> SchedulePost
+  entity: ScheduledPost
+  operation: create
+  fields: [campaign_id, content, platforms, scheduled_time, hashtags]
+  submitLabel: "Schedule Post"
+end
+
+Component<ActionForm> CreateAudience
+  entity: AudienceSegment
+  operation: create
+  fields: [name, criteria]
+  submitLabel: "Create Segment"
+end
+
+Component<LiveMetrics> EngagementFeed
+  entity: LiveEngagement
+  metrics: ["event", "platform", "user", "engagement_score"]
+  label: "Live Engagement"
+end
+
+Component<DataCard> DashboardOverview
+  entity: SocialDashboard
+  fields: ["total_followers", "total_impressions", "avg_engagement_rate", "best_platform", "follower_growth_potential"]
+  title: "Social Media Overview"
+  highlight: "avg_engagement_rate"
+end
+
+Component<BarChart> PlatformEngagement
+  entity: SocialDashboard
+  bars:
+    - field: "twitter_engagement_rate" label: "Twitter" color: "#1DA1F2"
+    - field: "instagram_engagement_rate" label: "Instagram" color: "#E4405F"
+  title: "Engagement Rate by Platform"
+  xLabel: "Platform"
+  yLabel: "Engagement Rate (%)"
+end
+
+Component<PieChart> FollowerDistribution
+  entity: SocialDashboard
+  slices:
+    - field: "twitter_share" label: "Twitter" color: "#1DA1F2"
+    - field: "instagram_share" label: "Instagram" color: "#E4405F"
+  title: "Follower Distribution"
+end
+
+Component<Metric> TotalFollowers
+  entity: SocialDashboard
+  field: "total_followers"
+  label: "Total Followers"
+  format: "number"
+end
+
+Component<Metric> AvgEngagement
+  entity: SocialDashboard
+  field: "avg_engagement_rate"
+  label: "Avg Engagement Rate"
+  format: "percent"
+end

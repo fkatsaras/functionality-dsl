@@ -187,8 +187,7 @@ def extract_auth_config(server):
         jwt_config = getattr(auth, "jwt_config", None)
         if jwt_config:
             config["jwt"] = {
-                "secret": getattr(jwt_config, "secret", None) or None,
-                "secret_env": getattr(jwt_config, "secret_env", None) or None,
+                "secret": getattr(jwt_config, "secret", None) or "JWT_SECRET",
                 "header": getattr(jwt_config, "header", None) or "Authorization",
                 "scheme": getattr(jwt_config, "scheme", None) or "Bearer",
                 "algorithm": getattr(jwt_config, "algorithm", None) or "HS256",

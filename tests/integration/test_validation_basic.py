@@ -128,7 +128,7 @@ def test_reserved_role_name_public_fails():
 
     Auth MyAuth
       type: jwt
-      secret_env: "JWT_SECRET"
+      secret: "JWT_SECRET"
       roles_claim: "roles"
     end
 
