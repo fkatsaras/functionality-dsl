@@ -21,15 +21,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # Configuration
 # ============================================================================
 
-{% if secret %}
-# Using direct secret value from FDSL (for testing)
-JWT_SECRET = "{{ secret }}"
-{% else %}
-# Using environment variable
-JWT_SECRET = os.getenv("{{ secret_env }}")
+# JWT secret: Read from environment variable
+# The secret is auto-generated during code generation and stored in .env
+JWT_SECRET = os.getenv("{{ secret }}")
 if not JWT_SECRET:
-    raise ValueError("{{ secret_env }} environment variable not set")
-{% endif %}
+    raise RuntimeError("JWT_SECRET environment variable '{{ secret }}' is not set. Check your .env file.")
 
 JWT_ALGORITHM = "{{ algorithm }}"
 USER_ID_CLAIM = "{{ user_id_claim }}"

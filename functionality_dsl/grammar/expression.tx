@@ -43,12 +43,10 @@ PostfixExpr: base=AtomBase (tails+=PostfixTail)* ;
 
 PostfixTail:
       member=MemberAccess
-    | param=ParamAccess
     | index=IndexAccess
 ;
 
 MemberAccess: '.' name=ID ;
-ParamAccess:  '$' name=ID ;  // Changed from @ to $ to avoid conflict with validators
 IndexAccess:  '[' (slice=SliceExpr | index=Expr) ']' ;
 
 // Python-style slicing: arr[start:end:step]

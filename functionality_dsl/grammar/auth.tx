@@ -3,6 +3,10 @@
 // =============================================================================
 // Defines authentication as a first-class entity, separate from Server
 // Server references Auth by name
+//
+// Supported auth types:
+// - jwt: Stateless token-based auth (recommended for APIs)
+// - session: Stateful cookie-based auth (traditional web apps)
 
 // Auth Declaration - first-class citizen
 Auth:
@@ -10,14 +14,16 @@ Auth:
     'type:' type=AuthType
     (jwt_config=JWTAuthConfig)?
     (session_config=SessionAuthConfig)?
-    (apikey_config=APIKeyAuthConfig)?
   'end'
 ;
 
-AuthType: 'jwt' | 'session' | 'api_key' ;
+AuthType: 'jwt' | 'session' ;
 
+// JWT Authentication - stateless, token in Authorization header
+// Supports RBAC via roles claim in token payload
+// secret: specifies the environment variable name for the JWT secret
 JWTAuthConfig:
-    (('secret:' secret=STRING) | ('secret_env:' secret_env=STRING))
+    'secret:' secret=STRING
     ('header:' header=STRING)?
     ('scheme:' scheme=STRING)?
     ('algorithm:' algorithm=STRING)?
@@ -25,14 +31,10 @@ JWTAuthConfig:
     ('roles_claim:' roles_claim=STRING)?
 ;
 
+// Session Authentication - stateful, cookie-based
+// Uses in-memory session store (suitable for single-server deployments)
+// Supports RBAC via roles stored in session data
 SessionAuthConfig:
-    (('cookie:' cookie=STRING) | ('redis_url_env:' redis_url_env=STRING) | ('store_env:' store_env=STRING))
     ('cookie:' cookie=STRING)?
-    ('redis_url_env:' redis_url_env=STRING)?
-    ('store_env:' store_env=STRING)?
-;
-
-APIKeyAuthConfig:
-    ('lookup_env:' lookup_env=STRING)
-    ('header:' header=STRING)?
+    ('expiry:' expiry=INT)?  // Session expiry in seconds (default: 3600)
 ;

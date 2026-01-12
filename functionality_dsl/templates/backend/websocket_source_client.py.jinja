@@ -29,7 +29,11 @@ class {{ source_name }}Source:
 
     async def subscribe(self) -> AsyncIterator[Dict[str, Any]]:
         """
-        Subscribe to WebSocket feed and yield messages.
+        Subscribe to WebSocket feed and yield messages as dicts.
+        Handles both JSON text messages and binary data.
+        {% if binary_attr %}
+        Binary messages are automatically wrapped as {"{{ binary_attr }}": <bytes>}.
+        {% endif %}
         """
         logger.info(f"Connecting to {self.url}")
 
@@ -40,10 +44,22 @@ class {{ source_name }}Source:
 
                 async for message in websocket:
                     try:
-                        # Parse JSON message
-                        data = json.loads(message)
-                        logger.debug(f"Received message: {type(data)}")
-                        yield data
+                        # Check if message is binary (bytes)
+                        if isinstance(message, bytes):
+                            {% if binary_attr %}
+                            # Binary message - wrap in dict with entity attribute name
+                            logger.debug(f"Received binary message: {len(message)} bytes")
+                            yield {"{{ binary_attr }}": message}
+                            {% else %}
+                            # Binary message - yield raw bytes (no schema info available)
+                            logger.debug(f"Received binary message: {len(message)} bytes")
+                            yield message
+                            {% endif %}
+                        else:
+                            # Text message - parse as JSON
+                            data = json.loads(message)
+                            logger.debug(f"Received message: {type(data)}")
+                            yield data
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse message: {e}")
                         continue

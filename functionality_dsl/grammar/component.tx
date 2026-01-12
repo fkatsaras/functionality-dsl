@@ -24,6 +24,15 @@ Component:
   | ObjectViewComponent
   | CameraComponent
   | DownloadFormComponent
+  | MetricComponent
+  | DataCardComponent
+  | PieChartComponent
+  | BarChartComponent
+  | ProgressComponent
+  | LiveProgressComponent
+  | AlertComponent
+  | LiveAlertComponent
+  | PublishFormComponent
 ;
 
 // Column definition with type specification
@@ -198,11 +207,13 @@ LiveViewComponent:
 ToggleComponent:
   'Component' '<' 'Toggle' '>' name=ID
   'entity:' entity_ref=[entity.Entity]
-  ( ('label:' label=STRING)
-  | ('onLabel:' onLabel=STRING)
-  | ('offLabel:' offLabel=STRING)
-  | ('field:' field=STRING)
-  )*
+  (
+    ('label:' label=STRING)?
+    ('onLabel:' onLabel=STRING)?
+    ('offLabel:' offLabel=STRING)?
+    ('field:' field=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
   'end'
 ;
 
@@ -247,6 +258,129 @@ MapComponent:
     ('label:' label=STRING)?
     ('width:' width=INT)?
     ('height:' height=INT)?
+  )#
+  'end'
+;
+
+MetricComponent:
+  'Component' '<' 'Metric' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('label:' label=STRING)?
+    ('format:' format=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+DataCardComponent:
+  'Component' '<' 'DataCard' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('fields:' '[' fields+=STRING (',' fields+=STRING)* ']')?
+    ('title:' title=STRING)?
+    ('highlight:' highlight=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+// SliceField defines a mapping from entity field to pie chart slice
+SliceField:
+  'field:' field=STRING 'label:' label=STRING 'color:' color=STRING
+;
+
+PieChartComponent:
+  'Component' '<' 'PieChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('slices:' '-' slices+=SliceField ('-' slices+=SliceField)*)?
+    ('title:' title=STRING)?
+    ('size:' size=INT)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+// BarField defines a mapping from entity field to bar chart bar
+BarField:
+  'field:' field=STRING 'label:' label=STRING ('color:' color=STRING)?
+;
+
+BarChartComponent:
+  'Component' '<' 'BarChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('bars:' '-' bars+=BarField ('-' bars+=BarField)*)?
+    ('title:' title=STRING)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
+    ('height:' height=INT)?
+    ('width:' width=INT)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+ProgressComponent:
+  'Component' '<' 'Progress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveProgressComponent:
+  'Component' '<' 'LiveProgress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+  )#
+  'end'
+;
+
+AlertComponent:
+  'Component' '<' 'Alert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveAlertComponent:
+  'Component' '<' 'LiveAlert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
+  )#
+  'end'
+;
+
+// PublishForm for outbound WebSocket entities - sends JSON payloads
+PublishFormComponent:
+  'Component' '<' 'PublishForm' '>' name=ID
+  (
+    'entity:' entity_ref=[entity.Entity]
+    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
+    ('submitLabel:' submitLabel=STRING)?
+    ('label:' label=STRING)?
   )#
   'end'
 ;

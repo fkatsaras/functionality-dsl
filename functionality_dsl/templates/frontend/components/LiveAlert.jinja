@@ -1,0 +1,8 @@
+{# components/LiveAlert.jinja #}
+<LiveAlert
+    name="{{ common.name }}"
+    wsUrl="{{ props.get('wsUrl') }}"
+    condition="{{ props.get('condition') }}"
+    message="{{ props.get('message') }}"
+    severity="{{ props.get('severity', 'info') }}"
+/>

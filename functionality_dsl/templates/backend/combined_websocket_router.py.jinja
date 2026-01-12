@@ -6,7 +6,7 @@
 import logging
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Set, Optional
+from typing import Set, Optional, Union, Tuple
 from pydantic import ValidationError
 import asyncio
 
@@ -23,7 +23,14 @@ from app.core.error_handlers import (
     classify_error
 )
 {% if has_auth %}
-from app.core.auth import decode_token, TokenPayload
+# Import auth utilities - supports both JWT and session auth
+try:
+    from app.core.auth import decode_token, TokenPayload
+    AUTH_TYPE = "jwt"
+except ImportError:
+    # Session auth module has different interface
+    from app.core.auth import get_session, TokenPayload, SESSION_COOKIE_NAME
+    AUTH_TYPE = "session"
 {% endif %}
 
 logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
@@ -32,6 +39,29 @@ router = APIRouter()
 
 # Track active WebSocket connections
 active_connections: Set[WebSocket] = set()
+
+
+def extract_binary_payload(message: Union[dict, bytes]) -> Tuple[bool, Union[bytes, dict]]:
+    """
+    Extract binary payload from message if present.
+    Returns (is_binary, payload) where payload is either raw bytes or the original dict.
+
+    Handles:
+    - Raw bytes: returns (True, bytes)
+    - Dict with single binary value: returns (True, bytes)
+    - Dict with all non-binary values: returns (False, dict)
+    """
+    if isinstance(message, bytes):
+        return True, message
+
+    if isinstance(message, dict):
+        # Check if dict contains a single binary value
+        binary_values = [(k, v) for k, v in message.items() if isinstance(v, bytes)]
+        if len(binary_values) == 1 and len(message) == 1:
+            # Single binary attribute - extract the bytes
+            return True, binary_values[0][1]
+
+    return False, message
 
 
 @router.websocket("{{ ws_channel }}")
@@ -45,13 +75,31 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     """
     {% if has_auth %}
     # Authenticate before accepting connection
-    # Extract token from Authorization header: "Bearer <token>"
-    auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-    token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:]  # Remove "Bearer " prefix
-
     user: Optional[TokenPayload] = None
+
+    # Extract credentials based on auth type
+    if AUTH_TYPE == "jwt":
+        # JWT auth: Extract token from Authorization header or query parameter
+        # Note: Browsers don't support custom headers for WebSocket, so we also check query params
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+
+        # Fallback to query parameter for browser WebSocket connections
+        if not token:
+            token = websocket.query_params.get("token")
+    else:
+        # Session auth: Extract session cookie
+        # WebSocket cookies come from the Cookie header
+        cookie_header = websocket.headers.get("cookie", "")
+        session_id = None
+        if cookie_header:
+            for cookie in cookie_header.split(";"):
+                cookie = cookie.strip()
+                if cookie.startswith(f"{SESSION_COOKIE_NAME}="):
+                    session_id = cookie[len(SESSION_COOKIE_NAME) + 1:]
+                    break
 
     {% if subscribe_required_roles != ["public"] or publish_required_roles != ["public"] %}
     # Check if authentication is required
@@ -70,29 +118,39 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     publish_roles = []
     {% endif %}
 
-    # Verify token if required
+    # Verify credentials if required
     if subscribe_requires_auth or publish_requires_auth:
-        # Case 1: Both operations require auth - reject if no token
+        has_credentials = (AUTH_TYPE == "jwt" and token) or (AUTH_TYPE == "session" and session_id)
+
+        # Case 1: Both operations require auth - reject if no credentials
         if subscribe_requires_auth and publish_requires_auth:
-            if not token:
-                logger.warning("WebSocket connection rejected: No token provided (both subscribe and publish require auth)")
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (both subscribe and publish require auth)")
                 await websocket.close(code=1008, reason="Authentication required")
                 return
 
-        # Case 2: Only subscribe requires auth - reject if no token
+        # Case 2: Only subscribe requires auth - reject if no credentials
         elif subscribe_requires_auth:
-            if not token:
-                logger.warning("WebSocket connection rejected: No token provided (subscribe requires auth)")
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (subscribe requires auth)")
                 await websocket.close(code=1008, reason="Authentication required for subscribe")
                 return
 
-        # Case 3: Only publish requires auth - accept connection, but validate token if provided
+        # Case 3: Only publish requires auth - accept connection, but validate credentials if provided
         # (user can subscribe without auth, but needs auth to publish)
 
-        # Decode token if present
-        if token:
+        # Validate credentials if present
+        if has_credentials:
             try:
-                user = decode_token(token)
+                if AUTH_TYPE == "jwt":
+                    user = decode_token(token)
+                else:
+                    # Session auth - get session data
+                    session = get_session(session_id)
+                    if not session:
+                        raise Exception("Invalid or expired session")
+                    user = TokenPayload(user_id=session.user_id, roles=session.roles)
+
                 logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
 
                 # Check subscribe permissions
@@ -113,7 +171,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
             except Exception as e:
                 logger.warning(f"WebSocket authentication failed: {str(e)}")
-                await websocket.close(code=1008, reason=f"Invalid token: {str(e)}")
+                await websocket.close(code=1008, reason=f"Authentication failed: {str(e)}")
                 return
     {% endif %}
     {% endif %}
@@ -155,21 +213,10 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     try:
         {% if has_subscribe and has_publish %}
         # Bidirectional mode: Run subscribe and publish concurrently
-        {% if has_subscribe %}
         from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
 
         subscribe_source = {{ subscribe_ws_source.name }}Source()
-        {% endif %}
-        {% if has_publish and publish_ws_target %}
-        from app.sources.{{ publish_ws_target.name | lower }}_source import {{ publish_ws_target.name }}Source
-
-        # Check if subscribe and publish use the same source - if so, share the connection
-        {% if has_subscribe and subscribe_ws_source.name == publish_ws_target.name %}
-        publish_target = subscribe_source  # Share the same connection
-        {% else %}
-        publish_target = {{ publish_ws_target.name }}Source()
-        {% endif %}
-        {% endif %}
+        # Publish uses the service's source directly
 
         async def handle_subscribe():
             """Subscribe task: Stream data from external source to client."""
@@ -178,6 +225,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     continue
 
                 # Transform raw message through entity service
+                # Note: Binary messages are pre-wrapped by the source client
                 transformed_message = subscribe_service._transform_entity(raw_message)
 
                 # Apply filters if specified
@@ -186,9 +234,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     continue  # Skip this message, doesn't match filters
                 {% endif %}
 
-                # Send to client
-                await websocket.send_json(transformed_message)
-                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+                # Send to client - extract binary payload if present
+                is_binary, payload = extract_binary_payload(transformed_message)
+                if is_binary:
+                    await websocket.send_bytes(payload)
+                    logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                else:
+                    await websocket.send_json(payload)
+                    logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
 
         async def handle_publish():
             """Publish task: Receive data from client and send to external target."""
@@ -244,14 +297,9 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     transformed_data = publish_service._transform_entity(data)
                     logger.debug(f"Transformed message: {transformed_data}")
 
-                    {% if publish_ws_target %}
-                    # Publish to external WebSocket target
-                    await publish_target.publish(transformed_data)
-                    logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
-                    {% else %}
-                    # No target specified - message processed but not forwarded
-                    logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
-                    {% endif %}
+                    # Publish to external WebSocket via service source
+                    await publish_service.source.publish(transformed_data)
+                    logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
                 except ValidationError as e:
                     await WebSocketErrorHandler.handle_validation_error(websocket, e, logger)
@@ -306,6 +354,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     if raw_message is None:
                         continue
 
+                    # Note: Binary messages are pre-wrapped by the source client
                     async with message_lock:
                         latest_messages[parent_entity_name] = raw_message
 
@@ -329,9 +378,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                                 continue  # Skip this message, doesn't match filters
                             {% endif %}
 
-                            # Send to client
-                            await websocket.send_json(final_message)
-                            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(final_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
             except Exception as e:
                 error_category = classify_error(e)
                 logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
@@ -356,6 +410,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue
 
             # Chain transformations through all intermediate services
+            # Note: Binary messages are pre-wrapped by the source client
             transformed = raw_message
             {% for service_name in intermediate_services | reverse %}
             transformed = {{ service_name | lower }}_service._transform_entity(transformed)
@@ -365,9 +420,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             # Final transformation through this entity's service
             final_message = subscribe_service._transform_entity(transformed)
 
-            # Send to client
-            await websocket.send_json(final_message)
-            logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(final_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
         {% endif %}
         {% elif subscribe_ws_sources | length > 1 %}
         # Multiple WebSocket sources - merge streams
@@ -393,6 +453,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     if raw_message is None:
                         continue
 
+                    # Note: Binary messages are pre-wrapped by the source client
                     async with message_lock:
                         latest_messages[parent_entity_name] = raw_message
 
@@ -408,9 +469,14 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                                 continue  # Skip this message, doesn't match filters
                             {% endif %}
 
-                            # Send to client
-                            await websocket.send_json(transformed_message)
-                            logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(transformed_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
             except Exception as e:
                 error_category = classify_error(e)
                 logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
@@ -437,6 +503,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue
 
             # Transform raw message through entity service
+            # Note: Binary messages are pre-wrapped by the source client
             transformed_message = subscribe_service._transform_entity(raw_message)
 
             # Apply filters if specified
@@ -445,18 +512,19 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 continue  # Skip this message, doesn't match filters
             {% endif %}
 
-            # Send to client
-            await websocket.send_json(transformed_message)
-            logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(transformed_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
         {% endif %}
 
         {% elif has_publish %}
         # Publish-only mode: Receive data from client and send to external target
-        {% if publish_ws_target %}
-        from app.sources.{{ publish_ws_target.name | lower }}_source import {{ publish_ws_target.name }}Source
-
-        target_source = {{ publish_ws_target.name }}Source()
-        {% endif %}
+        # The service has the source to publish to
 
         while True:
             {% if has_auth and publish_required_roles != ["public"] %}
@@ -500,14 +568,9 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             transformed_data = publish_service._transform_entity(data)
             logger.debug(f"Transformed message: {transformed_data}")
 
-            {% if publish_ws_target %}
-            # Publish to external WebSocket target
-            await target_source.publish(transformed_data)
-            logger.debug(f"Published to external target: {{ publish_ws_target.name }}")
-            {% else %}
-            # No target specified - message processed but not forwarded
-            logger.warning("Message processed but no target specified for {{ publish_entity_name }}")
-            {% endif %}
+            # Publish to external WebSocket via service source
+            await publish_service.source.publish(transformed_data)
+            logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
         {% endif %}
 

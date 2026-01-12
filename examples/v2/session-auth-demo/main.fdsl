@@ -1,0 +1,246 @@
+// =============================================================================
+// Session Auth Demo - Using DummyJSON
+// =============================================================================
+// Demonstrates session-based authentication with RBAC
+//
+// Key differences from JWT:
+// - Server stores session data (in-memory)
+// - Client receives session cookie
+// - Easy session revocation (logout deletes server-side session)
+//
+// Uses DummyJSON.com as the backing API for testing
+// =============================================================================
+
+Role user
+Role admin
+
+Auth SessionAuth
+  type: session
+  cookie: "demo_session"
+  expiry: 3600
+end
+
+Server SessionDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+  auth: SessionAuth
+end
+
+// =============================================================================
+// REST SOURCES - DummyJSON API
+// =============================================================================
+
+Source<REST> UsersAPI
+  url: "https://dummyjson.com/users/1"
+  operations: [read]
+end
+
+Source<REST> ProductsAPI
+  url: "https://dummyjson.com/products"
+  operations: [read]
+end
+
+Source<REST> SingleProductAPI
+  url: "https://dummyjson.com/products/1"
+  operations: [read]
+end
+
+// =============================================================================
+// ENTITIES
+// =============================================================================
+
+// User profile - accessible by any authenticated user
+Entity UserProfile
+  source: UsersAPI
+  attributes:
+    - id: integer @readonly;
+    - firstName: string @readonly;
+    - lastName: string @readonly;
+    - email: string @readonly;
+    - phone: string @readonly;
+    - username: string @readonly;
+    - image: string @readonly;
+    - role: string @readonly;
+  access: [user, admin]
+end
+
+// Product listing - only accessible by admin role
+Entity ProductList
+  source: ProductsAPI
+  attributes:
+    - products: array @readonly;
+    - total: integer @readonly;
+    - skip: integer @readonly;
+    - limit: integer @readonly;
+  access: [admin]
+end
+
+// Single product - accessible by users
+Entity Product
+  source: SingleProductAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - description: string @readonly;
+    - price: number @readonly;
+    - brand: string @readonly;
+    - category: string @readonly;
+    - thumbnail: string @readonly;
+  access: [user, admin]
+end
+
+// Public endpoint - no auth required (derived from UserProfile)
+Entity PublicUserInfo(UserProfile)
+  attributes:
+    - display_name: string = UserProfile.firstName + " " + UserProfile.lastName;
+    - username: string = UserProfile.username;
+    - has_image: boolean = UserProfile.image != "";
+  access: public
+end
+
+// Derived product info - public
+Entity ProductSummary(Product)
+  attributes:
+    - name: string = Product.title;
+    - price_usd: string = "$" + toString(Product.price);
+    - category: string = Product.category;
+  access: public
+end
+
+// =============================================================================
+// UI COMPONENTS - Using DataCard for single-entity snapshots
+// =============================================================================
+
+// Public info card - no auth required
+Component<DataCard> PublicInfoCard
+  entity: PublicUserInfo
+  fields: ["display_name", "username", "has_image"]
+  title: "Public User Info"
+end
+
+// Product summary card - public
+Component<DataCard> ProductCard
+  entity: ProductSummary
+  fields: ["name", "price_usd", "category"]
+  title: "Product Summary"
+end
+
+// User profile card - requires user/admin role
+Component<DataCard> UserProfileCard
+  entity: UserProfile
+  fields: ["firstName", "lastName", "email", "username", "role"]
+  title: "User Profile"
+end
+
+// Product details card - requires user/admin role
+Component<DataCard> ProductDetailsCard
+  entity: Product
+  fields: ["title", "price", "brand", "category", "description"]
+  title: "Product Details"
+end
+
+// Admin-only card - shows product list stats
+Component<DataCard> AdminStatsCard
+  entity: ProductList
+  fields: ["total", "skip", "limit"]
+  title: "Admin Stats (Admin Only)"
+end
+
+// =============================================================================
+// WEBSOCKET SOURCES - Binance Crypto Streams
+// =============================================================================
+
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BinanceBTC
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - With RBAC
+// =============================================================================
+
+// Raw ETH tick from Binance
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - s: string;
+    - c: string;
+    - E: integer;
+end
+
+// Raw BTC tick from Binance
+Entity BTCTick
+  type: inbound
+  source: BinanceBTC
+  attributes:
+    - s: string;
+    - c: string;
+    - E: integer;
+end
+
+// Public crypto prices - anyone can subscribe
+Entity PublicPrices(ETHTick)
+  type: inbound
+  attributes:
+    - symbol: string = ETHTick.s;
+    - price: number = toNumber(ETHTick.c);
+    - timestamp: integer = ETHTick.E;
+  access: public
+end
+
+// User-level prices with more detail - requires user role
+Entity UserPrices(ETHTick, BTCTick)
+  type: inbound
+  attributes:
+    - eth_price: number = toNumber(ETHTick.c);
+    - btc_price: number = toNumber(BTCTick.c);
+    - spread: number = round(toNumber(BTCTick.c) - toNumber(ETHTick.c), 2);
+    - timestamp: integer = ETHTick.E;
+  access: [user, admin]
+end
+
+// Admin-only analytics - requires admin role
+Entity AdminPrices(ETHTick, BTCTick)
+  type: inbound
+  attributes:
+    - eth_raw: string = ETHTick.c;
+    - btc_raw: string = BTCTick.c;
+    - eth_price: number = toNumber(ETHTick.c);
+    - btc_price: number = toNumber(BTCTick.c);
+    - ratio: number = round(toNumber(BTCTick.c) / toNumber(ETHTick.c), 4);
+    - timestamp: integer = ETHTick.E;
+  access: [admin]
+end
+
+// =============================================================================
+// WEBSOCKET UI COMPONENTS
+// =============================================================================
+
+// Public live metrics - no auth required
+Component<LiveMetrics> PublicCryptoMetrics
+  entity: PublicPrices
+  metrics: ["symbol", "price"]
+  label: "Public Crypto (No Auth)"
+end
+
+// User live metrics - requires user role
+Component<LiveMetrics> UserCryptoMetrics
+  entity: UserPrices
+  metrics: ["eth_price", "btc_price", "spread"]
+  label: "User Crypto (User/Admin)"
+end
+
+// Admin live metrics - requires admin role
+Component<LiveMetrics> AdminCryptoMetrics
+  entity: AdminPrices
+  metrics: ["eth_price", "btc_price", "ratio"]
+  label: "Admin Crypto (Admin Only)"
+end

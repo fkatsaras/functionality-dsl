@@ -12,19 +12,21 @@ end
 
 // ============================================================================
 // EXTERNAL WEBSOCKET SOURCE
-// No subscribe/publish blocks - just like REST sources!
 // ============================================================================
 
 Source<WS> WikiMonEN
   channel: "wss://wikimon.hatnote.com/en/"
+  operations: [subscribe]
 end
 
 // ============================================================================
 // BASE ENTITY - Schema from external WebSocket
-// Binds to source just like REST entities
+// Receives messages from external WS, pushes to clients
 // ============================================================================
 
 Entity WikiEdit
+  type: inbound
+  source: WikiMonEN
   attributes:
     - action: string;
     - change_size: integer;
@@ -33,33 +35,31 @@ Entity WikiEdit
     - page_title: string;
     - user: string;
     - server_name: string;
-  source: WikiMonEN
+  access: public
 end
 
 // ============================================================================
-// SUBSCRIBE ENTITIES - Transform and stream to clients
-// Paths auto-generated: /ws/editgauge and /ws/wikieditstream
+// TRANSFORMED ENTITIES - Apply computations before streaming to clients
+// Path auto-generated: /ws/editgauge, /ws/wikieditstream
 // ============================================================================
 
 // Computed entity for gauge display (absolute value of change size)
 Entity EditGauge(WikiEdit)
+  type: inbound
   attributes:
     - edit_size_abs: integer = abs(WikiEdit.change_size);
-  expose:
-    operations: [subscribe]
-    // Auto-generated path: /ws/editgauge
+  access: public
 end
 
-// Stream raw edits to client
+// Stream raw edits to client with selected fields
 Entity WikiEditStream(WikiEdit)
+  type: inbound
   attributes:
     - user: string = WikiEdit.user;
     - page_title: string = WikiEdit.page_title;
     - action: string = WikiEdit.action;
     - change_size: integer = WikiEdit.change_size;
-  expose:
-    operations: [subscribe]
-    // Auto-generated path: /ws/wikieditstream
+  access: public
 end
 
 // ============================================================================

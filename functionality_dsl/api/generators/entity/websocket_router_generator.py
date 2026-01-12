@@ -195,17 +195,13 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             collect_intermediate_services(entity, intermediate_services)
             is_chained_composite = len(intermediate_services) > 0
 
-        # Get filters from config
-        subscribe_filters = config.get("filters", [])
-
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
             "subscribe_ws_source_entity": ws_source_entity,
-            "subscribe_ws_sources": ws_sources,  # NEW: List of all WS sources
+            "subscribe_ws_sources": ws_sources,  # List of all WS sources
             "is_chained_composite": is_chained_composite,
             "intermediate_services": intermediate_services,  # Ordered list of services to chain through
-            "subscribe_filters": subscribe_filters,  # Filter fields for query parameters
         })
 
     # Add publish entity details
@@ -216,7 +212,6 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         # Extract parent entities from ParentRef objects
         parent_refs = getattr(entity, "parents", []) or []
         parents = [ref.entity for ref in parent_refs] if parent_refs else []
-        ws_target = config.get("target", None)
 
         # Get explicit type and contentType from parent entity
         # The parent entity defines what the client sends
@@ -245,7 +240,6 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         context.update({
             "publish_entity_name": entity_name,
             "publish_parents": [p.name for p in parents],
-            "publish_ws_target": ws_target,
             "publish_entity_type": publish_entity_type,  # "string", "object", "array", etc.
             "publish_content_type": publish_content_type,  # "application/json", "text/plain", etc.
             "publish_wrapper_key": publish_wrapper_key,  # e.g., "value" for wrapper

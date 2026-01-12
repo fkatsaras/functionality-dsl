@@ -3,6 +3,8 @@ Entity-level validation for FDSL.
 
 This module contains validation functions for Entity definitions, including
 schema-only entities, computed entities, and entity hierarchies.
+
+All entities are now singletons (no @id field, no collections, no filters).
 """
 
 from collections import deque
@@ -302,9 +304,8 @@ def _validate_computed_attrs(model, metamodel=None):
 
             if expr is None:
                 raise TextXSemanticError(
-                    f"Attribute '{a.name}' is missing expression. "
-                    f"Entities with computed attributes must have expressions for ALL attributes, "
-                    f"or be pure schema entities (no expressions at all) when used in request/response.",
+                    f"Attribute '{a.name}' is missing an expression. "
+                    f"Either add '= expr' or make all attributes schema-only.",
                     **get_location(a)
                 )
 
@@ -332,17 +333,15 @@ def _validate_computed_attrs(model, metamodel=None):
                 if var_name in entity_attr_names:
                     raise TextXSemanticError(
                         f"Bare identifier '{var_name}' is ambiguous. "
-                        f"Use explicit syntax '{ent.name}.{var_name}' to reference entity attributes. "
-                        f"Entity attributes must always be referenced with the entity name prefix.",
+                        f"Use '{ent.name}.{var_name}' to reference the attribute.",
                         **get_location(node)
                     )
 
-                # If it matches a known entity/source/endpoint name but used as bare variable, warn
+                # If it matches a known entity/source/endpoint name but used as bare variable, error
                 if var_name in all_known_names:
                     raise TextXSemanticError(
-                        f"Bare identifier '{var_name}' matches a known entity/source/endpoint name. "
-                        f"If you meant to reference this entity, use explicit syntax like '{var_name}.attribute'. "
-                        f"If this is intentional, it will be looked up in the runtime context.",
+                        f"Bare reference '{var_name}' is not allowed. "
+                        f"Use '{var_name}.attributeName' syntax.",
                         **get_location(node)
                     )
 
@@ -370,15 +369,14 @@ def _validate_computed_attrs(model, metamodel=None):
                         # Check if the referenced attribute exists
                         if attr not in attr_order:
                             raise TextXSemanticError(
-                                f"Attribute '{a.name}' references '{ent.name}.{attr}' which does not exist on entity '{ent.name}'.",
+                                f"'{ent.name}.{attr}' does not exist.",
                                 **get_location(node),
                             )
                         # Check that it's referencing an earlier attribute (forward-only)
                         ref_idx = attr_order[attr]
                         if ref_idx >= attr_idx:
                             raise TextXSemanticError(
-                                f"Forward reference: attribute '{a.name}' references '{ent.name}.{attr}' which is defined later. "
-                                f"Move '{attr}' before '{a.name}'.",
+                                f"Forward reference not allowed: '{attr}' must be defined before '{a.name}'.",
                                 **get_location(node),
                             )
                     continue
@@ -399,10 +397,9 @@ def _validate_computed_attrs(model, metamodel=None):
                     parent_names = {p.name for p in parent_entities}
 
                     if alias not in parent_names:
-                        all_parents = sorted(parent_names | {alias})
                         raise TextXSemanticError(
-                            f"Entity '{ent.name}' references '{alias}' but it's not a parent. "
-                            f"Add to parents: Entity {ent.name}({', '.join(all_parents)})",
+                            f"'{alias}' is not a parent of '{ent.name}'. "
+                            f"Add it: Entity {ent.name}(..., {alias})",
                             **get_location(node),
                         )
                     continue
@@ -463,8 +460,7 @@ def _validate_schema_only_entities(model):
         parent_entities = _get_parent_entities(entity)
         if parent_entities and len(parent_entities) > 0:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' is used as a request schema and cannot have parent entities. "
-                f"Request schema entities must be simple, self-contained data structures.",
+                f"Request schema entity '{entity.name}' cannot have parent entities.",
                 **get_location(entity)
             )
 
@@ -474,9 +470,7 @@ def _validate_schema_only_entities(model):
             expr = getattr(attr, "expr", None)
             if expr:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}' has an expression. "
-                    f"Request schema entities must have simple type declarations only (no '= expression' part). "
-                    f"Use: '- {attr.name}: {attr.type}' (without expressions).",
+                    f"Request schema entity '{entity.name}': attribute '{attr.name}' cannot have an expression.",
                     **get_location(attr)
                 )
 
@@ -555,19 +549,8 @@ def _validate_source_response_entities(model):
             for alias, _, node in _collect_refs(expr):
                 if alias == source_name:
                     raise TextXSemanticError(
-                        f"Entity '{entity.name}' attribute '{attr.name}' references Source '{source_name}'. "
-                        f"Entities directly sourced from external Sources (REST/WS) should be pure schema entities "
-                        f"without expressions. Instead, create a transformation entity that inherits from '{entity.name}' "
-                        f"to compute values. Example:\n"
-                        f"  Entity {entity.name}\n"
-                        f"    attributes:\n"
-                        f"      - {attr.name}: {getattr(attr.type, 'typename', 'type')};\n"
-                        f"  end\n"
-                        f"  \n"
-                        f"  Entity {entity.name}Computed({entity.name})\n"
-                        f"    attributes:\n"
-                        f"      - computed: ... = {entity.name}.{attr.name};\n"
-                        f"  end",
+                        f"Source schema entity '{entity.name}' cannot reference its source '{source_name}'. "
+                        f"Create a separate transformation entity instead.",
                         **get_location(attr)
                     )
 
@@ -657,11 +640,8 @@ def _validate_rest_endpoint_entities(model):
         # Validate the response entity
         if not is_rest_sourced_or_computed(entity):
             raise TextXSemanticError(
-                f"Endpoint<REST> '{endpoint.name}' response entity '{entity.name}' is not sourced from a Source<REST> "
-                f"and has no computed attributes. REST response entities must either:\n"
-                f"  1. Be provided by a Source<REST> response block\n"
-                f"  2. Inherit from an entity provided by Source<REST>\n"
-                f"  3. Be a computed entity (with expressions) that transforms data",
+                f"Response entity '{entity.name}' has no data source. "
+                f"Either bind it to a Source<REST> or add computed attributes.",
                 **get_location(endpoint)
             )
 
@@ -685,29 +665,29 @@ def _validate_entity_inheritance_cycles(model):
             raise
 
 
-def _validate_source_base_urls(model):
+def _validate_source_urls(model):
     """
-    Validate that REST source base_urls follow best practices:
+    Validate that REST source urls follow best practices:
     - Should include the resource path, not just the server root
     - Helps prevent common mistakes where one source is used for multiple resource types
 
     Example:
-    ✓ GOOD: base_url: "http://api.example.com/users"
-    ✗ BAD:  base_url: "http://api.example.com"
+    ✓ GOOD: url: "http://api.example.com/users"
+    ✗ BAD:  url: "http://api.example.com"
     """
     sources = get_children_of_type("SourceREST", model)
 
     for source in sources:
 
-        base_url = getattr(source, "base_url", None)
-        if not base_url:
+        url = getattr(source, "url", None)
+        if not url:
             continue
 
         # Parse the URL to check if it has a path component
         # Remove protocol
-        url_without_protocol = base_url
-        if "://" in base_url:
-            url_without_protocol = base_url.split("://", 1)[1]
+        url_without_protocol = url
+        if "://" in url:
+            url_without_protocol = url.split("://", 1)[1]
 
         # Check if there's a path after the host
         # Format: "host:port/path" or "host/path"
@@ -716,10 +696,8 @@ def _validate_source_base_urls(model):
         # If there's only one part (no path after host), warn the user
         if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ""):
             raise TextXSemanticError(
-                f"Source '{source.name}' has base_url '{base_url}' without a resource path.\n"
-                f"REST sources should include the resource path in base_url.\n"
-                f"Example: Instead of 'http://api.example.com', use 'http://api.example.com/users'\n"
-                f"This ensures each source maps to exactly one resource type.",
+                f"Source '{source.name}' url '{url}' is missing a resource path. "
+                f"Use 'http://host/resource' format.",
                 **get_location(source)
             )
 
@@ -747,184 +725,6 @@ def _is_websocket_entity(entity, model):
             return True
 
     return False
-
-
-def _validate_rest_entity_relationships(model):
-    """
-    Validate relationships block in REST COMPOSITE entities (entities with parents).
-
-    Rules (REST-specific):
-    1. Relationships block can only be used in composite entities
-    2. All non-first parents must have a relationship defined (UNLESS all parents are singletons)
-    3. Relationship fetch expressions must reference valid entity attributes
-    4. First parent doesn't need a relationship (uses endpoint ID)
-    5. Relationships can ONLY reference base entities (non-composite, with source)
-    6. Composites of singleton entities don't need relationships (they just aggregate static data)
-    """
-    entities = get_children_of_type("Entity", model)
-
-    for entity in entities:
-        # Skip WebSocket entities - they use different semantics
-        if _is_websocket_entity(entity, model):
-            continue
-
-        parent_refs = _get_parent_refs(entity)
-        parent_entities = _get_parent_entities(entity)
-        alias_map = _build_parent_alias_map(entity)  # {alias: (ref, entity)}
-
-        relationships_block = getattr(entity, "relationships", None)
-        relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
-
-        # Rule 1: Relationships block only for composite entities
-        if relationships and not parent_refs:
-            raise TextXSemanticError(
-                f"Entity '{entity.name}' has 'relationships:' block but no parents.\n"
-                f"The 'relationships:' block can only be used in composite entities (entities with parents).\n"
-                f"Remove the 'relationships:' block or add parents: Entity {entity.name}(ParentEntity)",
-                **get_location(relationships_block)
-            )
-
-        # If no parents, skip further validation
-        if not parent_refs:
-            continue
-
-        # Rule 6: Check if all parents are singletons (no relationships needed)
-        all_parents_singleton = all(
-            getattr(parent, "_is_singleton", False) for parent in parent_entities
-        )
-
-        if all_parents_singleton:
-            # Composites of singletons just aggregate static data - no relationships needed
-            # If a relationships block exists, warn but don't fail
-            if relationships:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' is a composite of singleton entities and does not need 'relationships:' block.\n"
-                    f"Singleton entities are static resources (no path parameters), so composites simply aggregate their data.\n"
-                    f"Remove the 'relationships:' block - relationships are only needed for entities with @id fields.",
-                    **get_location(relationships_block)
-                )
-            # Skip further validation for singleton composites
-            continue
-
-        # Rule 7: Check if all parents are array parents (fetch ALL records, no filtering)
-        # Array parents like Book[], Member[], Loan[] fetch all records without ID-based filtering
-        all_parents_array = all(
-            getattr(parent_ref, "is_array", False) for parent_ref in parent_refs
-        )
-
-        if all_parents_array:
-            # Composites with all array parents don't need relationships - they fetch all records
-            # Relationships block should be empty/absent
-            if relationships:
-                raise TextXSemanticError(
-                    f"Entity '{entity.name}' uses only array parents (e.g., Book[], Member[]) which fetch ALL records.\n"
-                    f"Array parents don't need relationships because there's no ID-based filtering.\n"
-                    f"Remove the 'relationships:' block or the filter entries inside it.",
-                    **get_location(relationships_block)
-                )
-            # Skip further validation for all-array-parent composites
-            continue
-
-        # Rule 2: All non-first parents must have a relationship defined
-        # (First parent uses the endpoint's ID parameter by convention)
-        if len(parent_refs) > 1:
-            relationship_map = {rel.parentAlias: rel for rel in relationships}
-            first_parent_alias = _get_parent_alias(parent_refs[0])
-
-            for i, parent_ref in enumerate(parent_refs[1:], start=1):  # Skip first parent
-                parent_alias = _get_parent_alias(parent_ref)
-                if parent_alias not in relationship_map:
-                    raise TextXSemanticError(
-                        f"Composite entity '{entity.name}' is missing relationship for parent alias '{parent_alias}'.\n"
-                        f"Add to relationships block:\n"
-                        f"  - {parent_alias}: {first_parent_alias}.{parent_ref.entity.name.lower()}Id",
-                        **get_location(entity)
-                    )
-
-        # Rule 3: Validate fetch expressions reference valid attributes
-        for rel in relationships:
-            parent_alias = rel.parentAlias
-            fetch_expr = rel.fetchExpr
-            source_name = fetch_expr.entityOrAlias
-            attr_name = fetch_expr.attr
-
-            # Validate that parentAlias refers to a valid parent
-            if parent_alias not in alias_map:
-                raise TextXSemanticError(
-                    f"Relationship references unknown parent alias '{parent_alias}'.\n"
-                    f"Valid parent aliases: {', '.join(alias_map.keys())}",
-                    **get_location(rel)
-                )
-
-            # Resolve source_name to actual entity (could be alias or entity name)
-            if source_name in alias_map:
-                # It's a parent alias
-                source_entity = alias_map[source_name][1]
-            else:
-                # Try to find entity by name in the model
-                all_entities = get_children_of_type("Entity", model)
-                source_entity = next((e for e in all_entities if e.name == source_name), None)
-                if not source_entity:
-                    raise TextXSemanticError(
-                        f"Relationship for '{parent_alias}' references unknown entity or alias '{source_name}'.\n"
-                        f"Valid aliases: {', '.join(alias_map.keys())}",
-                        **get_location(rel)
-                    )
-
-            # Rule 5: Source entity in relationships must be a base entity (not composite)
-            source_is_composite = getattr(source_entity, "_is_composite", False)
-            if source_is_composite:
-                raise TextXSemanticError(
-                    f"Relationship for '{parent_alias}' references composite entity '{source_entity.name}'.\n"
-                    f"Relationships can ONLY reference base entities (entities with 'source:' field).\n"
-                    f"Composite entities are computed locally and cannot be used for data fetching.\n"
-                    f"Use the identity anchor instead: {entity._identity_anchor.name if entity._identity_anchor else 'base entity'}",
-                    **get_location(rel)
-                )
-
-            # Check that the source entity is either:
-            # 1. The first parent (identity anchor)
-            # 2. Any parent that appears BEFORE the current parent in the parent list
-            #    (for chained relationships like: OrderItem -> Order -> User)
-            first_parent_alias = _get_parent_alias(parent_refs[0])
-            first_parent_entity = parent_entities[0]
-
-            # Build set of valid source entities (all parents that come before this one)
-            valid_sources = {first_parent_entity.name}
-            if entity._identity_anchor:
-                valid_sources.add(entity._identity_anchor.name)
-
-            # Find the position of the parent being fetched
-            parent_entity_obj = alias_map[parent_alias][1]
-            try:
-                target_parent_idx = parent_entities.index(parent_entity_obj)
-            except ValueError:
-                target_parent_idx = -1
-
-            # Add all parents that come BEFORE this one as valid sources for chained relationships
-            for i in range(target_parent_idx):
-                valid_sources.add(parent_entities[i].name)
-
-            if source_entity.name not in valid_sources:
-                raise TextXSemanticError(
-                    f"Relationship for '{parent_alias}' uses '{source_entity.name}.{attr_name}', "
-                    f"but fetch expressions can only reference parents that appear earlier in the parent list.\n"
-                    f"Valid sources for '{parent_alias}': {', '.join(valid_sources)}.\n"
-                    f"Parents are fetched in order, so you can only use data from parents that come before '{parent_alias}' in the parent list.",
-                    **get_location(rel)
-                )
-
-            # Check that the attribute exists in the source entity
-            source_attrs = getattr(source_entity, "attributes", []) or []
-            attr_names = [a.name for a in source_attrs]
-
-            if attr_name not in attr_names:
-                raise TextXSemanticError(
-                    f"Relationship for '{parent_alias}' references '{source_entity.name}.{attr_name}', "
-                    f"but attribute '{attr_name}' does not exist in entity '{source_entity.name}'.\n"
-                    f"Available attributes: {', '.join(attr_names)}",
-                    **get_location(rel)
-                )
 
 
 def _validate_websocket_entity_relationships(model):
@@ -977,35 +777,17 @@ def _validate_websocket_entity_relationships(model):
 
             if len(unique_types) > 1:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' has multiple WebSocket parents with different types: {dict(zip(ws_parents, ws_parent_types))}.\n\n"
-                    f"RULE: When aggregating multiple WebSocket sources, all parents must have the same type.\n\n"
-                    f"Valid patterns:\n"
-                    f"- Multiple 'type: inbound' parents (latest-tick synchronization)\n"
-                    f"- Single parent only for other patterns\n\n"
-                    f"Mixed inbound/outbound aggregation is not supported.",
+                    f"Entity '{entity.name}' has WebSocket parents with mixed types. "
+                    f"All WS parents must have the same type.",
                     **get_location(entity)
                 )
 
             # If all parents are NOT inbound, disallow multiple parents
             if unique_types != {'inbound'}:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' has multiple WebSocket parents: {ws_parents}.\n\n"
-                    f"RULE: Multiple WebSocket parents are only allowed for 'type: inbound' aggregation.\n\n"
-                    f"Current parent types: {dict(zip(ws_parents, ws_parent_types))}\n\n"
-                    f"For aggregating multiple inbound streams, ensure all parents have 'type: inbound'.",
+                    f"Entity '{entity.name}' has multiple WebSocket parents. "
+                    f"Only 'type: inbound' entities can have multiple WS parents.",
                     **get_location(entity)
-                )
-
-        # WebSocket entities should NOT have relationship blocks
-        relationships_block = getattr(entity, "relationships", None)
-        if relationships_block and ws_parents:
-            relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
-            if relationships:
-                raise TextXSemanticError(
-                    f"WebSocket entity '{entity.name}' has 'relationships:' block.\n"
-                    f"Relationships are for REST entities with foreign-key based fetching.\n"
-                    f"WebSocket entities use message streaming - remove the 'relationships:' block.",
-                    **get_location(relationships_block)
                 )
 
 
@@ -1036,287 +818,39 @@ def _validate_outbound_entities_not_composed(model):
 
             if parent_ws_flow_type == "outbound":
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' cannot extend '{parent.name}' because '{parent.name}' is outbound.\n\n"
-                    f"RULE: Outbound WebSocket entities (type: outbound) cannot be composed.\n\n"
-                    f"Outbound entities receive data from clients and publish to external WebSocket.\n"
-                    f"Composition is only allowed for inbound entities (type: inbound) to transform incoming messages.\n\n"
-                    f"If you need to transform data before publishing:\n"
-                    f"1. Apply transformations client-side before sending\n"
-                    f"2. Or use computed fields in the outbound entity itself",
+                    f"Entity '{entity.name}' cannot extend outbound entity '{parent.name}'. "
+                    f"Outbound entities cannot be composed.",
                     **get_location(entity)
                 )
-
-
-def _validate_array_parents(model):
-    """
-    Validate array parent syntax (Entity(Parent[])) usage.
-
-    Rules:
-    1. Array parents must be base entities (have source, not composite)
-    2. Array parents must have @id field for filtering
-    3. Array parents must support list operation with filters
-    4. Composite entities with array parents must have relationships defined (UNLESS all parents are arrays)
-    """
-    entities = get_children_of_type("Entity", model)
-
-    for entity in entities:
-        parent_refs = _get_parent_refs(entity)
-
-        if not parent_refs:
-            continue
-
-        # Check if ALL parents are array parents (for special handling)
-        all_parents_array = all(
-            getattr(parent_ref, "is_array", False) for parent_ref in parent_refs
-        )
-
-        # Check each parent ref for array syntax
-        for parent_ref in parent_refs:
-            is_array = getattr(parent_ref, "is_array", None)
-
-            if not is_array:
-                continue
-
-            # This parent has [] syntax - validate it
-            parent_entity = parent_ref.entity
-            parent_alias = _get_parent_alias(parent_ref)
-
-            # Rule 1: Array parent cannot be a composite entity
-            parent_is_composite = getattr(parent_entity, "_is_composite", False)
-            if parent_is_composite:
-                raise TextXSemanticError(
-                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') is a composite entity.\n"
-                    f"Only base entities (with 'source:' field) can be array parents.\n"
-                    f"Composite entities are computed locally and cannot be fetched as collections.\n"
-                    f"Remove the '[]' syntax or use a base entity instead.",
-                    **get_location(parent_ref)
-                )
-
-            # Rule 1b: Array parent must have source
-            parent_source = getattr(parent_entity, "source", None)
-            if not parent_source:
-                raise TextXSemanticError(
-                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') has no 'source:' field.\n"
-                    f"Array parents must be base entities with a source to support list operations.\n"
-                    f"Add 'source: SourceName' to entity '{parent_entity.name}' or remove the '[]' syntax.",
-                    **get_location(parent_ref)
-                )
-
-            # Rule 2: Array parent must have @id field for filtering
-            parent_id_field = _find_id_attribute(parent_entity)
-            if not parent_id_field:
-                raise TextXSemanticError(
-                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') has no @id field.\n"
-                    f"Array parents must have an @id field to support filtering.\n"
-                    f"Add '@id' marker to an attribute in '{parent_entity.name}' or remove the '[]' syntax.",
-                    **get_location(parent_ref)
-                )
-
-            # Rule 3: Array parent must support list operation
-            # Check if parent entity exposes list operation (old or new syntax)
-            parent_expose = getattr(parent_entity, "expose", None)
-            parent_source = getattr(parent_entity, "source", None)
-            parent_operations = []
-
-            # Try expose block first (may have explicit operations list)
-            if parent_expose:
-                parent_operations = getattr(parent_expose, "operations", []) or []
-
-            # If no operations from expose, try source
-            if not parent_operations and parent_source:
-                # Try old syntax (operations block with permissions)
-                source_ops_block = getattr(parent_source, "operations", None)
-                if source_ops_block:
-                    source_op_rules = getattr(source_ops_block, "ops", []) or []
-                    parent_operations = [rule.operation for rule in source_op_rules]
-
-                # Try new syntax (operations_list - simple array)
-                if not parent_operations:
-                    source_ops_list = getattr(parent_source, "operations_list", None)
-                    if source_ops_list:
-                        parent_operations = getattr(source_ops_list, "operations", []) or []
-
-            if 'read' not in parent_operations:
-                raise TextXSemanticError(
-                    f"Array parent '{parent_alias}' (entity '{parent_entity.name}') does not support 'read' operation.\n"
-                    f"Array parents must support read operations (which includes listing) for filtering.\n"
-                    f"Add 'read' to the operations in source '{parent_source.name if parent_source else 'Unknown'}' OR expose block.",
-                    **get_location(parent_ref)
-                )
-
-            # Rule 4: Array parent requires relationship definition
-            # (unless it's the first parent, which uses endpoint ID)
-            # EXCEPTION: If ALL parents are array parents, no relationships needed (fetch all records)
-            parent_refs_list = list(parent_refs)
-            parent_idx = parent_refs_list.index(parent_ref)
-
-            if parent_idx > 0 and not all_parents_array:  # Not the first parent AND not all-array case
-                relationships_block = getattr(entity, "relationships", None)
-                relationships = getattr(relationships_block, "relationships", []) if relationships_block else []
-                relationship_map = {rel.parentAlias: rel for rel in relationships}
-
-                if parent_alias not in relationship_map:
-                    first_parent_alias = _get_parent_alias(parent_refs_list[0])
-                    raise TextXSemanticError(
-                        f"Array parent '{parent_alias}' requires a relationship definition.\n"
-                        f"Add to relationships block:\n"
-                        f"  relationships:\n"
-                        f"    - {parent_alias}: {first_parent_alias}.{parent_id_field}\n"
-                        f"  end\n"
-                        f"This specifies which field to use for filtering the array parent.",
-                        **get_location(entity)
-                    )
 
 
 # ------------------------------------------------------------------------------
 # Identity anchor computation and validation
 
-def _find_id_attribute(entity):
-    """Find the attribute marked with @id marker."""
-    attrs = getattr(entity, "attributes", []) or []
-    for attr in attrs:
-        type_spec = getattr(attr, "type", None)
-        if not type_spec:
-            continue
-        # Check for @id marker on the type spec
-        if getattr(type_spec, "idMarker", None) == "@id":
-            return attr.name
-    return None
-
-
 def _compute_identity_anchors(model):
     """
-    Compute identity anchor for all entities.
+    Compute identity markers for all entities.
 
-    Simplified rules (nested resources removed):
-    - Base entity (no parents, has @id and source) → anchor = itself
-    - Singleton entity (no parents, no @id, has source, exposes read) → singleton
-    - Composite entity (has parents) → anchor = first parent's anchor, CANNOT have source
+    All entities are now singletons (no @id field, no collections).
+    This function marks entities as composite or base.
     """
     entities = get_children_of_type("Entity", model)
 
-    # Store computed anchors on entity objects
+    # Store computed markers on entity objects
     for entity in entities:
-        entity._identity_anchor = None
-        entity._identity_field = None
-        entity._is_composite = False
-        entity._is_singleton = False
-
-    def compute_anchor(entity, visited=None):
-        """Recursively compute identity anchor."""
-        if visited is None:
-            visited = set()
-
-        # Check for cycles
-        if id(entity) in visited:
-            raise TextXSemanticError(
-                f"Circular dependency detected in entity hierarchy for '{entity.name}'",
-                **get_location(entity)
-            )
-        visited.add(id(entity))
-
-        # Already computed
-        if entity._identity_anchor is not None or entity._is_singleton:
-            return entity._identity_anchor
-
         parent_entities = _get_parent_entities(entity)
-
-        # Base entity (no parents)
-        if not parent_entities:
-            id_field = _find_id_attribute(entity)
-            source = getattr(entity, "source", None)
-            expose = getattr(entity, "expose", None)
-            access_block = getattr(entity, "access", None)
-
-            if id_field and source:
-                # This is a standard base resource entity
-                entity._identity_anchor = entity
-                entity._identity_field = id_field
-                entity._is_composite = False
-                entity._is_singleton = False
-            elif not id_field and source and (expose or access_block):
-                # Check if this is a singleton (no @id, has source, has exposure)
-                # Singleton entities have no @id field (identity from context)
-                # They can have expose: or access: true
-                if expose:
-                    operations = getattr(expose, "operations", [])
-                else:
-                    # For access: true, operations come from source
-                    operations = []
-                    source_ops_block = getattr(source, "operations", None)
-                    source_ops_list = getattr(source, "operations_list", None)
-                    if source_ops_block:
-                        source_op_rules = getattr(source_ops_block, "ops", []) or []
-                        operations = [rule.operation for rule in source_op_rules]
-                    elif source_ops_list:
-                        operations = getattr(source_ops_list, "operations", []) or []
-
-                rest_ops = {'read', 'create', 'update', 'delete'}
-                has_rest_ops = any(op in rest_ops for op in operations)
-                has_list = 'list' in operations
-
-                if has_rest_ops and not has_list:
-                    # This is a singleton entity (REST operations but no 'list')
-                    entity._identity_anchor = None
-                    entity._identity_field = None
-                    entity._is_composite = False
-                    entity._is_singleton = True
-                else:
-                    # No identity anchor and not singleton
-                    entity._identity_anchor = None
-                    entity._identity_field = None
-                    entity._is_composite = False
-                    entity._is_singleton = False
-            else:
-                # No identity anchor (schema-only entity or computed entity without source)
-                entity._identity_anchor = None
-                entity._identity_field = None
-                entity._is_composite = False
-                entity._is_singleton = False
-
-            return entity._identity_anchor
-
-        # Composite entity (has parents)
-        entity._is_composite = True
-        entity._is_singleton = False
-
-        # Compute anchor from first parent
-        first_parent = parent_entities[0]
-        first_parent_anchor = compute_anchor(first_parent, visited.copy())
-        first_parent_is_singleton = getattr(first_parent, "_is_singleton", False)
-
-        # Composite of singleton entity
-        if first_parent_is_singleton:
-            entity._identity_anchor = None
-            entity._identity_field = None
-            entity._is_singleton = True  # Composite of singleton is also a singleton
-            # Note: Composite of singleton is also treated as singleton-derived
-            return None
-
-        if not first_parent_anchor:
-            # First parent has no anchor
-            entity._identity_anchor = None
-            entity._identity_field = None
-            return None
-
-        # Composite inherits anchor from first parent
-        entity._identity_anchor = first_parent_anchor
-        entity._identity_field = first_parent_anchor._identity_field
-
-        return entity._identity_anchor
-
-    # Compute anchors for all entities
-    for entity in entities:
-        compute_anchor(entity)
-
-
+        entity._is_composite = len(parent_entities) > 0
 
 
 def _validate_composite_entities(model):
     """
-    Validate composite entity rules (simplified - no nested resources):
+    Validate composite entity rules:
     1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
-    2. Composite entities CANNOT have @id field (they're views, not resources)
+
+    Rationale:
+    - REST composites are read-only transformations of parent data
+    - WS inbound composites transform incoming messages before sending to clients
+    - WS outbound composites don't make sense (use computed fields on base entity instead)
     """
     entities = get_children_of_type("Entity", model)
 
@@ -1327,32 +861,76 @@ def _validate_composite_entities(model):
         if not parent_entities:
             continue
 
-        # Rule 1: Entities with parents CANNOT have source
+        # Rule: Entities with parents CANNOT have source
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' has parents but also has 'source:' field.\n"
-                f"Entities with parents are composite views (read-only) and CANNOT have a source.\n"
-                f"To create a base resource entity with CRUD operations, remove the parent references.\n"
-                f"Example:\n"
-                f"  Entity {entity.name}  # Remove ({', '.join(p.name for p in parent_entities)})\n"
-                f"    attributes: ...\n"
-                f"    source: {source.name}\n"
-                f"    expose: operations: [read, create, update, delete]\n"
-                f"  end",
+                f"Entity '{entity.name}' cannot have both parents and a source. "
+                f"Composite entities are read-only views.",
                 **get_location(entity)
             )
 
-        # Rule 2: Composite entities cannot have @id field
-        id_field = _find_id_attribute(entity)
-        if id_field:
-            raise TextXSemanticError(
-                f"Composite entity '{entity.name}' cannot have '@id' field.\n"
-                f"Composite entities are views/projections of base resources, not resources themselves.\n"
-                f"The URI path parameter identifies the base resource, not the composite entity.\n"
-                f"Remove the '@id' marker from '{id_field}' or make this a base entity (remove parents).",
-                **get_location(entity)
-            )
+
+# ------------------------------------------------------------------------------
+# Attribute marker validation (@readonly, @optional)
+
+def _validate_attribute_markers(model):
+    """
+    Validate @readonly and @optional attribute markers.
+
+    Rules:
+    1. @optional on computed attributes is invalid (computed = always derived)
+    2. @optional on composite entity attributes is redundant (composites have no input schemas)
+    3. @readonly and @optional are mutually exclusive (grammar enforces this, but double-check)
+    4. @readonly/@optional on inbound WS entities is invalid (no input schemas)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_entities = _get_parent_entities(entity)
+        is_composite = len(parent_entities) > 0
+        ws_flow_type = getattr(entity, "ws_flow_type", None)
+
+        attrs = getattr(entity, "attributes", []) or []
+
+        for attr in attrs:
+            attr_type = getattr(attr, "type", None)
+            if not attr_type:
+                continue
+
+            is_optional = getattr(attr_type, "optionalMarker", None)
+            is_readonly = getattr(attr_type, "readonlyMarker", None)
+            has_expr = getattr(attr, "expr", None) is not None
+
+            # Rule 1: @optional on computed attributes is invalid
+            if is_optional and has_expr:
+                raise TextXSemanticError(
+                    f"'{attr.name}': @optional cannot be used on computed attributes.",
+                    **get_location(attr)
+                )
+
+            # Rule 2: @optional on composite entities is redundant (warning, not error)
+            # Composite entities don't have create/update schemas, so @optional has no effect
+            # We could warn here, but for now we'll just silently allow it
+
+            # Rule 3: @readonly and @optional together (grammar already prevents this via alternation)
+            # This is just a safety check
+            if is_optional and is_readonly:
+                raise TextXSemanticError(
+                    f"'{attr.name}': @optional and @readonly cannot be combined.",
+                    **get_location(attr)
+                )
+
+            # Rule 4: @readonly/@optional on inbound WS entities is invalid
+            # Inbound entities only output data to clients - they have no input schemas
+            # These markers only affect Create/Update schemas which don't exist for inbound WS
+            if ws_flow_type == "inbound" and (is_optional or is_readonly):
+                marker = "@optional" if is_optional else "@readonly"
+                raise TextXSemanticError(
+                    f"'{attr.name}': {marker} cannot be used on inbound WebSocket entities. "
+                    f"Inbound entities only output data and have no input schemas.",
+                    **get_location(attr)
+                )
 
 
 # ------------------------------------------------------------------------------
@@ -1361,16 +939,16 @@ def _validate_composite_entities(model):
 def verify_entities(model):
     """Entity-specific cross-model validation."""
     _validate_entity_inheritance_cycles(model)
-    _compute_identity_anchors(model)  # Compute anchors first
-    _validate_composite_entities(model)  # Then validate composite rules
+    _compute_identity_anchors(model)  # Mark composite entities
+    _validate_composite_entities(model)  # Validate composite rules
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
-    _validate_source_base_urls(model)
+    _validate_source_urls(model)
+    _validate_attribute_markers(model)  # Validate @readonly/@optional markers
 
-    # Separate REST and WebSocket relationship validation
-    _validate_rest_entity_relationships(model)  # REST: requires relationship blocks for multi-parent
-    _validate_websocket_entity_relationships(model)  # WebSocket: join semantics, no relationships needed
+    # WebSocket validation
+    _validate_websocket_entity_relationships(model)  # WebSocket: join semantics
     _validate_outbound_entities_not_composed(model)  # WebSocket: outbound entities cannot be composed
 
-    _validate_array_parents(model)  # Validate array parent syntax
+    _validate_computed_attrs(model)  # Must be last - compiles expressions

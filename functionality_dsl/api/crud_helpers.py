@@ -1,39 +1,26 @@
 """
-CRUD convention helpers for NEW SYNTAX (entity-centric API exposure).
-Maps CRUD operations to HTTP methods, paths, and status codes.
+CRUD convention helpers for v2 syntax (snapshot entities only).
+Maps CRUD operations to HTTP methods and status codes.
+
+All entities are snapshots - no /{id} paths, no list operation.
+REST paths are flat: /api/{entity_name}
 """
 
-# Operation to HTTP method mapping
+# Operation to HTTP method mapping (NO list operation)
 OPERATION_HTTP_METHOD = {
-    "list": "GET",
     "read": "GET",
     "create": "POST",
     "update": "PUT",
     "delete": "DELETE",
 }
 
-# Operation to path suffix mapping
-# (relative to base path, {id} placeholder for item operations)
-# Note: 'read' suffix depends on entity type (handled in get_operation_path_suffix)
-OPERATION_PATH_SUFFIX = {
-    "list": "",  # Collection endpoint (no ID)
-    "read": "/{id}",  # Default for object types
-    "create": "",
-    "update": "/{id}",
-    "delete": "/{id}",
-}
-
 # Operation to default HTTP status code mapping
 OPERATION_STATUS_CODE = {
-    "list": 200,
     "read": 200,
     "create": 201,
     "update": 200,
     "delete": 204,
 }
-
-# Operations that require ID parameter (depends on entity type for 'read')
-ITEM_OPERATIONS = {"update", "delete"}
 
 # Operations that accept request body
 REQUEST_BODY_OPERATIONS = {"create", "update"}
@@ -44,54 +31,9 @@ def get_operation_http_method(operation):
     return OPERATION_HTTP_METHOD.get(operation, "GET")
 
 
-def get_operation_path_suffix(operation, id_field="id", entity_type="object"):
-    """
-    Get path suffix for a CRUD operation.
-    Replaces {id} placeholder with actual id_field name.
-
-    Special cases:
-    - If entity_type is 'array' and operation is 'read', returns "" (collection endpoint)
-    - If id_field is None/empty and operation is 'read', returns "" (singleton read)
-    - Otherwise uses id_field for item operations
-    """
-    # Normalize empty string to None (TextX returns "" for optional attributes)
-    if id_field == "":
-        id_field = None
-
-    # Array entity read = collection endpoint (no ID)
-    if operation == "read" and entity_type == "array":
-        return ""
-
-    # Singleton pattern: operations without id_field (singleton entities)
-    # Singleton entities don't have ID parameters for read/update/delete
-    if operation in ["read", "update", "delete"] and id_field is None:
-        return ""
-
-    suffix = OPERATION_PATH_SUFFIX.get(operation, "")
-
-    # If id_field is None for operations that need it, use default "id"
-    if id_field is None:
-        id_field = "id"
-
-    return suffix.replace("{id}", f"{{{id_field}}}")
-
-
 def get_operation_status_code(operation):
     """Get default HTTP status code for a CRUD operation."""
     return OPERATION_STATUS_CODE.get(operation, 200)
-
-
-def is_item_operation(operation, entity_type="object"):
-    """
-    Check if operation is an item operation (requires ID).
-    'list' is never an item operation (collection endpoint).
-    'read' depends on entity type: object requires ID, array doesn't.
-    """
-    if operation == "list":
-        return False  # List is always a collection endpoint (no ID)
-    if operation == "read":
-        return entity_type != "array"  # Array reads are collections (no ID)
-    return operation in ITEM_OPERATIONS
 
 
 def requires_request_body(operation):
@@ -99,47 +41,12 @@ def requires_request_body(operation):
     return operation in REQUEST_BODY_OPERATIONS
 
 
-def generate_standard_crud_config(base_url, entity_name):
+def generate_rest_path(entity_name):
     """
-    Generate standard CRUD configuration for a Source.
-    Returns a dict with operation definitions.
-
-    Example:
-    {
-        "list": {"method": "GET", "path": "/"},
-        "read": {"method": "GET", "path": "/{id}"},
-        "create": {"method": "POST", "path": "/"},
-        "update": {"method": "PUT", "path": "/{id}"},
-        "delete": {"method": "DELETE", "path": "/{id}"},
-    }
+    Generate REST path for a snapshot entity.
+    All entities are snapshots: /api/{entity_name_lower}
     """
-    return {
-        "list": {
-            "method": "GET",
-            "path": "/",
-            "url": base_url,
-        },
-        "read": {
-            "method": "GET",
-            "path": "/{id}",
-            "url": f"{base_url}/{{id}}",
-        },
-        "create": {
-            "method": "POST",
-            "path": "/",
-            "url": base_url,
-        },
-        "update": {
-            "method": "PUT",
-            "path": "/{id}",
-            "url": f"{base_url}/{{id}}",
-        },
-        "delete": {
-            "method": "DELETE",
-            "path": "/{id}",
-            "url": f"{base_url}/{{id}}",
-        },
-    }
+    return f"/api/{entity_name.lower()}"
 
 
 def derive_request_schema_name(entity_name, operation):
@@ -182,7 +89,7 @@ def filter_computed_attributes(attributes):
 
 def get_writable_attributes(entity, readonly_fields=None):
     """
-    Get writable attributes for an entity (for create/update/patch schemas).
+    Get writable attributes for an entity (for create/update schemas).
     Filters out readonly fields and computed attributes.
     """
     if readonly_fields is None:

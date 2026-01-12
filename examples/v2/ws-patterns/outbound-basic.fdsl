@@ -1,0 +1,44 @@
+// =============================================================================
+// OUTBOUND WEBSOCKET - BASIC
+// Demonstrates: Publishing to an external WebSocket source
+// Client sends data to FDSL server, which forwards to external WS
+// =============================================================================
+
+Server OutboundBasic
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Source: External WebSocket that receives commands
+// -----------------------------------------------------------------------------
+Source<WS> CommandWS
+  channel: "ws://dummy:9001/ws/commands"
+  operations: [publish]
+end
+
+// -----------------------------------------------------------------------------
+// Entity: Outbound = receives FROM client, pushes TO external WS
+// The entity defines the shape of messages clients can send
+// -----------------------------------------------------------------------------
+Entity DeviceCommand
+  type: outbound
+  source: CommandWS
+  attributes:
+    - device_id: string;
+    - action: string;
+    - value: number;
+  access: public
+end
+
+// Generated WebSocket endpoint:
+// ws://localhost:8080/ws/devicecommand
+//
+// Data flow:
+// Client (sends to /ws/devicecommand)
+//   → FDSL Server
+//   → External WS (ws://dummy:9001/ws/commands)
+//
+// Client sends messages in the shape defined by DeviceCommand

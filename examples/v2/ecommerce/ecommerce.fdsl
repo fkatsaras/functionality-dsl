@@ -1,0 +1,227 @@
+// ============================================
+// E-Commerce Order Fulfillment - Production Grade
+// Demonstrates: Multi-service orchestration + Business workflows
+//
+// Thesis Focus: REST orchestration + Real-time order tracking
+// ============================================
+
+Role customer
+Role warehouse
+
+Auth ShopAuth
+  type: jwt
+  secret: "ECOMMERCE_JWT_SECRET"
+end
+
+Server ECommerceAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+  auth: ShopAuth
+end
+
+// ============================================
+// REST SOURCES - Business Services
+// ============================================
+
+Source<REST> CartAPI
+  url: "http://dummy-ecomm-service:9001/cart"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> InventoryAPI
+  url: "http://dummy-ecomm-service:9001/stock"
+  operations: [read]
+end
+
+Source<REST> OrderAPI
+  url: "http://dummy-ecomm-service:9001/current-order"
+  operations: [read, create]
+end
+
+// ============================================
+// REST ENTITIES - Shopping Cart & Inventory
+// ============================================
+
+// Shopping Cart - Customer's current cart
+Entity Cart
+  source: CartAPI
+  attributes:
+    - items: array;
+    - updated_at: string @readonly;
+  access: [customer]
+end
+
+// Inventory Status - Stock availability
+Entity Inventory
+  source: InventoryAPI
+  attributes:
+    - in_stock_items: array @readonly;
+    - low_stock_items: array @readonly;
+    - out_of_stock_items: array @readonly;
+  access: [warehouse]
+end
+
+// Current Order - Active order snapshot
+Entity Order
+  source: OrderAPI
+  attributes:
+    - order_id: string @readonly;
+    - status: string @readonly;
+    - created_at: string @readonly;
+    - items: array;  // Writable:
+  access: [customer]
+end
+
+// ============================================
+// COMPOSITE ENTITIES - Business Logic
+// ============================================
+
+// Checkout Summary - Cart with calculated pricing
+Entity CheckoutSummary(Cart)
+  attributes:
+    - item_count: integer = len(Cart.items);
+    - subtotal: number = round(sum(map(Cart.items, i => i["price"] * i["quantity"])), 2);
+    - tax: number = round(CheckoutSummary.subtotal * 0.08, 2);
+    - shipping: number = 10.0 if CheckoutSummary.subtotal < 50 and CheckoutSummary.item_count != 0 else 0.0;
+    - discount: number = 5.0 if CheckoutSummary.subtotal > 100 else 0.0;
+    - total: number = round(CheckoutSummary.subtotal + CheckoutSummary.tax + CheckoutSummary.shipping - CheckoutSummary.discount, 2);
+    - has_items: boolean = len(Cart.items) > 0;
+  access: [customer]
+end
+
+
+// Order Status - Order with calculated totals
+Entity OrderStatus(Order)
+  attributes:
+    - order_id: string = Order.order_id;
+    - status: string = Order.status;
+    - created_at: string = Order.created_at;
+    - item_count: integer = len(Order.items);
+    - subtotal: number = round(sum(map(Order.items, i => i["price"] * i["quantity"])), 2);
+    - total_amount: number = round(OrderStatus.subtotal * 1.08 + (10.0 if OrderStatus.subtotal < 50 else 0.0), 2);
+    - is_pending: boolean = Order.status == "pending";
+    - is_processing: boolean = Order.status == "processing";
+    - is_completed: boolean = Order.status == "completed";
+  access: [customer]
+end
+
+// ============================================
+// COMPOSITE ENTITIES - Analytics & Stats
+// ============================================
+
+// Inventory Health Metrics - Snapshot of inventory status
+Entity InventoryHealth(Inventory)
+  attributes:
+    - in_stock_count: integer = len(Inventory.in_stock_items);
+    - low_stock_count: integer = len(Inventory.low_stock_items);
+    - out_of_stock_count: integer = len(Inventory.out_of_stock_items);
+    - total_items: integer = InventoryHealth.in_stock_count + InventoryHealth.low_stock_count + InventoryHealth.out_of_stock_count;
+    - health_score: number = round((InventoryHealth.in_stock_count / InventoryHealth.total_items) * 100, 1) if InventoryHealth.total_items > 0 else 0.0;
+  access: [warehouse]
+end
+
+// ============================================
+// UI COMPONENTS
+// ============================================
+
+// Cart Management - Create new cart
+Component<ActionForm> CreateCart
+  entity: Cart
+  operation: create
+  fields: [items]
+  submitLabel: "Create Cart"
+end
+
+// Cart Management - Update cart
+Component<ActionForm> UpdateCart
+  entity: Cart
+  operation: update
+  fields: [items]
+  submitLabel: "Update Cart"
+end
+
+// Cart Management - Delete cart (no fields needed for delete)
+Component<ActionForm> DeleteCart
+  entity: Cart
+  operation: delete
+  submitLabel: "Clear Cart"
+end
+
+// Single-value metrics
+Component<Metric> TotalCartValue
+  entity: CheckoutSummary
+  field: "total"
+  label: "Cart Total"
+  format: "currency"
+  // refreshMs: 3000
+end
+
+Component<Metric> ItemsInCart
+  entity: CheckoutSummary
+  field: "item_count"
+  label: "Items in Cart"
+  format: "number"
+  // refreshMs: 3000
+end
+
+Component<Metric> InventoryHealthScore
+  entity: InventoryHealth
+  field: "health_score"
+  label: "Inventory Health"
+  format: "percent"
+  // refreshMs: 5000
+end
+
+// Multi-field cards
+Component<DataCard> CheckoutDetails
+  entity: CheckoutSummary
+  fields: ["subtotal", "tax", "shipping", "discount", "total"]
+  title: "Checkout Summary"
+  highlight: "total"
+  // refreshMs: 3000
+end
+
+Component<DataCard> OrderDetails
+  entity: OrderStatus
+  fields: ["order_id", "status", "item_count", "total_amount", "created_at"]
+  title: "Current Order"
+  highlight: "status"
+  // refreshMs: 5000
+end
+
+Component<DataCard> StockOverview
+  entity: InventoryHealth
+  fields: ["in_stock_count", "low_stock_count", "out_of_stock_count", "health_score"]
+  title: "Inventory Overview"
+  highlight: "out_of_stock_count"
+  // refreshMs: 5000
+end
+
+// Pie chart - Inventory distribution
+Component<PieChart> InventoryDistribution
+  entity: InventoryHealth
+  slices:
+    - field: "in_stock_count" label: "In Stock" color: "#22c55e"
+    - field: "low_stock_count" label: "Low Stock" color: "#f59e0b"
+    - field: "out_of_stock_count" label: "Out of Stock" color: "#ef4444"
+  title: "Inventory Status Distribution"
+  size: 250
+  // refreshMs: 5000
+end
+
+// Bar chart - Inventory status comparison
+Component<BarChart> InventoryStatusChart
+  entity: InventoryHealth
+  bars:
+    - field: "in_stock_count" label: "In Stock" color: "#22c55e"
+    - field: "low_stock_count" label: "Low Stock" color: "#f59e0b"
+    - field: "out_of_stock_count" label: "Out of Stock" color: "#ef4444"
+  title: "Inventory Status Breakdown"
+  xLabel: "Status"
+  yLabel: "Item Count"
+  height: 350
+  width: 600
+  // refreshMs: 5000
+end

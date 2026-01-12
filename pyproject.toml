@@ -21,7 +21,7 @@ dependencies = [
     "bs4",
     "graphviz",
     "pyyaml",
-    "pluralizer",
+    "pyecore",
 ]
 
 [project.scripts]

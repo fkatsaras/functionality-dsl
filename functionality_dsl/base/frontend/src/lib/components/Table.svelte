@@ -1,5 +1,6 @@
 <script lang="ts">
         import { onMount } from "svelte";
+        import { authStore } from "$lib/stores/authStore";
         import RefreshButton from "$lib/primitives/RefreshButton.svelte";
         import Badge from "$lib/primitives/Badge.svelte";
         import Card from "$lib/primitives/Card.svelte";
@@ -34,6 +35,17 @@
         let error = $state<string | null>(null);
         let entityKeys = $state<string[]>([]);
 
+        // Get initial auth state synchronously
+        const initialAuth = authStore.getState();
+        let authToken = $state<string | null>(initialAuth.token);
+        let authType = $state<string>(initialAuth.authType);
+
+        // Subscribe to auth store for updates
+        authStore.subscribe((state) => {
+                authToken = state.token;
+                authType = state.authType;
+        });
+
         async function load() {
                 const finalUrl = url || "";
                 if (!finalUrl) {
@@ -45,7 +57,18 @@
                 error = null;
 
                 try {
-                    const response = await fetch(finalUrl);
+                    const headers: Record<string, string> = {};
+                    const fetchOptions: RequestInit = { headers };
+
+                    // For JWT auth, use Authorization header
+                    // For session auth, include credentials (cookies)
+                    if (authType === 'jwt' && authToken) {
+                        headers['Authorization'] = `Bearer ${authToken}`;
+                    } else if (authType === 'session') {
+                        fetchOptions.credentials = 'include';
+                    }
+
+                    const response = await fetch(finalUrl, fetchOptions);
                     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
                     const json = await response.json();

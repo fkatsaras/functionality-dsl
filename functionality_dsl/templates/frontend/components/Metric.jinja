@@ -1,0 +1,16 @@
+{% set endpoint = props.get('endpointPath') %}
+<Metric
+  name="{{ common.name }}"
+  url="{{ endpoint }}"
+  field={{ props.get('field') | tojson }}
+  {%- if props.get('label') %}
+  label={{ props.get('label') | tojson }}
+  {%- endif %}
+  {%- if props.get('format') %}
+  format={{ props.get('format') | tojson }}
+  {%- endif %}
+  {%- if props.get('refreshMs') %}
+  refreshMs={{ props.get('refreshMs') }}
+  {%- endif %}
+>
+</Metric>

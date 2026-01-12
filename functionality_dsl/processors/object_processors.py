@@ -90,33 +90,12 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 def external_rest_endpoint_obj_processor(ep):
     """
     SourceREST validation:
-    - OLD SYNTAX: Must have absolute url (http/https), default method to GET
-    - NEW SYNTAX (CRUD): Must have base_url, can omit method/url
-    - Mutation methods (POST/PUT/PATCH) should have request entity
+    - Must have url: field with absolute url (http/https)
     """
-    # Check if this is new CRUD-based syntax
-    base_url = getattr(ep, "base_url", None)
-    crud = getattr(ep, "crud", None)
-
-    if base_url:
-        # NEW SYNTAX: CRUD-based Source
-        if not (base_url.startswith("http://") or base_url.startswith("https://")):
-            raise TextXSemanticError(
-                f"Source<REST> '{ep.name}' base_url must start with http:// or https://.",
-                **get_location(ep),
-            )
-        # CRUD sources don't need method/url/request/response validation here
-        # That will be handled by CRUD block validation
-        return
-
-    # OLD SYNTAX: Traditional Source with url/method
-    if not getattr(ep, "method", None):
-        ep.method = "GET"
-
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
-            f"Source<REST> '{ep.name}' must define either 'url:' or 'base_url:'.",
+            f"Source<REST> '{ep.name}' must define 'url:' field.",
             **get_location(ep),
         )
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -124,18 +103,6 @@ def external_rest_endpoint_obj_processor(ep):
             f"Source<REST> '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
-
-    # Mutation methods should have request or response (at least warn if missing)
-    request = getattr(ep, "request", None)
-    response = getattr(ep, "response", None)
-
-    if request is None and response is None and ep.method.upper() != "DELETE":
-        # It's okay for DELETE to have no schemas, but warn for others
-        pass  # Could add warning here if desired
-
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(request, "request", f"Source<REST> '{ep.name}'")
-    _validate_type_schema_compatibility(response, "response", f"Source<REST> '{ep.name}'")
 
 
 def external_ws_endpoint_obj_processor(ep):

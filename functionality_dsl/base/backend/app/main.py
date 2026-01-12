@@ -1,9 +1,10 @@
 # app/main.py
 import uuid
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import AsyncExitStack
+from typing import Optional
 
 from app.core.config import settings
 from app.api.routers import include_generated_routers
@@ -52,6 +53,34 @@ def create_app() -> FastAPI:
         await app.state._stack.aclose()
 
     include_generated_routers(app)
+
+    # Register auth routes if auth module exists
+    try:
+        from app.core.auth import (
+            login_handler, logout_handler, me_handler,
+            LoginRequest, LoginResponse, LogoutResponse,
+            get_current_user, TokenPayload, SESSION_COOKIE_NAME
+        )
+        from fastapi import Depends
+
+        @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+        async def login(request: LoginRequest, response: Response):
+            """Login and create a session"""
+            return await login_handler(request, response)
+
+        @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
+        async def logout(response: Response, session_id: Optional[str] = Cookie(None)):
+            """Logout and clear session"""
+            return await logout_handler(response, session_id)
+
+        @app.get("/auth/me", tags=["Auth"])
+        async def me(user: TokenPayload = Depends(get_current_user)):
+            """Get current user info"""
+            return await me_handler(user)
+
+        logger.info("Auth routes registered: /auth/login, /auth/logout, /auth/me")
+    except ImportError as e:
+        logger.debug(f"No auth module found - skipping auth routes: {e}")
 
     @app.get("/")
     def root():

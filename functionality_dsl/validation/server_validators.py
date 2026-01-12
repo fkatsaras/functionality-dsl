@@ -4,7 +4,7 @@ Server validation logic for FDSL.
 Validates Server blocks including authentication configurations.
 """
 
-from textx import get_location, textx_isinstance
+from textx import get_location
 from textx.exceptions import TextXSemanticError
 
 
@@ -27,48 +27,20 @@ def _validate_auth_config(auth_block):
     if auth_type == "jwt":
         if not auth_block.jwt_config:
             raise TextXSemanticError(
-                "JWT authentication requires 'secret_env' field.\n"
-                "Minimal example: auth:\n"
-                "  type: jwt\n"
-                "  secret_env: \"JWT_SECRET\"",
+                "JWT authentication requires 'secret:' field.",
                 **get_location(auth_block),
             )
 
         jwt_config = auth_block.jwt_config
-        if not jwt_config.secret_env:
+        if not jwt_config.secret:
             raise TextXSemanticError(
-                "JWT configuration must specify 'secret_env' (environment variable containing JWT secret)",
+                "JWT configuration must specify 'secret:' (environment variable name).",
                 **get_location(auth_block),
             )
 
-    # Session validation
+    # Session validation - all fields are optional, no validation needed
     elif auth_type == "session":
-        if not auth_block.session_config:
-            raise TextXSemanticError(
-                "Session authentication requires at least one of: 'cookie', 'redis_url_env', or 'store_env'.\n"
-                "Minimal example: auth:\n"
-                "  type: session\n"
-                "  store_env: \"SESSION_STORE\"",
-                **get_location(auth_block),
-            )
-
-    # API Key validation
-    elif auth_type == "api_key":
-        if not auth_block.apikey_config:
-            raise TextXSemanticError(
-                "API key authentication requires 'lookup_env' field.\n"
-                "Minimal example: auth:\n"
-                "  type: api_key\n"
-                "  lookup_env: \"API_KEYS\"",
-                **get_location(auth_block),
-            )
-
-        apikey_config = auth_block.apikey_config
-        if not apikey_config.lookup_env:
-            raise TextXSemanticError(
-                "API key configuration must specify 'lookup_env' (environment variable with key-to-user mapping)",
-                **get_location(auth_block),
-            )
+        pass
 
 
 def verify_server(model):

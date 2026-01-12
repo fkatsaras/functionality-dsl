@@ -59,95 +59,63 @@ class _BaseComponent:
         return None
     
     def _endpoint_path(self, suffix: str | None = None) -> str:
-        # NEW SYNTAX: Check for type: inbound/outbound (WebSocket flow type)
+        """
+        Generate endpoint path for entity (v2 syntax only).
+
+        - WebSocket entities (type: inbound/outbound): /ws/{entity_name}
+        - REST entities (with source): /api/{entity_name}
+
+        All paths are flat - no /{id} suffixes (snapshot entities only).
+        """
+        # Check for WebSocket flow type (type: inbound/outbound)
         ws_flow_type = getattr(self.entity_ref, "ws_flow_type", None)
         if ws_flow_type:
-            # WebSocket entity - auto-generate path
             return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
 
-        # Get path from entity's expose block (REST or WebSocket - old syntax)
-        expose = getattr(self.entity_ref, "expose", None)
-        if expose:
-            # OLD SYNTAX: Check for operations and channel
-            operations = getattr(expose, "operations", []) or []
-            channel = getattr(expose, "channel", None)
+        # Check if entity has source to determine REST vs WebSocket
+        source = self._find_source()
 
-            # WebSocket operations (subscribe/publish)
-            if any(op in ['subscribe', 'publish'] for op in operations):
-                if channel:
-                    # Use explicit channel if provided
-                    ws_path = channel.strip('"').strip("'")
-                    return ws_path + (suffix or "")
-                else:
-                    # Auto-generated WebSocket path
-                    return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
+        if source:
+            source_class = source.__class__.__name__
+            if source_class in ("SourceWS", "WSSource", "WSEndpoint"):
+                # WebSocket entity
+                return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
 
-            # REST operations (list/read/create/update/delete)
-            if any(op in ['list', 'read', 'create', 'update', 'delete'] for op in operations):
-                # Use identity anchor if available
-                identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
-                if identity_anchor and isinstance(identity_anchor, str):
-                    return identity_anchor + (suffix or "")
-                else:
-                    # Fallback to entity name
-                    return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
-
-            # OLD SYNTAX: Check for REST path
-            rest = getattr(expose, "rest", None)
-            if rest:
-                rest_path = getattr(rest, "path", None)
-                if rest_path:
-                    return rest_path + (suffix or "")
-
-            # OLD SYNTAX: Check for WebSocket channel
-            websocket = getattr(expose, "websocket", None)
-            if websocket:
-                ws_channel = getattr(websocket, "channel", None)
-                if ws_channel:
-                    # Remove quotes from channel string
-                    ws_path = ws_channel.strip('"').strip("'")
-                    return ws_path + (suffix or "")
-
-        # NEW SYNTAX: access: true (no expose block)
-        # Check if entity has source to determine if it's REST or WebSocket
-        access_block = getattr(self.entity_ref, "access", None)
-        if access_block:
-            has_access = getattr(access_block, "access", False)
-            if has_access:
-                # Determine if WebSocket or REST based on source type
-                source = getattr(self.entity_ref, "source", None)
-
-                # Check parent chain for source if not found on entity
-                if not source:
-                    parents = getattr(self.entity_ref, "parents", []) or []
-                    if parents:
-                        from collections import deque
-                        queue = deque(parents)
-                        visited = set()
-                        while queue and not source:
-                            parent_ref = queue.popleft()
-                            parent = parent_ref.entity if hasattr(parent_ref, 'entity') else parent_ref
-                            parent_id = id(parent)
-                            if parent_id in visited:
-                                continue
-                            visited.add(parent_id)
-                            source = getattr(parent, "source", None)
-                            if not source:
-                                parent_parents = getattr(parent, "parents", []) or []
-                                queue.extend(parent_parents)
-
-                # Check if source is WebSocket
-                if source:
-                    source_class = source.__class__.__name__
-                    if source_class == "SourceWS" or source_class == "WSSource" or source_class == "WSEndpoint":
-                        # WebSocket entity
-                        return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
-
-                # Default to REST
-                return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
-
-        # Fallback to REST path
+        # Default to REST path (all REST entities are snapshots)
         return f"/api/{self.entity_ref.name.lower()}" + (suffix or "")
+
+    def _find_source(self):
+        """Find source for entity, checking parent chain if necessary."""
+        source = getattr(self.entity_ref, "source", None)
+        if source:
+            return source
+
+        # Check parent chain for source
+        parents = getattr(self.entity_ref, "parents", []) or []
+        if not parents:
+            return None
+
+        from collections import deque
+        queue = deque(parents)
+        visited = set()
+
+        while queue:
+            parent_ref = queue.popleft()
+            parent = parent_ref.entity if hasattr(parent_ref, 'entity') else parent_ref
+            parent_id = id(parent)
+
+            if parent_id in visited:
+                continue
+            visited.add(parent_id)
+
+            source = getattr(parent, "source", None)
+            if source:
+                return source
+
+            parent_parents = getattr(parent, "parents", []) or []
+            queue.extend(parent_parents)
+
+        return None
 
     def _extract_path_params(self) -> list:
         """Extract path parameter names from endpoint path."""
@@ -287,31 +255,12 @@ class TableComponent(_BaseComponent):
         return n
 
     def to_props(self):
-        # Table component needs the LIST endpoint to fetch multiple rows
-        # Check if entity exposes 'list' operation, otherwise use base path
-        expose = getattr(self.entity_ref, "expose", None)
-        operations = getattr(expose, "operations", []) if expose else []
-
-        # Use list endpoint if available (for fetching all rows)
-        if 'list' in operations:
-            # Get base entity path and use list operation
-            identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
-            if identity_anchor and isinstance(identity_anchor, str):
-                # Remove /{id} suffix from identity anchor to get list path
-                # e.g., "/api/users/{userId}" -> "/api/users"
-                base_path = identity_anchor.rsplit('/', 1)[0] if '/{' in identity_anchor else identity_anchor
-            else:
-                # Fallback: use entity name for base entities
-                base_path = f"/api/{self.entity_ref.name.lower()}s"
-            endpoint_path = base_path
-        else:
-            # Fallback to base path
-            endpoint_path = self._endpoint_path("")
-
+        # Table component fetches entity data from REST endpoint
+        # All entities are snapshots - single endpoint at /api/{entity_name}
         return {
-            "endpointPath": endpoint_path,
+            "endpointPath": self._endpoint_path(""),
             "colNames": self.colNames,
-            "columns": self.columns,  # Include full column type info
+            "columns": self.columns,
         }
 
 
@@ -374,12 +323,11 @@ class LiveTableComponent(_BaseComponent):
         if entity_ref is None and endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:' or 'endpoint:'.")
 
-        # Check if entity has WebSocket subscribe operation
+        # Check if entity is a WebSocket inbound entity
         if entity_ref:
-            expose = getattr(entity_ref, "expose", None)
-            operations = getattr(expose, "operations", []) if expose else []
-            if 'subscribe' not in operations:
-                raise ValueError(f"Component '{name}': LiveTable requires entity with 'subscribe' operation, got {operations}")
+            ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+            if ws_flow_type != 'inbound':
+                raise ValueError(f"Component '{name}': LiveTable requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
 
         if not self.keyField:
             raise ValueError(f"Component '{name}': 'keyField:' is required for LiveTable.")
@@ -432,21 +380,9 @@ class LiveTableComponent(_BaseComponent):
         return n
 
     def to_props(self):
-        # LiveTable needs the WebSocket channel path from entity's expose block
-        expose = getattr(self.entity_ref, "expose", None)
-        if expose:
-            ws_channel = getattr(expose, "channel", None)
-            if ws_channel:
-                # Strip quotes from channel string
-                stream_path = ws_channel.strip('"').strip("'")
-            else:
-                # Fallback to auto-generated channel
-                stream_path = f"/ws/{self.entity_ref.name.lower()}"
-        else:
-            stream_path = f"/ws/{self.entity_ref.name.lower()}"
-
+        # LiveTable uses auto-generated WebSocket path
         return {
-            "streamPath": stream_path,
+            "streamPath": self._endpoint_path(""),
             "arrayField": self.arrayField,
             "keyField": self.keyField,
             "colNames": self.colNames,
@@ -548,24 +484,11 @@ class LiveChartComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
         # Note: values field is optional - chart auto-detects keys from data if not specified
 
-        # NEW SYNTAX: Validate entity is inbound WebSocket
+        # Validate entity is inbound WebSocket
         if entity_ref:
-            # Check if entity has type: inbound (new WebSocket syntax)
             ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-
-            # Also check old syntax (expose with operations)
-            expose = getattr(entity_ref, "expose", None)
-            operations = getattr(expose, "operations", []) if expose else []
-
-            # Valid if either: type: inbound OR has subscribe operation
-            is_valid = ws_flow_type == 'inbound' or 'subscribe' in operations
-
-            if not is_valid:
-                raise ValueError(f"Component '{name}': LiveChart requires entity with 'type: inbound' or 'subscribe' operation for real-time streaming. Entity has type={ws_flow_type}, operations={operations}")
-
-        # LEGACY: Validate endpoint type
-        if endpoint and endpoint.__class__.__name__ != "EndpointWS":
-            raise ValueError(f"Component '{name}': LiveChart component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+            if ws_flow_type != 'inbound':
+                raise ValueError(f"Component '{name}': LiveChart requires entity with 'type: inbound' for real-time streaming, got type={ws_flow_type}")
 
     def to_props(self):
         return {
@@ -618,38 +541,20 @@ class ActionFormComponent(_BaseComponent):
         if self.entity_ref is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
 
-        # Validate that entity exposes the requested operation
-        expose = getattr(self.entity_ref, "expose", None)
-        operations = getattr(expose, "operations", []) if expose else []
-        if self.operation not in operations:
-            raise ValueError(f"Component '{name}': Entity '{self.entity_ref.name}' does not expose '{self.operation}' operation. Available operations: {operations}")
+        # Operation validation is delegated to the backend
+        # Source operations are validated at generation time
 
     def to_props(self):
         """
         Build frontend props for ActionForm.
-        - Get path from entity's expose block (identity anchor)
-        - For create: use base path without {id}
-        - For update/delete: use path with {id}
-        - Expose pathKey so the frontend knows which field to use
+        Uses _endpoint_path() to get the correct path for the entity.
+        This handles both singleton and collection-based entities correctly.
         """
-        # Get the entity's identity anchor
-        identity_anchor = getattr(self.entity_ref, "_identity_anchor", None)
+        # Use _endpoint_path() to get the correct API path (respects singleton vs collection)
+        # Pass empty string to get the base path without any suffix
+        path = self._endpoint_path("")
 
-        if self.operation == 'create':
-            # For create (POST), use list path without {id}
-            if identity_anchor and isinstance(identity_anchor, str):
-                # Remove /{id} suffix from identity anchor
-                # e.g., "/api/students/{id}" -> "/api/students"
-                path = identity_anchor.rsplit('/', 1)[0] if '/{' in identity_anchor else identity_anchor
-            else:
-                path = f"/api/{self.entity_ref.name.lower()}s"
-        else:
-            # For update/delete (PUT/DELETE), use path with {id}
-            if identity_anchor and isinstance(identity_anchor, str):
-                path = identity_anchor
-            else:
-                path = f"/api/{self.entity_ref.name.lower()}s/{{id}}"
-
+        # Extract pathKey from the path if it contains a parameter like {id}
         import re
         match = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", path)
         path_key = self.pathKey or (match.group(1) if match else None)
@@ -786,25 +691,9 @@ class GaugeComponent(_BaseComponent):
         self.max = float(self.max) if self.max is not None else 100.0
 
     def to_props(self):
-        # Gauge works with WebSocket subscribe entities
-        # Get the WebSocket channel from entity's expose block
-        expose = getattr(self.entity_ref, "expose", None)
-        if expose:
-            operations = getattr(expose, "operations", [])
-            if 'subscribe' in operations:
-                ws_channel = getattr(expose, "channel", None)
-                if ws_channel:
-                    stream_path = ws_channel.strip('"').strip("'")
-                else:
-                    stream_path = f"/ws/{self.entity_ref.name.lower()}"
-            else:
-                # Fallback for non-WS entities (shouldn't happen with Gauge)
-                stream_path = self._endpoint_path("")
-        else:
-            stream_path = f"/ws/{self.entity_ref.name.lower()}"
-
+        # Gauge uses auto-generated WebSocket path
         return {
-            "streamPath": stream_path,
+            "streamPath": self._endpoint_path(""),
             "value": self.value,
             "min": float(self.min),
             "max": float(self.max),
@@ -817,21 +706,20 @@ class GaugeComponent(_BaseComponent):
 class InputComponent(_BaseComponent):
     """
     <Component<Input> ...>
-      entity: <Entity> (v2 syntax) OR endpoint: <Endpoint<WS> (v1 syntax - sink)>
+      entity: <Entity> (outbound WebSocket entity)
       label: optional label
       placeholder: optional placeholder text
       initial: optional initial value
     """
     def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None, label=None, placeholder=None, initial=None, submitLabel=None):
         super().__init__(parent, name, entity_ref=entity_ref or endpoint)
-        self.endpoint = endpoint  # Keep for backward compatibility
         self.label = _strip_quotes(label)
         self.placeholder = _strip_quotes(placeholder)
         self.initial = _strip_quotes(initial)
         self.submitLabel = _strip_quotes(submitLabel)
 
-        if entity_ref is None and endpoint is None:
-            raise ValueError(f"Component '{name}' must bind either 'entity:' (v2) or 'endpoint:' (v1) endpoint.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
     def to_props(self):
         return {
@@ -848,8 +736,6 @@ class LiveViewComponent(_BaseComponent):
     def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None,
                  fields=None, label=None, maxMessages=None):
         super().__init__(parent, name, entity_ref=entity_ref or endpoint)
-        self.endpoint = endpoint  # Keep for backward compatibility
-        print("[DEBUG] maxMessages BEFORE =", repr(maxMessages))
         # normalize fields
         if hasattr(fields, "items"):
             fields = fields.items
@@ -862,21 +748,15 @@ class LiveViewComponent(_BaseComponent):
         self.fields = [self._attr_name(f) for f in fields]
 
         self.maxMessages = int(maxMessages) if maxMessages is not None else 50
-        
-        print("[DEBUG] maxMessages AFTER =", repr(maxMessages))
-
         self.label = _strip_quotes(label) or ""
 
-        if endpoint is None and entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' or 'entity:'.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
     def to_props(self):
-        # LiveView works with WebSocket subscribe entities
-        # Use _endpoint_path to get the correct path (handles both old and new syntax)
-        stream_path = self._endpoint_path("")
-
+        # LiveView uses auto-generated WebSocket path
         return {
-            "streamPath": stream_path,
+            "streamPath": self._endpoint_path(""),
             "fields": self.fields,
             "label": self.label,
             "maxMessages": self.maxMessages,
@@ -961,21 +841,22 @@ class ObjectViewComponent(_BaseComponent):
 class CameraComponent(_BaseComponent):
     """
     <Component<Camera> ...>
-      endpoint: <Endpoint<WS>> (subscribe to image frames)
+      entity: <Entity> (WebSocket entity with binary frame attribute)
       label: optional string label
 
-    Displays a live camera feed from a WebSocket endpoint that streams
+    Displays a live camera feed from a WebSocket entity that streams
     binary image frames (JPEG, PNG, etc.)
     """
-    def __init__(self, parent=None, name=None, endpoint=None, label=None):
-        super().__init__(parent, name, endpoint)
+    def __init__(self, parent=None, name=None, entity_ref=None, label=None):
+        super().__init__(parent, name, entity_ref)
 
-        if endpoint is None:
-            raise ValueError(f"Component '{name}' must bind an 'endpoint:' Endpoint<WS>.")
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
-        # Validate: Camera only works with WebSocket endpoints
-        if endpoint.__class__.__name__ != "EndpointWS":
-            raise ValueError(f"Component '{name}': Camera component requires Endpoint<WS>, got {endpoint.__class__.__name__}")
+        # Validate: Camera requires inbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': Camera requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
 
         self.label = _strip_quotes(label) or "Camera"
 
@@ -1083,6 +964,428 @@ class MapComponent(_BaseComponent):
             "width": self.width,
             "height": self.height,
         }
+
+@register_component
+class MetricComponent(_BaseComponent):
+    """
+    <Component<Metric> ...>
+      entity: <Entity> (REST entity)
+      field: required string (field name to display)
+      label: optional string label
+      format: optional string ("number" | "currency" | "percent")
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, field=None, label=None, format=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field) if field else None
+        self.label = _strip_quotes(label)
+        self.format = _strip_quotes(format)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' is required.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "label": self.label or self.field,
+            "format": self.format or "number",
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class DataCardComponent(_BaseComponent):
+    """
+    <Component<DataCard> ...>
+      entity: <Entity> (REST entity)
+      fields: required list of field names to display
+      title: optional string title
+      highlight: optional string (field name to highlight)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, fields=None, title=None, highlight=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.fields = [_strip_quotes(f) for f in (fields or [])]
+        self.title = _strip_quotes(title)
+        self.highlight = _strip_quotes(highlight)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.fields:
+            raise ValueError(f"Component '{name}': 'fields:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "fields": self.fields,
+            "title": self.title or self.entity_ref.name,
+            "highlight": self.highlight,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class PieChartComponent(_BaseComponent):
+    """
+    <Component<PieChart> ...>
+      entity: <Entity> (REST entity)
+      slices: required list of SliceField definitions
+      title: optional string title
+      size: optional int (chart diameter in pixels)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, slices=None, title=None, size=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse slices from SliceField definitions
+        self.slices = []
+        for slice_def in (slices or []):
+            self.slices.append({
+                "field": _strip_quotes(getattr(slice_def, "field", None)),
+                "label": _strip_quotes(getattr(slice_def, "label", None)),
+                "color": _strip_quotes(getattr(slice_def, "color", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.size = int(size) if size is not None else 200
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.slices:
+            raise ValueError(f"Component '{name}': 'slices:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "slices": self.slices,
+            "title": self.title or self.entity_ref.name,
+            "size": self.size,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class BarChartComponent(_BaseComponent):
+    """
+    <Component<BarChart> ...>
+      entity: <Entity> (REST entity)
+      bars: required list of BarField definitions
+      title: optional string title
+      xLabel: optional string (x-axis label)
+      yLabel: optional string (y-axis label)
+      height: optional int (chart height in pixels)
+      width: optional int (chart width in pixels)
+      refreshMs: optional int (auto-refresh interval)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, bars=None, title=None, xLabel=None, yLabel=None, height=None, width=None, refreshMs=None):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse bars from BarField definitions
+        self.bars = []
+        for bar_def in (bars or []):
+            self.bars.append({
+                "field": _strip_quotes(getattr(bar_def, "field", None)),
+                "label": _strip_quotes(getattr(bar_def, "label", None)),
+                "color": _strip_quotes(getattr(bar_def, "color", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.xLabel = _strip_quotes(xLabel)
+        self.yLabel = _strip_quotes(yLabel)
+        self.height = int(height) if height is not None else 300
+        self.width = int(width) if width is not None else 500
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.bars:
+            raise ValueError(f"Component '{name}': 'bars:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "bars": self.bars,
+            "title": self.title or self.entity_ref.name,
+            "xLabel": self.xLabel or "",
+            "yLabel": self.yLabel or "",
+            "height": self.height,
+            "width": self.width,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class ProgressComponent(_BaseComponent):
+    """
+    <Component<Progress> ...>
+      entity: Entity
+      field: string (attribute name)
+      min: number (optional, default 0)
+      max: number (optional, default 100)
+      threshold: number (optional, show warning if value exceeds threshold)
+      label: string (optional)
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        min=None,
+        max=None,
+        threshold=None,
+        label=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.min = float(min) if min is not None else 0.0
+        self.max = float(max) if max is not None else 100.0
+        self.threshold = float(threshold) if threshold is not None else None
+        self.label = _strip_quotes(label)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "min": self.min,
+            "max": self.max,
+            "threshold": self.threshold,
+            "label": self.label or self.field,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class LiveProgressComponent(_BaseComponent):
+    """
+    <Component<LiveProgress> ...>
+      entity: Entity (WebSocket entity)
+      field: string (attribute name)
+      min: number (optional, default 0)
+      max: number (optional, default 100)
+      threshold: number (optional, show warning if value exceeds threshold)
+      label: string (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        min=None,
+        max=None,
+        threshold=None,
+        label=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.min = float(min) if min is not None else 0.0
+        self.max = float(max) if max is not None else 100.0
+        self.threshold = float(threshold) if threshold is not None else None
+        self.label = _strip_quotes(label)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "field": self.field,
+            "min": self.min,
+            "max": self.max,
+            "threshold": self.threshold,
+            "label": self.label or self.field,
+        }
+
+
+@register_component
+class AlertComponent(_BaseComponent):
+    """
+    <Component<Alert> ...>
+      entity: Entity
+      condition: string (field name that should be truthy to show alert)
+      message: string (alert message)
+      severity: string (optional: "info", "warning", "error", default "info")
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        condition=None,
+        message=None,
+        severity=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.condition = _strip_quotes(condition)
+        self.message = _strip_quotes(message)
+        self.severity = _strip_quotes(severity) if severity else "info"
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.condition:
+            raise ValueError(f"Component '{name}': 'condition:' cannot be empty.")
+        if not self.message:
+            raise ValueError(f"Component '{name}': 'message:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "condition": self.condition,
+            "message": self.message,
+            "severity": self.severity,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class LiveAlertComponent(_BaseComponent):
+    """
+    <Component<LiveAlert> ...>
+      entity: Entity (WebSocket entity)
+      condition: string (field name that should be truthy to show alert)
+      message: string (alert message)
+      severity: string (optional: "info", "warning", "error", default "info")
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        condition=None,
+        message=None,
+        severity=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.condition = _strip_quotes(condition)
+        self.message = _strip_quotes(message)
+        self.severity = _strip_quotes(severity) if severity else "info"
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.condition:
+            raise ValueError(f"Component '{name}': 'condition:' cannot be empty.")
+        if not self.message:
+            raise ValueError(f"Component '{name}': 'message:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "condition": self.condition,
+            "message": self.message,
+            "severity": self.severity,
+        }
+
+
+@register_component
+class ToggleComponent(_BaseComponent):
+    """
+    <Component<Toggle> ...>
+      entity: Entity
+      field: string (boolean field to toggle)
+      label: string (optional)
+      onLabel: string (optional, for backward compatibility)
+      offLabel: string (optional, for backward compatibility)
+      refreshMs: number (optional)
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        field=None,
+        label=None,
+        onLabel=None,
+        offLabel=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        self.field = _strip_quotes(field)
+        self.label = _strip_quotes(label)
+        self.onLabel = _strip_quotes(onLabel)  # Accept but don't use
+        self.offLabel = _strip_quotes(offLabel)  # Accept but don't use
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.field:
+            raise ValueError(f"Component '{name}': 'field:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "field": self.field,
+            "label": self.label or self.field,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
+class PublishFormComponent(_BaseComponent):
+    """
+    <Component<PublishForm> ...>
+      entity: <Entity> (outbound WebSocket entity)
+      fields: list of field names to include in form
+      submitLabel: optional string for submit button
+      label: optional string label for the form
+
+    PublishForm is for outbound WebSocket entities - it provides a multi-field
+    form that sends JSON payloads to the WebSocket endpoint.
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, fields=None, submitLabel=None, label=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.fields = [str(f) for f in (fields or [])]
+        self.submitLabel = _strip_quotes(submitLabel)
+        self.label = _strip_quotes(label)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Validate: PublishForm requires outbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'outbound':
+            raise ValueError(f"Component '{name}': PublishForm requires entity with 'type: outbound' for WebSocket publishing, got type={ws_flow_type}")
+
+    def to_props(self):
+        return {
+            "wsPath": self._endpoint_path(""),
+            "fields": self.fields,
+            "submitLabel": self.submitLabel or "Send",
+            "label": self.label or self.entity_ref.name,
+        }
+
 
 @register_component
 class DownloadFormComponent(_BaseComponent):

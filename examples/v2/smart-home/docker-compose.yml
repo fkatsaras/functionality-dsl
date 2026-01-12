@@ -8,6 +8,10 @@ services:
     container_name: dummy-smart-home-devices
     ports:
       - "9001:9001"
+    volumes:
+      - ./camera-frames:/app/camera_frames:ro
+    environment:
+      - CAMERA_IMAGE_DIR=/app/camera_frames
     networks:
       - thesis_fdsl_net
     healthcheck:

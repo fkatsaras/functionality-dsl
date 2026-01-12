@@ -178,6 +178,14 @@ visualize: ## Visualize FDSL model (usage: make visualize FILE=path/to/file.fdsl
 .PHONY: viz
 viz: visualize ## Alias for 'visualize'
 
+.PHONY: viz-no-components
+viz-no-components: ## Visualize without UI components (usage: make viz-no-components FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		exit 1; \
+	fi
+	$(FDSL) visualize-model $(FILE) --output docs --no-components
+
 # ==============================================================================
 # Testing
 # ==============================================================================

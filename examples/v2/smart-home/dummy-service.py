@@ -4,12 +4,22 @@ Dummy Smart Home Devices Service
 Simulates various smart home devices with realistic data
 """
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_sock import Sock
 import random
 import time
+import json
+import os
+import glob
 from datetime import datetime
+import threading
 
 app = Flask(__name__)
+sock = Sock(app)
+
+# Camera feed configuration
+CAMERA_FRAME_RATE_MS = 100  # 10 fps
+CAMERA_IMAGE_DIR = os.environ.get('CAMERA_IMAGE_DIR', '/app/camera_frames')
 
 # Simulated device states
 class SmartHomeState:
@@ -20,12 +30,14 @@ class SmartHomeState:
         self.thermostat_fan = "medium"
 
         self.lights = {
-            "living_room": 75,
-            "bedroom": 0,
-            "kitchen": 100,
-            "bathroom": 50,
-            "outdoor": 30
+            "living_room": True,
+            "bedroom": False,
+            "kitchen": True,
         }
+
+        # Roomba state
+        self.roomba_status = "docked"
+        self.roomba_power = 2
 
         self.security_armed = False
         self.security_mode = "disarmed"
@@ -53,11 +65,11 @@ class SmartHomeState:
 
     def get_motion_detected(self):
         # Motion detected if lights are on in living areas
-        return self.lights["living_room"] > 0 or self.lights["kitchen"] > 0
+        return self.lights["living_room"] or self.lights["kitchen"]
 
     def get_total_lights_power(self):
-        # Assume each light at 100% = 10W LED
-        total = sum([v * 0.1 for v in self.lights.values()])
+        # Assume each light on = 10W LED
+        total = sum([10 if v else 0 for v in self.lights.values()])
         return round(total, 1)
 
 state = SmartHomeState()
@@ -74,16 +86,31 @@ def get_thermostat():
         "power_watts": round(2500 + 500 * random.random(), 1) if state.thermostat_mode != "off" else 0
     })
 
+@app.route('/thermostat', methods=['PUT'])
+def update_thermostat():
+    data = request.get_json()
+    if 'target_temp_f' in data:
+        state.thermostat_target = float(data['target_temp_f'])
+    if 'mode' in data:
+        state.thermostat_mode = data['mode']
+    return get_thermostat()
+
 @app.route('/lights', methods=['GET'])
 def get_lights():
     return jsonify({
         "living_room": state.lights["living_room"],
         "bedroom": state.lights["bedroom"],
         "kitchen": state.lights["kitchen"],
-        "bathroom": state.lights["bathroom"],
-        "outdoor": state.lights["outdoor"],
         "power_watts": state.get_total_lights_power()
     })
+
+@app.route('/lights', methods=['PUT'])
+def update_lights():
+    data = request.get_json()
+    for key in ['living_room', 'bedroom', 'kitchen']:
+        if key in data:
+            state.lights[key] = bool(data[key])
+    return get_lights()
 
 @app.route('/security', methods=['GET'])
 def get_security():
@@ -96,6 +123,16 @@ def get_security():
         "camera_count": 4,
         "last_event_time": datetime.now().isoformat()
     })
+
+@app.route('/security', methods=['PUT'])
+def update_security():
+    data = request.get_json()
+    if 'armed' in data:
+        state.security_armed = bool(data['armed'])
+        state.security_mode = "armed" if state.security_armed else "disarmed"
+    if 'door_locked' in data:
+        state.door_locked = bool(data['door_locked'])
+    return get_security()
 
 @app.route('/energy', methods=['GET'])
 def get_energy():
@@ -179,10 +216,191 @@ def get_appliances():
         "coffee_maker_on": state.coffee_maker
     })
 
+@app.route('/appliances', methods=['PUT'])
+def update_appliances():
+    data = request.get_json()
+    if 'oven_on' in data:
+        state.oven_on = bool(data['oven_on'])
+        if state.oven_on:
+            state.oven_temp = 350  # Preheat to 350F
+        else:
+            state.oven_temp = 0
+    return get_appliances()
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "service": "smart-home-devices"})
 
+# WebSocket endpoint: Security events stream
+@sock.route('/ws/security/events')
+def security_events(ws):
+    """Stream security events every 2 seconds"""
+    print("Client connected to /ws/security/events")
+    try:
+        while True:
+            # Simulate security state changes
+            if random.random() < 0.1:  # 10% chance to toggle door lock
+                state.door_locked = not state.door_locked
+
+            if random.random() < 0.05:  # 5% chance to toggle armed state
+                state.security_armed = not state.security_armed
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "armed": state.security_armed,
+                "door_locked": state.door_locked,
+                "motion_detected": state.get_motion_detected()
+            }
+            ws.send(json.dumps(event))
+            time.sleep(2)
+    except Exception as e:
+        print(f"Security events WebSocket error: {e}")
+
+# WebSocket endpoint: Climate monitoring stream
+@sock.route('/ws/climate/monitor')
+def climate_monitor(ws):
+    """Stream climate data every 3 seconds"""
+    print("Client connected to /ws/climate/monitor")
+    try:
+        while True:
+            current_temp = state.get_current_temp()
+            humidity = round(45 + 10 * random.random(), 1)
+
+            # Simulate temperature drift
+            if random.random() < 0.2:  # 20% chance to change target temp
+                state.thermostat_target += random.choice([-1, 1])
+                state.thermostat_target = max(65, min(80, state.thermostat_target))
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "temp_f": current_temp,
+                "humidity": humidity
+            }
+            ws.send(json.dumps(event))
+            time.sleep(3)
+    except Exception as e:
+        print(f"Climate monitor WebSocket error: {e}")
+
+# WebSocket endpoint: Energy consumption stream
+@sock.route('/ws/energy')
+def energy_stream(ws):
+    """Stream energy consumption data every 2 seconds"""
+    print("Client connected to /ws/energy")
+    try:
+        while True:
+            # HVAC consumption varies with mode
+            if state.thermostat_mode == "off":
+                hvac_kwh = 0
+            elif state.thermostat_mode == "eco":
+                hvac_kwh = round(1.5 + 0.5 * random.random(), 2)
+            else:
+                hvac_kwh = round(2.0 + 1.0 * random.random(), 2)
+
+            # Lighting based on actual light levels
+            lighting_kwh = round(state.get_total_lights_power() / 1000, 3)
+
+            # Appliances - oven is big consumer
+            base_appliances = 0.15  # Fridge, standby, etc.
+            oven_kwh = 3.5 if state.oven_on else 0
+            appliances_kwh = round(base_appliances + oven_kwh + 0.2 * random.random(), 2)
+
+            event = {
+                "timestamp": int(time.time() * 1000),
+                "hvac_kwh": hvac_kwh,
+                "lighting_kwh": lighting_kwh,
+                "appliances_kwh": appliances_kwh
+            }
+            ws.send(json.dumps(event))
+            time.sleep(2)
+    except Exception as e:
+        print(f"Energy stream WebSocket error: {e}")
+
+# WebSocket endpoint: Security camera feed (binary frames)
+@sock.route('/ws/camera/feed')
+def camera_feed(ws):
+    """Stream binary image frames from security camera"""
+    print("Client connected to /ws/camera/feed")
+
+    # Load image files
+    image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.png')))
+    if not image_files:
+        # Try jpg as fallback
+        image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.jpg')))
+
+    if not image_files:
+        print(f"WARNING: No image files found in {CAMERA_IMAGE_DIR}")
+        # Send a placeholder message and close
+        ws.send(b'NO_IMAGES_AVAILABLE')
+        return
+
+    print(f"Camera feed: Found {len(image_files)} image files")
+    frame_index = 0
+
+    try:
+        while True:
+            # Read current frame as binary
+            frame_file = image_files[frame_index]
+            with open(frame_file, 'rb') as f:
+                frame_data = f.read()
+
+            # Send raw binary frame
+            ws.send(frame_data)
+
+            # Move to next frame (loop)
+            frame_index = (frame_index + 1) % len(image_files)
+
+            # Wait for next frame
+            time.sleep(CAMERA_FRAME_RATE_MS / 1000.0)
+    except Exception as e:
+        print(f"Camera feed WebSocket error: {e}")
+
+# WebSocket endpoint: Roomba commands (receives commands from clients)
+@sock.route('/ws/roomba/commands')
+def roomba_commands(ws):
+    """Receive commands for Roomba vacuum robot"""
+    print("Client connected to /ws/roomba/commands")
+    try:
+        while True:
+            message = ws.receive()
+            if message is None:
+                break
+
+            try:
+                data = json.loads(message)
+                command = data.get('command', '')
+                room = data.get('room', '')
+                power = data.get('power', 2)
+
+                print(f"Roomba command received: {command}, room={room}, power={power}")
+
+                # Update state based on command
+                if command == 'start':
+                    state.roomba_status = 'cleaning'
+                    state.roomba_power = power
+                elif command == 'stop':
+                    state.roomba_status = 'paused'
+                elif command == 'dock':
+                    state.roomba_status = 'docking'
+                elif command == 'clean_room':
+                    state.roomba_status = f'cleaning_{room}'
+                    state.roomba_power = power
+
+                # Send acknowledgment
+                ack = {
+                    "status": "ok",
+                    "roomba_status": state.roomba_status,
+                    "timestamp": int(time.time() * 1000)
+                }
+                ws.send(json.dumps(ack))
+
+            except json.JSONDecodeError as e:
+                print(f"Invalid JSON received: {e}")
+                ws.send(json.dumps({"status": "error", "message": "Invalid JSON"}))
+
+    except Exception as e:
+        print(f"Roomba commands WebSocket error: {e}")
+
 if __name__ == '__main__':
-    print("🏠 Smart Home Devices Service starting on port 9001...")
+    print("Smart Home Devices Service starting on port 9001...")
+    print(f"Camera frames directory: {CAMERA_IMAGE_DIR}")
     app.run(host='0.0.0.0', port=9001, debug=True)

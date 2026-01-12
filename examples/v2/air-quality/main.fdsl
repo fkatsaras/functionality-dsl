@@ -1,14 +1,8 @@
 // =============================================================================
-// Global Air Quality Monitor - IoT/Smart City Demo
+// Global Air Quality Monitor - Multi-City Comparison
 // =============================================================================
-// This example demonstrates FDSL with REAL live air quality data:
-// - Real-time air quality measurements across multiple cities
-// - Pollutant levels (PM2.5, PM10, CO, NO2, SO2, O3)
-// - Air quality index and health recommendations
-// - Multi-city comparison and analytics
-//
-// Data Source: Open-Meteo Air Quality API
-// FREE - No API key required! Returns JSON!
+// Demonstrates: Multi-source REST aggregation with computed fields
+// Data Source: Open-Meteo Air Quality API (FREE - No API key required!)
 // =============================================================================
 
 Server AirQualityAPI
@@ -20,26 +14,21 @@ Server AirQualityAPI
 end
 
 // =============================================================================
-// EXTERNAL SOURCES - Open-Meteo Air Quality API (Multiple Cities)
+// EXTERNAL SOURCES - Open-Meteo Air Quality API
 // =============================================================================
 
 Source<REST> LondonAirQuality
-  base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=51.51&longitude=-0.13&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=51.51&longitude=-0.13&hourly=pm10,pm2_5,ozone,uv_index"
   operations: [read]
 end
 
 Source<REST> ParisAirQuality
-  base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=48.85&longitude=2.35&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=48.85&longitude=2.35&hourly=pm10,pm2_5,ozone,uv_index"
   operations: [read]
 end
 
 Source<REST> BeijingAirQuality
-  base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=39.90&longitude=116.40&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
-  operations: [read]
-end
-
-Source<REST> LosAngelesAirQuality
-  base_url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=34.05&longitude=-118.24&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,dust,uv_index"
+  url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=39.90&longitude=116.40&hourly=pm10,pm2_5,ozone,uv_index"
   operations: [read]
 end
 
@@ -52,13 +41,9 @@ Entity LondonAir
   attributes:
     - latitude: number;
     - longitude: number;
-    - generationtime_ms: number;
-    - utc_offset_seconds: integer;
     - timezone: string;
-    - timezone_abbreviation: string;
-    - elevation: number?;
     - hourly_units: object;
-    - hourly: object;  // { time: [], pm10: [], pm2_5: [], carbon_monoxide: [], ... }
+    - hourly: object;  // { time: [], pm10: [], pm2_5: [], ozone: [], uv_index: [] }
   access: public
 end
 
@@ -67,11 +52,7 @@ Entity ParisAir
   attributes:
     - latitude: number;
     - longitude: number;
-    - generationtime_ms: number;
-    - utc_offset_seconds: integer;
     - timezone: string;
-    - timezone_abbreviation: string;
-    - elevation: number?;
     - hourly_units: object;
     - hourly: object;
   access: public
@@ -82,109 +63,72 @@ Entity BeijingAir
   attributes:
     - latitude: number;
     - longitude: number;
-    - generationtime_ms: number;
-    - utc_offset_seconds: integer;
     - timezone: string;
-    - timezone_abbreviation: string;
-    - elevation: number?;
     - hourly_units: object;
     - hourly: object;
   access: public
 end
 
-Entity LosAngelesAir
-  source: LosAngelesAirQuality
-  attributes:
-    - latitude: number;
-    - longitude: number;
-    - generationtime_ms: number;
-    - utc_offset_seconds: integer;
-    - timezone: string;
-    - timezone_abbreviation: string;
-    - elevation: number?;
-    - hourly_units: object;
-    - hourly: object;
-  access: public 
-end
-
 // =============================================================================
-// DERIVED ENTITY 1 - City Comparison (Current Conditions)
+// DERIVED ENTITY - City Comparison (Current Readings)
 // =============================================================================
 
-Entity CityComparison(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
+Entity CityComparison(LondonAir, ParisAir, BeijingAir)
   attributes:
-    // Current air quality snapshot for each city (latest reading)
-    - cities: array = map(
-        [
-          {"name": "London", "data": LondonAir},
-          {"name": "Paris", "data": ParisAir},
-          {"name": "Beijing", "data": BeijingAir},
-          {"name": "Los Angeles", "data": LosAngelesAir}
-        ],
-        city => {
-          "city": city["name"],
-          "pm2_5": get(city["data"].hourly, "pm2_5", [])[0],
-          "pm10": get(city["data"].hourly, "pm10", [])[0],
-          "ozone": get(city["data"].hourly, "ozone", [])[0],
-          "uv_index": get(city["data"].hourly, "uv_index", [])[0]
-        }
-      );
+    // London current readings (index 0 = latest)
+    - london_pm2_5: number = get(LondonAir.hourly, "pm2_5", [])[0];
+    - london_pm10: number = get(LondonAir.hourly, "pm10", [])[0];
+    - london_ozone: number = get(LondonAir.hourly, "ozone", [])[0];
+    - london_uv: number = get(LondonAir.hourly, "uv_index", [])[0];
+
+    // Paris current readings
+    - paris_pm2_5: number = get(ParisAir.hourly, "pm2_5", [])[0];
+    - paris_pm10: number = get(ParisAir.hourly, "pm10", [])[0];
+    - paris_ozone: number = get(ParisAir.hourly, "ozone", [])[0];
+    - paris_uv: number = get(ParisAir.hourly, "uv_index", [])[0];
+
+    // Beijing current readings
+    - beijing_pm2_5: number = get(BeijingAir.hourly, "pm2_5", [])[0];
+    - beijing_pm10: number = get(BeijingAir.hourly, "pm10", [])[0];
+    - beijing_ozone: number = get(BeijingAir.hourly, "ozone", [])[0];
+    - beijing_uv: number = get(BeijingAir.hourly, "uv_index", [])[0];
   access: public
 end
 
 // =============================================================================
-// DERIVED ENTITY 2 - PM2.5 Time Series (Chart Data)
+// DERIVED ENTITY - Air Quality Analytics
 // =============================================================================
 
-Entity PM25Trends(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
+Entity AirQualityStats(LondonAir, ParisAir, BeijingAir, CityComparison)
   attributes:
-    // Chart format: { time, london, paris, beijing, los_angeles }
-    - data: array = map(
-        zip(
-          get(LondonAir.hourly, "time", []),
-          get(LondonAir.hourly, "pm2_5", []),
-          get(ParisAir.hourly, "pm2_5", []),
-          get(BeijingAir.hourly, "pm2_5", []),
-          get(LosAngelesAir.hourly, "pm2_5", [])
-        ),
-        point => {
-          "time": point[0],
-          "london": point[1],
-          "paris": point[2],
-          "beijing": point[3],
-          "los_angeles": point[4]
-        }
-      );
+    // Average PM2.5 per city
+    - london_avg_pm2_5: number = round(sum(get(LondonAir.hourly, "pm2_5", [])) / len(get(LondonAir.hourly, "pm2_5", [])), 1);
+    - paris_avg_pm2_5: number = round(sum(get(ParisAir.hourly, "pm2_5", [])) / len(get(ParisAir.hourly, "pm2_5", [])), 1);
+    - beijing_avg_pm2_5: number = round(sum(get(BeijingAir.hourly, "pm2_5", [])) / len(get(BeijingAir.hourly, "pm2_5", [])), 1);
+
+    // Max PM2.5 per city
+    - london_max_pm2_5: number = max(get(LondonAir.hourly, "pm2_5", []));
+    - paris_max_pm2_5: number = max(get(ParisAir.hourly, "pm2_5", []));
+    - beijing_max_pm2_5: number = max(get(BeijingAir.hourly, "pm2_5", []));
+
+    // Air quality status (based on PM2.5 WHO guidelines: good < 15, moderate < 35, unhealthy >= 35)
+    - london_status: string = "Good" if CityComparison.london_pm2_5 < 15 else ("Moderate" if CityComparison.london_pm2_5 < 35 else "Unhealthy");
+    - paris_status: string = "Good" if CityComparison.paris_pm2_5 < 15 else ("Moderate" if CityComparison.paris_pm2_5 < 35 else "Unhealthy");
+    - beijing_status: string = "Good" if CityComparison.beijing_pm2_5 < 15 else ("Moderate" if CityComparison.beijing_pm2_5 < 35 else "Unhealthy");
   access: public
 end
 
 // =============================================================================
-// DERIVED ENTITY 3 - Pollution Analytics
+// DERIVED ENTITY - PM2.5 Trends (Chart Data)
 // =============================================================================
 
-Entity PollutionStats(LondonAir, ParisAir, BeijingAir, LosAngelesAir)
+Entity PM25Trends(LondonAir, ParisAir, BeijingAir)
   attributes:
-    // Statistics per city
-    - stats: array = map(
-        [
-          {"name": "London", "data": LondonAir},
-          {"name": "Paris", "data": ParisAir},
-          {"name": "Beijing", "data": BeijingAir},
-          {"name": "Los Angeles", "data": LosAngelesAir}
-        ],
-        city => {
-          "city": city["name"],
-          "avg_pm2_5": round(
-            sum(get(city["data"].hourly, "pm2_5", [])) /
-            len(get(city["data"].hourly, "pm2_5", [])), 1
-          ),
-          "max_pm2_5": max(get(city["data"].hourly, "pm2_5", [])),
-          "avg_ozone": round(
-            sum(get(city["data"].hourly, "ozone", [])) /
-            len(get(city["data"].hourly, "ozone", [])), 1
-          )
-        }
-      );
+    // Time series data
+    - times: array = get(LondonAir.hourly, "time", []);
+    - london_pm2_5: array = get(LondonAir.hourly, "pm2_5", []);
+    - paris_pm2_5: array = get(ParisAir.hourly, "pm2_5", []);
+    - beijing_pm2_5: array = get(BeijingAir.hourly, "pm2_5", []);
   access: public
 end
 
@@ -192,20 +136,26 @@ end
 // UI COMPONENTS
 // =============================================================================
 
-Component<Table> CurrentConditionsTable
+Component<DataCard> LondonCard
   entity: CityComparison
-  colNames: ["city", "pm2_5", "pm10", "ozone", "uv_index"]
+  fields: ["london_pm2_5", "london_pm10", "london_ozone", "london_uv"]
+  title: "London Air Quality"
 end
 
-Component<Chart> PM25TrendsChart
-  entity: PM25Trends
-  values: data
-  xLabel: "Time"
-  yLabel: "PM2.5 (ug/m^3)"
-  height: 400
+Component<DataCard> ParisCard
+  entity: CityComparison
+  fields: ["paris_pm2_5", "paris_pm10", "paris_ozone", "paris_uv"]
+  title: "Paris Air Quality"
 end
 
-Component<Table> PollutionStatsTable
-  entity: PollutionStats
-  colNames: ["city", "avg_pm2_5", "max_pm2_5", "avg_ozone"]
+Component<DataCard> BeijingCard
+  entity: CityComparison
+  fields: ["beijing_pm2_5", "beijing_pm10", "beijing_ozone", "beijing_uv"]
+  title: "Beijing Air Quality"
+end
+
+Component<DataCard> StatsCard
+  entity: AirQualityStats
+  fields: ["london_status", "paris_status", "beijing_status"]
+  title: "Air Quality Status"
 end

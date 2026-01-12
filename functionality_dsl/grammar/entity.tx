@@ -1,5 +1,6 @@
 import utils
 import expression
+import rbac
 
 AttrType:
   'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
@@ -17,11 +18,14 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
-// Extended to support @id marker for identity fields and @readonly marker for read-only fields
+// Field markers:
+//   @readonly - field excluded from create/update request schemas (response only)
+//   @optional - field not required in create/update request schemas (can be omitted)
+//   ? - nullable (value can be null)
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? idMarker='@id'? readonlyMarker='@readonly'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?
 ;
 
 TypeConstraint:
@@ -50,19 +54,17 @@ Entity:
   ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
   ('type:' ws_flow_type=WSFlowType)?
   ('source:' source=[Source])?
-  (relationships=RelationshipsBlock)?
+  ('strict:' strict=Bool)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
-  (filters=FiltersBlock)?
   (access=AccessBlock)?
   'end'
 ;
 
 // Parent reference: either plain (Product) or aliased (thessForecast: Forecast)
-// Optional [] suffix indicates one-to-many relationship (array parent)
 ParentRef:
-  (alias=ID ':')? entity=[Entity] is_array?='[]'?
+  (alias=ID ':')? entity=[Entity]
 ;
 
 // WebSocket flow direction (for WebSocket entities only)
@@ -70,80 +72,9 @@ WSFlowType:
   'inbound' | 'outbound'
 ;
 
-// Relationships block for composite entities
-// Specifies how to fetch each parent entity
-RelationshipsBlock:
-  'relationships:'
-    '-' relationships+=Relationship ('-' relationships+=Relationship)*
-;
 
-Relationship:
-  parentAlias=ID ':' fetchExpr=AttrRef
-;
-
-AttrRef:
-  entityOrAlias=ID '.' attr=ID
-;
-
-// ---------- EXPOSE BLOCK ----------
-// Supports two syntaxes:
-// 1. NEW: expose: true (simple boolean for composite entities)
-// 2. OLD: expose: operations: [...] (for WebSocket with explicit operations)
-ExposeBlock:
-    'expose:' expose_value=BOOL                           // NEW: expose: true
-  | 'expose:'                                              // OLD: expose block with fields
-    ('channel:' channel=STRING)?
-    ('operations:' '[' operations+=Operation (',' operations+=Operation)* ']')?
-    ('id_field:' id_field=STRING)?
-    (path_params=ExposePathParamsBlock)?
-    (filters=FiltersBlock)?
-    (permissions=PermissionsBlock)?
-    (access=ExposeAccessBlock)?
-;
-
-Operation:
-  'read' | 'create' | 'update' | 'delete' | 'list' | 'subscribe' | 'publish'
-;
-
-// Path params for expose block (explicit mapping)
-ExposePathParam:
-  '-' name=ID ':' type=TypeSpec '->' target=Expr ';'?
-;
-
-ExposePathParamsBlock:
-  'path_params:' params+=ExposePathParam+
-;
-
-FiltersBlock:
-  'filters:' '[' fields+=ID (',' fields+=ID)* ']'
-;
-
-// Permissions block for RBAC (deprecated - use source operations instead)
-PermissionsBlock:
-  'permissions:'
-    ('-' perms+=PermissionRule)+
-;
-
-PermissionRule:
-  operation=Operation ':' '[' roles+=STRING (',' roles+=STRING)* ']'
-;
-
-// DEPRECATED: Source operations block with inline permissions (OLD SYNTAX)
-// Keep for backward compatibility during migration
-SourceOperationsBlock:
-  'operations:'
-    ('-' ops+=SourceOperationRule)+
-;
-
-SourceOperationRule:
-  operation=Operation ':' '[' roles+=RoleOrWildcard (',' roles+=RoleOrWildcard)* ']'
-;
-
-RoleOrWildcard:
-  STRING | '*'
-;
-
-// NEW SYNTAX: Simple operation list (permissions defined in AccessControl block)
+// Simple operation list (permissions defined in Entity AccessBlock)
+// Note: Operation type is imported from rbac.tx
 SourceOperationsList:
   'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
 ;
@@ -155,22 +86,14 @@ SourceOperationsList:
 // 3. access: read: public create: [admin] (per-operation control)
 AccessBlock:
     'access:' public_keyword='public'                             // Public access: access: public
-  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list: access: [admin, user]
+  | 'access:' '[' roles+=[Role] (',' roles+=[Role])* ']'         // Role list: access: [admin, user]
   | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
 ;
 
 // Access rule for per-operation control
 // Example: read: public  or  create: [admin, librarian]
 AccessRule:
-  operation=Operation ':' (public_keyword='public' | '[' roles+=ID (',' roles+=ID)* ']')
-;
-
-// Expose access block (for WebSocket entities in expose block)
-// Same structure as AccessBlock but nested in expose
-ExposeAccessBlock:
-    'access:' public_keyword='public'                             // Public access
-  | 'access:' '[' roles+=ID (',' roles+=ID)* ']'                 // Role list
-  | 'access:' access_rules+=AccessRule+                           // Per-operation
+  operation=Operation ':' (public_keyword='public' | '[' roles+=[Role] (',' roles+=[Role])* ']')
 ;
 
 // Entity sources / targets -------------------
@@ -182,15 +105,15 @@ Source:
 // ---------- SOURCE (integration) ----------
 SourceREST:
   'Source<' kind='REST' '>' name=ID
-  'base_url:' base_url=STRING
-  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
+  'url:' url=STRING
+  operations=SourceOperationsList
   'end'
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   'channel:' url=STRING
-  (operations_list=SourceOperationsList | operations=SourceOperationsBlock)
+  operations=SourceOperationsList?
   'end'
 ;
 

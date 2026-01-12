@@ -8,7 +8,7 @@ from textx.exceptions import TextXSemanticError
 
 
 # Valid operations for each source type
-VALID_REST_OPERATIONS = {'create', 'read', 'update', 'delete', 'list'}
+VALID_REST_OPERATIONS = {'create', 'read', 'update', 'delete'}
 VALID_WS_OPERATIONS = {'subscribe', 'publish'}
 
 
@@ -17,7 +17,7 @@ def validate_source_syntax(model, metamodel=None):
     Validate that Source syntax is correct (runs before RBAC validation).
 
     Rules:
-    1. REST sources MUST have 'base_url:' and 'operations:' fields
+    1. REST sources MUST have 'url:' and 'operations:' fields
     2. WS sources MUST have 'channel:' and 'operations:' fields
     3. REST operations can only be: create, read, update, delete, list
     4. WS operations can only be: subscribe, publish
@@ -35,16 +35,11 @@ def validate_source_syntax(model, metamodel=None):
 
 def _validate_rest_source(source):
     """Validate a single REST source."""
-    # Check base_url is present (should be enforced by grammar, but double-check)
-    base_url = getattr(source, "base_url", None)
-    if not base_url:
+    # Check url is present (should be enforced by grammar, but double-check)
+    url = getattr(source, "url", None)
+    if not url:
         raise TextXSemanticError(
-            f"Source<REST> '{source.name}': MUST define 'base_url:' field.\n"
-            f"Correct syntax:\n"
-            f"  Source<REST> {source.name}\n"
-            f"    base_url: \"http://api.example.com/resource\"\n"
-            f"    operations: [read, create, update, delete]\n"
-            f"  end",
+            f"Source<REST> '{source.name}' is missing 'url:' field.",
             **get_location(source)
         )
 
@@ -54,13 +49,8 @@ def _validate_rest_source(source):
     # Check operations field exists
     if not operations:
         raise TextXSemanticError(
-            f"Source<REST> '{source.name}': MUST define 'operations: [...]' field.\n"
-            f"Valid REST operations: {', '.join(sorted(VALID_REST_OPERATIONS))}\n"
-            f"Example:\n"
-            f"  Source<REST> {source.name}\n"
-            f"    base_url: \"{base_url}\"\n"
-            f"    operations: [read, create, update, delete]\n"
-            f"  end",
+            f"Source<REST> '{source.name}' is missing 'operations:' field. "
+            f"Valid: {', '.join(sorted(VALID_REST_OPERATIONS))}.",
             **get_location(source)
         )
 
@@ -68,9 +58,8 @@ def _validate_rest_source(source):
     for op in operations:
         if op not in VALID_REST_OPERATIONS:
             raise TextXSemanticError(
-                f"Source<REST> '{source.name}': Invalid operation '{op}'.\n"
-                f"Valid REST operations: {', '.join(sorted(VALID_REST_OPERATIONS))}\n"
-                f"You specified: {operations}",
+                f"Source<REST> '{source.name}': invalid operation '{op}'. "
+                f"Valid: {', '.join(sorted(VALID_REST_OPERATIONS))}.",
                 **get_location(source)
             )
 
@@ -81,12 +70,7 @@ def _validate_ws_source(source):
     url = getattr(source, "url", None)
     if not url:
         raise TextXSemanticError(
-            f"Source<WS> '{source.name}': MUST define 'channel:' field.\n"
-            f"Correct syntax:\n"
-            f"  Source<WS> {source.name}\n"
-            f"    channel: \"ws://host:port/path\"\n"
-            f"    operations: [subscribe, publish]\n"
-            f"  end",
+            f"Source<WS> '{source.name}' is missing 'channel:' field.",
             **get_location(source)
         )
 
@@ -96,13 +80,8 @@ def _validate_ws_source(source):
     # Check operations field exists
     if not operations:
         raise TextXSemanticError(
-            f"Source<WS> '{source.name}': MUST define 'operations: [...]' field.\n"
-            f"Valid WebSocket operations: {', '.join(sorted(VALID_WS_OPERATIONS))}\n"
-            f"Example:\n"
-            f"  Source<WS> {source.name}\n"
-            f"    channel: \"{url}\"\n"
-            f"    operations: [subscribe, publish]\n"
-            f"  end",
+            f"Source<WS> '{source.name}' is missing 'operations:' field. "
+            f"Valid: {', '.join(sorted(VALID_WS_OPERATIONS))}.",
             **get_location(source)
         )
 
@@ -110,37 +89,16 @@ def _validate_ws_source(source):
     for op in operations:
         if op not in VALID_WS_OPERATIONS:
             raise TextXSemanticError(
-                f"Source<WS> '{source.name}': Invalid operation '{op}'.\n"
-                f"Valid WebSocket operations: {', '.join(sorted(VALID_WS_OPERATIONS))}\n"
-                f"You specified: {operations}",
+                f"Source<WS> '{source.name}': invalid operation '{op}'. "
+                f"Valid: {', '.join(sorted(VALID_WS_OPERATIONS))}.",
                 **get_location(source)
             )
 
-    # Ensure at least one operation is defined
-    if len(operations) == 0:
-        raise TextXSemanticError(
-            f"Source<WS> '{source.name}': Must define at least one operation.\n"
-            f"Valid operations: subscribe, publish",
-            **get_location(source)
-        )
-
 
 def _extract_operations(source):
-    """Extract operations list from source (handles both block and list syntax)."""
-    operations = []
-
-    # Check for operations_list (compact syntax: operations: [read, create])
-    operations_list = getattr(source, "operations_list", None)
-    if operations_list:
-        ops = getattr(operations_list, "operations", []) or []
-        operations = [op for op in ops]
-        return operations
-
-    # Check for operations block (verbose syntax: operations: read create end)
-    operations_block = getattr(source, "operations", None)
-    if operations_block:
-        ops = getattr(operations_block, "operations", []) or []
-        operations = [op for op in ops]
-        return operations
-
+    """Extract operations list from source."""
+    operations_obj = getattr(source, "operations", None)
+    if operations_obj:
+        ops = getattr(operations_obj, "operations", []) or []
+        return [op for op in ops]
     return []

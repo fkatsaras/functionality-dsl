@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  dummy-ecomm-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dummy
+    container_name: dummy-ecomm-service
+    ports:
+      - "9001:9001"
+    networks:
+      - thesis_fdsl_net
+    environment:
+      - FLASK_ENV=development
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  thesis_fdsl_net:
+    external: true

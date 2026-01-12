@@ -1,0 +1,9 @@
+{# components/PublishForm.jinja #}
+{# PublishForm for outbound WebSocket entities - sends JSON payloads #}
+<PublishForm
+    name="{{ common.name }}"
+    wsPath="{{ props.get('wsPath') or '' }}"
+    fields={{ "{" }}{{ props.get('fields') | tojson }}{{ "}" }}
+    submitLabel="{{ props.get('submitLabel') or 'Send' }}"
+    label="{{ props.get('label') or common.name }}"
+/>

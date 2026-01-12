@@ -22,19 +22,9 @@ from functionality_dsl.lib.component_types import COMPONENT_TYPES
 # Import validation functions
 from functionality_dsl.validation import (
     _validate_computed_attrs,
-    _validate_parameter_expressions,
-    _validate_error_event_conditions,
-    _validate_http_method_constraints,
-    _validate_ws_connection_scoping,
     _validate_exposure_blocks,
-    _validate_crud_blocks,
-    _validate_entity_crud_rules,
-    _validate_permissions,
-    _validate_source_operations,
+    _validate_ws_entities,
     _validate_entity_access_blocks,
-    verify_unique_endpoint_paths,
-    verify_endpoints,
-    verify_path_params,
     verify_entities,
     verify_components,
     verify_server,
@@ -176,9 +166,6 @@ def model_processor(model, metamodel=None):
     validate_server_auth_reference(model)
 
     verify_server(model)
-    verify_unique_endpoint_paths(model)
-    verify_endpoints(model)
-    verify_path_params(model)
     verify_entities(model)
     verify_components(model)
     _populate_aggregates(model)
@@ -315,8 +302,8 @@ def _expand_imports(model_path: str, visited=None) -> str:
     if not model_file.exists():
         raise FileNotFoundError(f"File not found: {model_file}")
 
-    # Read the file content
-    content = model_file.read_text()
+    # Read the file content with explicit UTF-8 encoding
+    content = model_file.read_text(encoding="utf-8")
     base_dir = model_file.parent
 
     # Find all import statements
@@ -370,17 +357,10 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
-    mm.register_model_processor(_validate_parameter_expressions)
-    mm.register_model_processor(_validate_error_event_conditions)
-    mm.register_model_processor(_validate_http_method_constraints)
-    mm.register_model_processor(_validate_ws_connection_scoping)
     mm.register_model_processor(_validate_exposure_blocks)
-    mm.register_model_processor(_validate_crud_blocks)
-    mm.register_model_processor(_validate_entity_crud_rules)  # NEW: Validate CRUD rules
-    mm.register_model_processor(_validate_permissions)  # OLD SYNTAX: Validate permissions/RBAC in expose blocks
-    mm.register_model_processor(validate_source_syntax)  # NEW: Validate source syntax (before RBAC validation)
-    mm.register_model_processor(_validate_source_operations)  # NEW SYNTAX: Validate source operations (RBAC)
-    mm.register_model_processor(_validate_entity_access_blocks)  # NEW SYNTAX: Validate entity access blocks
+    mm.register_model_processor(_validate_ws_entities)
+    mm.register_model_processor(validate_source_syntax)
+    mm.register_model_processor(_validate_entity_access_blocks)
 
     return mm
 
