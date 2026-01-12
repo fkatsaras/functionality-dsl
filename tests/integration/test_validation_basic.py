@@ -8,7 +8,7 @@ Tests that the parser/validator correctly:
 
 import pytest
 from pathlib import Path
-from functionality_dsl.language import build_model
+from functionality_dsl.language import build_model, build_model_str
 from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
 
@@ -154,3 +154,87 @@ def test_reserved_role_name_public_fails():
     # Verify the error message mentions the reserved keyword
     assert "reserved" in str(exc_info.value).lower()
     assert "public" in str(exc_info.value)
+
+
+def test_optional_on_inbound_ws_entity_fails():
+    """Test that @optional on inbound WebSocket entity attributes fails validation."""
+    fdsl_code = """
+    Server TestServer
+      host: "localhost"
+      port: 8080
+    end
+
+    Source<WS> DataWS
+      channel: "ws://external.api/data"
+    end
+
+    Entity DataTick
+      type: inbound
+      source: DataWS
+      attributes:
+        - value: string @optional;
+    end
+    """
+
+    # Should raise semantic error - @optional has no effect on inbound WS entities
+    with pytest.raises(TextXSemanticError) as exc_info:
+        build_model_str(fdsl_code)
+
+    assert "@optional" in str(exc_info.value)
+    assert "inbound" in str(exc_info.value).lower()
+
+
+def test_readonly_on_inbound_ws_entity_fails():
+    """Test that @readonly on inbound WebSocket entity attributes fails validation."""
+    fdsl_code = """
+    Server TestServer
+      host: "localhost"
+      port: 8080
+    end
+
+    Source<WS> DataWS
+      channel: "ws://external.api/data"
+    end
+
+    Entity DataTick
+      type: inbound
+      source: DataWS
+      attributes:
+        - value: string @readonly;
+    end
+    """
+
+    # Should raise semantic error - @readonly has no effect on inbound WS entities
+    with pytest.raises(TextXSemanticError) as exc_info:
+        build_model_str(fdsl_code)
+
+    assert "@readonly" in str(exc_info.value)
+    assert "inbound" in str(exc_info.value).lower()
+
+
+def test_optional_on_outbound_ws_entity_allowed():
+    """Test that @optional on outbound WebSocket entity attributes is allowed."""
+    fdsl_code = """
+    Server TestServer
+      host: "localhost"
+      port: 8080
+    end
+
+    Source<WS> CommandWS
+      channel: "ws://external.api/commands"
+      operations: [publish]
+    end
+
+    Entity Command
+      type: outbound
+      source: CommandWS
+      attributes:
+        - action: string;
+        - message: string @optional;
+      access: public
+    end
+    """
+
+    # Should NOT raise - @optional is valid for outbound WS entities
+    model = build_model_str(fdsl_code)
+    assert model is not None

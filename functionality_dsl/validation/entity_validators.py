@@ -882,12 +882,14 @@ def _validate_attribute_markers(model):
     1. @optional on computed attributes is invalid (computed = always derived)
     2. @optional on composite entity attributes is redundant (composites have no input schemas)
     3. @readonly and @optional are mutually exclusive (grammar enforces this, but double-check)
+    4. @readonly/@optional on inbound WS entities is invalid (no input schemas)
     """
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
         parent_entities = _get_parent_entities(entity)
         is_composite = len(parent_entities) > 0
+        ws_flow_type = getattr(entity, "ws_flow_type", None)
 
         attrs = getattr(entity, "attributes", []) or []
 
@@ -916,6 +918,17 @@ def _validate_attribute_markers(model):
             if is_optional and is_readonly:
                 raise TextXSemanticError(
                     f"'{attr.name}': @optional and @readonly cannot be combined.",
+                    **get_location(attr)
+                )
+
+            # Rule 4: @readonly/@optional on inbound WS entities is invalid
+            # Inbound entities only output data to clients - they have no input schemas
+            # These markers only affect Create/Update schemas which don't exist for inbound WS
+            if ws_flow_type == "inbound" and (is_optional or is_readonly):
+                marker = "@optional" if is_optional else "@readonly"
+                raise TextXSemanticError(
+                    f"'{attr.name}': {marker} cannot be used on inbound WebSocket entities. "
+                    f"Inbound entities only output data and have no input schemas.",
                     **get_location(attr)
                 )
 

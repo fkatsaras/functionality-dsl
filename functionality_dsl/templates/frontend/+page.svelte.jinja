@@ -50,7 +50,7 @@
 {% if auth %}
 {% raw %}{#if !authState.isAuthenticated}{% endraw %}
     {% if auth.type == "jwt" %}
-    <Login secret="{{ auth.secret }}" roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
+    <Login roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
     {% elif auth.type == "session" %}
     <SessionLogin roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
     {% endif %}

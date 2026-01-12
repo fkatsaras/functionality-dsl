@@ -3,9 +3,11 @@
 // =============================================================================
 // Demonstrates:
 // - REST CRUD: Patient profiles, health goals, medications
+// - Per-operation access control: Medications (patients can read/create,
+//   only doctors can update/delete)
 // - WebSocket inbound: Real-time heart rate from wearables
 // - WebSocket outbound: Emergency SOS alerts from patients
-// - Complex aggregations: BMI, calorie balance, health scores
+// - Complex aggregations: BMI, health scores, vital status
 //
 // Thesis Focus: Data collection from wearables + processing (BMI, status)
 //               + aggregation (health summaries)
@@ -32,22 +34,22 @@ end
 // =============================================================================
 
 Source<REST> PatientAPI
-  url: "http://health-service:9001/patient"
+  url: "http://dummy-health-monitoring:9001/patient"
   operations: [read, update]
 end
 
 Source<REST> GoalsAPI
-  url: "http://health-service:9001/goals"
+  url: "http://dummy-health-monitoring:9001/goals"
   operations: [read, create, update, delete]
 end
 
 Source<REST> MedicationAPI
-  url: "http://health-service:9001/medications"
+  url: "http://dummy-health-monitoring:9001/medications"
   operations: [read, create, update, delete]
 end
 
 Source<REST> VitalsSnapshotAPI
-  url: "http://health-service:9001/vitals"
+  url: "http://dummy-health-monitoring:9001/vitals"
   operations: [read]
 end
 
@@ -56,11 +58,13 @@ end
 // =============================================================================
 
 Source<WS> WearableHeartRate
-  channel: "ws://wearable-gateway:9002/ws/heartrate"
+  channel: "ws://dummy-health-monitoring:9001/ws/heartrate"
+  operations: [subscribe]
 end
 
 Source<WS> EmergencyChannel
-  channel: "ws://emergency-service:9003/ws/sos"
+  channel: "ws://dummy-health-monitoring:9001/ws/sos"
+  operations: [publish]
 end
 
 // =============================================================================
@@ -74,9 +78,9 @@ Entity PatientProfile
     - patient_id: string @readonly;
     - name: string;
     - age: integer;
-    - weight_kg: number;
-    - height_cm: number;
-    - blood_type: string;
+    - weight_kg: number @optional;
+    - height_cm: number @optional;
+    - blood_type: string @optional;
     - emergency_contact: string @optional;
     - updated_at: string @readonly;
   access: [patient, doctor]
@@ -95,7 +99,8 @@ Entity HealthGoal
   access: [patient]
 end
 
-// Medications - full CRUD
+// Medications - per-operation access control demonstration
+// Patients can view and add medications, but only doctors can modify or remove them
 Entity Medication
   source: MedicationAPI
   attributes:
@@ -103,10 +108,14 @@ Entity Medication
     - name: string;
     - dosage: string;
     - frequency: string;
-    - time_of_day: string;
-    - active: boolean;
+    - time_of_day: string @optional;
+    - active: boolean @optional;
     - notes: string @optional;
-  access: [patient, doctor]
+  access:
+    read: [patient, doctor]
+    create: [patient, doctor]
+    update: [doctor]
+    delete: [doctor]
 end
 
 // Current Vitals Snapshot (read-only)
@@ -153,6 +162,7 @@ end
 // =============================================================================
 
 // Real-time heart rate with analysis
+// Note: WebSocket auth requires token in query param - using public for demo simplicity
 Entity HeartRateMonitor(HeartRateTick)
   type: inbound
   attributes:
@@ -161,7 +171,7 @@ Entity HeartRateMonitor(HeartRateTick)
     - status: string = "critical" if HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50
         else ("elevated" if HeartRateTick.bpm > 100 else "normal");
     - needs_attention: boolean = HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50;
-  access: [patient, doctor]
+  access: public
 end
 
 // Health Summary - combines profile + vitals with BMI calculation

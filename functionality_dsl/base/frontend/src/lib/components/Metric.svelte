@@ -20,11 +20,16 @@
     let error = $state<string | null>(null);
     let loading = $state(true);
     let interval: ReturnType<typeof setInterval> | null = null;
-    let authToken = $state<string | null>(null);
 
-    // Subscribe to auth store to get token
+    // Get initial auth state synchronously
+    const initialAuth = authStore.getState();
+    let authToken = $state<string | null>(initialAuth.token);
+    let authType = $state<string>(initialAuth.authType);
+
+    // Subscribe to auth store for updates
     authStore.subscribe((state) => {
         authToken = state.token;
+        authType = state.authType;
     });
 
     async function fetchData() {
@@ -32,11 +37,17 @@
 
         try {
             const headers: Record<string, string> = {};
-            if (authToken) {
+            const fetchOptions: RequestInit = { headers };
+
+            // For JWT auth, use Authorization header
+            // For session auth, include credentials (cookies)
+            if (authType === 'jwt' && authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;
+            } else if (authType === 'session') {
+                fetchOptions.credentials = 'include';
             }
 
-            const res = await fetch(props.url, { headers });
+            const res = await fetch(props.url, fetchOptions);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
@@ -85,11 +96,9 @@
 
 <Card>
     <svelte:fragment slot="header">
-        <div class="flex justify-between items-center">
+        <div class="flex items-center justify-between w-full">
             <h3 class="text-sm font-medium text-[var(--text-muted)]">{displayLabel}</h3>
-            {#if props.refreshMs}
-                <RefreshButton onclick={fetchData} />
-            {/if}
+            <RefreshButton onRefresh={fetchData} {loading} />
         </div>
     </svelte:fragment>
 
@@ -98,7 +107,7 @@
             <EmptyState />
             
         </div>
-    {:else if error === "401"}
+    {:else if error && error.includes("401")}
         <UnauthorizedState />
     {:else if error}
         <ErrorState message={error} />

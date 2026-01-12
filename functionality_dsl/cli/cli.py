@@ -188,6 +188,24 @@ def generate(context, model_path, target, out_dir):
         model = build_model(model_path)
         out_path = Path(out_dir).resolve()
 
+        # Generate JWT secret once for both backend and frontend
+        from functionality_dsl.api.generators.core.infrastructure import generate_random_secret
+        from functionality_dsl.api.extractors import extract_server_config
+
+        server_config = extract_server_config(model)
+        jwt_secret_value = None
+        jwt_secret_var = None
+
+        auth_config = server_config.get("auth")
+        if auth_config and auth_config.get("type") == "jwt":
+            jwt_config = auth_config.get("jwt", {})
+            if jwt_config.get("secret"):
+                jwt_secret_var = jwt_config["secret"]
+                jwt_secret_value = generate_random_secret(32)
+                # Store in server_config so backend can use it
+                server_config["jwt_secret_var"] = jwt_secret_var
+                server_config["jwt_secret_value"] = jwt_secret_value
+
         if target in ("all", "backend"):
             base_backend_dir = Path(PKG_DIR) / "base" / "backend"
             templates_backend_dir = Path(PKG_DIR) / "templates" / "backend"
@@ -196,6 +214,7 @@ def generate(context, model_path, target, out_dir):
                 base_backend_dir=base_backend_dir,
                 templates_backend_dir=templates_backend_dir,
                 out_dir=out_path,
+                jwt_secret_value=jwt_secret_value,
             )
             render_domain_files(model, templates_backend_dir, out_path)
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")
@@ -209,6 +228,7 @@ def generate(context, model_path, target, out_dir):
                 base_frontend_dir=base_frontend_dir,
                 templates_frontend_dir=templates_frontend_dir,
                 out_dir=out_path / "frontend",
+                jwt_secret_value=jwt_secret_value,
             )
             # then write generated components
             render_frontend_files(model, templates_frontend_dir, out_path / "frontend")

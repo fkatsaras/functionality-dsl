@@ -79,11 +79,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     # Extract credentials based on auth type
     if AUTH_TYPE == "jwt":
-        # JWT auth: Extract token from Authorization header: "Bearer <token>"
+        # JWT auth: Extract token from Authorization header or query parameter
+        # Note: Browsers don't support custom headers for WebSocket, so we also check query params
         auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
         token = None
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header[7:]  # Remove "Bearer " prefix
+
+        # Fallback to query parameter for browser WebSocket connections
+        if not token:
+            token = websocket.query_params.get("token")
     else:
         # Session auth: Extract session cookie
         # WebSocket cookies come from the Cookie header

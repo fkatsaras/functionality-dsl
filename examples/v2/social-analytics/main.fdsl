@@ -32,27 +32,27 @@ end
 // =============================================================================
 
 Source<REST> CampaignAPI
-  url: "http://social-service:9001/campaigns"
+  url: "http://dummy-social-analytics:9001/campaigns"
   operations: [read, create, update, delete]
 end
 
 Source<REST> PostAPI
-  url: "http://social-service:9001/posts"
+  url: "http://dummy-social-analytics:9001/posts"
   operations: [read, create, update, delete]
 end
 
 Source<REST> AudienceAPI
-  url: "http://social-service:9001/audiences"
+  url: "http://dummy-social-analytics:9001/audiences"
   operations: [read, create, delete]
 end
 
 Source<REST> TwitterMetricsAPI
-  url: "http://social-service:9001/metrics/twitter"
+  url: "http://dummy-social-analytics:9001/metrics/twitter"
   operations: [read]
 end
 
 Source<REST> InstagramMetricsAPI
-  url: "http://social-service:9001/metrics/instagram"
+  url: "http://dummy-social-analytics:9001/metrics/instagram"
   operations: [read]
 end
 
@@ -61,11 +61,11 @@ end
 // =============================================================================
 
 Source<WS> EngagementStream
-  channel: "ws://social-gateway:9002/ws/engagement"
+  channel: "ws://dummy-social-analytics:9001/ws/engagement"
 end
 
 Source<WS> PublishChannel
-  channel: "ws://social-gateway:9002/ws/publish"
+  channel: "ws://dummy-social-analytics:9001/ws/publish"
 end
 
 // =============================================================================

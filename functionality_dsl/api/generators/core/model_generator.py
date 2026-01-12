@@ -22,9 +22,23 @@ def generate_domain_models(model, templates_dir, output_dir):
     all_imports = set()
     models_needing_rebuild = set()  # Track models with forward references
 
+    # Build exposure map to get optional_fields for each entity
+    exposure_map = build_exposure_map(model)
+
     for entity in get_entities(model):
         attribute_configs = []
         has_self_reference = False
+
+        # Get optional fields for this entity from exposure map (if exposed)
+        entity_exposure = exposure_map.get(entity.name, {})
+        optional_fields = entity_exposure.get("optional_fields", [])
+
+        # Also check attribute markers directly for non-exposed entities
+        if not optional_fields:
+            for attr in getattr(entity, "attributes", []) or []:
+                attr_type = getattr(attr, "type", None)
+                if attr_type and getattr(attr_type, "optionalMarker", None):
+                    optional_fields.append(attr.name)
 
         for attr in getattr(entity, "attributes", []) or []:
             # Compile validators to Pydantic constraints
@@ -35,6 +49,10 @@ def generate_domain_models(model, templates_dir, output_dir):
 
             # Get python type and check for self-reference
             py_type = map_to_python_type(attr)
+
+            # If field is @optional, wrap in Optional[] if not already
+            if attr.name in optional_fields and not py_type.startswith("Optional["):
+                py_type = f"Optional[{py_type}]"
 
             # Detect self-reference: if the entity name appears in the type annotation
             # Examples: List[Department], Optional[List[Department]], Department
@@ -89,7 +107,7 @@ def generate_domain_models(model, templates_dir, output_dir):
 
     # Generate CRUD schemas for exposed entities (NEW SYNTAX)
     crud_schemas = []
-    exposure_map = build_exposure_map(model)
+    # exposure_map already built above
 
     for entity_name, config in exposure_map.items():
         entity = config["entity"]

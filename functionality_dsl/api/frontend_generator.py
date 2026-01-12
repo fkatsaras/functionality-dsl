@@ -91,13 +91,19 @@ def _jinja_env(*, loader):
     )
 
 # ---------- scaffold ----------
-def scaffold_frontend_from_model(model, *, base_frontend_dir: Path, templates_frontend_dir: Path, out_dir: Path) -> Path:
+def scaffold_frontend_from_model(model, *, base_frontend_dir: Path, templates_frontend_dir: Path, out_dir: Path, jwt_secret_value: str = None) -> Path:
     ctx = _get_server_ctx(model)
+
+    # Add JWT secret value to context for .env generation
+    if jwt_secret_value:
+        ctx["jwt_secret_value"] = jwt_secret_value
+
     copytree(base_frontend_dir, out_dir, dirs_exist_ok=True)
     env = _jinja_env(loader=FileSystemLoader(str(templates_frontend_dir)))
     for target, tpl_name in {
         "vite.config.ts": "vite.config.ts.jinja",
         "Dockerfile":     "Dockerfile.jinja",
+        ".env":           "env.jinja",
     }.items():
         tpl = env.get_template(tpl_name)
         (out_dir / target).write_text(tpl.render(**ctx), encoding="utf-8")

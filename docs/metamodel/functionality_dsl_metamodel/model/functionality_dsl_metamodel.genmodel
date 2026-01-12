@@ -88,7 +88,6 @@
     </genClasses>
     <genClasses image="false" ecoreClass="functionality_dsl_metamodel.ecore#//JWTAuthConfig">
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/secret"/>
-      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/secret_env"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/header"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/scheme"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/algorithm"/>

@@ -6,6 +6,7 @@
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
     import ErrorState from "../primitives/icons/ErrorState.svelte";
+    import UnauthorizedState from "../primitives/icons/UnauthorizedState.svelte";
 
     const props = $props<{
         url: string;
@@ -95,10 +96,8 @@
 
 <Card fullWidth>
     <svelte:fragment slot="header">
-        <div class="flex justify-between items-center">
-            {#if props.title}
-                <h3 class="text-lg font-medium text-[var(--text)]">{props.title}</h3>
-            {/if}
+        <div class="flex items-center justify-between w-full">
+            <h3 class="text-lg font-medium text-[var(--text)]">{props.title || ""}</h3>
             <RefreshButton onRefresh={fetchData} {loading} />
         </div>
     </svelte:fragment>
@@ -107,6 +106,10 @@
         <div class="state-container">
             <EmptyState />
             
+        </div>
+    {:else if error && error.includes("401")}
+        <div class="state-container">
+            <UnauthorizedState />
         </div>
     {:else if error}
         <div class="state-container">

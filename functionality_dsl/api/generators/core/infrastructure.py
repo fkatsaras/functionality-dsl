@@ -30,12 +30,15 @@ def render_infrastructure_files(context, templates_dir, output_dir):
     )
 
     # Generate JWT secret environment variable
+    # Use pre-generated secret if available, otherwise generate new one
     auth_config = context.get("auth")
     if auth_config and auth_config.get("type") == "jwt":
         jwt_config = auth_config.get("jwt", {})
         if jwt_config.get("secret"):
             context["jwt_secret_var"] = jwt_config["secret"]
-            context["jwt_secret_value"] = generate_random_secret(32)
+            # Use existing value if already generated, otherwise generate new one
+            if "jwt_secret_value" not in context:
+                context["jwt_secret_value"] = generate_random_secret(32)
 
     # Map output files to their templates
     file_mappings = {
@@ -117,15 +120,26 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         print("  [WARN] templates_dir not provided, skipping error_handlers.py")
 
 
-def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path) -> Path:
+def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None) -> Path:
     """
     Scaffold the complete backend structure from the model.
     Copies base files and renders environment/Docker configuration.
+
+    Args:
+        model: The parsed FDSL model
+        base_backend_dir: Path to base backend template files
+        templates_backend_dir: Path to backend Jinja templates
+        out_dir: Output directory for generated code
+        jwt_secret_value: Pre-generated JWT secret value (optional)
     """
     print("\n[SCAFFOLD] Creating backend structure...")
 
     # Extract server configuration
     context = extract_server_config(model)
+
+    # Use pre-generated JWT secret if provided
+    if jwt_secret_value:
+        context["jwt_secret_value"] = jwt_secret_value
 
     # Copy base backend files
     copytree(base_backend_dir, out_dir, dirs_exist_ok=True)

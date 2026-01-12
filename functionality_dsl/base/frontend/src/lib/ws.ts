@@ -1,3 +1,5 @@
+import { authStore } from './stores/authStore';
+
 type Listener = (data: any) => void;
 
 type SocketState = {
@@ -26,11 +28,32 @@ function resolveWs(raw: string) {
   return raw;
 }
 
+/**
+ * Append authentication token to WebSocket URL as query parameter.
+ * Browsers don't support custom headers for WebSocket, so we use query params for JWT.
+ * For session auth, cookies are sent automatically.
+ */
+function appendAuthToUrl(url: string): string {
+    const state = authStore.getState();
+
+    // For JWT auth, append token as query parameter
+    if (state.authType === 'jwt' && state.token) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}token=${encodeURIComponent(state.token)}`;
+    }
+
+    // For session auth, cookies are sent automatically by the browser
+    // No URL modification needed
+    return url;
+}
+
 function connect(state: SocketState): string | undefined {
     if (state.refCount <= 0) return;
 
     try {
-        state.ws = new WebSocket(state.fullUrl);
+        // Append auth token to URL for authenticated WebSocket connections
+        const urlWithAuth = appendAuthToUrl(state.fullUrl);
+        state.ws = new WebSocket(urlWithAuth);
 
         // debugs
         state.ws.onopen = () => {

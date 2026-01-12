@@ -3,9 +3,11 @@
     import Card from "$lib/primitives/Card.svelte";
 
     const props = $props<{
-        secret: string;
         roles: string[];
     }>();
+
+    // Read JWT secret from environment variable
+    const jwtSecret = import.meta.env.VITE_JWT_SECRET || "";
 
     let userId = $state("");
     let selectedRoles = $state<string[]>([]);
@@ -73,7 +75,7 @@
         // For client-side demo, we'll use a simple signature
         // In production, this would use proper HMAC-SHA256 with the secret
         const signatureData = `${headerEncoded}.${payloadEncoded}`;
-        const signature = await createSignature(signatureData, props.secret);
+        const signature = await createSignature(signatureData, jwtSecret);
 
         return `${headerEncoded}.${payloadEncoded}.${signature}`;
     }
@@ -156,10 +158,7 @@
             </button>
 
             <div class="info-text">
-                <p class="text-sm text-[var(--text-muted)]">
-                    JWT Secret: <code>{props.secret}</code>
-                </p>
-                <p class="text-xs text-[var(--text-muted)] mt-2">
+                <p class="text-xs text-[var(--text-muted)]">
                     This generates a JWT token client-side for demo purposes.
                     In production, tokens should be issued by your auth server.
                 </p>
