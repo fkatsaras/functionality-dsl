@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  dummy-social-analytics:
+  dummy-esports:
     build:
       context: .
       dockerfile: Dockerfile.dummy
-    container_name: dummy-social-analytics
+    container_name: dummy-esports
     ports:
       - "9001:9001"
     networks:

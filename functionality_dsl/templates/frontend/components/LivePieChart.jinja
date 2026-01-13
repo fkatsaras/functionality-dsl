@@ -1,0 +1,12 @@
+{# components/LivePieChart.jinja #}
+<LivePieChart
+  name="{{ common.name }}"
+  wsUrl="{{ props.get('wsUrl') }}"
+  sliceFields={{ "{" }}{{ props.get('slices') | tojson }}{{ "}" }}
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+  {%- if props.get('size') %}
+  size={{ props.get('size') }}
+  {%- endif %}
+/>

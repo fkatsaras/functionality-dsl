@@ -27,6 +27,7 @@ Component:
   | MetricComponent
   | DataCardComponent
   | PieChartComponent
+  | LivePieChartComponent
   | BarChartComponent
   | ProgressComponent
   | LiveProgressComponent
@@ -299,6 +300,17 @@ PieChartComponent:
     ('title:' title=STRING)?
     ('size:' size=INT)?
     ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LivePieChartComponent:
+  'Component' '<' 'LivePieChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('slices:' '-' slices+=SliceField ('-' slices+=SliceField)*)?
+    ('title:' title=STRING)?
+    ('size:' size=INT)?
   )#
   'end'
 ;

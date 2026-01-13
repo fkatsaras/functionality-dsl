@@ -64,15 +64,24 @@ class {{ entity_name }}Service:
             context["{{ parent }}"] = parent_data["{{ parent }}"]
         {% endfor %}
         {% elif has_parent_services %}
-        # Parent data comes from entity services (Pydantic models)
+        # Parent data comes from entity services (Pydantic models or dicts from WS chain)
+        # Using mode="json" to serialize complex types (UUID, date, HttpUrl) to JSON-compatible strings
         {% for parent_info in parent_services %}
         if "{{ parent_info.name }}" in parent_data:
-            # Convert Pydantic model to dict for expression evaluation
-            # Check if this is an array parent (list of models)
-            if isinstance(parent_data["{{ parent_info.name }}"], list):
-                context["{{ parent_info.name }}"] = [item.model_dump() for item in parent_data["{{ parent_info.name }}"]]
+            parent_value = parent_data["{{ parent_info.name }}"]
+            # Handle both Pydantic models (REST composition) and dicts (WS chained composition)
+            if isinstance(parent_value, list):
+                # Check if list items are Pydantic models or dicts
+                if parent_value and hasattr(parent_value[0], "model_dump"):
+                    context["{{ parent_info.name }}"] = [item.model_dump(mode="json") for item in parent_value]
+                else:
+                    context["{{ parent_info.name }}"] = parent_value
+            elif hasattr(parent_value, "model_dump"):
+                # Pydantic model - convert to dict
+                context["{{ parent_info.name }}"] = parent_value.model_dump(mode="json")
             else:
-                context["{{ parent_info.name }}"] = parent_data["{{ parent_info.name }}"].model_dump()
+                # Already a dict (from WS chained transformation)
+                context["{{ parent_info.name }}"] = parent_value
         {% endfor %}
         {% elif has_multiple_parent_sources %}
         # Parent data comes from multiple sources (raw dicts or lists)

@@ -1073,6 +1073,44 @@ class PieChartComponent(_BaseComponent):
 
 
 @register_component
+class LivePieChartComponent(_BaseComponent):
+    """
+    <Component<LivePieChart> ...>
+      entity: <Entity> (WebSocket entity)
+      slices: required list of SliceField definitions
+      title: optional string title
+      size: optional int (chart diameter in pixels)
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, slices=None, title=None, size=None):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse slices from SliceField definitions
+        self.slices = []
+        for slice_def in (slices or []):
+            self.slices.append({
+                "field": _strip_quotes(getattr(slice_def, "field", None)),
+                "label": _strip_quotes(getattr(slice_def, "label", None)),
+                "color": _strip_quotes(getattr(slice_def, "color", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.size = int(size) if size is not None else 200
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.slices:
+            raise ValueError(f"Component '{name}': 'slices:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "slices": self.slices,
+            "title": self.title or self.entity_ref.name,
+            "size": self.size,
+        }
+
+
+@register_component
 class BarChartComponent(_BaseComponent):
     """
     <Component<BarChart> ...>
