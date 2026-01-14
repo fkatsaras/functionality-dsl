@@ -1,0 +1,113 @@
+// =============================================================================
+// External Auth Database Demo
+// =============================================================================
+// Demonstrates FDSL connecting to an existing user database.
+//
+// Use this pattern when:
+// - You have an existing user database
+// - Your column names differ from FDSL defaults
+// - You want to integrate with an existing auth system
+//
+// The AuthDB block maps your table/columns to FDSL's auth system.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Roles
+// -----------------------------------------------------------------------------
+Role admin
+Role moderator
+Role member
+
+// -----------------------------------------------------------------------------
+// External User Database Configuration
+// -----------------------------------------------------------------------------
+// Maps to an existing PostgreSQL database with custom column names.
+// You must set the LEGACY_DB_URL environment variable to your connection string.
+//
+// Expected table structure:
+// CREATE TABLE app_users (
+//     id SERIAL PRIMARY KEY,
+//     user_email VARCHAR(255) UNIQUE NOT NULL,
+//     pwd_hash VARCHAR(255) NOT NULL,
+//     user_role VARCHAR(50) DEFAULT 'member'
+// );
+
+AuthDB LegacyUsers
+  connection: "LEGACY_DB_URL"
+  table: "app_users"
+  columns:
+    - id: "user_email"
+    - password: "pwd_hash"
+    - role: "user_role"
+end
+
+// -----------------------------------------------------------------------------
+// Authentication
+// -----------------------------------------------------------------------------
+// References the external AuthDB - no default database will be generated
+Auth ForumAuth
+  type: jwt
+  secret: "FORUM_JWT_SECRET"
+  db: LegacyUsers
+end
+
+// -----------------------------------------------------------------------------
+// Server
+// -----------------------------------------------------------------------------
+Server ForumAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  env: dev
+  loglevel: debug
+  auth: ForumAuth
+end
+
+// -----------------------------------------------------------------------------
+// External Sources
+// -----------------------------------------------------------------------------
+Source<REST> PostsAPI
+  url: "http://posts-service:9001/posts"
+  operations: [read, create]
+end
+
+Source<REST> ModerationAPI
+  url: "http://moderation-service:9001/queue"
+  operations: [read, update]
+end
+
+// -----------------------------------------------------------------------------
+// Entities
+// -----------------------------------------------------------------------------
+
+// Public posts - anyone can read
+Entity PublicPosts
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string;
+    - content: string;
+    - authorId: integer @readonly;
+    - createdAt: string @readonly;
+  access: public
+end
+
+// Member posts - members can create
+Entity MemberPost
+  source: PostsAPI
+  attributes:
+    - title: string;
+    - content: string;
+  access: [member, moderator, admin]
+end
+
+// Moderation queue - moderators and admins only
+Entity ModerationQueue
+  source: ModerationAPI
+  attributes:
+    - postId: integer;
+    - reportReason: string;
+    - status: string;
+    - reviewedBy: integer?;
+  access: [moderator, admin]
+end

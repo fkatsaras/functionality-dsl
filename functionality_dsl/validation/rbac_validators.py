@@ -115,3 +115,72 @@ def validate_server_auth_reference(model):
                 f"Available: {', '.join(sorted(declared_auths)) if declared_auths else 'none'}.",
                 **get_location(server),
             )
+
+
+def validate_authdb_references(model):
+    """Validate that Auth db references point to declared AuthDB entities."""
+    auths = get_children_of_type("Auth", model)
+    authdbs = get_children_of_type("AuthDB", model)
+    declared_authdbs = {authdb.name for authdb in authdbs}
+
+    for auth in auths:
+        db_ref = getattr(auth, "db", None)
+        if db_ref and isinstance(db_ref, str):
+            raise TextXSemanticError(
+                f"Auth '{auth.name}' references undeclared AuthDB '{db_ref}'. "
+                f"Available: {', '.join(sorted(declared_authdbs)) if declared_authdbs else 'none'}.",
+                **get_location(auth),
+            )
+
+
+def validate_authdb_config(model):
+    """Validate AuthDB configuration is complete and valid."""
+    authdbs = get_children_of_type("AuthDB", model)
+
+    for authdb in authdbs:
+        # Validate connection string is provided
+        connection = getattr(authdb, "connection", None)
+        if not connection:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'connection:' (environment variable name).",
+                **get_location(authdb),
+            )
+
+        # Validate table name is provided
+        table = getattr(authdb, "table", None)
+        if not table:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'table:' (user table name).",
+                **get_location(authdb),
+            )
+
+        # Validate columns are provided and complete
+        columns = getattr(authdb, "columns", None)
+        if not columns:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'columns:' with id, password, and role columns.",
+                **get_location(authdb),
+            )
+
+        # Validate column fields
+        id_col = getattr(columns, "id", None)
+        password_col = getattr(columns, "password", None)
+        role_col = getattr(columns, "role", None)
+
+        if not id_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'id:' (login identifier column).",
+                **get_location(authdb),
+            )
+
+        if not password_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'password:' (password hash column).",
+                **get_location(authdb),
+            )
+
+        if not role_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'role:' (user role column).",
+                **get_location(authdb),
+            )

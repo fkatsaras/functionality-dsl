@@ -17,10 +17,16 @@ def generate_random_secret(length: int = 32) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
-def render_infrastructure_files(context, templates_dir, output_dir):
+def render_infrastructure_files(context, templates_dir, output_dir, db_context=None):
     """
     Render infrastructure files (.env, docker-compose.yml, Dockerfile)
     from templates using the provided context.
+
+    Args:
+        context: Server configuration context
+        templates_dir: Path to templates directory
+        output_dir: Output directory for generated files
+        db_context: Optional database context from get_database_context()
     """
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
@@ -39,6 +45,10 @@ def render_infrastructure_files(context, templates_dir, output_dir):
             # Use existing value if already generated, otherwise generate new one
             if "jwt_secret_value" not in context:
                 context["jwt_secret_value"] = generate_random_secret(32)
+
+    # Merge database context if provided
+    if db_context:
+        context.update(db_context)
 
     # Map output files to their templates
     file_mappings = {
@@ -120,7 +130,7 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         print("  [WARN] templates_dir not provided, skipping error_handlers.py")
 
 
-def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None) -> Path:
+def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, db_context: dict = None) -> Path:
     """
     Scaffold the complete backend structure from the model.
     Copies base files and renders environment/Docker configuration.
@@ -131,6 +141,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
         templates_backend_dir: Path to backend Jinja templates
         out_dir: Output directory for generated code
         jwt_secret_value: Pre-generated JWT secret value (optional)
+        db_context: Database context from get_database_context() (optional)
     """
     print("\n[SCAFFOLD] Creating backend structure...")
 
@@ -151,7 +162,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
     backend_core_dir = out_dir / "app" / "core"
     _copy_runtime_libs(lib_root, backend_core_dir, templates_backend_dir)
 
-    # Render infrastructure files
-    render_infrastructure_files(context, templates_backend_dir, out_dir)
+    # Render infrastructure files with database context
+    render_infrastructure_files(context, templates_backend_dir, out_dir, db_context)
 
     return out_dir

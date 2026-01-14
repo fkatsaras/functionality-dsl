@@ -1,0 +1,102 @@
+// =============================================================================
+// Auth Database Demo
+// =============================================================================
+// Demonstrates FDSL's built-in user authentication with PostgreSQL database.
+//
+// Features:
+// - JWT authentication with auto-generated secret
+// - PostgreSQL user database (auto-generated via Docker Compose)
+// - User registration, login, and profile endpoints
+// - Role-based access control
+//
+// Generated endpoints:
+// - POST /auth/register - Create new user account
+// - POST /auth/login    - Authenticate and get JWT token
+// - GET /auth/me        - Get current user info
+// - GET /api/publicdata - Public endpoint (no auth required)
+// - GET /api/userdata   - Protected endpoint (requires 'user' role)
+// - GET /api/admindata  - Admin endpoint (requires 'admin' role)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Roles
+// -----------------------------------------------------------------------------
+Role admin
+Role user
+
+// -----------------------------------------------------------------------------
+// Authentication
+// -----------------------------------------------------------------------------
+// When no AuthDB is specified, FDSL generates:
+// - A PostgreSQL container in docker-compose.yml
+// - A SQLModel User table with: id, email, password_hash, role, created_at
+// - Password hashing with bcrypt
+// - JWT token creation/validation
+
+Auth AppAuth
+  type: jwt
+  secret: "AUTH_DB_DEMO_SECRET"
+end
+
+// -----------------------------------------------------------------------------
+// Server
+// -----------------------------------------------------------------------------
+Server AuthDBDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  env: dev
+  loglevel: debug
+  auth: AppAuth
+end
+
+// -----------------------------------------------------------------------------
+// External Sources (Mock APIs for demo)
+// -----------------------------------------------------------------------------
+Source<REST> PublicAPI
+  url: "http://httpbin.org/json"
+  operations: [read]
+end
+
+Source<REST> UserAPI
+  url: "http://httpbin.org/json"
+  operations: [read]
+end
+
+Source<REST> AdminAPI
+  url: "http://httpbin.org/json"
+  operations: [read]
+end
+
+// -----------------------------------------------------------------------------
+// Entities
+// -----------------------------------------------------------------------------
+
+// Public endpoint - no authentication required
+Entity PublicData
+  source: PublicAPI
+  attributes:
+    - message: string;
+    - timestamp: integer;
+  access: public
+end
+
+// User endpoint - requires 'user' or 'admin' role
+Entity UserData
+  source: UserAPI
+  attributes:
+    - userId: string;
+    - profile: string;
+    - preferences: string;
+  access: [user, admin]
+end
+
+// Admin endpoint - requires 'admin' role only
+Entity AdminData
+  source: AdminAPI
+  attributes:
+    - systemStatus: string;
+    - userCount: integer;
+    - serverMetrics: string;
+  access: [admin]
+end

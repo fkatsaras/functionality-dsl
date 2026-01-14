@@ -7,13 +7,57 @@
 // Supported auth types:
 // - jwt: Stateless token-based auth (recommended for APIs)
 // - session: Stateful cookie-based auth (traditional web apps)
+//
+// AuthDB: Optional user database configuration
+// - If not specified: generates default Postgres + SQLModel user store
+// - If specified: connects to external database with user table mapping
 
+// =============================================================================
+// AuthDB Declaration - User Database Configuration
+// =============================================================================
+// Defines where user credentials and roles are stored
+//
+// Usage:
+// 1. Default (no AuthDB): FDSL generates Postgres container + SQLModel user table
+// 2. External DB: User provides connection string and column mapping
+//
+// Example (external DB):
+//   AuthDB UserStore
+//     connection: "DATABASE_URL"
+//     table: "users"
+//     columns:
+//       - id: "user_email"
+//       - password: "pwd_hash"
+//       - role: "user_role"
+//   end
+
+AuthDB:
+    'AuthDB' name=ID
+        'connection:' connection=STRING    // Env var name for connection string
+        'table:' table=STRING              // Table name containing users
+        'columns:'
+            columns=AuthDBColumns
+    'end'
+;
+
+// Column definitions for external user database
+// Maps FDSL expected fields to actual column names (uses - prefix like entity attributes)
+AuthDBColumns:
+    '-' 'id:' id=STRING                    // Login identifier column (email, username, etc.)
+    '-' 'password:' password=STRING        // Password hash column
+    '-' 'role:' role=STRING                // Role column (stores role name as string)
+;
+
+// =============================================================================
+// Auth Declaration - Authentication Configuration
+// =============================================================================
 // Auth Declaration - first-class citizen
 Auth:
   'Auth' name=ID
     'type:' type=AuthType
     (jwt_config=JWTAuthConfig)?
     (session_config=SessionAuthConfig)?
+    ('db:' db=[AuthDB])?                   // Optional reference to AuthDB
   'end'
 ;
 

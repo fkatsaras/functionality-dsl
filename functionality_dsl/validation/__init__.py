@@ -42,6 +42,8 @@ from functionality_dsl.validation.rbac_validators import (
     validate_accesscontrol_dependencies,
     validate_role_references,
     validate_server_auth_reference,
+    validate_authdb_references,
+    validate_authdb_config,
 )
 
 from functionality_dsl.validation.source_validators import (
@@ -72,6 +74,8 @@ __all__ = [
     "validate_accesscontrol_dependencies",
     "validate_role_references",
     "validate_server_auth_reference",
+    "validate_authdb_references",
+    "validate_authdb_config",
     # Source validators
     "validate_source_syntax",
 ]

@@ -48,6 +48,13 @@ def create_app() -> FastAPI:
         app.state._stack = AsyncExitStack()
         await app.state._stack.enter_async_context(lifespan_http_client())
 
+        # Initialize database if db module exists
+        try:
+            from app.db import init_db
+            init_db()
+        except ImportError:
+            logger.debug("No db module found - skipping database initialization")
+
     @app.on_event("shutdown")
     async def _shutdown():
         await app.state._stack.aclose()

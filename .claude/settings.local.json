@@ -228,7 +228,9 @@
       "Bash(__NEW_LINE__ echo \"=== No auth - GET medication \\(should FAIL - requires auth\\) ===\")",
       "Bash(PATIENT_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwYXRpZW50MTIzIiwicm9sZXMiOlsicGF0aWVudCJdLCJleHAiOjE3NjgyNjI2NTYsImlhdCI6MTc2ODI1OTA1Nn0.XL5HjaHIqyeqtsOdnl6IEoGZbPZu-Y9j-79tCBPuPHw\")",
       "Bash(DOCTOR_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkb2N0b3I0NTYiLCJyb2xlcyI6WyJkb2N0b3IiXSwiZXhwIjoxNzY4MjYyNjU2LCJpYXQiOjE3NjgyNTkwNTZ9.vxSJ-guTE6ajAjtK3MTTvNIfpnSOZy3BoyLqWnBLvCQ\")",
-      "Bash(__NEW_LINE_ace4c45d0e8ec8c8__ echo \"=== TEST: HealthSummary composite entity \\(access: [patient, doctor]\\) ===\")"
+      "Bash(__NEW_LINE_ace4c45d0e8ec8c8__ echo \"=== TEST: HealthSummary composite entity \\(access: [patient, doctor]\\) ===\")",
+      "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_basic.py -v -k \"authdb or auth_with\")",
+      "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_basic.py -v -k \"authdb\")"
     ],
     "deny": [],
     "ask": []

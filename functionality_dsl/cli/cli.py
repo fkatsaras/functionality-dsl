@@ -14,6 +14,7 @@ from plantuml import PlantUML
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
 from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
+from functionality_dsl.api.generators.core.database_generator import get_database_context
 from functionality_dsl.language import build_model
 from functionality_dsl.utils import print_model_debug
 from functionality_dsl.language import THIS_DIR as PKG_DIR
@@ -209,12 +210,17 @@ def generate(context, model_path, target, out_dir):
         if target in ("all", "backend"):
             base_backend_dir = Path(PKG_DIR) / "base" / "backend"
             templates_backend_dir = Path(PKG_DIR) / "templates" / "backend"
+
+            # Get database context for infrastructure templates
+            db_context = get_database_context(model)
+
             scaffold_backend_from_model(
                 model,
                 base_backend_dir=base_backend_dir,
                 templates_backend_dir=templates_backend_dir,
                 out_dir=out_path,
                 jwt_secret_value=jwt_secret_value,
+                db_context=db_context,
             )
             render_domain_files(model, templates_backend_dir, out_path)
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")

@@ -238,3 +238,152 @@ def test_optional_on_outbound_ws_entity_allowed():
     # Should NOT raise - @optional is valid for outbound WS entities
     model = build_model_str(fdsl_code)
     assert model is not None
+
+
+# =============================================================================
+# AuthDB Tests
+# =============================================================================
+
+def test_auth_with_default_db_parses():
+    """Test that Auth without AuthDB reference uses default database."""
+    fdsl_code = """
+    Role admin
+    Role user
+
+    Auth AppAuth
+      type: jwt
+      secret: "JWT_SECRET"
+    end
+
+    Server TestServer
+      host: "localhost"
+      port: 8080
+      auth: AppAuth
+    end
+
+    Source<REST> DataAPI
+      url: "http://api.example.com/data"
+      operations: [read]
+    end
+
+    Entity Data
+      source: DataAPI
+      attributes:
+        - value: string;
+      access: [user, admin]
+    end
+    """
+
+    model = build_model_str(fdsl_code)
+    assert model is not None
+    # Auth should be present and referenced by server
+    assert len(model.auth) == 1
+    assert model.auth[0].name == "AppAuth"
+    assert model.servers[0].auth.name == "AppAuth"
+    # No AuthDB should be referenced
+    assert model.auth[0].db is None
+
+
+def test_auth_with_external_authdb_parses():
+    """Test that Auth with AuthDB reference parses correctly."""
+    fdsl_code = """
+    Role admin
+    Role member
+
+    AuthDB ExternalUsers
+      connection: "DATABASE_URL"
+      table: "users"
+      columns:
+        - id: "user_email"
+        - password: "pwd_hash"
+        - role: "user_role"
+    end
+
+    Auth AppAuth
+      type: jwt
+      secret: "JWT_SECRET"
+      db: ExternalUsers
+    end
+
+    Server TestServer
+      host: "localhost"
+      port: 8080
+      auth: AppAuth
+    end
+
+    Source<REST> DataAPI
+      url: "http://api.example.com/data"
+      operations: [read]
+    end
+
+    Entity Data
+      source: DataAPI
+      attributes:
+        - value: string;
+      access: [member, admin]
+    end
+    """
+
+    model = build_model_str(fdsl_code)
+    assert model is not None
+    # Auth should reference AuthDB
+    assert model.auth[0].db is not None
+    assert model.auth[0].db.name == "ExternalUsers"
+    # AuthDB should have correct column mapping
+    assert model.auth[0].db.table == "users"
+    assert model.auth[0].db.columns.id == "user_email"
+    assert model.auth[0].db.columns.password == "pwd_hash"
+    assert model.auth[0].db.columns.role == "user_role"
+
+
+def test_auth_referencing_nonexistent_authdb_fails():
+    """Test that Auth referencing non-existent AuthDB fails validation."""
+    fdsl_code = """
+    Role admin
+
+    Auth AppAuth
+      type: jwt
+      secret: "JWT_SECRET"
+      db: NonExistentDB
+    end
+
+    Server TestServer
+      host: "localhost"
+      port: 8080
+      auth: AppAuth
+    end
+    """
+
+    # Should raise semantic error for missing AuthDB
+    with pytest.raises((TextXSemanticError, TextXSyntaxError)):
+        build_model_str(fdsl_code)
+
+
+def test_authdb_missing_connection_fails():
+    """Test that AuthDB without connection field fails validation."""
+    # Note: This will fail at parse time because connection is required in grammar
+    fdsl_code = """
+    AuthDB BrokenDB
+      table: "users"
+      columns:
+        - id: "email"
+        - password: "password"
+        - role: "role"
+    end
+    """
+
+    with pytest.raises((TextXSemanticError, TextXSyntaxError)):
+        build_model_str(fdsl_code)
+
+
+def test_authdb_missing_columns_fails():
+    """Test that AuthDB without columns fails validation."""
+    fdsl_code = """
+    AuthDB BrokenDB
+      connection: "DATABASE_URL"
+      table: "users"
+    end
+    """
+
+    with pytest.raises((TextXSemanticError, TextXSyntaxError)):
+        build_model_str(fdsl_code)

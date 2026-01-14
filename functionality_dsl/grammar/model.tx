@@ -10,6 +10,7 @@ FDSLModel:
 
     (
         roles+=Role
+    |   authdb+=AuthDB
     |   auth+=Auth
     |   servers+=Server
     |   externalrest+=SourceREST
