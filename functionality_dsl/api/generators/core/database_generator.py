@@ -158,14 +158,29 @@ def _extract_database_config(auth, model) -> dict:
     - uses_default_db: bool - whether to use default Postgres
     - database_url_env: str - environment variable name for DB URL
     - authdb: dict - AuthDB mapping config (if external DB)
+    - auth_type: str - 'jwt' or 'session'
     - debug: bool - whether to enable SQL echo
     """
     # Check if Auth references an AuthDB
     authdb = getattr(auth, "db", None)
+    auth_type = getattr(auth, "type", "jwt")
 
     if authdb:
         # External database mode
         columns = getattr(authdb, "columns", None)
+        sessions = getattr(authdb, "sessions", None)
+
+        # Build sessions config if present
+        sessions_config = None
+        if sessions:
+            sessions_config = {
+                "table": sessions.table,
+                "session_id": sessions.session_id,
+                "user_id": sessions.user_id,
+                "roles": sessions.roles,
+                "expires_at": sessions.expires_at,
+            }
+
         return {
             "uses_default_db": False,
             "database_url_env": authdb.connection,
@@ -176,7 +191,9 @@ def _extract_database_config(auth, model) -> dict:
                     "password": columns.password,
                     "role": columns.role,
                 },
+                "sessions": sessions_config,
             },
+            "auth_type": auth_type,
             "debug": False,
         }
     else:
@@ -185,6 +202,7 @@ def _extract_database_config(auth, model) -> dict:
             "uses_default_db": True,
             "database_url_env": "DATABASE_URL",
             "authdb": None,
+            "auth_type": auth_type,
             "debug": False,
         }
 

@@ -184,3 +184,30 @@ def validate_authdb_config(model):
                 f"AuthDB '{authdb.name}' columns must specify 'role:' (user role column).",
                 **get_location(authdb),
             )
+
+
+def validate_sessions_jwt_conflict(model):
+    """Validate that sessions table config is not used with JWT auth.
+
+    Sessions table mapping only makes sense for session-based auth.
+    JWT is stateless and doesn't need server-side session storage.
+    """
+    auths = get_children_of_type("Auth", model)
+
+    for auth in auths:
+        auth_type = getattr(auth, "type", "jwt")
+        db_ref = getattr(auth, "db", None)
+
+        if not db_ref:
+            continue
+
+        # Check if AuthDB has sessions config
+        sessions = getattr(db_ref, "sessions", None)
+
+        if sessions and auth_type == "jwt":
+            raise TextXSemanticError(
+                f"Auth '{auth.name}' uses JWT authentication but AuthDB '{db_ref.name}' "
+                f"has 'sessions:' configured. Sessions table is only used with 'type: session' auth. "
+                f"Either remove the sessions config or change to 'type: session'.",
+                **get_location(auth),
+            )

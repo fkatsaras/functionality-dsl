@@ -7,12 +7,448 @@ Configuration:
   Cookie: {{ cookie }}
   Expiry: {{ expiry }} seconds
   Roles: {{ roles }}
+{% if uses_default_db %}
+  Storage: PostgreSQL database (persistent, default schema)
+{% elif authdb and authdb.sessions %}
+  Storage: External database (persistent, mapped schema)
+  Table: {{ authdb.sessions.table }}
+{% else %}
+  Storage: In-memory (sessions lost on restart)
+  Note: For persistent sessions with external DB, add sessions config to AuthDB.
+{% endif %}
 
 This module provides:
-- In-memory session store (suitable for single-server deployments)
+- Session store for stateful authentication
 - Login/logout endpoints for session management
 - Role-based access control (RBAC) via session data
 """
+
+{# Database-backed sessions: either default DB or BYODB with sessions config #}
+{% if uses_default_db or (authdb and authdb.sessions) %}
+import json
+import secrets
+from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Any
+from fastapi import Depends, HTTPException, status, Response, Request, Cookie
+from pydantic import BaseModel
+from sqlmodel import Session as DBSession, select, delete
+
+from app.db.database import get_db, SessionRecord
+{% if authdb and authdb.sessions %}
+from app.db.database import (
+    SESSION_ID_COLUMN,
+    SESSION_USER_ID_COLUMN,
+    SESSION_ROLES_COLUMN,
+    SESSION_EXPIRES_AT_COLUMN,
+)
+{% endif %}
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+SESSION_COOKIE_NAME = "{{ cookie }}"
+SESSION_EXPIRY_SECONDS = {{ expiry }}
+
+# Declared roles from FDSL
+DECLARED_ROLES = {{ roles }}
+DECLARED_ROLES.append("public")  # Public is always allowed
+
+{% if uses_default_db %}
+# Default schema column names
+_SESSION_ID_COL = "session_id"
+_SESSION_USER_ID_COL = "user_id"
+_SESSION_ROLES_COL = "roles"
+_SESSION_EXPIRES_AT_COL = "expires_at"
+{% else %}
+# BYODB mapped column names
+_SESSION_ID_COL = SESSION_ID_COLUMN
+_SESSION_USER_ID_COL = SESSION_USER_ID_COLUMN
+_SESSION_ROLES_COL = SESSION_ROLES_COLUMN
+_SESSION_EXPIRES_AT_COL = SESSION_EXPIRES_AT_COLUMN
+{% endif %}
+
+
+# ============================================================================
+# Session Data Model (for API)
+# ============================================================================
+
+class SessionData(BaseModel):
+    """Data stored in a session"""
+    user_id: str
+    roles: List[str]
+    created_at: float
+    expires_at: float
+
+
+def _generate_session_id() -> str:
+    """Generate a cryptographically secure session ID"""
+    return secrets.token_urlsafe(32)
+
+
+def _cleanup_expired_sessions(db: DBSession):
+    """Remove expired sessions from the database"""
+    now = datetime.utcnow()
+    expires_col = getattr(SessionRecord, _SESSION_EXPIRES_AT_COL)
+    stmt = delete(SessionRecord).where(expires_col < now)
+    db.exec(stmt)
+    db.commit()
+
+
+# ============================================================================
+# Session Management (Database-backed)
+# ============================================================================
+
+def create_session(db: DBSession, user_id: str, roles: List[str]) -> str:
+    """
+    Create a new session for a user.
+
+    Args:
+        db: Database session
+        user_id: User identifier
+        roles: List of user roles
+
+    Returns:
+        Session ID (to be set as cookie)
+    """
+    # Cleanup old sessions periodically (1 in 10 chance to avoid every request)
+    if secrets.randbelow(10) == 0:
+        _cleanup_expired_sessions(db)
+
+    session_id = _generate_session_id()
+    now = datetime.utcnow()
+    expires_at = now + timedelta(seconds=SESSION_EXPIRY_SECONDS)
+
+{% if uses_default_db %}
+    session_record = SessionRecord(
+        session_id=session_id,
+        user_id=user_id,
+        roles=json.dumps(roles),
+        created_at=now,
+        expires_at=expires_at
+    )
+{% else %}
+    # BYODB: use mapped column names
+    session_record = SessionRecord(**{
+        _SESSION_ID_COL: session_id,
+        _SESSION_USER_ID_COL: user_id,
+        _SESSION_ROLES_COL: json.dumps(roles),
+        _SESSION_EXPIRES_AT_COL: expires_at,
+    })
+{% endif %}
+    db.add(session_record)
+    db.commit()
+
+    return session_id
+
+
+def get_session(db: DBSession, session_id: str) -> Optional[SessionData]:
+    """
+    Get session data by session ID.
+
+    Args:
+        db: Database session
+        session_id: Session ID from cookie
+
+    Returns:
+        SessionData if valid session exists, None otherwise
+    """
+    session_id_col = getattr(SessionRecord, _SESSION_ID_COL)
+    stmt = select(SessionRecord).where(session_id_col == session_id)
+    record = db.exec(stmt).first()
+
+    if record is None:
+        return None
+
+    # Check if expired (use property accessor for consistent interface)
+    if datetime.utcnow() > record.expires_at:
+        # Clean up expired session
+        db.delete(record)
+        db.commit()
+        return None
+
+{% if uses_default_db %}
+    return SessionData(
+        user_id=record.user_id,
+        roles=json.loads(record.roles),
+        created_at=record.created_at.timestamp(),
+        expires_at=record.expires_at.timestamp()
+    )
+{% else %}
+    # BYODB: use property accessors
+    return SessionData(
+        user_id=record.user_id,
+        roles=json.loads(record.roles),
+        created_at=0.0,  # Not tracked in BYODB sessions
+        expires_at=record.expires_at.timestamp()
+    )
+{% endif %}
+
+
+def delete_session(db: DBSession, session_id: str) -> bool:
+    """
+    Delete a session (logout).
+
+    Args:
+        db: Database session
+        session_id: Session ID to delete
+
+    Returns:
+        True if session was deleted, False if not found
+    """
+    session_id_col = getattr(SessionRecord, _SESSION_ID_COL)
+    stmt = select(SessionRecord).where(session_id_col == session_id)
+    record = db.exec(stmt).first()
+
+    if record:
+        db.delete(record)
+        db.commit()
+        return True
+    return False
+
+
+def refresh_session(db: DBSession, session_id: str) -> bool:
+    """
+    Refresh session expiry time.
+
+    Args:
+        db: Database session
+        session_id: Session ID to refresh
+
+    Returns:
+        True if session was refreshed, False if not found
+    """
+    session_id_col = getattr(SessionRecord, _SESSION_ID_COL)
+    stmt = select(SessionRecord).where(session_id_col == session_id)
+    record = db.exec(stmt).first()
+
+    if record and datetime.utcnow() < record.expires_at:
+        # Update expires_at using the actual column name
+        setattr(record, _SESSION_EXPIRES_AT_COL, datetime.utcnow() + timedelta(seconds=SESSION_EXPIRY_SECONDS))
+        db.add(record)
+        db.commit()
+        return True
+    return False
+
+
+# ============================================================================
+# Token Payload (compatible interface with JWT auth)
+# ============================================================================
+
+class TokenPayload:
+    """Session payload - compatible interface with JWT TokenPayload"""
+
+    def __init__(self, user_id: str, roles: List[str]):
+        self.user_id = user_id
+        self.roles = roles
+
+    def has_role(self, role: str) -> bool:
+        """Check if user has a specific role"""
+        return role in self.roles
+
+    def has_any_role(self, roles: List[str]) -> bool:
+        """Check if user has any of the specified roles"""
+        return any(self.has_role(role) for role in roles)
+
+
+# ============================================================================
+# FastAPI Dependencies
+# ============================================================================
+
+async def get_current_user(
+    request: Request,
+    db: DBSession = Depends(get_db),
+    session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)
+) -> TokenPayload:
+    """
+    Dependency to get current authenticated user from session cookie.
+    """
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated - no session cookie"
+        )
+
+    session = get_session(db, session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session"
+        )
+
+    # Refresh session on each request
+    refresh_session(db, session_id)
+
+    return TokenPayload(user_id=session.user_id, roles=session.roles)
+
+
+async def get_optional_user(
+    request: Request,
+    db: DBSession = Depends(get_db),
+    session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)
+) -> Optional[TokenPayload]:
+    """
+    Dependency to optionally get current user (doesn't fail if no session).
+    """
+    if not session_id:
+        return None
+
+    session = get_session(db, session_id)
+    if not session:
+        return None
+
+    refresh_session(db, session_id)
+    return TokenPayload(user_id=session.user_id, roles=session.roles)
+
+
+def require_roles(required_roles: List[str]):
+    """
+    Dependency factory to require specific roles.
+    """
+    # Special case: public access (no auth required)
+    if "public" in required_roles:
+        async def _check_roles_or_public(
+            request: Request,
+            db: DBSession = Depends(get_db),
+            session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)
+        ):
+            """Check if user has required roles OR allow public access"""
+            if not session_id:
+                return None
+
+            session = get_session(db, session_id)
+            if not session:
+                return None
+
+            user = TokenPayload(user_id=session.user_id, roles=session.roles)
+            if not user.has_any_role(required_roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+                )
+            return user
+
+        return _check_roles_or_public
+
+    async def _check_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has required roles"""
+        if not user.has_any_role(required_roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_roles
+
+
+def require_all_roles(required_roles: List[str]):
+    """
+    Dependency factory to require ALL specified roles.
+    """
+    async def _check_all_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has all required roles"""
+        missing_roles = [role for role in required_roles if not user.has_role(role)]
+        if missing_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required roles: {missing_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_all_roles
+
+
+# ============================================================================
+# Login/Logout Request/Response Models
+# ============================================================================
+
+class LoginRequest(BaseModel):
+    """Login request body"""
+    user_id: str
+    roles: List[str]
+
+
+class LoginResponse(BaseModel):
+    """Login response body"""
+    user_id: str
+    roles: List[str]
+    message: str = "Login successful"
+
+
+class LogoutResponse(BaseModel):
+    """Logout response body"""
+    message: str = "Logout successful"
+
+
+# ============================================================================
+# Login/Logout Endpoint Handlers
+# ============================================================================
+
+async def login_handler(request: LoginRequest, response: Response, db: DBSession) -> LoginResponse:
+    """
+    Handle login - create session and set cookie.
+    """
+    # Validate roles
+    invalid_roles = [r for r in request.roles if r not in DECLARED_ROLES and r != "public"]
+    if invalid_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid roles: {invalid_roles}. Valid roles: {DECLARED_ROLES}"
+        )
+
+    # Create session in database
+    session_id = create_session(db, request.user_id, request.roles)
+
+    # Set session cookie
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=SESSION_EXPIRY_SECONDS,
+        httponly=True,  # Prevent JavaScript access
+        samesite="lax",  # CSRF protection
+        secure=False,  # Set to True in production with HTTPS
+    )
+
+    return LoginResponse(
+        user_id=request.user_id,
+        roles=request.roles
+    )
+
+
+async def logout_handler(
+    response: Response,
+    db: DBSession = Depends(get_db),
+    session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)
+) -> LogoutResponse:
+    """
+    Handle logout - delete session and clear cookie.
+    """
+    if session_id:
+        delete_session(db, session_id)
+
+    # Clear the session cookie
+    response.delete_cookie(key=SESSION_COOKIE_NAME)
+
+    return LogoutResponse()
+
+
+async def me_handler(user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    """
+    Get current user info.
+    """
+    return {
+        "user_id": user.user_id,
+        "roles": user.roles
+    }
+
+{% else %}
+# ==========================================================================
+# IN-MEMORY SESSION STORAGE (for BYODB mode without sessions table)
+# ==========================================================================
+# Note: Sessions are stored in-memory and will be lost on server restart.
+# For persistent sessions, add a 'sessions:' config to your AuthDB block.
 
 import secrets
 import time
@@ -46,7 +482,7 @@ class SessionData(BaseModel):
 
 
 # In-memory session store
-# Note: For production with multiple servers, use Redis or database
+# WARNING: Sessions will be lost on server restart
 _sessions: Dict[str, SessionData] = {}
 
 
@@ -78,13 +514,6 @@ def _cleanup_expired_sessions():
 def create_session(user_id: str, roles: List[str]) -> str:
     """
     Create a new session for a user.
-
-    Args:
-        user_id: User identifier
-        roles: List of user roles
-
-    Returns:
-        Session ID (to be set as cookie)
     """
     # Cleanup old sessions periodically
     _cleanup_expired_sessions()
@@ -105,12 +534,6 @@ def create_session(user_id: str, roles: List[str]) -> str:
 def get_session(session_id: str) -> Optional[SessionData]:
     """
     Get session data by session ID.
-
-    Args:
-        session_id: Session ID from cookie
-
-    Returns:
-        SessionData if valid session exists, None otherwise
     """
     session = _sessions.get(session_id)
 
@@ -128,12 +551,6 @@ def get_session(session_id: str) -> Optional[SessionData]:
 def delete_session(session_id: str) -> bool:
     """
     Delete a session (logout).
-
-    Args:
-        session_id: Session ID to delete
-
-    Returns:
-        True if session was deleted, False if not found
     """
     if session_id in _sessions:
         del _sessions[session_id]
@@ -144,12 +561,6 @@ def delete_session(session_id: str) -> bool:
 def refresh_session(session_id: str) -> bool:
     """
     Refresh session expiry time.
-
-    Args:
-        session_id: Session ID to refresh
-
-    Returns:
-        True if session was refreshed, False if not found
     """
     session = _sessions.get(session_id)
     if session and not _is_session_expired(session):
@@ -188,11 +599,6 @@ async def get_current_user(
 ) -> TokenPayload:
     """
     Dependency to get current authenticated user from session cookie.
-
-    Usage:
-        @app.get("/protected")
-        async def protected_route(user: TokenPayload = Depends(get_current_user)):
-            return {"user_id": user.user_id, "roles": user.roles}
     """
     if not session_id:
         raise HTTPException(
@@ -219,13 +625,6 @@ async def get_optional_user(
 ) -> Optional[TokenPayload]:
     """
     Dependency to optionally get current user (doesn't fail if no session).
-
-    Usage:
-        @app.get("/public-or-protected")
-        async def route(user: Optional[TokenPayload] = Depends(get_optional_user)):
-            if user:
-                return {"message": f"Hello {user.user_id}"}
-            return {"message": "Hello anonymous"}
     """
     if not session_id:
         return None
@@ -241,17 +640,6 @@ async def get_optional_user(
 def require_roles(required_roles: List[str]):
     """
     Dependency factory to require specific roles.
-
-    Args:
-        required_roles: List of roles, user must have at least one
-
-    Returns:
-        FastAPI dependency function
-
-    Usage:
-        @app.post("/admin-only", dependencies=[Depends(require_roles(["admin"]))])
-        async def admin_route():
-            return {"message": "Admin access granted"}
     """
     # Special case: public access (no auth required)
     if "public" in required_roles:
@@ -292,12 +680,6 @@ def require_roles(required_roles: List[str]):
 def require_all_roles(required_roles: List[str]):
     """
     Dependency factory to require ALL specified roles.
-
-    Args:
-        required_roles: List of roles, user must have ALL of them
-
-    Returns:
-        FastAPI dependency function
     """
     async def _check_all_roles(user: TokenPayload = Depends(get_current_user)):
         """Check if user has all required roles"""
@@ -341,11 +723,6 @@ class LogoutResponse(BaseModel):
 async def login_handler(request: LoginRequest, response: Response) -> LoginResponse:
     """
     Handle login - create session and set cookie.
-
-    This should be mounted as:
-        @app.post("/auth/login")
-        async def login(request: LoginRequest, response: Response):
-            return await login_handler(request, response)
     """
     # Validate roles
     invalid_roles = [r for r in request.roles if r not in DECLARED_ROLES and r != "public"]
@@ -380,11 +757,6 @@ async def logout_handler(
 ) -> LogoutResponse:
     """
     Handle logout - delete session and clear cookie.
-
-    This should be mounted as:
-        @app.post("/auth/logout")
-        async def logout(response: Response, session_id: str = Cookie(None)):
-            return await logout_handler(response, session_id)
     """
     if session_id:
         delete_session(session_id)
@@ -398,13 +770,9 @@ async def logout_handler(
 async def me_handler(user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Get current user info.
-
-    This should be mounted as:
-        @app.get("/auth/me")
-        async def me(user: TokenPayload = Depends(get_current_user)):
-            return await me_handler(user)
     """
     return {
         "user_id": user.user_id,
         "roles": user.roles
     }
+{% endif %}

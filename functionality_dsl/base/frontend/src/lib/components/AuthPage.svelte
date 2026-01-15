@@ -18,7 +18,9 @@
     let success = $state<string | null>(null);
     let loading = $state(false);
 
-    const baseUrl = props.apiUrl || import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "";
+    // Use relative URLs - Vite proxy handles forwarding to backend
+    // VITE_API_URL is for server-side proxy config, not browser requests
+    const baseUrl = props.apiUrl || "";
 
     function switchMode(newMode: AuthMode) {
         mode = newMode;

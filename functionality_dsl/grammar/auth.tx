@@ -21,7 +21,7 @@
 // 1. Default (no AuthDB): FDSL generates Postgres container + SQLModel user table
 // 2. External DB: User provides connection string and column mapping
 //
-// Example (external DB):
+// Example (external DB with session auth):
 //   AuthDB UserStore
 //     connection: "DATABASE_URL"
 //     table: "users"
@@ -29,6 +29,13 @@
 //       - id: "user_email"
 //       - password: "pwd_hash"
 //       - role: "user_role"
+//     sessions:
+//       table: "sessions"
+//       columns:
+//         - session_id: "sid"
+//         - user_id: "uid"
+//         - roles: "user_roles"
+//         - expires_at: "expiry"
 //   end
 
 AuthDB:
@@ -37,6 +44,7 @@ AuthDB:
         'table:' table=STRING              // Table name containing users
         'columns:'
             columns=AuthDBColumns
+        (sessions=AuthDBSessions)?         // Optional sessions table mapping (for session auth)
     'end'
 ;
 
@@ -46,6 +54,18 @@ AuthDBColumns:
     '-' 'id:' id=STRING                    // Login identifier column (email, username, etc.)
     '-' 'password:' password=STRING        // Password hash column
     '-' 'role:' role=STRING                // Role column (stores role name as string)
+;
+
+// Sessions table configuration for external database (only used with session auth)
+// Maps FDSL session fields to actual column names in external sessions table
+AuthDBSessions:
+    'sessions:'
+        'table:' table=STRING              // Sessions table name
+        'columns:'
+            '-' 'session_id:' session_id=STRING    // Session token column
+            '-' 'user_id:' user_id=STRING          // User identifier column
+            '-' 'roles:' roles=STRING              // Roles column (JSON string)
+            '-' 'expires_at:' expires_at=STRING    // Expiry timestamp column
 ;
 
 // =============================================================================

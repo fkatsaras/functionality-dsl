@@ -33,6 +33,7 @@ from functionality_dsl.validation import (
     validate_server_auth_reference,
     validate_authdb_references,
     validate_authdb_config,
+    validate_sessions_jwt_conflict,
     validate_source_syntax,
 )
 
@@ -170,6 +171,7 @@ def model_processor(model, metamodel=None):
     # AuthDB validation
     validate_authdb_references(model)
     validate_authdb_config(model)
+    validate_sessions_jwt_conflict(model)
 
     verify_server(model)
     verify_entities(model)

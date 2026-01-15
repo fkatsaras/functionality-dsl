@@ -7,6 +7,7 @@ networks:
 {% if uses_default_db %}
 volumes:
   postgres_data:
+  pgadmin_data:
 {% endif %}
 
 services:
@@ -29,6 +30,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - fdsl_net
+
+  # ===================== pgAdmin (Database UI) =====================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: {{ server.name | lower | replace(' ', '-') }}-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@fdsl.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: unless-stopped
     networks:
       - fdsl_net
 

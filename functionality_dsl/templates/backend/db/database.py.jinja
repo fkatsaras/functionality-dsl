@@ -73,11 +73,36 @@ class User(SQLModel, table=True):
     def login_id(self) -> str:
         """Get login identifier (email)."""
         return self.email
+
+
+{% if auth_type == 'session' %}
+class SessionRecord(SQLModel, table=True):
+    """
+    Database-backed session storage.
+    Stores session data for stateful authentication.
+    """
+    __tablename__ = "sessions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(unique=True, index=True, max_length=64)
+    user_id: str = Field(index=True, max_length=255)
+    roles: str = Field(max_length=500)  # JSON-encoded list of roles
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(index=True)
+{% endif %}
 {% else %}
 # Column name constants for auth system (mapped from AuthDB config)
 USER_ID_COLUMN = "{{ authdb.columns.id }}"
 USER_PASSWORD_COLUMN = "{{ authdb.columns.password }}"
 USER_ROLE_COLUMN = "{{ authdb.columns.role }}"
+{% if authdb.sessions %}
+
+# Session column name constants (mapped from AuthDB sessions config)
+SESSION_ID_COLUMN = "{{ authdb.sessions.session_id }}"
+SESSION_USER_ID_COLUMN = "{{ authdb.sessions.user_id }}"
+SESSION_ROLES_COLUMN = "{{ authdb.sessions.roles }}"
+SESSION_EXPIRES_AT_COLUMN = "{{ authdb.sessions.expires_at }}"
+{% endif %}
 
 
 class User(SQLModel, table=True):
@@ -106,6 +131,42 @@ class User(SQLModel, table=True):
     def role(self) -> str:
         """Get user role."""
         return getattr(self, USER_ROLE_COLUMN)
+
+
+{% if authdb.sessions %}
+class SessionRecord(SQLModel, table=True):
+    """
+    External session model mapped to existing database.
+    Table: {{ authdb.sessions.table }}
+    """
+    __tablename__ = "{{ authdb.sessions.table }}"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    {{ authdb.sessions.session_id }}: str = Field(unique=True, index=True, max_length=64)
+    {{ authdb.sessions.user_id }}: str = Field(index=True, max_length=255)
+    {{ authdb.sessions.roles }}: str = Field(max_length=500)  # JSON-encoded list of roles
+    {{ authdb.sessions.expires_at }}: datetime = Field(index=True)
+
+    @property
+    def session_id(self) -> str:
+        """Get session ID."""
+        return getattr(self, SESSION_ID_COLUMN)
+
+    @property
+    def user_id(self) -> str:
+        """Get user ID."""
+        return getattr(self, SESSION_USER_ID_COLUMN)
+
+    @property
+    def roles(self) -> str:
+        """Get roles (JSON string)."""
+        return getattr(self, SESSION_ROLES_COLUMN)
+
+    @property
+    def expires_at(self) -> datetime:
+        """Get expiry timestamp."""
+        return getattr(self, SESSION_EXPIRES_AT_COLUMN)
+{% endif %}
 {% endif %}
 
 

@@ -99,9 +99,66 @@ end
 | Aspect | JWT | Session |
 |--------|-----|---------|
 | State | Stateless (token contains all info) | Stateful (server stores session) |
-| Storage | Client (localStorage/header) | Server (in-memory) |
+| Storage | Client (localStorage/header) | Server (in-memory or database) |
 | Revocation | Hard (need blocklist) | Easy (delete session) |
 | Use case | APIs, mobile, microservices | Web apps, browsers |
+
+### User Database Configuration (AuthDB)
+
+By default, FDSL generates a PostgreSQL database with a `users` table for storing credentials. For existing databases (BYODB - Bring Your Own Database), use `AuthDB`:
+
+**Default (no AuthDB):** FDSL generates PostgreSQL + users table automatically.
+
+**External Database (BYODB):**
+```fdsl
+AuthDB UserStore
+  connection: "MY_DATABASE_URL"  // Environment variable name
+  table: "users"                 // Your existing users table
+  columns:
+    - id: "user_email"           // Login identifier column
+    - password: "pwd_hash"       // Password hash column (bcrypt)
+    - role: "user_role"          // Role column
+end
+
+Auth MyAuth
+  type: jwt
+  secret: "JWT_SECRET"
+  db: UserStore              // Reference to AuthDB
+end
+```
+
+**BYODB with Session Storage (for session auth only):**
+```fdsl
+AuthDB UserStore
+  connection: "MY_DATABASE_URL"
+  table: "users"
+  columns:
+    - id: "user_email"
+    - password: "pwd_hash"
+    - role: "user_role"
+  sessions:                      // Optional: persistent sessions
+    table: "sessions"            // Your sessions table
+    columns:
+      - session_id: "sid"        // Session token column
+      - user_id: "uid"           // User ID column
+      - roles: "user_roles"      // Roles column (JSON string)
+      - expires_at: "expiry"     // Expiry timestamp column
+end
+
+Auth MyAuth
+  type: session
+  cookie: "session_id"
+  db: UserStore
+end
+```
+
+**Note:** The `sessions:` config is only valid with `type: session`. JWT auth is stateless and doesn't need session storage.
+
+**Auth + Database Matrix:**
+| Auth Type | No AuthDB | AuthDB (no sessions) | AuthDB (with sessions) |
+|-----------|-----------|---------------------|------------------------|
+| JWT | ✅ Default DB | ✅ External DB | ❌ Invalid (JWT is stateless) |
+| Session | ✅ Default DB (DB sessions) | ⚠️ In-memory sessions | ✅ External DB sessions |
 
 ---
 

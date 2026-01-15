@@ -89,9 +89,32 @@ def _extract_auth_config(auth, model):
     role_blocks = get_children_of_type("Role", model)
     roles = [r.name for r in role_blocks]
 
+    # Check if using default database (no AuthDB reference)
+    authdb_ref = getattr(auth, "db", None)
+    uses_default_db = authdb_ref is None
+
+    # Build authdb config for templates (needed for BYODB sessions)
+    authdb_config = None
+    if authdb_ref:
+        sessions_ref = getattr(authdb_ref, "sessions", None)
+        sessions_config = None
+        if sessions_ref:
+            sessions_config = {
+                "table": sessions_ref.table,
+                "session_id": sessions_ref.session_id,
+                "user_id": sessions_ref.user_id,
+                "roles": sessions_ref.roles,
+                "expires_at": sessions_ref.expires_at,
+            }
+        authdb_config = {
+            "sessions": sessions_config,
+        }
+
     config = {
         "auth_type": auth_type,
         "roles": roles,
+        "uses_default_db": uses_default_db,
+        "authdb": authdb_config,
     }
 
     # Helper to get value or default (TextX returns "" for unset optional fields)

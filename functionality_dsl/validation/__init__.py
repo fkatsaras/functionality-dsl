@@ -44,6 +44,7 @@ from functionality_dsl.validation.rbac_validators import (
     validate_server_auth_reference,
     validate_authdb_references,
     validate_authdb_config,
+    validate_sessions_jwt_conflict,
 )
 
 from functionality_dsl.validation.source_validators import (
@@ -76,6 +77,7 @@ __all__ = [
     "validate_server_auth_reference",
     "validate_authdb_references",
     "validate_authdb_config",
+    "validate_sessions_jwt_conflict",
     # Source validators
     "validate_source_syntax",
 ]
