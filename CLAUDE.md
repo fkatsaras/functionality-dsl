@@ -670,3 +670,7 @@ end
 | `filters:` field | Not needed - no list endpoints |
 
 **Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET url`, `PUT url`, etc.).
+
+## dev notes:
+IMPORTANT!!! : THIS IS HOW YOU GENERATE A FILE
+cd c:/ffile/functionality-dsl && venv_WIN/Scripts/fdsl generate examples/v2/ecommerce/ecommerce_byodb.fdsl --out generated_byodb

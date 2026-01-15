@@ -230,7 +230,9 @@
       "Bash(DOCTOR_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkb2N0b3I0NTYiLCJyb2xlcyI6WyJkb2N0b3IiXSwiZXhwIjoxNzY4MjYyNjU2LCJpYXQiOjE3NjgyNTkwNTZ9.vxSJ-guTE6ajAjtK3MTTvNIfpnSOZy3BoyLqWnBLvCQ\")",
       "Bash(__NEW_LINE_ace4c45d0e8ec8c8__ echo \"=== TEST: HealthSummary composite entity \\(access: [patient, doctor]\\) ===\")",
       "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_basic.py -v -k \"authdb or auth_with\")",
-      "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_basic.py -v -k \"authdb\")"
+      "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_basic.py -v -k \"authdb\")",
+      "Skill(validate)",
+      "Skill(validate:*)"
     ],
     "deny": [],
     "ask": []
