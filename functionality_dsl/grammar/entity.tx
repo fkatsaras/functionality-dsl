@@ -106,6 +106,7 @@ Source:
 SourceREST:
   'Source<' kind='REST' '>' name=ID
   'url:' url=STRING
+  params=SourceParamsList?
   operations=SourceOperationsList
   'end'
 ;
@@ -113,8 +114,16 @@ SourceREST:
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   'channel:' url=STRING
+  params=SourceParamsList?
   operations=SourceOperationsList?
   'end'
+;
+
+// Source parameters list - maps client query params to source URL
+// Params in URL path like {id} are replaced with query param values
+// Params not in URL path are forwarded as query string
+SourceParamsList:
+  'params:' '[' params+=ID (',' params+=ID)* ']'
 ;
 
 // ---------- COMMON ----------

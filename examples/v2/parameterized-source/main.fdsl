@@ -1,0 +1,124 @@
+// =============================================================================
+// Parameterized Source Example - JSONPlaceholder API
+// =============================================================================
+// This example demonstrates:
+// - Parameterized REST sources with path params
+// - Parameterized REST sources with query params
+// - Composite entities inheriting params from parents
+//
+// External API: JSONPlaceholder (https://jsonplaceholder.typicode.com)
+// =============================================================================
+
+Server ParamDemo
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// =============================================================================
+// PARAMETERIZED SOURCE - Path param {id}
+// =============================================================================
+
+// Single todo by ID - path param
+Source<REST> TodoAPI
+  url: "https://jsonplaceholder.typicode.com/todos/{id}"
+  params: [id]
+  operations: [read]
+end
+
+Entity Todo
+  source: TodoAPI
+  attributes:
+    - userId: integer;
+    - id: integer;
+    - title: string;
+    - completed: boolean;
+  access: public
+end
+
+// Client: GET /api/todo?id=5
+// FDSL:   GET https://jsonplaceholder.typicode.com/todos/5
+
+
+// =============================================================================
+// PARAMETERIZED SOURCE - Query param forwarding
+// =============================================================================
+
+// Search posts - query params forwarded
+Source<REST> PostSearchAPI
+  url: "https://jsonplaceholder.typicode.com/posts"
+  params: [userId]
+  operations: [read]
+end
+
+Entity UserPosts
+  source: PostSearchAPI
+  attributes:
+    - posts: array;
+  access: public
+end
+
+// Client: GET /api/userposts?userId=1
+// FDSL:   GET https://jsonplaceholder.typicode.com/posts?userId=1
+
+
+// =============================================================================
+// PARAMETERIZED SOURCE - Multiple path params
+// =============================================================================
+
+// Post comments - nested resource
+Source<REST> PostCommentsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{postId}/comments"
+  params: [postId]
+  operations: [read]
+end
+
+Entity PostComments
+  source: PostCommentsAPI
+  attributes:
+    - comments: array;
+  access: public
+end
+
+// Client: GET /api/postcomments?postId=1
+// FDSL:   GET https://jsonplaceholder.typicode.com/posts/1/comments
+
+
+// =============================================================================
+// COMPOSITE ENTITY - Inherits params from parent
+// =============================================================================
+
+Entity TodoStats(Todo)
+  attributes:
+    - id: integer = Todo.id;
+    - title: string = Todo.title;
+    - title_length: integer = len(Todo.title);
+    - status: string = "completed" if Todo.completed else "pending";
+  access: public
+end
+
+// Client: GET /api/todostats?id=5
+// Inherits id param from Todo
+// FDSL:   GET https://jsonplaceholder.typicode.com/todos/5
+// Then transforms the response
+
+
+// =============================================================================
+// FIXED SOURCE (no params) - For comparison
+// =============================================================================
+
+Source<REST> AllTodosAPI
+  url: "https://jsonplaceholder.typicode.com/todos"
+  operations: [read]
+end
+
+Entity AllTodos
+  source: AllTodosAPI
+  attributes:
+    - todos: array;
+  access: public
+end
+
+// Client: GET /api/alltodos
+// FDSL:   GET https://jsonplaceholder.typicode.com/todos (no params)

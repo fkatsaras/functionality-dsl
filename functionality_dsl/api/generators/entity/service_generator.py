@@ -170,6 +170,10 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         }
         operation_methods.append(method_config)
 
+    # Get source params info from config
+    has_params = config.get("has_params", False)
+    all_params = config.get("all_params", [])
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_service.py.jinja")
@@ -188,6 +192,9 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         parent_sources=parent_sources,
         has_multiple_ws_sources=has_multiple_ws_sources,
         parent_ws_sources=parent_ws_sources,
+        # Source params for parameterized sources
+        has_params=has_params,
+        all_params=all_params,
     )
 
     # Write to file

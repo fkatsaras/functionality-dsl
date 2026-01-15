@@ -89,6 +89,10 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         auth = getattr(servers[0], "auth", None)
         has_auth = auth is not None
 
+    # Get source params info
+    has_params = config.get("has_params", False)
+    all_params = config.get("all_params", [])
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_router.py.jinja")
@@ -101,6 +105,9 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         id_field=None,  # No ID field (singletons)
         source_name=source.name,
         has_auth=has_auth,
+        # Source params for parameterized sources
+        has_params=has_params,
+        all_params=all_params,
     )
 
     # Write to file

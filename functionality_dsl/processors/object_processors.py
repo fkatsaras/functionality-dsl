@@ -87,10 +87,37 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 # ------------------------------------------------------------------------------
 # Source processors (external endpoints)
 
+def _validate_source_params(source, url, source_type):
+    """
+    Validate source params against URL placeholders.
+
+    Rules:
+    - All {placeholders} in URL must be declared in params list
+    - Params not in URL are forwarded as query params (allowed)
+    """
+    params_list = getattr(source, "params", None)
+    declared_params = set()
+
+    if params_list and hasattr(params_list, "params"):
+        declared_params = set(params_list.params)
+
+    # Extract {param} placeholders from URL
+    url_placeholders = set(re.findall(r'\{(\w+)\}', url))
+
+    # All URL placeholders must be declared
+    missing = url_placeholders - declared_params
+    if missing:
+        raise TextXSemanticError(
+            f"{source_type} '{source.name}' has path placeholders {missing} in URL but not declared in params list.",
+            **get_location(source),
+        )
+
+
 def external_rest_endpoint_obj_processor(ep):
     """
     SourceREST validation:
     - Must have url: field with absolute url (http/https)
+    - If params declared, validate against URL placeholders
     """
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
@@ -103,6 +130,9 @@ def external_rest_endpoint_obj_processor(ep):
             f"Source<REST> '{ep.name}' url must start with http:// or https://.",
             **get_location(ep),
         )
+
+    # Validate params against URL placeholders
+    _validate_source_params(ep, url, "Source<REST>")
 
 
 def external_ws_endpoint_obj_processor(ep):
@@ -143,6 +173,9 @@ def external_ws_endpoint_obj_processor(ep):
             f"Source<WS> '{ep.name}' channel must start with ws:// or wss://.",
             **get_location(ep),
         )
+
+    # Validate params against channel URL placeholders
+    _validate_source_params(ep, ws_url, "Source<WS>")
 
     # NEW SYNTAX: No validation for subscribe/publish blocks
     # Operations are inferred from entities (just like REST)

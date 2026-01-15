@@ -21,6 +21,36 @@ class {{ source_name }}Source:
 
     def __init__(self):
         self.base_url = "{{ base_url }}"
+{% if has_params %}
+        # Source params configuration
+        self.path_params = {{ path_params }}  # Params that go into URL path
+        self.query_params = {{ query_params }}  # Params forwarded as query string
+
+    def _build_url(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """
+        Build final URL by replacing path placeholders and extracting query params.
+
+        Args:
+            params: Dict of param_name -> value from client query string
+
+        Returns:
+            tuple: (final_url, query_params_dict)
+        """
+        url = self.base_url
+
+        # Replace {placeholder} with actual values
+        for param in self.path_params:
+            if param in params:
+                url = url.replace("{" + param + "}", str(params[param]))
+
+        # Collect query params to forward
+        query = {}
+        for param in self.query_params:
+            if param in params:
+                query[param] = params[param]
+
+        return url, query
+{% endif %}
 
 {% for op in operations %}
     {%- if op.name == "list" %}
@@ -38,6 +68,22 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "read" %}
+{% if has_params %}
+    async def read(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get snapshot from {{ source_name }} with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Fetching snapshot from {url} with query params: {query_params}")
+
+        try:
+            client = get_http_client()
+            response = await client.request(
+                method="{{ op.method }}",
+                url=url,
+                params=query_params if query_params else None
+            )
+            response.raise_for_status()
+            return response.json()
+{% else %}
     async def read(self) -> Optional[Dict[str, Any]]:
         """Get snapshot from {{ source_name }}"""
         url = f"{self.base_url}{{ op.path }}"
@@ -51,6 +97,7 @@ class {{ source_name }}Source:
             )
             response.raise_for_status()
             return response.json()
+{% endif %}
         except httpx.TimeoutException as e:
             logger.error(f"Timeout fetching from {{ source_name }}: {e}")
             raise HTTPException(
@@ -86,6 +133,22 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "create" %}
+{% if has_params %}
+    async def create(self, data: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new item in {{ source_name }} with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Creating item at {url}")
+
+        client = get_http_client()
+        response = await client.request(
+            method="{{ op.method }}",
+            url=url,
+            json=data,
+            params=query_params if query_params else None
+        )
+        response.raise_for_status()
+        return response.json()
+{% else %}
     async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new item in {{ source_name }}"""
         logger.debug(f"Creating item at {self.base_url}{{ op.path }}")
@@ -98,8 +161,26 @@ class {{ source_name }}Source:
         )
         response.raise_for_status()
         return response.json()
+{% endif %}
 
     {%- elif op.name == "update" %}
+{% if has_params %}
+    async def update(self, data: Dict[str, Any], params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update the {{ source_name }} snapshot with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Updating snapshot at {url}")
+
+        try:
+            client = get_http_client()
+            response = await client.request(
+                method="{{ op.method }}",
+                url=url,
+                json=data,
+                params=query_params if query_params else None
+            )
+            response.raise_for_status()
+            return response.json()
+{% else %}
     async def update(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
@@ -114,6 +195,7 @@ class {{ source_name }}Source:
             )
             response.raise_for_status()
             return response.json()
+{% endif %}
         except httpx.TimeoutException as e:
             logger.error(f"Timeout updating {{ source_name }}: {e}")
             raise HTTPException(
@@ -149,6 +231,20 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "delete" %}
+{% if has_params %}
+    async def delete(self, params: Dict[str, Any]) -> None:
+        """Delete the {{ source_name }} snapshot with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Deleting snapshot at {url}")
+
+        client = get_http_client()
+        response = await client.request(
+            method="{{ op.method }}",
+            url=url,
+            params=query_params if query_params else None
+        )
+        response.raise_for_status()
+{% else %}
     async def delete(self) -> None:
         """Delete the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
@@ -160,6 +256,7 @@ class {{ source_name }}Source:
             url=url
         )
         response.raise_for_status()
+{% endif %}
 
     {%- endif %}
 

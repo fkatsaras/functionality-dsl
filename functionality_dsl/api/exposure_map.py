@@ -6,7 +6,37 @@ REST paths are flat: /api/{entity_name_lower}
 Operations: read, create, update, delete (NO list operation)
 """
 
+import re
 from textx import get_children_of_type
+
+
+def _extract_source_params(source):
+    """
+    Extract params from source definition.
+
+    Returns:
+        tuple: (all_params, path_params, query_params)
+        - all_params: list of all param names
+        - path_params: list of params that are URL placeholders
+        - query_params: list of params forwarded as query string
+    """
+    if not source:
+        return [], [], []
+
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    # Extract {placeholder} names from URL
+    url = getattr(source, "url", "") or ""
+    path_params = list(set(re.findall(r'\{(\w+)\}', url)))
+
+    # Query params are those not in URL path
+    query_params = [p for p in all_params if p not in path_params]
+
+    return all_params, path_params, query_params
 
 
 def _generate_rest_path(entity):
@@ -141,6 +171,10 @@ def build_exposure_map(model):
             else:
                 access_rules[op] = []  # Empty list means public
 
+        # Extract source params for parameterized sources
+        all_params, path_params, query_params = _extract_source_params(source)
+        has_params = len(all_params) > 0
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -154,6 +188,11 @@ def build_exposure_map(model):
             "access_rules": access_rules,
             "is_transformation": is_composite,
             "parents": parents,
+            # Source params for parameterized sources
+            "has_params": has_params,
+            "all_params": all_params,
+            "path_params": path_params,
+            "query_params": query_params,
         }
 
     return exposure_map

@@ -4,9 +4,9 @@
 # ========================================================================
 
 import logging
-from typing import List, Optional
+from typing import List, Optional{% if has_params %}, Dict, Any{% endif %}
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends{% if has_params %}, Query{% endif %}
 
 from app.domain.models import {{ entity_name }}
 {%- for op in operations %}
@@ -49,6 +49,11 @@ async def {{ op.function_name }}(
     {{ filter.name }}: Optional[{{ filter.type }}] = None,
     {%- endfor %}
     {%- endif %}
+    {%- if has_params %}
+    {%- for param in all_params %}
+    {{ param }}: str = Query(..., description="Source parameter: {{ param }}"),
+    {%- endfor %}
+    {%- endif %}
     service: {{ service_name }} = Depends()
 ){%- if op.type != "delete" %} -> {{ op.response_model }}{% endif %}:
     """{{ op.type | capitalize }} {{ entity_name }}"""
@@ -78,12 +83,32 @@ async def {{ op.function_name }}(
         raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
     return result
     {%- else %}
+{% if has_params %}
+    # Parameterized read - pass query params to service
+    params = {
+    {%- for param in all_params %}
+        "{{ param }}": {{ param }},
+    {%- endfor %}
+    }
+    return await service.get_{{ entity_name | lower }}(params)
+{% else %}
     # Singleton read - no ID parameter
     return await service.get_{{ entity_name | lower }}()
+{% endif %}
     {%- endif %}
 
     {%- elif op.type == "create" %}
+{% if has_params %}
+    # Parameterized create - pass query params to service
+    params = {
+    {%- for param in all_params %}
+        "{{ param }}": {{ param }},
+    {%- endfor %}
+    }
+    return await service.create_{{ entity_name | lower }}(data, params)
+{% else %}
     return await service.create_{{ entity_name | lower }}(data)
+{% endif %}
 
     {%- elif op.type == "update" %}
     {%- if op.is_item_op %}
@@ -92,8 +117,18 @@ async def {{ op.function_name }}(
         raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
     return result
     {%- else %}
+{% if has_params %}
+    # Parameterized update - pass query params to service
+    params = {
+    {%- for param in all_params %}
+        "{{ param }}": {{ param }},
+    {%- endfor %}
+    }
+    result = await service.update_{{ entity_name | lower }}(data, params)
+{% else %}
     # Singleton update - no ID parameter
     result = await service.update_{{ entity_name | lower }}(data)
+{% endif %}
     if not result:
         raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
     return result
@@ -103,8 +138,18 @@ async def {{ op.function_name }}(
     {%- if op.is_item_op %}
     await service.delete_{{ entity_name | lower }}({{ op.id_field }})
     {%- else %}
+{% if has_params %}
+    # Parameterized delete - pass query params to service
+    params = {
+    {%- for param in all_params %}
+        "{{ param }}": {{ param }},
+    {%- endfor %}
+    }
+    await service.delete_{{ entity_name | lower }}(params)
+{% else %}
     # Singleton delete - no ID parameter
     await service.delete_{{ entity_name | lower }}()
+{% endif %}
     {%- endif %}
     {%- endif %}
 

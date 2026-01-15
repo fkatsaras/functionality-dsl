@@ -4,7 +4,7 @@
 # ========================================================================
 
 import logging
-from typing import Optional, List
+from typing import Optional, List{% if has_params %}, Dict, Any{% endif %}
 
 from app.domain.models import {{ entity_name }}
 {% if source_name and not has_multiple_parent_sources %}
@@ -170,15 +170,25 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "read" %}
+{% if has_params %}
+    async def get_{{ entity_name | lower }}(self, params: Dict[str, Any]) -> {{ entity_name }}:
+        """Get the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Getting {{ entity_name }} snapshot with params: {params}")
+{% else %}
     async def get_{{ entity_name | lower }}(self) -> {{ entity_name }}:
         """Get the {{ entity_name }} snapshot"""
         logger.debug("Getting {{ entity_name }} snapshot")
+{% endif %}
 
         {% if has_parent_services %}
         # Fetch parent entity data via services (composition pattern)
         parent_data = {}
         {%- for ps in parent_services %}
+{% if has_params %}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(params)
+{% else %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
+{% endif %}
         # Fail fast if parent not found
         if not parent_data["{{ ps.name }}"]:
             return None
@@ -187,11 +197,19 @@ class {{ entity_name }}Service:
         # Fetch from multiple parent sources
         parent_data = {}
         {%- for ps in parent_sources %}
+{% if has_params %}
+        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(params)
+{% else %}
         parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read()
+{% endif %}
         {%- endfor %}
         {% else %}
         # Fetch from source
+{% if has_params %}
+        raw_data = await self.source.read(params)
+{% else %}
         raw_data = await self.source.read()
+{% endif %}
         {% endif %}
 
         {% if has_computed_attrs %}
@@ -207,12 +225,21 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "create" %}
+{% if has_params %}
+    async def create_{{ entity_name | lower }}(self, data, params: Dict[str, Any]) -> {{ entity_name }}:
+        """Create a new {{ entity_name }} with params"""
+        logger.debug(f"Creating {{ entity_name }}: {data} with params: {params}")
+
+        # Call source create operation
+        created = await self.source.create(data.model_dump(), params)
+{% else %}
     async def create_{{ entity_name | lower }}(self, data) -> {{ entity_name }}:
         """Create a new {{ entity_name }}"""
         logger.debug(f"Creating {{ entity_name }}: {data}")
 
         # Call source create operation
         created = await self.source.create(data.model_dump())
+{% endif %}
 
         {% if has_computed_attrs %}
         # Transform created entity
@@ -223,12 +250,21 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "update" %}
+{% if has_params %}
+    async def update_{{ entity_name | lower }}(self, data, params: Dict[str, Any]) -> Optional[{{ entity_name }}]:
+        """Update the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Updating {{ entity_name }} snapshot with params: {params}")
+
+        # Call source update operation (exclude_none for partial updates)
+        updated = await self.source.update(data.model_dump(exclude_none=True), params)
+{% else %}
     async def update_{{ entity_name | lower }}(self, data) -> Optional[{{ entity_name }}]:
         """Update the {{ entity_name }} snapshot"""
         logger.debug(f"Updating {{ entity_name }} snapshot")
 
         # Call source update operation (exclude_none for partial updates)
         updated = await self.source.update(data.model_dump(exclude_none=True))
+{% endif %}
 
         if not updated:
             return None
@@ -242,12 +278,21 @@ class {{ entity_name }}Service:
         {% endif %}
 
     {%- elif op.operation == "delete" %}
+{% if has_params %}
+    async def delete_{{ entity_name | lower }}(self, params: Dict[str, Any]) -> None:
+        """Delete the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Deleting {{ entity_name }} snapshot with params: {params}")
+
+        # Call source delete operation
+        await self.source.delete(params)
+{% else %}
     async def delete_{{ entity_name | lower }}(self) -> None:
         """Delete the {{ entity_name }} snapshot"""
         logger.debug("Deleting {{ entity_name }} snapshot")
 
         # Call source delete operation
         await self.source.delete()
+{% endif %}
 
     {%- endif %}
 

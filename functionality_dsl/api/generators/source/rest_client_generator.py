@@ -1,10 +1,38 @@
 """
 Source client generator for v2 syntax (snapshot entities).
 Generates HTTP client classes for Source<REST> with CRUD operations.
+Supports parameterized sources with path and query params.
 """
 
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+
+
+def _extract_source_params(source):
+    """
+    Extract params list from source.
+
+    Returns:
+        tuple: (all_params, path_params, query_params)
+        - all_params: list of all param names
+        - path_params: set of params that are URL placeholders
+        - query_params: set of params forwarded as query string
+    """
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    # Extract {placeholder} names from URL
+    url = getattr(source, "url", "") or ""
+    path_params = set(re.findall(r'\{(\w+)\}', url))
+
+    # Query params are those not in URL path
+    query_params = set(all_params) - path_params
+
+    return all_params, path_params, query_params
 
 
 def generate_source_client(source, model, templates_dir, out_dir, exposure_map=None):
@@ -25,6 +53,13 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         return
 
     print(f"  Generating source client for {source.name}")
+
+    # Extract params
+    all_params, path_params, query_params = _extract_source_params(source)
+    has_params = len(all_params) > 0
+
+    if has_params:
+        print(f"    Params: {all_params} (path: {path_params}, query: {query_params})")
 
     # Infer operations from entities that bind to this source
     operations = set()
@@ -92,6 +127,11 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         source_name=source.name,
         base_url=url,
         operations=operation_methods,
+        # Params info for parameterized sources
+        has_params=has_params,
+        all_params=all_params,
+        path_params=list(path_params),
+        query_params=list(query_params),
     )
 
     # Write to file
