@@ -3,8 +3,9 @@
 // =============================================================================
 // This example demonstrates:
 // - Parameterized REST sources with path params
-// - Parameterized REST sources with query params
+// - All CRUD operations with params
 // - Composite entities inheriting params from parents
+// - Multi-parent composites
 //
 // External API: JSONPlaceholder (https://jsonplaceholder.typicode.com)
 // =============================================================================
@@ -17,10 +18,34 @@ Server ParamDemo
 end
 
 // =============================================================================
-// PARAMETERIZED SOURCE - Path param {id}
+// FULL CRUD - Post with all operations
 // =============================================================================
 
-// Single todo by ID - path param
+Source<REST> PostCrudAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{id}"
+  params: [id]
+  operations: [read, update, delete]
+end
+
+Entity PostCrud
+  source: PostCrudAPI
+  attributes:
+    - userId: integer;
+    - id: integer @readonly;
+    - title: string;
+    - body: string;
+  access: public
+end
+
+// READ:   GET /api/postcrud?id=1       -> GET https://jsonplaceholder.typicode.com/posts/1
+// UPDATE: PUT /api/postcrud?id=1       -> PUT https://jsonplaceholder.typicode.com/posts/1
+// DELETE: DELETE /api/postcrud?id=1    -> DELETE https://jsonplaceholder.typicode.com/posts/1
+
+
+// =============================================================================
+// PARAMETERIZED SOURCE - Todo by ID (read only)
+// =============================================================================
+
 Source<REST> TodoAPI
   url: "https://jsonplaceholder.typicode.com/todos/{id}"
   params: [id]
@@ -37,88 +62,113 @@ Entity Todo
   access: public
 end
 
-// Client: GET /api/todo?id=5
-// FDSL:   GET https://jsonplaceholder.typicode.com/todos/5
-
 
 // =============================================================================
-// PARAMETERIZED SOURCE - Query param forwarding
+// PARAMETERIZED SOURCE - User by ID (read only)
 // =============================================================================
 
-// Search posts - query params forwarded
-Source<REST> PostSearchAPI
-  url: "https://jsonplaceholder.typicode.com/posts"
-  params: [userId]
+Source<REST> UserAPI
+  url: "https://jsonplaceholder.typicode.com/users/{id}"
+  params: [id]
   operations: [read]
 end
 
-Entity UserPosts
-  source: PostSearchAPI
+Entity User
+  source: UserAPI
   attributes:
-    - posts: array;
+    - id: integer;
+    - name: string;
+    - username: string;
+    - email: string;
   access: public
 end
 
-// Client: GET /api/userposts?userId=1
-// FDSL:   GET https://jsonplaceholder.typicode.com/posts?userId=1
-
 
 // =============================================================================
-// PARAMETERIZED SOURCE - Multiple path params
+// PARAMETERIZED SOURCE - Comment by ID (read only)
 // =============================================================================
 
-// Post comments - nested resource
-Source<REST> PostCommentsAPI
-  url: "https://jsonplaceholder.typicode.com/posts/{postId}/comments"
-  params: [postId]
+Source<REST> CommentAPI
+  url: "https://jsonplaceholder.typicode.com/comments/{id}"
+  params: [id]
   operations: [read]
 end
 
-Entity PostComments
-  source: PostCommentsAPI
+Entity Comment
+  source: CommentAPI
   attributes:
-    - comments: array;
+    - postId: integer;
+    - id: integer;
+    - name: string;
+    - email: string;
+    - body: string;
   access: public
 end
 
-// Client: GET /api/postcomments?postId=1
-// FDSL:   GET https://jsonplaceholder.typicode.com/posts/1/comments
-
 
 // =============================================================================
-// COMPOSITE ENTITY - Inherits params from parent
+// SINGLE-PARENT COMPOSITE - TodoStats from Todo
 // =============================================================================
 
 Entity TodoStats(Todo)
   attributes:
-    - id: integer = Todo.id;
+    - todoId: integer = Todo.id;
     - title: string = Todo.title;
-    - title_length: integer = len(Todo.title);
+    - titleLength: integer = len(Todo.title);
     - status: string = "completed" if Todo.completed else "pending";
+    - owner: integer = Todo.userId;
   access: public
 end
 
-// Client: GET /api/todostats?id=5
-// Inherits id param from Todo
-// FDSL:   GET https://jsonplaceholder.typicode.com/todos/5
-// Then transforms the response
+// GET /api/todostats?id=5 -> fetches Todo with id=5, transforms it
 
 
 // =============================================================================
-// FIXED SOURCE (no params) - For comparison
+// SINGLE-PARENT COMPOSITE - UserProfile from User
 // =============================================================================
 
-Source<REST> AllTodosAPI
-  url: "https://jsonplaceholder.typicode.com/todos"
-  operations: [read]
-end
-
-Entity AllTodos
-  source: AllTodosAPI
+Entity UserProfile(User)
   attributes:
-    - todos: array;
+    - userId: integer = User.id;
+    - displayName: string = User.name;
+    - handle: string = "@" + User.username;
+    - contact: string = User.email;
   access: public
 end
 
-// Client: GET /api/alltodos
-// FDSL:   GET https://jsonplaceholder.typicode.com/todos (no params)
+// GET /api/userprofile?id=1 -> fetches User with id=1, transforms it
+
+
+// =============================================================================
+// SINGLE-PARENT COMPOSITE - CommentSummary from Comment
+// =============================================================================
+
+Entity CommentSummary(Comment)
+  attributes:
+    - commentId: integer = Comment.id;
+    - author: string = Comment.name;
+    - authorEmail: string = Comment.email;
+    - preview: string = Comment.body;
+    - parentPost: integer = Comment.postId;
+  access: public
+end
+
+// GET /api/commentsummary?id=1 -> fetches Comment with id=1, transforms it
+
+
+// =============================================================================
+// CHAINED COMPOSITE - PostCrudStats from PostCrud (inherits CRUD params)
+// =============================================================================
+
+Entity PostCrudStats(PostCrud)
+  attributes:
+    - postId: integer = PostCrud.id;
+    - postTitle: string = PostCrud.title;
+    - titleLength: integer = len(PostCrud.title);
+    - bodyLength: integer = len(PostCrud.body);
+    - authorId: integer = PostCrud.userId;
+  access: public
+end
+
+// GET /api/postcrudstats?id=1 -> fetches PostCrud with id=1, transforms it
+// Inherits the id param from PostCrud

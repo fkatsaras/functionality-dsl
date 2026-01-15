@@ -17,6 +17,7 @@ from functionality_dsl.api.frontend_generator import render_frontend_files, scaf
 from functionality_dsl.language import build_model
 from functionality_dsl.utils import print_model_debug
 from functionality_dsl.language import THIS_DIR as PKG_DIR
+from functionality_dsl.transformers import transform_openapi_to_fdsl
 
 pretty.install()
 console = Console()
@@ -611,5 +612,53 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
         console.print(traceback.format_exc(), style="red")
         context.exit(1)
         
+@cli.command("transform", help="Transform an OpenAPI spec to FDSL")
+@click.pass_context
+@click.argument("openapi_path")
+@click.option("--out", "-o", "output_path", default=None, help="Output FDSL file path (default: print to stdout)")
+@click.option("--server-name", "-n", default=None, help="Override server name (default: from API title)")
+@click.option("--host", "-h", default="localhost", help="Server host (default: localhost)")
+@click.option("--port", "-p", default=8000, type=int, help="Server port (default: 8000)")
+def transform_cmd(context, openapi_path, output_path, server_name, host, port):
+    """
+    Transform an OpenAPI 3.x specification to FDSL.
+
+    Supports YAML (.yaml, .yml) and JSON (.json) OpenAPI specs.
+
+    Examples:
+        fdsl transform api.yaml
+        fdsl transform api.yaml --out generated.fdsl
+        fdsl transform api.json --server-name MyAPI --port 3000
+    """
+    try:
+        openapi_file = Path(openapi_path).resolve()
+
+        if not openapi_file.exists():
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {openapi_file}", style="red")
+            context.exit(1)
+
+        output_file = Path(output_path).resolve() if output_path else None
+
+        fdsl_content = transform_openapi_to_fdsl(
+            openapi_path=openapi_file,
+            output_path=output_file,
+            server_name=server_name,
+            host=host,
+            port=port,
+        )
+
+        if output_file:
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] FDSL written to: {output_file}", style="green")
+        else:
+            # Print to stdout
+            console.print(fdsl_content)
+
+    except Exception as e:
+        import traceback
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Transform failed: {e}", style="red")
+        console.print(traceback.format_exc(), style="red")
+        context.exit(1)
+
+
 def main():
     cli(prog_name="fdsl")

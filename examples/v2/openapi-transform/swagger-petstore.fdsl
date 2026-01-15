@@ -1,0 +1,131 @@
+// =============================================================================
+// AUTO-GENERATED FROM OPENAPI SPECIFICATION
+// =============================================================================
+
+Server SwaggerPetstoreOpenAPI30
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<REST> PetAPI
+  url: "https://petstore3.swagger.io/api/v3/pet/{petId}"
+  params: [petId, name, status]
+  operations: [delete, create, update, read]
+end
+
+Source<REST> FindbystatuAPI
+  url: "https://petstore3.swagger.io/api/v3/pet/findByStatus"
+  params: [status]
+  operations: [read]
+end
+
+Source<REST> FindbytagAPI
+  url: "https://petstore3.swagger.io/api/v3/pet/findByTags"
+  params: [tags]
+  operations: [read]
+end
+
+Source<REST> OrderAPI
+  url: "https://petstore3.swagger.io/api/v3/store/order/{orderId}"
+  params: [orderId]
+  operations: [delete, create, read]
+end
+
+Source<REST> UserAPI
+  url: "https://petstore3.swagger.io/api/v3/user/{username}"
+  params: [username]
+  operations: [delete, create, update, read]
+end
+
+Source<REST> CreatewithlistAPI
+  url: "https://petstore3.swagger.io/api/v3/user/createWithList"
+  operations: [create]
+end
+
+Source<REST> LoginAPI
+  url: "https://petstore3.swagger.io/api/v3/user/login"
+  params: [username, password]
+  operations: [read]
+end
+
+Source<REST> UploadimageAPI
+  url: "https://petstore3.swagger.io/api/v3/pet/{petId}/uploadImage"
+  params: [petId, additionalMetadata]
+  operations: [create]
+end
+
+Entity Pet
+  source: PetAPI
+  attributes:
+    - id: integer @optional;
+    - name: string;
+    - category: object @optional;
+    - photoUrls: array;
+    - tags: array @optional;
+    - status: string @optional;
+  access: public
+end
+
+Entity Findbystatu
+  source: FindbystatuAPI
+  attributes:
+    - items: array @readonly;
+  access: public
+end
+
+Entity Findbytag
+  source: FindbytagAPI
+  attributes:
+    - items: array @readonly;
+  access: public
+end
+
+Entity Order
+  source: OrderAPI
+  attributes:
+    - id: integer @optional;
+    - petId: integer @optional;
+    - quantity: integer @optional;
+    - shipDate: string @optional;
+    - status: string @optional;
+    - complete: boolean @optional;
+  access: public
+end
+
+Entity User
+  source: UserAPI
+  attributes:
+    - id: integer @optional;
+    - username: string @optional;
+    - firstName: string @optional;
+    - lastName: string @optional;
+    - email: string @optional;
+    - password: string @optional;
+    - phone: string @optional;
+    - userStatus: integer @optional;
+  access: public
+end
+
+Entity Createwithlist
+  source: CreatewithlistAPI
+  attributes:
+    - items: array;
+  access: public
+end
+
+Entity Login
+  source: LoginAPI
+  attributes:
+    - value: string @readonly;
+  access: public
+end
+
+Entity Uploadimage
+  source: UploadimageAPI
+  attributes:
+    - data: binary;
+  access: public
+end
