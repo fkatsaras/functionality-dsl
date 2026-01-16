@@ -234,14 +234,6 @@ def validate_session_byodb_requires_sessions_table(model):
 
         if not sessions:
             raise TextXSemanticError(
-                f"Auth '{auth.name}' uses session authentication with BYODB '{db_ref.name}' "
-                f"but no sessions table is configured. Add a sessions block:\n\n"
-                f"  sessions:\n"
-                f"    table: \"your_sessions_table\"\n"
-                f"    columns:\n"
-                f"      - session_id: \"your_session_id_column\"\n"
-                f"      - user_id: \"your_user_id_column\"\n"
-                f"      - roles: \"your_roles_column\"\n"
-                f"      - expires_at: \"your_expires_column\"",
+                f"Auth '{auth.name}': session auth with BYODB requires 'sessions:' config in '{db_ref.name}'.",
                 **get_location(auth),
             )
