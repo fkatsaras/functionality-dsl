@@ -216,6 +216,7 @@ def generate(context, model_path, target, out_dir):
                 templates_backend_dir=templates_backend_dir,
                 out_dir=out_path,
                 jwt_secret_value=jwt_secret_value,
+                target=target,
             )
             render_domain_files(model, templates_backend_dir, out_path)
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")

@@ -275,7 +275,10 @@ class PathGrouper:
 
     def extract_path_params(self, path: str) -> List[str]:
         """Extract path parameters from a URL path."""
-        return re.findall(r'\{(\w+)\}', path)
+        # Match {param}, {param-name}, {param_name} etc.
+        params = re.findall(r'\{([\w-]+)\}', path)
+        # Sanitize: convert hyphens to underscores for FDSL compatibility
+        return [p.replace('-', '_') for p in params]
 
     def extract_query_params(self, operation: Dict[str, Any]) -> List[str]:
         """Extract query parameters from an operation."""
@@ -383,8 +386,9 @@ class PathGrouper:
             entity_name = self.get_entity_name(path, path_item)
             source_name = self.get_source_name(entity_name, path_item)
 
-            # Build full URL
-            full_url = base_url.rstrip("/") + path
+            # Build full URL and sanitize path params (hyphens -> underscores)
+            sanitized_path = re.sub(r'\{([\w-]+)\}', lambda m: '{' + m.group(1).replace('-', '_') + '}', path)
+            full_url = base_url.rstrip("/") + sanitized_path
 
             # Collect operations and params
             operations = []
@@ -449,13 +453,16 @@ class PathGrouper:
                     operations=operations,
                 )
             else:
-                # If this path has params and the existing one doesn't, prefer this one
+                # If this path has path params and the existing URL doesn't have path params, prefer this one
                 existing = sources[source_name]
-                if has_path_params and not existing.params:
+                existing_has_path_params = '{' in existing.url
+                if has_path_params and not existing_has_path_params:
+                    # Merge: use parameterized URL, combine all params and operations
+                    merged_params = path_params + [p for p in existing.params if p not in path_params] + list(all_query_params)
                     sources[source_name] = FDSLSource(
                         name=source_name,
                         url=full_url,
-                        params=all_params,
+                        params=merged_params,
                         operations=list(set(existing.operations + operations)),
                     )
                 else:
