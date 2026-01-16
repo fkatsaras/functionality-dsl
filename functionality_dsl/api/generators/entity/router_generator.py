@@ -92,6 +92,8 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     # Get source params info
     has_params = config.get("has_params", False)
     all_params = config.get("all_params", [])
+    path_params = config.get("path_params", [])
+    query_params = config.get("query_params", [])
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -108,6 +110,8 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         # Source params for parameterized sources
         has_params=has_params,
         all_params=all_params,
+        path_params=path_params,
+        query_params=query_params,
     )
 
     # Write to file

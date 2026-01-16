@@ -457,14 +457,24 @@ class PathGrouper:
                 existing = sources[source_name]
                 existing_has_path_params = '{' in existing.url
                 if has_path_params and not existing_has_path_params:
-                    # Merge: use parameterized URL, combine all params and operations
+                    # This is a parameterized path (e.g., /posts/{id})
+                    # The existing path is the collection path (e.g., /posts)
+                    # Merge: use parameterized URL, include all operations (create will strip path params at runtime)
                     merged_params = path_params + [p for p in existing.params if p not in path_params] + list(all_query_params)
+                    merged_ops = list(set(existing.operations + operations))
+
                     sources[source_name] = FDSLSource(
                         name=source_name,
                         url=full_url,
                         params=merged_params,
-                        operations=list(set(existing.operations + operations)),
+                        operations=merged_ops,
                     )
+                elif not has_path_params and existing_has_path_params:
+                    # This is a collection path, existing is parameterized
+                    # Merge operations into existing parameterized source
+                    for op in operations:
+                        if op not in existing.operations:
+                            existing.operations.append(op)
                 else:
                     # Just merge operations
                     for op in operations:

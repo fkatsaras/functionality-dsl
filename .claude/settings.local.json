@@ -231,7 +231,10 @@
       "Bash(__NEW_LINE_ace4c45d0e8ec8c8__ echo \"=== TEST: HealthSummary composite entity \\(access: [patient, doctor]\\) ===\")",
       "Bash(venv_WIN\\\\Scripts\\\\python -m functionality_dsl.cli generate:*)",
       "Bash(venv_WIN\\\\Scripts\\\\fdsl generate:*)",
-      "Bash(venv_WIN\\\\Scripts\\\\fdsl.exe:*)"
+      "Bash(venv_WIN\\\\Scripts\\\\fdsl.exe:*)",
+      "Bash(dir:*)",
+      "Bash(../../../venv_WIN/Scripts/pip install -e . -q)",
+      "Bash(../../../venv_WIN/Scripts/python:*)"
     ],
     "deny": [],
     "ask": []

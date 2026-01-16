@@ -50,8 +50,11 @@ async def {{ op.function_name }}(
     {%- endfor %}
     {%- endif %}
     {%- if has_params %}
-    {%- for param in all_params %}
-    {{ param }}: str = Query(..., description="Source parameter: {{ param }}"),
+    {%- for param in path_params %}
+    {{ param }}: str = Query(..., description="Path parameter: {{ param }}"),
+    {%- endfor %}
+    {%- for param in query_params %}
+    {{ param }}: Optional[str] = Query(None, description="Query parameter: {{ param }}"),
     {%- endfor %}
     {%- endif %}
     service: {{ service_name }} = Depends()
@@ -85,11 +88,14 @@ async def {{ op.function_name }}(
     {%- else %}
 {% if has_params %}
     # Parameterized read - pass query params to service
-    params = {
-    {%- for param in all_params %}
-        "{{ param }}": {{ param }},
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
     {%- endfor %}
-    }
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
     return await service.get_{{ entity_name | lower }}(params)
 {% else %}
     # Singleton read - no ID parameter
@@ -100,11 +106,14 @@ async def {{ op.function_name }}(
     {%- elif op.type == "create" %}
 {% if has_params %}
     # Parameterized create - pass query params to service
-    params = {
-    {%- for param in all_params %}
-        "{{ param }}": {{ param }},
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
     {%- endfor %}
-    }
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
     return await service.create_{{ entity_name | lower }}(data, params)
 {% else %}
     return await service.create_{{ entity_name | lower }}(data)
@@ -119,11 +128,14 @@ async def {{ op.function_name }}(
     {%- else %}
 {% if has_params %}
     # Parameterized update - pass query params to service
-    params = {
-    {%- for param in all_params %}
-        "{{ param }}": {{ param }},
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
     {%- endfor %}
-    }
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
     result = await service.update_{{ entity_name | lower }}(data, params)
 {% else %}
     # Singleton update - no ID parameter
@@ -140,11 +152,14 @@ async def {{ op.function_name }}(
     {%- else %}
 {% if has_params %}
     # Parameterized delete - pass query params to service
-    params = {
-    {%- for param in all_params %}
-        "{{ param }}": {{ param }},
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
     {%- endfor %}
-    }
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
     await service.delete_{{ entity_name | lower }}(params)
 {% else %}
     # Singleton delete - no ID parameter

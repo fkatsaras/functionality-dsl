@@ -185,7 +185,13 @@ class {{ entity_name }}Service:
         parent_data = {}
         {%- for ps in parent_services %}
 {% if has_params %}
+{% if ps.params %}
+        # Filter params for {{ ps.name }} - only pass params its source needs: {{ ps.params }}
+        {{ ps.name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ ps.name | lower }}_params)
+{% else %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(params)
+{% endif %}
 {% else %}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
 {% endif %}
@@ -198,7 +204,13 @@ class {{ entity_name }}Service:
         parent_data = {}
         {%- for ps in parent_sources %}
 {% if has_params %}
+{% if ps.params %}
+        # Filter params for {{ ps.entity_name }} - only pass params its source needs: {{ ps.params }}
+        {{ ps.entity_name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
+        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read({{ ps.entity_name | lower }}_params)
+{% else %}
         parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(params)
+{% endif %}
 {% else %}
         parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read()
 {% endif %}

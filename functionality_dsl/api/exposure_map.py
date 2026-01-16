@@ -175,6 +175,37 @@ def build_exposure_map(model):
         all_params, path_params, query_params = _extract_source_params(source)
         has_params = len(all_params) > 0
 
+        # For composite entities, collect params from ALL parent sources
+        # Each parent may have different params (e.g., Post needs post_id, User needs user_id)
+        parent_params_map = {}  # {parent_name: {all_params, path_params, query_params}}
+        if is_composite:
+            all_params_combined = set(all_params)  # Start with direct source params
+            path_params_combined = set(path_params)
+            query_params_combined = set(query_params)
+
+            for parent in parents:
+                parent_source = getattr(parent, "source", None)
+                if not parent_source:
+                    # Parent might be a composite itself - traverse to find source
+                    parent_source = _find_source_in_parents([parent])
+
+                if parent_source:
+                    p_all, p_path, p_query = _extract_source_params(parent_source)
+                    parent_params_map[parent.name] = {
+                        "all_params": p_all,
+                        "path_params": p_path,
+                        "query_params": p_query,
+                    }
+                    all_params_combined.update(p_all)
+                    path_params_combined.update(p_path)
+                    query_params_combined.update(p_query)
+
+            # Update combined params
+            all_params = list(all_params_combined)
+            path_params = list(path_params_combined)
+            query_params = list(query_params_combined)
+            has_params = len(all_params) > 0
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -193,6 +224,7 @@ def build_exposure_map(model):
             "all_params": all_params,
             "path_params": path_params,
             "query_params": query_params,
+            "parent_params_map": parent_params_map,  # Per-parent param info for composites
         }
 
     return exposure_map

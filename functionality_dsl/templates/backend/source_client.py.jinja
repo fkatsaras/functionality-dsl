@@ -50,6 +50,29 @@ class {{ source_name }}Source:
                 query[param] = params[param]
 
         return url, query
+
+    def _build_create_url(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """
+        Build URL for create operations by stripping path param placeholders.
+        POST typically goes to the collection endpoint (e.g., /posts not /posts/{id}).
+
+        Args:
+            params: Dict of param_name -> value from client query string
+
+        Returns:
+            tuple: (final_url, query_params_dict)
+        """
+        import re
+        # Strip path param placeholders: /posts/{post_id} -> /posts
+        url = re.sub(r'/\{[^}]+\}', '', self.base_url)
+
+        # Collect query params to forward
+        query = {}
+        for param in self.query_params:
+            if param in params:
+                query[param] = params[param]
+
+        return url, query
 {% endif %}
 
 {% for op in operations %}
@@ -136,7 +159,7 @@ class {{ source_name }}Source:
 {% if has_params %}
     async def create(self, data: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new item in {{ source_name }} with params"""
-        url, query_params = self._build_url(params)
+        url, query_params = self._build_create_url(params)
         logger.debug(f"Creating item at {url}")
 
         client = get_http_client()
