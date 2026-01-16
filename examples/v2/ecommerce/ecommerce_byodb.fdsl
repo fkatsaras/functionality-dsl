@@ -9,15 +9,6 @@
 Role customer
 Role warehouse
 
-// ============================================
-// BYODB CONFIGURATION
-// ============================================
-// Connect to an existing PostgreSQL database with custom table/column names.
-// The user must:
-// 1. Set MY_ECOMM_DB_URL environment variable with connection string
-// 2. Have a 'shop_users' table with the mapped columns
-// 3. Have a 'user_sessions' table for persistent sessions
-
 AuthDB ShopUserStore
   connection: "MY_ECOMM_DB_URL"
   table: "shop_users"

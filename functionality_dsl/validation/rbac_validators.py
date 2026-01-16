@@ -211,3 +211,37 @@ def validate_sessions_jwt_conflict(model):
                 f"Either remove the sessions config or change to 'type: session'.",
                 **get_location(auth),
             )
+
+
+def validate_session_byodb_requires_sessions_table(model):
+    """Validate that session auth with BYODB requires sessions table config.
+
+    When using BYODB (Bring Your Own Database), the user must explicitly
+    configure the sessions table mapping for session-based auth.
+    """
+    auths = get_children_of_type("Auth", model)
+
+    for auth in auths:
+        auth_type = getattr(auth, "type", "jwt")
+        db_ref = getattr(auth, "db", None)
+
+        # Only applies to session auth with BYODB
+        if auth_type != "session" or not db_ref:
+            continue
+
+        # Check if AuthDB has sessions config
+        sessions = getattr(db_ref, "sessions", None)
+
+        if not sessions:
+            raise TextXSemanticError(
+                f"Auth '{auth.name}' uses session authentication with BYODB '{db_ref.name}' "
+                f"but no sessions table is configured. Add a sessions block:\n\n"
+                f"  sessions:\n"
+                f"    table: \"your_sessions_table\"\n"
+                f"    columns:\n"
+                f"      - session_id: \"your_session_id_column\"\n"
+                f"      - user_id: \"your_user_id_column\"\n"
+                f"      - roles: \"your_roles_column\"\n"
+                f"      - expires_at: \"your_expires_column\"",
+                **get_location(auth),
+            )
