@@ -5,6 +5,8 @@ Generates FastAPI auth utilities based on Server auth configuration.
 Supported auth types:
 - jwt: Stateless token-based authentication (Authorization header)
 - session: Stateful cookie-based authentication (in-memory session store)
+- apikey: API key authentication (header or query param)
+- basic: HTTP Basic authentication (username:password)
 """
 
 from pathlib import Path
@@ -54,6 +56,10 @@ def generate_auth_module(model, templates_dir, out_dir):
         template = env.get_template("auth_jwt.py.jinja")
     elif auth_type == "session":
         template = env.get_template("auth_session.py.jinja")
+    elif auth_type == "apikey":
+        template = env.get_template("auth_apikey.py.jinja")
+    elif auth_type == "basic":
+        template = env.get_template("auth_basic.py.jinja")
     else:
         print(f"  Unknown auth type: {auth_type} - skipping")
         return False
@@ -109,11 +115,6 @@ def _extract_auth_config(auth, model):
 
         config.update({
             "secret": secret_env_var,  # Environment variable name
-            "header": get_or_default(jwt_config, "header", "Authorization"),
-            "scheme": get_or_default(jwt_config, "scheme", "Bearer"),
-            "algorithm": get_or_default(jwt_config, "algorithm", "HS256"),
-            "user_id_claim": get_or_default(jwt_config, "user_id_claim", "sub"),
-            "roles_claim": get_or_default(jwt_config, "roles_claim", "roles"),
         })
 
     elif auth_type == "session":
@@ -124,6 +125,38 @@ def _extract_auth_config(auth, model):
             "expiry": get_or_default(session_config, "expiry", 3600),
         })
 
+    elif auth_type == "apikey":
+        apikey_config = getattr(auth, "apikey_config", None)
+
+        # Determine location and name from header: or query: config
+        location = "header"  # default
+        name = "X-API-Key"   # default
+
+        if apikey_config:
+            header_config = getattr(apikey_config, "header", None)
+            query_config = getattr(apikey_config, "query", None)
+
+            if header_config:
+                location = "header"
+                name = getattr(header_config, "name", "X-API-Key")
+            elif query_config:
+                location = "query"
+                name = getattr(query_config, "name", "api_key")
+
+        secret_env_var = get_or_default(apikey_config, "secret", "API_KEYS")
+
+        config.update({
+            "location": location,
+            "name": name,
+            "secret": secret_env_var,
+        })
+
+    elif auth_type == "basic":
+        # Basic auth has no config - uses BASIC_AUTH_USERS env var by default
+        config.update({
+            "users": "BASIC_AUTH_USERS",
+        })
+
     return config
 
 
@@ -131,10 +164,11 @@ def get_permission_dependencies(entity, model, operations=None):
     """
     Get permission requirements for each operation of an entity.
 
-    NEW SYNTAX: Supports three access control patterns:
-    1. access: public                    -> all operations public
-    2. access: [role1, role2]           -> all operations require roles
-    3. access: read: public create: [...] -> per-operation control
+    NEW SYNTAX: Supports four access control patterns:
+    1. access: public                    -> all operations public (no auth)
+    2. access: authenticated             -> all operations require valid auth (no role check)
+    3. access: [role1, role2]           -> all operations require these roles
+    4. access: read: public create: [...] -> per-operation control
 
     Also supports WebSocket access in expose block.
 
@@ -147,6 +181,7 @@ def get_permission_dependencies(entity, model, operations=None):
         dict: Mapping of operation -> list of required roles
               Example: {"create": ["librarian", "admin"], "read": ["public"]}
               "public" means no authentication required
+              "authenticated" means valid auth required, no role check
     """
     # Try entity-level access block first (REST entities)
     access_block = getattr(entity, "access", None)
@@ -183,7 +218,19 @@ def get_permission_dependencies(entity, model, operations=None):
 
         return {op: ["public"] for op in operations}
 
-    # Type 2: access: [role1, role2] (all operations use these roles)
+    # Type 2: access: authenticated (requires valid auth, no role check)
+    authenticated_keyword = getattr(access_block, "authenticated_keyword", None)
+    if authenticated_keyword == "authenticated":
+        if operations is None:
+            expose = getattr(entity, "expose", None)
+            if expose:
+                operations = getattr(expose, "operations", []) or []
+            else:
+                operations = ["read", "create", "update", "delete"]
+
+        return {op: ["authenticated"] for op in operations}
+
+    # Type 3: access: [role1, role2] (all operations use these roles)
     roles = getattr(access_block, "roles", []) or []
     if roles and not getattr(access_block, "access_rules", []):
         if operations is None:
@@ -197,7 +244,7 @@ def get_permission_dependencies(entity, model, operations=None):
         role_names = [r.name for r in roles]
         return {op: role_names for op in operations}
 
-    # Type 3: per-operation access rules
+    # Type 4: per-operation access rules
     access_rules = getattr(access_block, "access_rules", []) or []
     if access_rules:
         permission_map = {}
@@ -209,6 +256,9 @@ def get_permission_dependencies(entity, model, operations=None):
             rule_public = getattr(rule, "public_keyword", None)
             if rule_public == "public":
                 permission_map[operation] = ["public"]
+            # Check if rule uses 'authenticated' keyword
+            elif getattr(rule, "authenticated_keyword", None) == "authenticated":
+                permission_map[operation] = ["authenticated"]
             else:
                 # Get roles for this operation (Role objects, extract names)
                 rule_roles = getattr(rule, "roles", []) or []

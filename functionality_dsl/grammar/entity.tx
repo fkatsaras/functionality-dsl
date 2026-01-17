@@ -80,20 +80,22 @@ SourceOperationsList:
 ;
 
 // Access block for entities - controls authorization
-// Supports three syntaxes:
-// 1. access: public (public access to all operations)
-// 2. access: [role1, role2] (all operations require these roles)
-// 3. access: read: public create: [admin] (per-operation control)
+// Supports four syntaxes:
+// 1. access: public (public access to all operations - no auth required)
+// 2. access: authenticated (requires valid auth, no role check)
+// 3. access: [role1, role2] (all operations require these roles)
+// 4. access: read: public create: [admin] (per-operation control)
 AccessBlock:
     'access:' public_keyword='public'                             // Public access: access: public
+  | 'access:' authenticated_keyword='authenticated'               // Authenticated: access: authenticated
   | 'access:' '[' roles+=[Role] (',' roles+=[Role])* ']'         // Role list: access: [admin, user]
   | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
 ;
 
 // Access rule for per-operation control
-// Example: read: public  or  create: [admin, librarian]
+// Example: read: public  or  read: authenticated  or  create: [admin, librarian]
 AccessRule:
-  operation=Operation ':' (public_keyword='public' | '[' roles+=[Role] (',' roles+=[Role])* ']')
+  operation=Operation ':' (public_keyword='public' | authenticated_keyword='authenticated' | '[' roles+=[Role] (',' roles+=[Role])* ']')
 ;
 
 // Entity sources / targets -------------------

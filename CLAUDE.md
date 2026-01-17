@@ -61,13 +61,15 @@ Role guest
 
 **Authentication** (identity verification):
 
-FDSL supports two authentication types:
+FDSL supports four authentication types:
 - `jwt` - Stateless token-based auth (recommended for APIs)
 - `session` - Stateful cookie-based auth (traditional web apps)
+- `apikey` - API key authentication (header or query param)
+- `basic` - HTTP Basic authentication (username:password)
 
 **JWT Authentication** (stateless, token in header):
 ```fdsl
-Auth HomeAuth
+Auth JWTAuth
   type: jwt
   secret: "JWT_SECRET"  // environment variable name
 end
@@ -77,12 +79,38 @@ The `secret:` field specifies the environment variable name for the JWT secret. 
 
 **Session Authentication** (stateful, cookie-based):
 ```fdsl
-Auth WebAuth
+Auth SessionAuth
   type: session
   cookie: "session_id"
   expiry: 3600  // Session expiry in seconds (default: 3600)
 end
 ```
+
+**API Key Authentication** (simple key-based):
+```fdsl
+Auth APIKeyAuth
+  type: apikey
+  header: "X-API-Key"   // OR query: "api_key" (mutually exclusive)
+  secret: "API_KEYS"    // env var name for valid keys
+end
+```
+
+API keys are configured via environment variable. Format options:
+- Simple keys: `key1,key2,key3`
+- Keys with roles: `key1:admin,key2:user;editor,key3:viewer`
+  (colon separates key from roles, semicolon separates multiple roles)
+
+**Basic Authentication** (HTTP Basic auth):
+```fdsl
+Auth BasicAuth
+  type: basic
+end
+```
+
+Uses `BASIC_AUTH_USERS` env var by default. Format:
+`username:password:role1;role2,username2:password2:role3`
+
+Example: `admin:secret123:admin;superuser,reader:pass456:viewer`
 
 **Server** (configuration):
 ```fdsl
@@ -95,13 +123,13 @@ Server SmartHome
 end
 ```
 
-**JWT vs Session Comparison:**
-| Aspect | JWT | Session |
-|--------|-----|---------|
-| State | Stateless (token contains all info) | Stateful (server stores session) |
-| Storage | Client (localStorage/header) | Server (in-memory) |
-| Revocation | Hard (need blocklist) | Easy (delete session) |
-| Use case | APIs, mobile, microservices | Web apps, browsers |
+**Auth Type Comparison:**
+| Aspect | JWT | Session | API Key | Basic |
+|--------|-----|---------|---------|-------|
+| State | Stateless | Stateful | Stateless | Stateless |
+| Storage | Client | Server | Client/Config | Client |
+| Revocation | Hard | Easy | Easy (remove key) | Easy (remove user) |
+| Use case | APIs, mobile | Web apps | Third-party integrations | Simple tools, testing |
 
 ---
 

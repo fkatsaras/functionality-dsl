@@ -7,6 +7,8 @@
 // Supported auth types:
 // - jwt: Stateless token-based auth (recommended for APIs)
 // - session: Stateful cookie-based auth (traditional web apps)
+// - apikey: API key authentication (header or query param)
+// - basic: HTTP Basic authentication (username:password)
 
 // Auth Declaration - first-class citizen
 Auth:
@@ -14,27 +16,39 @@ Auth:
     'type:' type=AuthType
     (jwt_config=JWTAuthConfig)?
     (session_config=SessionAuthConfig)?
+    (apikey_config=APIKeyAuthConfig)?
   'end'
 ;
 
-AuthType: 'jwt' | 'session' ;
+AuthType: 'jwt' | 'session' | 'apikey' | 'basic' ;
 
 // JWT Authentication - stateless, token in Authorization header
 // Supports RBAC via roles claim in token payload
 // secret: specifies the environment variable name for the JWT secret
 JWTAuthConfig:
     'secret:' secret=STRING
-    ('header:' header=STRING)?
-    ('scheme:' scheme=STRING)?
-    ('algorithm:' algorithm=STRING)?
-    ('user_id_claim:' user_id_claim=STRING)?
-    ('roles_claim:' roles_claim=STRING)?
 ;
 
 // Session Authentication - stateful, cookie-based
 // Uses in-memory session store (suitable for single-server deployments)
 // Supports RBAC via roles stored in session data
 SessionAuthConfig:
-    ('cookie:' cookie=STRING)?
+    'cookie:' cookie=STRING
     ('expiry:' expiry=INT)?  // Session expiry in seconds (default: 3600)
 ;
+
+// API Key Authentication - simple key-based auth
+// Key can be passed in header or query param (mutually exclusive)
+// secret: environment variable containing valid API keys with roles
+// Format: key1:role1;role2,key2:role3
+APIKeyAuthConfig:
+    (header=APIKeyHeader | query=APIKeyQuery)
+    'secret:' secret=STRING
+;
+
+APIKeyHeader: 'header:' name=STRING ;
+APIKeyQuery: 'query:' name=STRING ;
+
+// Basic Authentication - HTTP Basic auth (Authorization: Basic base64(user:pass))
+// No configuration needed - uses BASIC_AUTH_USERS env var by default
+// Format: username:password:role1;role2,username2:password2:role3
