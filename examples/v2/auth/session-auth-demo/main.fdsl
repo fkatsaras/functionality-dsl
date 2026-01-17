@@ -11,21 +11,22 @@
 // Uses DummyJSON.com as the backing API for testing
 // =============================================================================
 
-Role user
-Role admin
-
-Auth SessionAuth
-  type: session
+// Auth mechanism
+Auth<session> SessionAuth
   cookie: "demo_session"
   expiry: 3600
 end
 
+// Roles belong to the auth mechanism
+Role user uses SessionAuth
+Role admin uses SessionAuth
+
+// Server config (no auth reference needed)
 Server SessionDemo
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: SessionAuth
 end
 
 // =============================================================================

@@ -2,48 +2,73 @@
 // Authentication Configuration Grammar
 // =============================================================================
 // Defines authentication as a first-class entity, separate from Server
-// Server references Auth by name
+// Uses Auth<type> syntax similar to Source<REST>/Source<WS>
 //
 // Supported auth types:
-// - jwt: Stateless token-based auth (recommended for APIs)
-// - session: Stateful cookie-based auth (traditional web apps)
-// - apikey: API key authentication (header or query param)
-// - basic: HTTP Basic authentication (username:password)
+// - Auth<jwt>: Stateless token-based auth (recommended for APIs)
+// - Auth<session>: Stateful cookie-based auth (traditional web apps)
+// - Auth<apikey>: API key authentication (header or query param)
+// - Auth<basic>: HTTP Basic authentication (username:password)
 
-// Auth Declaration - first-class citizen
+// Auth is a union type - one of the specific auth types
 Auth:
-  'Auth' name=ID
-    'type:' type=AuthType
-    (jwt_config=JWTAuthConfig)?
-    (session_config=SessionAuthConfig)?
-    (apikey_config=APIKeyAuthConfig)?
-  'end'
+    AuthJWT
+  | AuthSession
+  | AuthAPIKey
+  | AuthBasic
 ;
-
-AuthType: 'jwt' | 'session' | 'apikey' | 'basic' ;
 
 // JWT Authentication - stateless, token in Authorization header
 // Supports RBAC via roles claim in token payload
 // secret: specifies the environment variable name for the JWT secret
-JWTAuthConfig:
+//
+// Example:
+//   Auth<jwt> JWTAuth
+//     secret: "JWT_SECRET"
+//   end
+AuthJWT:
+  'Auth<' kind='jwt' '>' name=ID
     'secret:' secret=STRING
+  'end'
 ;
 
 // Session Authentication - stateful, cookie-based
 // Uses in-memory session store (suitable for single-server deployments)
 // Supports RBAC via roles stored in session data
-SessionAuthConfig:
+//
+// Example:
+//   Auth<session> SessionAuth
+//     cookie: "session_id"
+//     expiry: 3600
+//   end
+AuthSession:
+  'Auth<' kind='session' '>' name=ID
     'cookie:' cookie=STRING
     ('expiry:' expiry=INT)?  // Session expiry in seconds (default: 3600)
+  'end'
 ;
 
 // API Key Authentication - simple key-based auth
 // Key can be passed in header or query param (mutually exclusive)
 // secret: environment variable containing valid API keys with roles
 // Format: key1:role1;role2,key2:role3
-APIKeyAuthConfig:
+//
+// Example (header):
+//   Auth<apikey> APIKeyAuth
+//     header: "X-API-Key"
+//     secret: "API_KEYS"
+//   end
+//
+// Example (query param):
+//   Auth<apikey> APIKeyAuth
+//     query: "api_key"
+//     secret: "API_KEYS"
+//   end
+AuthAPIKey:
+  'Auth<' kind='apikey' '>' name=ID
     (header=APIKeyHeader | query=APIKeyQuery)
     'secret:' secret=STRING
+  'end'
 ;
 
 APIKeyHeader: 'header:' name=STRING ;
@@ -52,3 +77,11 @@ APIKeyQuery: 'query:' name=STRING ;
 // Basic Authentication - HTTP Basic auth (Authorization: Basic base64(user:pass))
 // No configuration needed - uses BASIC_AUTH_USERS env var by default
 // Format: username:password:role1;role2,username2:password2:role3
+//
+// Example:
+//   Auth<basic> BasicAuth
+//   end
+AuthBasic:
+  'Auth<' kind='basic' '>' name=ID
+  'end'
+;

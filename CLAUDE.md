@@ -50,27 +50,25 @@ This enables:
 
 ---
 
-## 1. Roles & Authentication
+## 1. Authentication & Roles
 
-**Roles** (simple identity declarations):
-```fdsl
-Role admin
-Role homeowner
-Role guest
-```
+FDSL uses a **multi-auth architecture** where:
+- **Auth** declarations define authentication mechanisms
+- **Roles** belong to specific Auth mechanisms
+- **Entity access** references `public`, `AuthName`, or `[roles]`
+- Multiple Auth mechanisms can coexist in one API
 
-**Authentication** (identity verification):
+### Auth Types
 
-FDSL supports four authentication types:
-- `jwt` - Stateless token-based auth (recommended for APIs)
-- `session` - Stateful cookie-based auth (traditional web apps)
-- `apikey` - API key authentication (header or query param)
-- `basic` - HTTP Basic authentication (username:password)
+FDSL supports four authentication types using the `Auth<type>` syntax (similar to `Source<REST>` / `Source<WS>`):
+- `Auth<jwt>` - Stateless token-based auth (recommended for APIs)
+- `Auth<session>` - Stateful cookie-based auth (traditional web apps)
+- `Auth<apikey>` - API key authentication (header or query param)
+- `Auth<basic>` - HTTP Basic authentication (username:password)
 
 **JWT Authentication** (stateless, token in header):
 ```fdsl
-Auth JWTAuth
-  type: jwt
+Auth<jwt> JWTAuth
   secret: "JWT_SECRET"  // environment variable name
 end
 ```
@@ -79,8 +77,7 @@ The `secret:` field specifies the environment variable name for the JWT secret. 
 
 **Session Authentication** (stateful, cookie-based):
 ```fdsl
-Auth SessionAuth
-  type: session
+Auth<session> SessionAuth
   cookie: "session_id"
   expiry: 3600  // Session expiry in seconds (default: 3600)
 end
@@ -88,8 +85,7 @@ end
 
 **API Key Authentication** (simple key-based):
 ```fdsl
-Auth APIKeyAuth
-  type: apikey
+Auth<apikey> APIKeyAuth
   header: "X-API-Key"   // OR query: "api_key" (mutually exclusive)
   secret: "API_KEYS"    // env var name for valid keys
 end
@@ -102,8 +98,7 @@ API keys are configured via environment variable. Format options:
 
 **Basic Authentication** (HTTP Basic auth):
 ```fdsl
-Auth BasicAuth
-  type: basic
+Auth<basic> BasicAuth
 end
 ```
 
@@ -112,14 +107,36 @@ Uses `BASIC_AUTH_USERS` env var by default. Format:
 
 Example: `admin:secret123:admin;superuser,reader:pass456:viewer`
 
-**Server** (configuration):
+### Roles
+
+Roles **belong to** Auth mechanisms using the `uses` keyword:
+
+```fdsl
+Auth<jwt> JWTAuth
+  secret: "JWT_SECRET"
+end
+
+Auth<apikey> APIKeyAuth
+  header: "X-API-Key"
+  secret: "API_KEYS"
+end
+
+// Roles reference their auth mechanism
+Role admin uses JWTAuth
+Role user uses JWTAuth
+Role service uses APIKeyAuth  // Different auth for service accounts
+```
+
+### Server (configuration)
+
+Server configuration does **not** reference auth - auth is determined per-entity/per-operation:
+
 ```fdsl
 Server SmartHome
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: HomeAuth
 end
 ```
 
@@ -307,7 +324,11 @@ Generates: `ws://localhost:8080/ws/ordercommand` (client publishes)
 
 ## 5. Access Control
 
-**Public Access:**
+Access control can be applied at the entity level (all operations) or per-operation. Three access types are supported:
+
+### Access Types
+
+**1. Public Access** - no authentication required:
 ```fdsl
 Entity Climate(RawThermostat)
   attributes:
@@ -316,22 +337,91 @@ Entity Climate(RawThermostat)
 end
 ```
 
-**Role-Based:**
+**2. Auth-Only Access** - valid authentication required, no role check:
+```fdsl
+Entity SecureData
+  source: DataAPI
+  attributes:
+    - value: string;
+  access: JWTAuth  // Any valid JWT token
+end
+```
+
+**3. Role-Based Access** - requires specific roles (auth is inferred from role):
 ```fdsl
 Entity RawThermostat
   source: ThermostatAPI
   attributes:
     - current_temp_f: number @readonly;
     - target_temp_f: number;
-  access: [homeowner]
+  access: [homeowner, admin]  // Requires homeowner OR admin role
 end
 ```
 
-**Rules:**
+### Per-Operation Access Control
+
+Different operations can have different access requirements:
+
+```fdsl
+Auth<apikey> APIKeyAuth
+  header: "X-API-Key"
+  secret: "API_KEYS"
+end
+
+Role admin uses APIKeyAuth
+Role user uses APIKeyAuth
+Role viewer uses APIKeyAuth
+
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - title: string;
+    - body: string;
+  access:
+    read: public              // Anyone can read
+    create: [admin, user]     // Admin or user role required
+    update: [admin, user]     // Admin or user role required
+    delete: [admin]           // Only admin can delete
+end
+```
+
+### Mixed Auth Types
+
+You can mix auth types within the same API:
+
+```fdsl
+Auth<jwt> JWTAuth
+  secret: "JWT_SECRET"
+end
+
+Auth<apikey> APIKeyAuth
+  header: "X-API-Key"
+  secret: "API_KEYS"
+end
+
+Role admin uses JWTAuth
+Role user uses JWTAuth
+Role service uses APIKeyAuth
+
+Entity Config
+  source: ConfigAPI
+  attributes:
+    - setting: string;
+  access:
+    read: [admin, user, service]  // JWT users or API key service
+    update: [admin]               // Only JWT admin
+end
+```
+
+### Access Control Rules
+
 - `access: public` = no authentication required
-- `access: [role1, role2]` = requires one of these roles
-- If using roles, file must have `Role` and `Auth` declarations
+- `access: AuthName` = valid auth of that type, no role check
+- `access: [role1, role2]` = requires one of these roles (auth inferred)
+- Per-operation: different rules for `read`, `create`, `update`, `delete`
 - No `access:` field defaults to `public`
+- When roles from different Auth types are mixed, multiple auth mechanisms are accepted
 
 ---
 
@@ -639,5 +729,30 @@ end
 | `list` operation | Not supported - no collections |
 | `/{id}` paths | Not generated - snapshot resources |
 | `filters:` field | Not needed - no list endpoints |
+| `Role admin` | `Role admin uses AuthName` |
+| `Server ... auth: AuthName` | Removed - auth per-entity/per-op |
+
+**Auth Migration:**
+```fdsl
+// OLD (auth with type: field)
+Auth HomeAuth
+  type: jwt
+  secret: "JWT_SECRET"
+end
+Role admin
+Server SmartHome
+  auth: HomeAuth
+end
+
+// NEW (Auth<type> syntax, roles use 'uses', no auth in Server)
+Auth<jwt> HomeAuth
+  secret: "JWT_SECRET"
+end
+Role admin uses HomeAuth
+Server SmartHome
+  host: "localhost"
+  port: 8080
+end
+```
 
 **Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET url`, `PUT url`, etc.).

@@ -1,6 +1,7 @@
 import utils
 import expression
 import rbac
+import auth
 
 AttrType:
   'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
@@ -81,21 +82,34 @@ SourceOperationsList:
 
 // Access block for entities - controls authorization
 // Supports four syntaxes:
-// 1. access: public (public access to all operations - no auth required)
-// 2. access: authenticated (requires valid auth, no role check)
-// 3. access: [role1, role2] (all operations require these roles)
+// 1. access: public (no auth required)
+// 2. access: AuthName (valid auth of that type, no role check)
+// 3. access: [role1, role2] (must have one of these roles - auth inferred from role)
 // 4. access: read: public create: [admin] (per-operation control)
+//
+// In lists, you can mix Auth refs and Roles: [AuthName, role1, role2]
+// - AuthName = any valid auth of that type
+// - role = must have that role (via its associated auth)
 AccessBlock:
     'access:' public_keyword='public'                             // Public access: access: public
-  | 'access:' authenticated_keyword='authenticated'               // Authenticated: access: authenticated
-  | 'access:' '[' roles+=[Role] (',' roles+=[Role])* ']'         // Role list: access: [admin, user]
+  | 'access:' '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'  // List: access: [admin, APIKeyAuth]
   | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
+  | 'access:' auth_ref=[Auth]                                     // Auth only: access: APIKeyAuth (last to avoid greedy ID match)
+;
+
+// Access item can be either a Role or an Auth reference
+AccessItem:
+    role=[Role] | auth=[Auth]
 ;
 
 // Access rule for per-operation control
-// Example: read: public  or  read: authenticated  or  create: [admin, librarian]
+// Example: read: public  or  read: AuthName  or  create: [admin, librarian]
 AccessRule:
-  operation=Operation ':' (public_keyword='public' | authenticated_keyword='authenticated' | '[' roles+=[Role] (',' roles+=[Role])* ']')
+    operation=Operation ':' (
+        public_keyword='public'
+      | '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'
+      | auth_ref=[Auth]
+    )
 ;
 
 // Entity sources / targets -------------------

@@ -13,20 +13,21 @@
 //
 // Or in browser - it will prompt for username/password
 
-Role admin
-Role user
-Role viewer
-
-Auth BasicAuth
-  type: basic
+// Auth mechanism
+Auth<basic> BasicAuth
 end
 
+// Roles belong to the auth mechanism
+Role admin uses BasicAuth
+Role user uses BasicAuth
+Role viewer uses BasicAuth
+
+// Server config (no auth reference needed)
 Server BasicAuthDemo
   host: "localhost"
   port: 8000
   cors: "*"
   loglevel: debug
-  auth: BasicAuth
 end
 
 // JSONPlaceholder Sources
@@ -71,7 +72,7 @@ Entity Todo
     - title: string;
     - completed: boolean;
   access:
-    read: authenticated       // Must be logged in to see todos
+    read: BasicAuth           // Must be logged in to see todos
     create: [admin, user]     // Admin and user can create
     update: [admin, user]     // Admin and user can update
     delete: [admin]           // Only admin can delete
@@ -84,4 +85,16 @@ Entity Album
     - userId: integer<int64> @readonly;
     - title: string @readonly;
   access: [viewer, user, admin]  // Any authenticated user with a role can view
+end
+
+// Composite entity - combines Post and Todo data (read-only)
+Entity UserDashboard(Post, Todo)
+  attributes:
+    - postId: integer<int64> = Post.id;
+    - postTitle: string = Post.title;
+    - todoId: integer<int64> = Todo.id;
+    - todoTitle: string = Todo.title;
+    - todoCompleted: boolean = Todo.completed;
+    - summary: string = "Post: " + Post.title + " | Todo: " + Todo.title;
+  access: [admin, user]  // Only admin and user can see dashboard
 end

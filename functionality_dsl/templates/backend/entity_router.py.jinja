@@ -14,7 +14,12 @@ from app.domain.models import {{ entity_name }}
 {%- endfor %}
 from app.services.{{ entity_name | lower }}_service import {{ service_name }}
 {%- if has_auth %}
-from app.core.auth import require_roles
+{%- for auth_name in auth_modules %}
+from app.core.auth_{{ auth_name | lower }} import (
+    require_roles as require_roles_{{ auth_name | lower }},
+    get_current_user as get_current_user_{{ auth_name | lower }},
+)
+{%- endfor %}
 {%- endif %}
 
 
@@ -33,8 +38,12 @@ router = APIRouter(
     response_model={{ op.response_model }},
     {%- endif %}
     status_code={{ op.status_code }}
-    {%- if has_auth and op.required_roles != ["public"] %},
-    dependencies=[Depends(require_roles({{ op.required_roles }}))]
+    {%- if not op.is_public and op.auth_name %}
+    {%- if op.required_roles %},
+    dependencies=[Depends(require_roles_{{ op.auth_name | lower }}({{ op.required_roles }}))]
+    {%- else %},
+    dependencies=[Depends(get_current_user_{{ op.auth_name | lower }})]
+    {%- endif %}
     {%- endif %}
 )
 async def {{ op.function_name }}(

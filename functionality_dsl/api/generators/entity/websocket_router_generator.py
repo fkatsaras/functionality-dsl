@@ -7,6 +7,8 @@ Supports parameterized WebSocket sources with query params.
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
+from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
+
 
 def _extract_ws_source_params(source):
     """
@@ -307,32 +309,75 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "publish_source_params": publish_source_params,
         })
 
-    # Get permissions for auth
-    subscribe_permissions = ["public"]
-    publish_permissions = ["public"]
+    # Get permissions for auth using the same approach as REST router
+    # Uses get_permission_dependencies for structured auth info
+    subscribe_auth_info = {"is_public": True, "auth": None, "roles": None}
+    publish_auth_info = {"is_public": True, "auth": None, "roles": None}
     has_auth = False
 
     if subscribe_entity:
-        _, config = subscribe_entity
-        permissions = config.get("permissions", {})
-        if "subscribe" in permissions:
-            subscribe_permissions = permissions["subscribe"]
-            has_auth = has_auth or ("public" not in subscribe_permissions)
+        entity_name, config = subscribe_entity
+        entity = config["entity"]
+        # Use get_permission_dependencies to get structured auth info
+        permission_map = get_permission_dependencies(entity, model, operations=["subscribe"])
+        if "subscribe" in permission_map:
+            perm = permission_map["subscribe"]
+            if perm == "public":
+                subscribe_auth_info = {"is_public": True, "auth": None, "roles": None}
+            elif isinstance(perm, dict):
+                subscribe_auth_info = {
+                    "is_public": False,
+                    "auth": perm.get("auth"),
+                    "roles": perm.get("roles"),
+                }
+                has_auth = True
+            elif isinstance(perm, list) and len(perm) > 0:
+                # Multiple auth options - take first one
+                first = perm[0]
+                subscribe_auth_info = {
+                    "is_public": False,
+                    "auth": first.get("auth"),
+                    "roles": first.get("roles"),
+                }
+                has_auth = True
 
     if publish_entity:
-        _, config = publish_entity
-        permissions = config.get("permissions", {})
-        if "publish" in permissions:
-            publish_permissions = permissions["publish"]
-            has_auth = has_auth or ("public" not in publish_permissions)
+        entity_name, config = publish_entity
+        entity = config["entity"]
+        # Use get_permission_dependencies to get structured auth info
+        permission_map = get_permission_dependencies(entity, model, operations=["publish"])
+        if "publish" in permission_map:
+            perm = permission_map["publish"]
+            if perm == "public":
+                publish_auth_info = {"is_public": True, "auth": None, "roles": None}
+            elif isinstance(perm, dict):
+                publish_auth_info = {
+                    "is_public": False,
+                    "auth": perm.get("auth"),
+                    "roles": perm.get("roles"),
+                }
+                has_auth = True
+            elif isinstance(perm, list) and len(perm) > 0:
+                # Multiple auth options - take first one
+                first = perm[0]
+                publish_auth_info = {
+                    "is_public": False,
+                    "auth": first.get("auth"),
+                    "roles": first.get("roles"),
+                }
+                has_auth = True
 
     # Debug output
-    print(f"    Auth config: has_auth={has_auth}, subscribe_roles={subscribe_permissions}, publish_roles={publish_permissions}")
+    print(f"    Auth config: has_auth={has_auth}, subscribe={subscribe_auth_info}, publish={publish_auth_info}")
 
     context.update({
         "has_auth": has_auth,
-        "subscribe_required_roles": subscribe_permissions,
-        "publish_required_roles": publish_permissions,
+        "subscribe_is_public": subscribe_auth_info["is_public"],
+        "subscribe_auth_name": subscribe_auth_info["auth"],
+        "subscribe_required_roles": subscribe_auth_info["roles"],
+        "publish_is_public": publish_auth_info["is_public"],
+        "publish_auth_name": publish_auth_info["auth"],
+        "publish_required_roles": publish_auth_info["roles"],
     })
 
     # Render template

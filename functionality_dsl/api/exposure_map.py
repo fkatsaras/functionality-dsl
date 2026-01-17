@@ -264,13 +264,14 @@ def _extract_permissions(entity, source):
     """
     Extract permissions from entity access block.
 
-    Supports three forms:
+    Supports four forms (NEW grammar):
     1. access: public - all operations are public
-    2. access: [role1, role2] - all operations require these roles
-    3. access: read: public create: [admin] - per-operation rules
+    2. access: AuthName - all operations require valid auth (no role check)
+    3. access: [item1, item2] - all operations require these roles/auths
+    4. access: read: public create: [admin] - per-operation rules
 
     Returns:
-        dict: {operation: [roles...]}
+        dict: {operation: [roles/auths...]}
     """
     permissions = {}
 
@@ -283,33 +284,55 @@ def _extract_permissions(entity, source):
 
     # Check which form of access block this is
     public_keyword = getattr(access_block, "public_keyword", None)
-    roles_list = getattr(access_block, "roles", []) or []
+    auth_ref = getattr(access_block, "auth_ref", None)
+    access_items = getattr(access_block, "access_items", []) or []
     access_rules = getattr(access_block, "access_rules", []) or []
 
     if public_keyword == "public":
         # Form 1: access: public - all operations are public
         for op in declared_ops:
             permissions[op] = ["public"]
-    elif roles_list:
-        # Form 2: access: [role1, role2] - all operations require these roles
-        # roles_list contains Role objects, extract names
-        role_names = [r.name for r in roles_list]
+    elif auth_ref:
+        # Form 2: access: AuthName - valid auth, no role check
         for op in declared_ops:
-            permissions[op] = role_names
+            permissions[op] = [f"auth:{auth_ref.name}"]
+    elif access_items:
+        # Form 3: access: [item1, item2] - all operations require these roles/auths
+        names = _extract_access_item_names(access_items)
+        for op in declared_ops:
+            permissions[op] = names
     elif access_rules:
-        # Form 3: access: read: public create: [admin] - per-operation rules
+        # Form 4: Per-operation rules
         for rule in access_rules:
             op = rule.operation
             rule_public = getattr(rule, "public_keyword", None)
-            rule_roles = getattr(rule, "roles", []) or []
+            rule_auth_ref = getattr(rule, "auth_ref", None)
+            rule_items = getattr(rule, "access_items", []) or []
 
             if rule_public == "public":
                 permissions[op] = ["public"]
-            elif rule_roles:
-                # rule_roles contains Role objects, extract names
-                permissions[op] = [r.name for r in rule_roles]
+            elif rule_auth_ref:
+                permissions[op] = [f"auth:{rule_auth_ref.name}"]
+            elif rule_items:
+                permissions[op] = _extract_access_item_names(rule_items)
 
     return permissions
+
+
+def _extract_access_item_names(access_items):
+    """
+    Extract names from AccessItem list (can be Role or Auth references).
+    Returns list of role names (prefixed with auth: for auth-only access).
+    """
+    names = []
+    for item in access_items:
+        role_ref = getattr(item, "role", None)
+        auth_ref = getattr(item, "auth", None)
+        if role_ref:
+            names.append(role_ref.name)
+        elif auth_ref:
+            names.append(f"auth:{auth_ref.name}")
+    return names
 
 
 def _get_declared_operations(entity, source):
