@@ -101,6 +101,7 @@ services:
     networks:
       - fdsl_net
     {% endif %}
+{% if target in ['all', 'frontend'] %}
   frontend:
     {% if server.env == 'dev' %}
     # ===================== DEV (HMR) =====================
@@ -142,3 +143,4 @@ services:
     networks:
       - fdsl_net
     {% endif %}
+{% endif %}

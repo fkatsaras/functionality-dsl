@@ -1,0 +1,87 @@
+// =============================================================================
+// TEST: Primitive and Array Response Types
+// Tests that FDSL can handle non-object responses (arrays, primitives)
+// =============================================================================
+
+Server PrimitiveArrayTest
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// --- ARRAY RESPONSE: GET /posts returns array of posts ---
+Source<REST> PostsCollectionAPI
+  url: "https://jsonplaceholder.typicode.com/posts"
+  operations: [read]
+end
+
+// Entity wrapping array response - user can name attribute whatever they want
+Entity PostsCollection
+  source: PostsCollectionAPI
+  attributes:
+    - items: array @readonly;
+  access: public
+end
+
+
+// --- ARRAY RESPONSE: GET /users returns array of users ---
+Source<REST> UsersCollectionAPI
+  url: "https://jsonplaceholder.typicode.com/users"
+  operations: [read]
+end
+
+Entity UsersCollection
+  source: UsersCollectionAPI
+  attributes:
+    - data: array @readonly;  // Different name than 'items' to test flexibility
+  access: public
+end
+
+
+// --- JSON OBJECT WITH SINGLE FIELD: httpbin returns {"uuid": "..."} ---
+// The wrapper pattern handles BOTH cases:
+// 1. Raw primitive response (e.g., API returns just "abc123")
+// 2. JSON object with matching field (e.g., API returns {"uuid": "abc123"})
+Source<REST> UuidAPI
+  url: "https://httpbin.org/uuid"
+  operations: [read]
+end
+
+// Entity with single 'uuid' field - matches the JSON response field name
+Entity UuidValue
+  source: UuidAPI
+  attributes:
+    - uuid: string @readonly;
+  access: public
+end
+
+
+// --- SINGLE ITEM for composition ---
+Source<REST> PostAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{post_id}"
+  params: [post_id]
+  operations: [read]
+end
+
+Entity Post
+  source: PostAPI
+  attributes:
+    - id: integer @readonly;
+    - userId: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: public
+end
+
+
+// --- COMPOSITE: Combines array collection with single item ---
+// This tests that array-wrapped entities work in composition
+Entity PostWithAllPosts(Post, PostsCollection)
+  attributes:
+    - currentPostId: integer = Post.id;
+    - currentPostTitle: string = Post.title;
+    - totalPosts: integer = len(PostsCollection.items);
+    - allPostTitles: array = map(PostsCollection.items, p => p["title"]);
+  access: public
+end

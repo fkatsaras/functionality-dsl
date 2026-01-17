@@ -1,0 +1,259 @@
+"""
+HTTP Basic Authentication Module
+Auto-generated from FDSL Server auth configuration
+
+Configuration:
+  Type: HTTP Basic Auth
+  Users Env Var: {{ users }}
+  Roles: {{ roles }}
+
+User Format in environment variable:
+  username:password:role1;role2,username2:password2:role3
+  (colon separates username, password, and roles; semicolon separates multiple roles)
+  Example: admin:secret123:admin;superuser,reader:pass456:viewer
+"""
+
+import os
+import base64
+import secrets
+from typing import List, Optional, Dict, Tuple
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+BASIC_AUTH_USERS_ENV_VAR = "{{ users }}"
+
+# Declared roles from FDSL
+DECLARED_ROLES = {{ roles }}
+DECLARED_ROLES.append("public")  # Public is always allowed
+
+
+# ============================================================================
+# User Storage
+# ============================================================================
+
+# Parse users from environment variable
+# Format: username:password:role1;role2,username2:password2:role3
+_users: Dict[str, Tuple[str, List[str]]] = {}  # username -> (password, roles)
+
+def _parse_users():
+    """Parse users from environment variable"""
+    global _users
+    raw_users = os.getenv(BASIC_AUTH_USERS_ENV_VAR, "")
+    if not raw_users:
+        return
+
+    for entry in raw_users.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+
+        parts = entry.split(":")
+        if len(parts) < 2:
+            continue  # Invalid format, skip
+
+        username = parts[0].strip()
+        password = parts[1].strip()
+
+        if len(parts) >= 3:
+            # Has roles
+            roles = [r.strip() for r in parts[2].split(";") if r.strip()]
+        else:
+            # No roles specified
+            roles = []
+
+        _users[username] = (password, roles)
+
+# Parse on module load
+_parse_users()
+
+
+def validate_credentials(username: str, password: str) -> Optional[List[str]]:
+    """
+    Validate username and password, return roles if valid.
+
+    Args:
+        username: The username
+        password: The password
+
+    Returns:
+        List of roles if credentials are valid, None if invalid
+    """
+    user_data = _users.get(username)
+    if user_data is None:
+        return None
+
+    stored_password, roles = user_data
+
+    # Use constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(password.encode(), stored_password.encode()):
+        return None
+
+    return roles
+
+
+# ============================================================================
+# Security scheme
+# ============================================================================
+
+security = HTTPBasic()
+
+
+# ============================================================================
+# Token Payload (compatible interface with JWT auth)
+# ============================================================================
+
+class TokenPayload:
+    """Basic auth payload - compatible interface with JWT TokenPayload"""
+
+    def __init__(self, user_id: str, roles: List[str]):
+        self.user_id = user_id  # The username
+        self.roles = roles
+
+    def has_role(self, role: str) -> bool:
+        """Check if user has a specific role"""
+        return role in self.roles
+
+    def has_any_role(self, roles: List[str]) -> bool:
+        """Check if user has any of the specified roles"""
+        return any(self.has_role(role) for role in roles)
+
+
+# ============================================================================
+# FastAPI Dependencies
+# ============================================================================
+
+async def get_current_user(
+    credentials: HTTPBasicCredentials = Depends(security)
+) -> TokenPayload:
+    """
+    Dependency to get current authenticated user from HTTP Basic auth.
+
+    Usage:
+        @app.get("/protected")
+        async def protected_route(user: TokenPayload = Depends(get_current_user)):
+            return {"user_id": user.user_id, "roles": user.roles}
+    """
+    roles = validate_credentials(credentials.username, credentials.password)
+
+    if roles is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    return TokenPayload(user_id=credentials.username, roles=roles)
+
+
+async def get_optional_user(
+    request: Request
+) -> Optional[TokenPayload]:
+    """
+    Dependency to optionally get current user (doesn't fail if no credentials).
+
+    Usage:
+        @app.get("/public-or-protected")
+        async def route(user: Optional[TokenPayload] = Depends(get_optional_user)):
+            if user:
+                return {"message": f"Hello {user.user_id}"}
+            return {"message": "Hello anonymous"}
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Basic "):
+        return None
+
+    try:
+        # Decode Base64 credentials
+        encoded = auth_header[6:]  # Remove "Basic " prefix
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        username, password = decoded.split(":", 1)
+
+        roles = validate_credentials(username, password)
+        if roles is None:
+            return None
+
+        return TokenPayload(user_id=username, roles=roles)
+    except Exception:
+        return None
+
+
+def require_roles(required_roles: List[str]):
+    """
+    Dependency factory to require specific roles.
+
+    Args:
+        required_roles: List of roles, user must have at least one
+                       Special values: "public" (no auth), "authenticated" (any valid auth)
+
+    Returns:
+        FastAPI dependency function
+
+    Usage:
+        @app.post("/admin-only", dependencies=[Depends(require_roles(["admin"]))])
+        async def admin_route():
+            return {"message": "Admin access granted"}
+    """
+    # Special case: public access (no auth required)
+    if "public" in required_roles:
+        async def _check_roles_or_public(
+            user: Optional[TokenPayload] = Depends(get_optional_user)
+        ):
+            """Check if user has required roles OR allow public access"""
+            if user is None:
+                return None
+
+            if not user.has_any_role(required_roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+                )
+            return user
+
+        return _check_roles_or_public
+
+    # Special case: authenticated (any valid auth, no role check)
+    if "authenticated" in required_roles:
+        async def _check_authenticated(user: TokenPayload = Depends(get_current_user)):
+            """Require valid authentication, no role check"""
+            return user
+
+        return _check_authenticated
+
+    async def _check_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has required roles"""
+        if not user.has_any_role(required_roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_roles
+
+
+def require_all_roles(required_roles: List[str]):
+    """
+    Dependency factory to require ALL specified roles.
+
+    Args:
+        required_roles: List of roles, user must have ALL of them
+
+    Returns:
+        FastAPI dependency function
+    """
+    async def _check_all_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has all required roles"""
+        missing_roles = [role for role in required_roles if not user.has_role(role)]
+        if missing_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required roles: {missing_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_all_roles

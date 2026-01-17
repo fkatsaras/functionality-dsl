@@ -4,6 +4,11 @@
 # ========================================================================
 
 import logging
+import os
+{% if auth_config and auth_config.kind == 'basic' %}
+import base64
+{% endif %}
+from datetime import datetime, date, time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -16,11 +21,142 @@ from app.core.error_handlers import RESTErrorHandler
 logger = logging.getLogger("fdsl.source.{{ source_name }}")
 
 
+def _serialize_for_json(data: Any) -> Any:
+    """Recursively convert datetime objects to ISO format strings for JSON serialization."""
+    if isinstance(data, datetime):
+        return data.isoformat()
+    elif isinstance(data, date):
+        return data.isoformat()
+    elif isinstance(data, time):
+        return data.isoformat()
+    elif isinstance(data, dict):
+        return {k: _serialize_for_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_serialize_for_json(item) for item in data]
+    return data
+
+
 class {{ source_name }}Source:
     """HTTP client for {{ source_name }} CRUD operations"""
 
     def __init__(self):
         self.base_url = "{{ base_url }}"
+{% if has_params %}
+        # Source params configuration
+        self.path_params = {{ path_params }}  # Params that go into URL path
+        self.query_params = {{ query_params }}  # Params forwarded as query string
+{% endif %}
+{% if auth_config %}
+        # Auth configuration for outbound requests
+        self._auth_kind = "{{ auth_config.kind }}"
+{% if auth_config.kind == 'apikey' %}
+{% if auth_config.header_name %}
+        self._auth_header_name = "{{ auth_config.header_name }}"
+        self._auth_location = "header"
+{% elif auth_config.query_name %}
+        self._auth_query_name = "{{ auth_config.query_name }}"
+        self._auth_location = "query"
+{% endif %}
+        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% elif auth_config.kind == 'jwt' %}
+        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% elif auth_config.kind == 'basic' %}
+        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% endif %}
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Get authentication headers for outbound requests."""
+        headers = {}
+{% if auth_config.kind == 'apikey' %}
+{% if auth_config.header_name %}
+        # API Key in header
+        api_key = os.getenv(self._auth_secret_env, "")
+        if api_key:
+            # If env var contains multiple keys (key1,key2), use the first one
+            api_key = api_key.split(",")[0].split(":")[0].strip()
+            headers[self._auth_header_name] = api_key
+{% endif %}
+{% elif auth_config.kind == 'jwt' %}
+        # JWT Bearer token (static token from env var for source auth)
+        token = os.getenv(self._auth_secret_env, "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+{% elif auth_config.kind == 'basic' %}
+        # HTTP Basic auth
+        creds = os.getenv(self._auth_secret_env, "")
+        if creds:
+            # Format: username:password:roles,... - take first entry
+            first_cred = creds.split(",")[0].strip()
+            parts = first_cred.split(":")
+            if len(parts) >= 2:
+                username, password = parts[0], parts[1]
+                encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+{% endif %}
+        return headers
+
+{% if auth_config.query_name %}
+    def _get_auth_query_params(self) -> Dict[str, str]:
+        """Get authentication query params for outbound requests."""
+        params = {}
+        api_key = os.getenv(self._auth_secret_env, "")
+        if api_key:
+            # If env var contains multiple keys (key1,key2), use the first one
+            api_key = api_key.split(",")[0].split(":")[0].strip()
+            params[self._auth_query_name] = api_key
+        return params
+{% endif %}
+{% endif %}
+
+{% if has_params %}
+    def _build_url(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """
+        Build final URL by replacing path placeholders and extracting query params.
+
+        Args:
+            params: Dict of param_name -> value from client query string
+
+        Returns:
+            tuple: (final_url, query_params_dict)
+        """
+        url = self.base_url
+
+        # Replace {placeholder} with actual values
+        for param in self.path_params:
+            if param in params:
+                url = url.replace("{" + param + "}", str(params[param]))
+
+        # Collect query params to forward
+        query = {}
+        for param in self.query_params:
+            if param in params:
+                query[param] = params[param]
+
+        return url, query
+
+    def _build_create_url(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """
+        Build URL for create operations by stripping path param placeholders.
+        POST typically goes to the collection endpoint (e.g., /posts not /posts/{id}).
+
+        Args:
+            params: Dict of param_name -> value from client query string
+
+        Returns:
+            tuple: (final_url, query_params_dict)
+        """
+        import re
+        # Strip path param placeholders: /posts/{post_id} -> /posts
+        url = re.sub(r'/\{[^}]+\}', '', self.base_url)
+
+        # Collect query params to forward
+        query = {}
+        for param in self.query_params:
+            if param in params:
+                query[param] = params[param]
+
+        return url, query
+{% endif %}
 
 {% for op in operations %}
     {%- if op.name == "list" %}
@@ -38,6 +174,35 @@ class {{ source_name }}Source:
         return response.json()
 
     {%- elif op.name == "read" %}
+{% if has_params %}
+    async def read(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get snapshot from {{ source_name }} with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Fetching snapshot from {url} with query params: {query_params}")
+{% if auth_config %}
+{% if auth_config.kind == 'apikey' and auth_config.query_name %}
+        # Merge auth query params
+        auth_query = self._get_auth_query_params()
+        if query_params:
+            query_params.update(auth_query)
+        else:
+            query_params = auth_query
+{% endif %}
+{% endif %}
+
+        try:
+            client = get_http_client()
+            response = await client.request(
+                method="{{ op.method }}",
+                url=url,
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+                headers=self._get_auth_headers(),
+{% endif %}
+                params=query_params if query_params else None
+            )
+            response.raise_for_status()
+            return response.json()
+{% else %}
     async def read(self) -> Optional[Dict[str, Any]]:
         """Get snapshot from {{ source_name }}"""
         url = f"{self.base_url}{{ op.path }}"
@@ -47,10 +212,19 @@ class {{ source_name }}Source:
             client = get_http_client()
             response = await client.request(
                 method="{{ op.method }}",
-                url=url
+                url=url{% if auth_config %},
+{% if auth_config.kind == 'apikey' and auth_config.query_name %}
+                params=self._get_auth_query_params(),
+{% endif %}
+{% if auth_config.kind != 'apikey' or auth_config.header_name %}
+                headers=self._get_auth_headers()
+{% endif %}
+{% endif %}
+
             )
             response.raise_for_status()
             return response.json()
+{% endif %}
         except httpx.TimeoutException as e:
             logger.error(f"Timeout fetching from {{ source_name }}: {e}")
             raise HTTPException(
@@ -86,6 +260,35 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "create" %}
+{% if has_params %}
+    async def create(self, data: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new item in {{ source_name }} with params"""
+        url, query_params = self._build_create_url(params)
+        logger.debug(f"Creating item at {url}")
+{% if auth_config %}
+{% if auth_config.query_name %}
+        # Merge auth query params
+        auth_query = self._get_auth_query_params()
+        if query_params:
+            query_params.update(auth_query)
+        else:
+            query_params = auth_query
+{% endif %}
+{% endif %}
+
+        client = get_http_client()
+        response = await client.request(
+            method="{{ op.method }}",
+            url=url,
+{% if auth_config and not auth_config.query_name %}
+            headers=self._get_auth_headers(),
+{% endif %}
+            json=_serialize_for_json(data),
+            params=query_params if query_params else None
+        )
+        response.raise_for_status()
+        return response.json()
+{% else %}
     async def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new item in {{ source_name }}"""
         logger.debug(f"Creating item at {self.base_url}{{ op.path }}")
@@ -94,12 +297,50 @@ class {{ source_name }}Source:
         response = await client.request(
             method="{{ op.method }}",
             url=f"{self.base_url}{{ op.path }}",
-            json=data
+{% if auth_config %}
+{% if auth_config.query_name %}
+            params=self._get_auth_query_params(),
+{% else %}
+            headers=self._get_auth_headers(),
+{% endif %}
+{% endif %}
+            json=_serialize_for_json(data)
         )
         response.raise_for_status()
         return response.json()
+{% endif %}
 
     {%- elif op.name == "update" %}
+{% if has_params %}
+    async def update(self, data: Dict[str, Any], params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update the {{ source_name }} snapshot with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Updating snapshot at {url}")
+{% if auth_config %}
+{% if auth_config.query_name %}
+        # Merge auth query params
+        auth_query = self._get_auth_query_params()
+        if query_params:
+            query_params.update(auth_query)
+        else:
+            query_params = auth_query
+{% endif %}
+{% endif %}
+
+        try:
+            client = get_http_client()
+            response = await client.request(
+                method="{{ op.method }}",
+                url=url,
+{% if auth_config and not auth_config.query_name %}
+                headers=self._get_auth_headers(),
+{% endif %}
+                json=_serialize_for_json(data),
+                params=query_params if query_params else None
+            )
+            response.raise_for_status()
+            return response.json()
+{% else %}
     async def update(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
@@ -110,10 +351,18 @@ class {{ source_name }}Source:
             response = await client.request(
                 method="{{ op.method }}",
                 url=url,
-                json=data
+{% if auth_config %}
+{% if auth_config.query_name %}
+                params=self._get_auth_query_params(),
+{% else %}
+                headers=self._get_auth_headers(),
+{% endif %}
+{% endif %}
+                json=_serialize_for_json(data)
             )
             response.raise_for_status()
             return response.json()
+{% endif %}
         except httpx.TimeoutException as e:
             logger.error(f"Timeout updating {{ source_name }}: {e}")
             raise HTTPException(
@@ -149,6 +398,33 @@ class {{ source_name }}Source:
             raise RESTErrorHandler.handle_service_error(e, logger, "{{ source_name }}")
 
     {%- elif op.name == "delete" %}
+{% if has_params %}
+    async def delete(self, params: Dict[str, Any]) -> None:
+        """Delete the {{ source_name }} snapshot with params"""
+        url, query_params = self._build_url(params)
+        logger.debug(f"Deleting snapshot at {url}")
+{% if auth_config %}
+{% if auth_config.query_name %}
+        # Merge auth query params
+        auth_query = self._get_auth_query_params()
+        if query_params:
+            query_params.update(auth_query)
+        else:
+            query_params = auth_query
+{% endif %}
+{% endif %}
+
+        client = get_http_client()
+        response = await client.request(
+            method="{{ op.method }}",
+            url=url,
+{% if auth_config and not auth_config.query_name %}
+            headers=self._get_auth_headers(),
+{% endif %}
+            params=query_params if query_params else None
+        )
+        response.raise_for_status()
+{% else %}
     async def delete(self) -> None:
         """Delete the {{ source_name }} snapshot"""
         url = f"{self.base_url}{{ op.path }}"
@@ -157,9 +433,17 @@ class {{ source_name }}Source:
         client = get_http_client()
         response = await client.request(
             method="{{ op.method }}",
-            url=url
+            url=url{% if auth_config %},
+{% if auth_config.query_name %}
+            params=self._get_auth_query_params()
+{% else %}
+            headers=self._get_auth_headers()
+{% endif %}
+{% endif %}
+
         )
         response.raise_for_status()
+{% endif %}
 
     {%- endif %}
 

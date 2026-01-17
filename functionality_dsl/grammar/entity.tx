@@ -1,6 +1,7 @@
 import utils
 import expression
 import rbac
+import auth
 
 AttrType:
   'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
@@ -9,8 +10,8 @@ AttrType:
 // Format qualifiers for types (OpenAPI-aligned)
 // Note: For datetime values, use plain 'string' type (OpenAPI date-time is just a string format hint)
 TypeFormat:
-  // String formats
-  'email' | 'uri' | 'uuid_str' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
+  // String formats (datetime must come before date for correct PEG parsing)
+  'email' | 'uri' | 'uuid' | 'datetime' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
   'byte' | 'binary' | 'password' | 'regex' |
   // Number formats
   'float' | 'double' | 'int32' | 'int64'
@@ -80,20 +81,35 @@ SourceOperationsList:
 ;
 
 // Access block for entities - controls authorization
-// Supports three syntaxes:
-// 1. access: public (public access to all operations)
-// 2. access: [role1, role2] (all operations require these roles)
-// 3. access: read: public create: [admin] (per-operation control)
+// Supports four syntaxes:
+// 1. access: public (no auth required)
+// 2. access: AuthName (valid auth of that type, no role check)
+// 3. access: [role1, role2] (must have one of these roles - auth inferred from role)
+// 4. access: read: public create: [admin] (per-operation control)
+//
+// In lists, you can mix Auth refs and Roles: [AuthName, role1, role2]
+// - AuthName = any valid auth of that type
+// - role = must have that role (via its associated auth)
 AccessBlock:
     'access:' public_keyword='public'                             // Public access: access: public
-  | 'access:' '[' roles+=[Role] (',' roles+=[Role])* ']'         // Role list: access: [admin, user]
+  | 'access:' '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'  // List: access: [admin, APIKeyAuth]
   | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
+  | 'access:' auth_ref=[Auth]                                     // Auth only: access: APIKeyAuth (last to avoid greedy ID match)
+;
+
+// Access item can be either a Role or an Auth reference
+AccessItem:
+    role=[Role] | auth=[Auth]
 ;
 
 // Access rule for per-operation control
-// Example: read: public  or  create: [admin, librarian]
+// Example: read: public  or  read: AuthName  or  create: [admin, librarian]
 AccessRule:
-  operation=Operation ':' (public_keyword='public' | '[' roles+=[Role] (',' roles+=[Role])* ']')
+    operation=Operation ':' (
+        public_keyword='public'
+      | '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'
+      | auth_ref=[Auth]
+    )
 ;
 
 // Entity sources / targets -------------------
@@ -106,15 +122,26 @@ Source:
 SourceREST:
   'Source<' kind='REST' '>' name=ID
   'url:' url=STRING
+  params=SourceParamsList?
   operations=SourceOperationsList
+  ('auth:' auth=[Auth])?
   'end'
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
   'channel:' url=STRING
+  params=SourceParamsList?
   operations=SourceOperationsList?
+  ('auth:' auth=[Auth])?
   'end'
+;
+
+// Source parameters list - maps client query params to source URL
+// Params in URL path like {id} are replaced with query param values
+// Params not in URL path are forwarded as query string
+SourceParamsList:
+  'params:' '[' params+=ID (',' params+=ID)* ']'
 ;
 
 // ---------- COMMON ----------

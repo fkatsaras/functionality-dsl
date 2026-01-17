@@ -59,10 +59,11 @@ def map_to_openapi_type(attr):
         openapi_format_map = {
             "email": "email",
             "uri": "uri",
-            "uuid_str": "uuid",
+            "uuid": "uuid",
             "date": "date",
-            "date_time": "date-time",
+            "datetime": "date-time",  # FDSL 'datetime' -> OpenAPI 'date-time'
             "time": "time",
+            "hostname": "hostname",
             "ipv4": "ipv4",
             "ipv6": "ipv6",
             "int32": "int32",
@@ -71,6 +72,8 @@ def map_to_openapi_type(attr):
             "double": "double",
             "byte": "byte",
             "binary": "binary",
+            "password": "password",
+            "regex": "pattern",
         }
         if format_str in openapi_format_map:
             schema["format"] = openapi_format_map[format_str]
@@ -139,12 +142,17 @@ def map_to_python_type(attr):
             # String formats that change Python type
             "email": "EmailStr",
             "uri": "HttpUrl",
-            "uuid_str": "UUID",
+            "uuid": "UUID",
             "date": "date",
-            "date_time": "datetime",
+            "datetime": "datetime",  # FDSL uses 'datetime' (no hyphen)
             "time": "time",
+            "hostname": "str",
             "ipv4": "IPvAnyAddress",
             "ipv6": "IPvAnyAddress",
+            "byte": "bytes",
+            "binary": "bytes",
+            "password": "str",
+            "regex": "str",
             # Number formats
             "int32": "int",
             "int64": "int",

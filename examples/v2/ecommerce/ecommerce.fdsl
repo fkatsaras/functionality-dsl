@@ -5,20 +5,18 @@
 // Thesis Focus: REST orchestration + Real-time order tracking
 // ============================================
 
-Role customer
-Role warehouse
-
-Auth ShopAuth
-  type: jwt
+Auth<jwt> ShopAuth
   secret: "ECOMMERCE_JWT_SECRET"
 end
+
+Role customer uses ShopAuth
+Role warehouse uses ShopAuth
 
 Server ECommerceAPI
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: ShopAuth
 end
 
 // ============================================

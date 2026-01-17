@@ -23,14 +23,34 @@ from app.core.error_handlers import (
     classify_error
 )
 {% if has_auth %}
-# Import auth utilities - supports both JWT and session auth
+# Import auth utilities based on configured auth module
+{% if subscribe_auth_name %}
+from app.core.auth_{{ subscribe_auth_name | lower }} import (
+    get_current_user as get_current_user_{{ subscribe_auth_name | lower }},
+    TokenPayload as TokenPayload_{{ subscribe_auth_name | lower }},
+)
+{% endif %}
+{% if publish_auth_name and publish_auth_name != subscribe_auth_name %}
+from app.core.auth_{{ publish_auth_name | lower }} import (
+    get_current_user as get_current_user_{{ publish_auth_name | lower }},
+    TokenPayload as TokenPayload_{{ publish_auth_name | lower }},
+)
+{% endif %}
+
+# Import auth-type specific utilities for WebSocket authentication
+{% set auth_name = subscribe_auth_name or publish_auth_name %}
+{% if auth_name %}
 try:
-    from app.core.auth import decode_token, TokenPayload
+    from app.core.auth_{{ auth_name | lower }} import decode_token
     AUTH_TYPE = "jwt"
 except ImportError:
-    # Session auth module has different interface
-    from app.core.auth import get_session, TokenPayload, SESSION_COOKIE_NAME
-    AUTH_TYPE = "session"
+    try:
+        from app.core.auth_{{ auth_name | lower }} import get_session, SESSION_COOKIE_NAME
+        AUTH_TYPE = "session"
+    except ImportError:
+        # API key or basic auth - check header/query param
+        AUTH_TYPE = "apikey"
+{% endif %}
 {% endif %}
 
 logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
@@ -75,25 +95,26 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     """
     {% if has_auth %}
     # Authenticate before accepting connection
-    user: Optional[TokenPayload] = None
+    {% set auth_name = subscribe_auth_name or publish_auth_name %}
+    user = None
+    token = None
+    session_id = None
 
     # Extract credentials based on auth type
     if AUTH_TYPE == "jwt":
         # JWT auth: Extract token from Authorization header or query parameter
         # Note: Browsers don't support custom headers for WebSocket, so we also check query params
         auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-        token = None
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header[7:]  # Remove "Bearer " prefix
 
         # Fallback to query parameter for browser WebSocket connections
         if not token:
             token = websocket.query_params.get("token")
-    else:
+    elif AUTH_TYPE == "session":
         # Session auth: Extract session cookie
         # WebSocket cookies come from the Cookie header
         cookie_header = websocket.headers.get("cookie", "")
-        session_id = None
         if cookie_header:
             for cookie in cookie_header.split(";"):
                 cookie = cookie.strip()
@@ -101,21 +122,28 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     session_id = cookie[len(SESSION_COOKIE_NAME) + 1:]
                     break
 
-    {% if subscribe_required_roles != ["public"] or publish_required_roles != ["public"] %}
-    # Check if authentication is required
-    {% if subscribe_required_roles != ["public"] %}
+    # Check if authentication is required for each operation
+    {% if not subscribe_is_public %}
     subscribe_requires_auth = True
-    subscribe_roles = {{ subscribe_required_roles }}
+    {% if subscribe_required_roles %}
+    subscribe_roles = {{ subscribe_required_roles }}  # Role-based access
+    {% else %}
+    subscribe_roles = None  # Auth-only (no role check)
+    {% endif %}
     {% else %}
     subscribe_requires_auth = False
-    subscribe_roles = []
+    subscribe_roles = None
     {% endif %}
-    {% if publish_required_roles != ["public"] %}
+    {% if not publish_is_public %}
     publish_requires_auth = True
-    publish_roles = {{ publish_required_roles }}
+    {% if publish_required_roles %}
+    publish_roles = {{ publish_required_roles }}  # Role-based access
+    {% else %}
+    publish_roles = None  # Auth-only (no role check)
+    {% endif %}
     {% else %}
     publish_requires_auth = False
-    publish_roles = []
+    publish_roles = None
     {% endif %}
 
     # Verify credentials if required
@@ -149,21 +177,22 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     session = get_session(session_id)
                     if not session:
                         raise Exception("Invalid or expired session")
+                    from app.core.auth_{{ auth_name | lower }} import TokenPayload
                     user = TokenPayload(user_id=session.user_id, roles=session.roles)
 
                 logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
 
-                # Check subscribe permissions
-                {% if subscribe_required_roles != ["public"] %}
-                if subscribe_requires_auth and not user.has_any_role(subscribe_roles):
+                # Check subscribe permissions (only if roles are specified)
+                {% if not subscribe_is_public and subscribe_required_roles %}
+                if subscribe_requires_auth and subscribe_roles and not user.has_any_role(subscribe_roles):
                     logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for subscribe: {subscribe_roles}")
                     await websocket.close(code=1008, reason="Insufficient permissions for subscribe")
                     return
                 {% endif %}
 
-                # Check publish permissions
-                {% if publish_required_roles != ["public"] %}
-                if publish_requires_auth and not user.has_any_role(publish_roles):
+                # Check publish permissions (only if roles are specified)
+                {% if not publish_is_public and publish_required_roles %}
+                if publish_requires_auth and publish_roles and not user.has_any_role(publish_roles):
                     logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for publish: {publish_roles}")
                     await websocket.close(code=1008, reason="Insufficient permissions for publish")
                     return
@@ -174,7 +203,6 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                 await websocket.close(code=1008, reason=f"Authentication failed: {str(e)}")
                 return
     {% endif %}
-    {% endif %}
 
     await websocket.accept()
     active_connections.add(websocket)
@@ -182,6 +210,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     {% if has_subscribe %}
     subscribe_service = {{ subscribe_entity_name }}Service()
+{% if has_subscribe_params %}
+
+    # Extract source params from query parameters
+    subscribe_params = {}
+    {% for param in subscribe_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        subscribe_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Subscribe source params: {subscribe_params}")
+{% endif %}
 
     # Extract filter values from query parameters
     {% if subscribe_filters %}
@@ -208,6 +246,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     {% endif %}
     {% if has_publish %}
     publish_service = {{ publish_entity_name }}Service()
+{% if has_publish_params %}
+
+    # Extract source params from query parameters for publish
+    publish_params = {}
+    {% for param in publish_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        publish_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Publish source params: {publish_params}")
+{% endif %}
     {% endif %}
 
     try:
@@ -220,7 +268,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         async def handle_subscribe():
             """Subscribe task: Stream data from external source to client."""
+{% if has_subscribe_params %}
+            async for raw_message in subscribe_source.subscribe(subscribe_params):
+{% else %}
             async for raw_message in subscribe_source.subscribe():
+{% endif %}
                 if raw_message is None:
                     continue
 
@@ -247,10 +299,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             """Publish task: Receive data from client and send to external target."""
             while True:
                 try:
-                    {% if has_auth and publish_required_roles != ["public"] %}
+                    {% if has_auth and not publish_is_public %}
                     # Runtime check: Verify user has publish permissions
+                    {% if publish_required_roles %}
+                    # Role-based access: check roles
                     if not user or not user.has_any_role(publish_roles):
-                        # User tried to publish without proper auth/permissions
                         error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
                         logger.warning(f"Publish rejected: {error_msg}")
                         await WebSocketErrorHandler.send_error(
@@ -261,6 +314,20 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                             close_connection=True
                         )
                         return
+                    {% else %}
+                    # Auth-only: just check user is authenticated
+                    if not user:
+                        error_msg = "Publish operation requires authentication"
+                        logger.warning(f"Publish rejected: {error_msg}")
+                        await WebSocketErrorHandler.send_error(
+                            websocket,
+                            Exception(error_msg),
+                            ErrorCategory.FORBIDDEN,
+                            logger,
+                            close_connection=True
+                        )
+                        return
+                    {% endif %}
                     {% endif %}
 
                     # Receive message based on content type
@@ -298,7 +365,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     logger.debug(f"Transformed message: {transformed_data}")
 
                     # Publish to external WebSocket via service source
+{% if has_publish_params %}
+                    await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
                     await publish_service.source.publish(transformed_data)
+{% endif %}
                     logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
                 except ValidationError as e:
@@ -350,7 +421,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
             """Subscribe to a single WebSocket source and update shared state."""
             try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
                 async for raw_message in source.subscribe():
+{% endif %}
                     if raw_message is None:
                         continue
 
@@ -405,7 +480,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         source = {{ subscribe_ws_source.name }}Source()
 
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
         async for raw_message in source.subscribe():
+{% endif %}
             if raw_message is None:
                 continue
 
@@ -449,7 +528,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
             """Subscribe to a single WebSocket source and update shared state."""
             try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
                 async for raw_message in source.subscribe():
+{% endif %}
                     if raw_message is None:
                         continue
 
@@ -498,7 +581,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         source = {{ subscribe_ws_source.name }}Source()
 
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
         async for raw_message in source.subscribe():
+{% endif %}
             if raw_message is None:
                 continue
 
@@ -527,10 +614,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         # The service has the source to publish to
 
         while True:
-            {% if has_auth and publish_required_roles != ["public"] %}
+            {% if has_auth and not publish_is_public %}
             # Runtime check: Verify user has publish permissions
+            {% if publish_required_roles %}
+            # Role-based access: check roles
             if not user or not user.has_any_role(publish_roles):
-                # User tried to publish without proper auth/permissions
                 error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
                 logger.warning(f"Publish rejected: {error_msg}")
                 await WebSocketErrorHandler.send_error(
@@ -541,6 +629,20 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     close_connection=True
                 )
                 break
+            {% else %}
+            # Auth-only: just check user is authenticated
+            if not user:
+                error_msg = "Publish operation requires authentication"
+                logger.warning(f"Publish rejected: {error_msg}")
+                await WebSocketErrorHandler.send_error(
+                    websocket,
+                    Exception(error_msg),
+                    ErrorCategory.FORBIDDEN,
+                    logger,
+                    close_connection=True
+                )
+                break
+            {% endif %}
             {% endif %}
 
             # Receive message based on content type
@@ -569,7 +671,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             logger.debug(f"Transformed message: {transformed_data}")
 
             # Publish to external WebSocket via service source
+{% if has_publish_params %}
+            await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
             await publish_service.source.publish(transformed_data)
+{% endif %}
             logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
         {% endif %}

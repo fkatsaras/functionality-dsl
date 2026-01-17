@@ -1,0 +1,64 @@
+// =============================================================================
+// AUTO-GENERATED FROM OPENAPI SPECIFICATION
+// =============================================================================
+
+Server PetStoreAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<REST> PetAPI
+  url: "https://api.petstore.example.com/v1/pets/{petId}"
+  params: [petId]
+  operations: [read, update, delete]
+end
+
+Source<REST> StoreAPI
+  url: "https://api.petstore.example.com/v1/stores/{storeId}"
+  params: [storeId, includeInventory]
+  operations: [read]
+end
+
+Source<REST> OrderAPI
+  url: "https://api.petstore.example.com/v1/orders/{orderId}"
+  params: [orderId]
+  operations: [read, update]
+end
+
+Entity Pet
+  source: PetAPI
+  attributes:
+    - id: string @readonly;
+    - name: string @optional;
+    - species: string @optional;
+    - age: integer @optional;
+    - status: string @optional;
+    - createdAt: string @readonly;
+    - updatedAt: string @readonly;
+  access: public
+end
+
+Entity Store
+  source: StoreAPI
+  attributes:
+    - id: string @readonly;
+    - name: string;
+    - location: string @optional;
+    - inventoryCount: integer @readonly;
+  access: public
+end
+
+Entity Order
+  source: OrderAPI
+  attributes:
+    - id: string @readonly;
+    - petId: string @readonly;
+    - quantity: integer @readonly;
+    - status: string;
+    - totalPrice: number @readonly;
+    - createdAt: string @readonly;
+  access: public
+end

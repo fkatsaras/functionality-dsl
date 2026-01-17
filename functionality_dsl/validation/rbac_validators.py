@@ -56,7 +56,7 @@ def validate_accesscontrol_dependencies(model):
     if not entities_with_access:
         return
 
-    auths = get_children_of_type("Auth", model)
+    auths = getattr(model, "auth", []) or []
     if not auths:
         first_entity = entities_with_access[0]
         raise TextXSemanticError(
@@ -104,7 +104,7 @@ def validate_role_references(model):
 def validate_server_auth_reference(model):
     """Validate that Server auth references point to declared Auth entities."""
     servers = get_children_of_type("Server", model)
-    auths = get_children_of_type("Auth", model)
+    auths = getattr(model, "auth", []) or []
     declared_auths = {auth.name for auth in auths}
 
     for server in servers:
