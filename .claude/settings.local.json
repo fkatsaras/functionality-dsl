@@ -241,7 +241,9 @@
       "Bash(docker stop:*)",
       "Bash(venv_WIN/Scripts/pip install -e . --force-reinstall --no-deps)",
       "Bash(venv_WIN/Scripts/python.exe venv_WIN/Scripts/fdsl:*)",
-      "Bash(/c/ffile/functionality-dsl/venv_WIN/Scripts/pip.exe uninstall:*)"
+      "Bash(/c/ffile/functionality-dsl/venv_WIN/Scripts/pip.exe uninstall:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

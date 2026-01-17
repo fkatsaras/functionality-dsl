@@ -2,11 +2,65 @@
 Source client generator for v2 syntax (snapshot entities).
 Generates HTTP client classes for Source<REST> with CRUD operations.
 Supports parameterized sources with path and query params.
+Supports source-level authentication for outbound requests.
 """
 
 import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+
+
+def _extract_auth_config(source):
+    """
+    Extract authentication configuration from source.
+
+    Returns:
+        dict with auth config or None if no auth:
+        {
+            "kind": "apikey" | "jwt" | "basic",
+            "header_name": str (for apikey header),
+            "query_name": str (for apikey query),
+            "secret_env": str (env var name for the secret/token),
+        }
+    """
+    auth = getattr(source, "auth", None)
+    if not auth:
+        return None
+
+    kind = getattr(auth, "kind", None)
+    if not kind:
+        return None
+
+    config = {"kind": kind}
+
+    if kind == "apikey":
+        # API key can be in header or query
+        header_obj = getattr(auth, "header", None)
+        query_obj = getattr(auth, "query", None)
+
+        if header_obj:
+            config["header_name"] = getattr(header_obj, "name", None)
+        elif query_obj:
+            config["query_name"] = getattr(query_obj, "name", None)
+
+        config["secret_env"] = getattr(auth, "secret", None)
+
+    elif kind == "jwt":
+        # JWT uses Authorization: Bearer <token>
+        # For source auth, we use a static token from env var
+        config["secret_env"] = getattr(auth, "secret", None)
+
+    elif kind == "basic":
+        # Basic auth uses Authorization: Basic <base64(user:pass)>
+        # Uses BASIC_AUTH_USERS env var by default
+        config["secret_env"] = "BASIC_AUTH_USERS"
+
+    elif kind == "session":
+        # Session auth doesn't make sense for outbound requests
+        # Skip it
+        return None
+
+    return config
 
 
 def _extract_source_params(source):
@@ -60,6 +114,11 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     if has_params:
         print(f"    Params: {all_params} (path: {path_params}, query: {query_params})")
+
+    # Extract auth config for outbound requests
+    auth_config = _extract_auth_config(source)
+    if auth_config:
+        print(f"    Auth: {auth_config['kind']} (env: {auth_config.get('secret_env', 'N/A')})")
 
     # Infer operations from entities that bind to this source
     operations = set()
@@ -132,6 +191,8 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
         all_params=all_params,
         path_params=list(path_params),
         query_params=list(query_params),
+        # Auth config for outbound requests
+        auth_config=auth_config,
     )
 
     # Write to file

@@ -36,6 +36,21 @@ class FDSLAttribute:
 
 
 @dataclass
+class FDSLAuth:
+    """Represents an FDSL Auth declaration."""
+    name: str
+    kind: str  # "jwt", "apikey", "basic"
+    config: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class FDSLRole:
+    """Represents an FDSL Role declaration."""
+    name: str
+    auth_name: str
+
+
+@dataclass
 class FDSLEntity:
     """Represents an FDSL entity."""
     name: str
@@ -51,6 +66,7 @@ class FDSLSource:
     url: str
     params: List[str] = field(default_factory=list)
     operations: List[str] = field(default_factory=list)
+    auth_name: Optional[str] = None  # Reference to Auth block for source authentication
 
 
 @dataclass
@@ -61,6 +77,9 @@ class FDSLModel:
     port: int = 8000
     sources: List[FDSLSource] = field(default_factory=list)
     entities: List[FDSLEntity] = field(default_factory=list)
+    auth_schemes: List[FDSLAuth] = field(default_factory=list)
+    roles: List[FDSLRole] = field(default_factory=list)
+    skipped_schemes: List[str] = field(default_factory=list)  # Unsupported schemes for warning
 
 
 class OpenAPIParser:
@@ -286,6 +305,124 @@ class SchemaConverter:
         return attributes
 
 
+class SecuritySchemeConverter:
+    """Converts OpenAPI securitySchemes to FDSL Auth declarations."""
+
+    # OpenAPI security scheme type -> FDSL auth kind mapping
+    SUPPORTED_TYPES = {
+        "apiKey": "apikey",
+        "http": {
+            "bearer": "jwt",
+            "basic": "basic",
+        },
+    }
+    UNSUPPORTED_TYPES = ["oauth2", "openIdConnect"]
+
+    def __init__(self, parser: OpenAPIParser):
+        self.parser = parser
+
+    def _to_pascal_case(self, name: str) -> str:
+        """Convert scheme name to PascalCase for FDSL Auth name."""
+        # Handle snake_case and kebab-case
+        parts = re.split(r'[_-]', name)
+        return ''.join(part.capitalize() for part in parts)
+
+    def _to_env_var_name(self, name: str) -> str:
+        """Convert scheme name to ENV_VAR_NAME format."""
+        # Handle camelCase, snake_case, kebab-case
+        # Insert underscore before uppercase letters
+        s = re.sub(r'([a-z])([A-Z])', r'\1_\2', name)
+        # Replace hyphens with underscores
+        s = s.replace('-', '_')
+        return s.upper()
+
+    def extract_auth_schemes(self, spec: Dict[str, Any]) -> Tuple[List[FDSLAuth], List[str]]:
+        """
+        Extract Auth blocks from OpenAPI securitySchemes.
+
+        Returns:
+            Tuple of (supported auth schemes, skipped scheme names)
+        """
+        schemes = spec.get("components", {}).get("securitySchemes", {})
+        auth_blocks: List[FDSLAuth] = []
+        skipped: List[str] = []
+
+        for scheme_name, scheme_def in schemes.items():
+            scheme_type = scheme_def.get("type")
+
+            if scheme_type == "apiKey":
+                # API Key authentication
+                location = scheme_def.get("in", "header")  # "header" or "query"
+                key_name = scheme_def.get("name", "api_key")
+                env_var = self._to_env_var_name(scheme_name) + "_KEYS"
+
+                config = {
+                    location: key_name,  # "header" or "query" as key
+                    "secret": env_var,
+                }
+
+                auth_blocks.append(FDSLAuth(
+                    name=self._to_pascal_case(scheme_name),
+                    kind="apikey",
+                    config=config,
+                ))
+
+            elif scheme_type == "http":
+                # HTTP authentication (Bearer JWT or Basic)
+                http_scheme = scheme_def.get("scheme", "").lower()
+
+                if http_scheme == "bearer":
+                    # JWT Bearer token
+                    env_var = self._to_env_var_name(scheme_name) + "_SECRET"
+                    auth_blocks.append(FDSLAuth(
+                        name=self._to_pascal_case(scheme_name),
+                        kind="jwt",
+                        config={"secret": env_var},
+                    ))
+
+                elif http_scheme == "basic":
+                    # HTTP Basic auth
+                    auth_blocks.append(FDSLAuth(
+                        name=self._to_pascal_case(scheme_name),
+                        kind="basic",
+                        config={},  # Basic auth uses default env var
+                    ))
+
+                else:
+                    # Unknown HTTP scheme
+                    skipped.append(f"{scheme_name} (http/{http_scheme})")
+
+            elif scheme_type in self.UNSUPPORTED_TYPES:
+                # OAuth2, OpenID Connect - not supported
+                skipped.append(f"{scheme_name} ({scheme_type})")
+
+            else:
+                # Unknown type
+                skipped.append(f"{scheme_name} ({scheme_type})")
+
+        return auth_blocks, skipped
+
+    def get_auth_name_map(self, auth_schemes: List[FDSLAuth], spec: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Build a mapping from OpenAPI scheme name to FDSL Auth name.
+
+        Returns:
+            Dict mapping original scheme name -> FDSL Auth name
+        """
+        schemes = spec.get("components", {}).get("securitySchemes", {})
+        name_map = {}
+
+        for scheme_name in schemes.keys():
+            pascal_name = self._to_pascal_case(scheme_name)
+            # Check if this scheme was converted to an auth
+            for auth in auth_schemes:
+                if auth.name == pascal_name:
+                    name_map[scheme_name] = pascal_name
+                    break
+
+        return name_map
+
+
 class PathGrouper:
     """Groups OpenAPI paths into FDSL sources."""
 
@@ -371,15 +508,61 @@ class PathGrouper:
             return x_fdsl["source"]
         return f"{entity_name}API"
 
-    def group_paths(self, base_url: str) -> Tuple[List[FDSLSource], Dict[str, Dict[str, Any]]]:
+    def _extract_operation_security(self, operation: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Extract security requirement from an OpenAPI operation.
+
+        Returns:
+            None if no security (public), or dict like:
+            {"scheme": "api_key", "scopes": []}
+            {"scheme": "petstore_auth", "scopes": ["write:pets", "read:pets"]}
+
+        OpenAPI security is an OR list - we take the first requirement.
+        """
+        security = operation.get("security")
+
+        # No security field = inherit global (we treat as public for now)
+        if security is None:
+            return None
+
+        # Empty security array = explicitly public
+        if security == []:
+            return {"explicit_public": True}
+
+        # security is a list of requirement objects (OR semantics)
+        # Each requirement is a dict like {"api_key": []} or {"petstore_auth": ["write:pets"]}
+        for requirement in security:
+            if not requirement:
+                continue
+            # Take the first scheme in this requirement
+            for scheme_name, scopes in requirement.items():
+                return {
+                    "scheme": scheme_name,
+                    "scopes": scopes if scopes else [],
+                }
+
+        return None
+
+    def group_paths(
+        self,
+        base_url: str,
+        auth_name_map: Optional[Dict[str, str]] = None
+    ) -> Tuple[List[FDSLSource], Dict[str, Dict[str, Any]]]:
         """
         Group paths into sources and collect schema info.
 
+        Args:
+            base_url: Base URL for the API
+            auth_name_map: Optional mapping from OpenAPI scheme name to FDSL Auth name
+
         Returns:
             Tuple of (sources, entity_schemas)
-            - sources: List of FDSLSource objects
+            - sources: List of FDSLSource objects (with auth_name set if applicable)
             - entity_schemas: Dict mapping entity name to schema info
         """
+        if auth_name_map is None:
+            auth_name_map = {}
+
         paths = self.parser.get_paths()
         sources: Dict[str, FDSLSource] = {}
         entity_schemas: Dict[str, Dict[str, Any]] = {}
@@ -449,6 +632,7 @@ class PathGrouper:
             all_query_params: Set[str] = set()
             response_schema = None
             request_schema = None
+            source_auth_name: Optional[str] = None  # Auth for this source
 
             for method, operation in path_item.items():
                 if method not in self.METHOD_MAP:
@@ -462,6 +646,14 @@ class PathGrouper:
                 fdsl_op = self.METHOD_MAP[method]
                 if fdsl_op not in operations:
                     operations.append(fdsl_op)
+
+                # Extract security and determine source auth (first supported scheme wins)
+                if source_auth_name is None:
+                    op_security = self._extract_operation_security(operation)
+                    if op_security and not op_security.get("explicit_public"):
+                        scheme_name = op_security.get("scheme")
+                        if scheme_name and scheme_name in auth_name_map:
+                            source_auth_name = auth_name_map[scheme_name]
 
                 # Collect query params
                 query_params = self.extract_query_params(operation)
@@ -510,6 +702,7 @@ class PathGrouper:
                     url=full_url,
                     params=all_params,
                     operations=operations,
+                    auth_name=source_auth_name,
                 )
             else:
                 # If this path has path params and the existing URL doesn't have path params, prefer this one
@@ -521,12 +714,15 @@ class PathGrouper:
                     # Merge: use parameterized URL, include all operations (create will strip path params at runtime)
                     merged_params = path_params + [p for p in existing.params if p not in path_params] + list(all_query_params)
                     merged_ops = list(set(existing.operations + operations))
+                    # Keep auth from either path (prefer existing if set)
+                    merged_auth = existing.auth_name or source_auth_name
 
                     sources[source_name] = FDSLSource(
                         name=source_name,
                         url=full_url,
                         params=merged_params,
                         operations=merged_ops,
+                        auth_name=merged_auth,
                     )
                 elif not has_path_params and existing_has_path_params:
                     # This is a collection path, existing is parameterized
@@ -534,11 +730,17 @@ class PathGrouper:
                     for op in operations:
                         if op not in existing.operations:
                             existing.operations.append(op)
+                    # Update auth if not set
+                    if not existing.auth_name and source_auth_name:
+                        existing.auth_name = source_auth_name
                 else:
                     # Just merge operations
                     for op in operations:
                         if op not in existing.operations:
                             existing.operations.append(op)
+                    # Update auth if not set
+                    if not existing.auth_name and source_auth_name:
+                        existing.auth_name = source_auth_name
 
             # Store/update schema info for entity generation
             # Prefer response schemas from parameterized paths
@@ -584,7 +786,28 @@ class FDSLGenerator:
         lines.append("// =============================================================================")
         lines.append("// AUTO-GENERATED FROM OPENAPI SPECIFICATION")
         lines.append("// =============================================================================")
+
+        # Warning for skipped security schemes
+        if self.model.skipped_schemes:
+            lines.append("// WARNING: Unsupported security schemes (oauth2/openIdConnect):")
+            for scheme_name in self.model.skipped_schemes:
+                lines.append(f"//   - {scheme_name}")
+
         lines.append("")
+
+        # Auth blocks (before Server)
+        for auth in self.model.auth_schemes:
+            lines.append(f"Auth<{auth.kind}> {auth.name}")
+            for key, value in auth.config.items():
+                lines.append(f'  {key}: "{value}"')
+            lines.append("end")
+            lines.append("")
+
+        # Role blocks (after Auth, before Server)
+        for role in self.model.roles:
+            lines.append(f"Role {role.name} uses {role.auth_name}")
+        if self.model.roles:
+            lines.append("")
 
         # Server
         lines.append(f"Server {self.model.server_name}")
@@ -606,6 +829,8 @@ class FDSLGenerator:
             if source.operations:
                 ops_str = ", ".join(source.operations)
                 lines.append(f"  operations: [{ops_str}]")
+            if source.auth_name:
+                lines.append(f"  auth: {source.auth_name}")
             lines.append("end")
 
         # Entities
@@ -701,9 +926,14 @@ def transform_openapi_to_fdsl(
         # Convert to valid identifier
         server_name = re.sub(r'[^a-zA-Z0-9]', '', title)
 
-    # Group paths into sources
+    # Extract security schemes
+    security_converter = SecuritySchemeConverter(parser)
+    auth_schemes, skipped_schemes = security_converter.extract_auth_schemes(spec)
+    auth_name_map = security_converter.get_auth_name_map(auth_schemes, spec)
+
+    # Group paths into sources (with source-level auth)
     grouper = PathGrouper(parser)
-    sources, entity_schemas = grouper.group_paths(base_url)
+    sources, entity_schemas = grouper.group_paths(base_url, auth_name_map)
 
     # Convert schemas to entities
     converter = SchemaConverter(parser)
@@ -752,7 +982,7 @@ def transform_openapi_to_fdsl(
             name=entity_name,
             source_name=schema_info.get("source_name"),
             attributes=attributes,
-            access="public",
+            access="public",  # Entity access is for our endpoints, not source auth
         ))
 
     # Build model
@@ -762,6 +992,9 @@ def transform_openapi_to_fdsl(
         port=port,
         sources=sources,
         entities=entities,
+        auth_schemes=auth_schemes,
+        roles=[],  # No role extraction from OAuth2 scopes (not supported)
+        skipped_schemes=skipped_schemes,
     )
 
     # Generate FDSL
