@@ -234,7 +234,11 @@
       "Bash(venv_WIN\\\\Scripts\\\\fdsl.exe:*)",
       "Bash(dir:*)",
       "Bash(../../../venv_WIN/Scripts/pip install -e . -q)",
-      "Bash(../../../venv_WIN/Scripts/python:*)"
+      "Bash(../../../venv_WIN/Scripts/python:*)",
+      "Bash(docker run:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(docker stop:*)"
     ],
     "deny": [],
     "ask": []

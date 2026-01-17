@@ -184,15 +184,12 @@ class {{ entity_name }}Service:
         # Fetch parent entity data via services (composition pattern)
         parent_data = {}
         {%- for ps in parent_services %}
-{% if has_params %}
 {% if ps.params %}
         # Filter params for {{ ps.name }} - only pass params its source needs: {{ ps.params }}
         {{ ps.name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ ps.name | lower }}_params)
 {% else %}
-        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}(params)
-{% endif %}
-{% else %}
+        # Parent {{ ps.name }} has no params - call without args
         parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
 {% endif %}
         # Fail fast if parent not found
@@ -203,15 +200,12 @@ class {{ entity_name }}Service:
         # Fetch from multiple parent sources
         parent_data = {}
         {%- for ps in parent_sources %}
-{% if has_params %}
 {% if ps.params %}
         # Filter params for {{ ps.entity_name }} - only pass params its source needs: {{ ps.params }}
         {{ ps.entity_name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
         parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read({{ ps.entity_name | lower }}_params)
 {% else %}
-        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(params)
-{% endif %}
-{% else %}
+        # Parent {{ ps.entity_name }} has no params - call without args
         parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read()
 {% endif %}
         {%- endfor %}
@@ -232,6 +226,14 @@ class {{ entity_name }}Service:
         transformed = self._transform_entity(raw_data)
         {% endif %}
         return {{ entity_name }}(**transformed)
+        {% elif is_wrapper_entity %}
+        # Wrapper entity - handles both:
+        # 1. Raw {{ wrapper_attr_type }} response -> wrap in '{{ wrapper_attr_name }}' attribute
+        # 2. JSON object with '{{ wrapper_attr_name }}' field -> pass through
+        if isinstance(raw_data, dict) and "{{ wrapper_attr_name }}" in raw_data:
+            return {{ entity_name }}(**raw_data)
+        else:
+            return {{ entity_name }}({{ wrapper_attr_name }}=raw_data)
         {% else %}
         return {{ entity_name }}(**raw_data)
         {% endif %}

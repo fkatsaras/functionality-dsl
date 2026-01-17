@@ -379,6 +379,32 @@ class PathGrouper:
                         if query_params or method != "get":
                             has_meaningful_ops = True
                             break
+                        # Also keep GET endpoints that return arrays or primitives
+                        # These become entities with items: array or value: type
+                        if method == "get":
+                            responses = op.get("responses", {})
+                            for code in ["200", "201"]:
+                                if code in responses:
+                                    content = responses[code].get("content", {})
+                                    # Check JSON content
+                                    json_content = content.get("application/json", {})
+                                    if "schema" in json_content:
+                                        schema = json_content["schema"]
+                                        resolved = self.parser.resolve_schema(schema)
+                                        schema_type = resolved.get("type")
+                                        # Keep if response is array or primitive (not object)
+                                        if schema_type in ("array", "string", "integer", "number", "boolean"):
+                                            has_meaningful_ops = True
+                                            break
+                                        # Also check for binary format
+                                        if resolved.get("format") == "binary":
+                                            has_meaningful_ops = True
+                                            break
+                                    # Check octet-stream (binary) content
+                                    octet_content = content.get("application/octet-stream", {})
+                                    if "schema" in octet_content:
+                                        has_meaningful_ops = True
+                                        break
 
                 if not has_meaningful_ops:
                     continue
@@ -419,9 +445,14 @@ class PathGrouper:
                     for code in ["200", "201"]:
                         if code in responses:
                             content = responses[code].get("content", {})
+                            # Prefer JSON, fall back to octet-stream (binary downloads)
                             json_content = content.get("application/json", {})
                             if "schema" in json_content:
                                 response_schema = json_content["schema"]
+                                break
+                            octet_content = content.get("application/octet-stream", {})
+                            if "schema" in octet_content:
+                                response_schema = octet_content["schema"]
                                 break
 
                 # Get request schema (from POST/PUT) - check JSON and octet-stream (binary)

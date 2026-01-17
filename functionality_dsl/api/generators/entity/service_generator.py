@@ -186,6 +186,27 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     has_params = config.get("has_params", False)
     all_params = config.get("all_params", [])
 
+    # Detect "wrapper entity" pattern - entity with single attribute that wraps
+    # an array or primitive response from source (e.g., items: array, value: string)
+    # This is needed because source returns raw array/primitive, not an object
+    is_wrapper_entity = False
+    wrapper_attr_name = None
+    wrapper_attr_type = None
+
+    # Only applies to entities without parents (direct source access)
+    # and without computed attributes (pass-through)
+    if not has_parents and not has_computed_attrs and len(attributes) == 1:
+        single_attr = attributes[0]
+        attr_type_spec = getattr(single_attr, "type", None)
+        # TypeSpec has baseType for primitives/array, or itemEntity for array<Entity>
+        if attr_type_spec:
+            base_type = getattr(attr_type_spec, "baseType", None)
+            # Check if it's wrapping a primitive or array type (not array<Entity>)
+            if base_type in ("array", "string", "integer", "number", "boolean", "binary"):
+                is_wrapper_entity = True
+                wrapper_attr_name = single_attr.name
+                wrapper_attr_type = base_type
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_service.py.jinja")
@@ -207,6 +228,10 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         # Source params for parameterized sources
         has_params=has_params,
         all_params=all_params,
+        # Wrapper entity pattern (single attr wrapping array/primitive)
+        is_wrapper_entity=is_wrapper_entity,
+        wrapper_attr_name=wrapper_attr_name,
+        wrapper_attr_type=wrapper_attr_type,
     )
 
     # Write to file
