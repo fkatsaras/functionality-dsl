@@ -613,40 +613,111 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
         console.print(traceback.format_exc(), style="red")
         context.exit(1)
         
-@cli.command("transform", help="Transform an OpenAPI spec to FDSL")
+def _detect_spec_type(file_path: Path) -> str:
+    """
+    Auto-detect whether a spec file is OpenAPI or AsyncAPI.
+
+    Returns:
+        "openapi" or "asyncapi"
+
+    Raises:
+        ValueError if spec type cannot be determined
+    """
+    import yaml
+    import json
+
+    content = file_path.read_text(encoding="utf-8")
+
+    # Parse the file
+    if file_path.suffix in (".yaml", ".yml"):
+        spec = yaml.safe_load(content)
+    elif file_path.suffix == ".json":
+        spec = json.loads(content)
+    else:
+        # Try YAML first, then JSON
+        try:
+            spec = yaml.safe_load(content)
+        except:
+            spec = json.loads(content)
+
+    if not isinstance(spec, dict):
+        raise ValueError("Invalid spec file: expected a dictionary/object at root")
+
+    # Check for AsyncAPI marker
+    if "asyncapi" in spec:
+        return "asyncapi"
+
+    # Check for OpenAPI marker
+    if "openapi" in spec or "swagger" in spec:
+        return "openapi"
+
+    # Heuristic: check for channels (AsyncAPI) vs paths (OpenAPI)
+    if "channels" in spec:
+        return "asyncapi"
+    if "paths" in spec:
+        return "openapi"
+
+    raise ValueError(
+        "Cannot determine spec type. Expected 'openapi', 'swagger', or 'asyncapi' "
+        "field in the spec, or 'paths' (OpenAPI) / 'channels' (AsyncAPI) sections."
+    )
+
+
+@cli.command("transform", help="Transform an OpenAPI/AsyncAPI spec to FDSL (auto-detects spec type)")
 @click.pass_context
-@click.argument("openapi_path")
+@click.argument("spec_path")
 @click.option("--out", "-o", "output_path", default=None, help="Output FDSL file path (default: print to stdout)")
 @click.option("--server-name", "-n", default=None, help="Override server name (default: from API title)")
 @click.option("--host", "-h", default="localhost", help="Server host (default: localhost)")
 @click.option("--port", "-p", default=8000, type=int, help="Server port (default: 8000)")
-def transform_cmd(context, openapi_path, output_path, server_name, host, port):
+def transform_cmd(context, spec_path, output_path, server_name, host, port):
     """
-    Transform an OpenAPI 3.x specification to FDSL.
+    Transform an OpenAPI or AsyncAPI specification to FDSL.
 
-    Supports YAML (.yaml, .yml) and JSON (.json) OpenAPI specs.
+    Automatically detects the spec type:
+    - OpenAPI 3.x / Swagger 2.x -> FDSL with REST sources
+    - AsyncAPI 2.x/3.x -> FDSL with WebSocket sources
+
+    Supports YAML (.yaml, .yml) and JSON (.json) spec files.
 
     Examples:
         fdsl transform api.yaml
         fdsl transform api.yaml --out generated.fdsl
-        fdsl transform api.json --server-name MyAPI --port 3000
+        fdsl transform websocket-api.yaml --server-name MyWSAPI
+        fdsl transform petstore.json --port 3000
     """
-    try:
-        openapi_file = Path(openapi_path).resolve()
+    from ..transformers.asyncapi_to_fdsl import transform_asyncapi_to_fdsl
 
-        if not openapi_file.exists():
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {openapi_file}", style="red")
+    try:
+        spec_file = Path(spec_path).resolve()
+
+        if not spec_file.exists():
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {spec_file}", style="red")
             context.exit(1)
+
+        # Auto-detect spec type
+        spec_type = _detect_spec_type(spec_file)
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Detected spec type: {spec_type.upper()}", style="blue")
 
         output_file = Path(output_path).resolve() if output_path else None
 
-        fdsl_content = transform_openapi_to_fdsl(
-            openapi_path=openapi_file,
-            output_path=output_file,
-            server_name=server_name,
-            host=host,
-            port=port,
-        )
+        # Call appropriate transformer
+        if spec_type == "openapi":
+            fdsl_content = transform_openapi_to_fdsl(
+                openapi_path=spec_file,
+                output_path=output_file,
+                server_name=server_name,
+                host=host,
+                port=port,
+            )
+        else:  # asyncapi
+            fdsl_content = transform_asyncapi_to_fdsl(
+                asyncapi_path=spec_file,
+                output_path=output_file,
+                server_name=server_name,
+                host=host,
+                port=port,
+            )
 
         if output_file:
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] FDSL written to: {output_file}", style="green")
@@ -657,56 +728,6 @@ def transform_cmd(context, openapi_path, output_path, server_name, host, port):
     except Exception as e:
         import traceback
         console.print(f"[{date.today().strftime('%Y-%m-%d')}] Transform failed: {e}", style="red")
-        console.print(traceback.format_exc(), style="red")
-        context.exit(1)
-
-
-@cli.command("transform-asyncapi", help="Transform an AsyncAPI spec to FDSL (WebSocket sources)")
-@click.pass_context
-@click.argument("asyncapi_path")
-@click.option("--out", "-o", "output_path", default=None, help="Output FDSL file path (default: print to stdout)")
-@click.option("--server-name", "-n", default=None, help="Override server name (default: from API title)")
-@click.option("--host", "-h", default="localhost", help="Server host (default: localhost)")
-@click.option("--port", "-p", default=8000, type=int, help="Server port (default: 8000)")
-def transform_asyncapi_cmd(context, asyncapi_path, output_path, server_name, host, port):
-    """
-    Transform an AsyncAPI 2.x/3.x specification to FDSL with WebSocket sources.
-
-    Supports YAML (.yaml, .yml) and JSON (.json) AsyncAPI specs.
-
-    Examples:
-        fdsl transform-asyncapi websocket-api.yaml
-        fdsl transform-asyncapi events.yaml --out generated.fdsl
-        fdsl transform-asyncapi api.json --server-name MyWSAPI --port 3000
-    """
-    from ..transformers.asyncapi_to_fdsl import transform_asyncapi_to_fdsl
-
-    try:
-        asyncapi_file = Path(asyncapi_path).resolve()
-
-        if not asyncapi_file.exists():
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {asyncapi_file}", style="red")
-            context.exit(1)
-
-        output_file = Path(output_path).resolve() if output_path else None
-
-        fdsl_content = transform_asyncapi_to_fdsl(
-            asyncapi_path=asyncapi_file,
-            output_path=output_file,
-            server_name=server_name,
-            host=host,
-            port=port,
-        )
-
-        if output_file:
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] FDSL written to: {output_file}", style="green")
-        else:
-            # Print to stdout
-            console.print(fdsl_content)
-
-    except Exception as e:
-        import traceback
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] AsyncAPI transform failed: {e}", style="red")
         console.print(traceback.format_exc(), style="red")
         context.exit(1)
 

@@ -12,8 +12,8 @@ end
 
 Source<REST> PetAPI
   url: "https://petstore3.swagger.io/api/v3/pet/{petId}"
-  params: [petId, name, status]
-  operations: [delete, create, update, read]
+  params: [petId, status, name]
+  operations: [read, create, update, delete]
 end
 
 Source<REST> FindbystatuAPI
@@ -31,13 +31,13 @@ end
 Source<REST> OrderAPI
   url: "https://petstore3.swagger.io/api/v3/store/order/{orderId}"
   params: [orderId]
-  operations: [delete, create, read]
+  operations: [read, create, delete]
 end
 
 Source<REST> UserAPI
   url: "https://petstore3.swagger.io/api/v3/user/{username}"
   params: [username]
-  operations: [delete, create, update, read]
+  operations: [read, create, update, delete]
 end
 
 Source<REST> CreatewithlistAPI
@@ -47,7 +47,7 @@ end
 
 Source<REST> LoginAPI
   url: "https://petstore3.swagger.io/api/v3/user/login"
-  params: [username, password]
+  params: [password, username]
   operations: [read]
 end
 
@@ -60,7 +60,7 @@ end
 Entity Pet
   source: PetAPI
   attributes:
-    - id: integer @optional;
+    - id: integer<int64> @optional;
     - name: string;
     - category: object @optional;
     - photoUrls: array;
@@ -86,10 +86,10 @@ end
 Entity Order
   source: OrderAPI
   attributes:
-    - id: integer @optional;
-    - petId: integer @optional;
-    - quantity: integer @optional;
-    - shipDate: string @optional;
+    - id: integer<int64> @optional;
+    - petId: integer<int64> @optional;
+    - quantity: integer<int32> @optional;
+    - shipDate: string<datetime> @optional;
     - status: string @optional;
     - complete: boolean @optional;
   access: public
@@ -98,14 +98,14 @@ end
 Entity User
   source: UserAPI
   attributes:
-    - id: integer @optional;
+    - id: integer<int64> @optional;
     - username: string @optional;
     - firstName: string @optional;
     - lastName: string @optional;
     - email: string @optional;
     - password: string @optional;
     - phone: string @optional;
-    - userStatus: integer @optional;
+    - userStatus: integer<int32> @optional;
   access: public
 end
 
