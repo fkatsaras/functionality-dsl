@@ -2,12 +2,66 @@
 WebSocket source client generator for NEW SYNTAX (operations-based WebSocket sources).
 Generates WebSocket client classes that connect to external WebSocket feeds.
 Supports parameterized sources with query params for WebSocket connection URLs.
+Supports source-level authentication for outbound WebSocket requests.
 """
 
 import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+
+
+def _extract_auth_config(source):
+    """
+    Extract authentication configuration from WebSocket source.
+
+    Returns:
+        dict with auth config or None if no auth:
+        {
+            "kind": "apikey" | "jwt" | "basic",
+            "header_name": str (for apikey header),
+            "query_name": str (for apikey query),
+            "secret_env": str (env var name for the secret/token),
+        }
+    """
+    auth = getattr(source, "auth", None)
+    if not auth:
+        return None
+
+    kind = getattr(auth, "kind", None)
+    if not kind:
+        return None
+
+    config = {"kind": kind}
+
+    if kind == "apikey":
+        # API key can be in header or query
+        header_obj = getattr(auth, "header", None)
+        query_obj = getattr(auth, "query", None)
+
+        if header_obj:
+            config["header_name"] = getattr(header_obj, "name", None)
+        elif query_obj:
+            config["query_name"] = getattr(query_obj, "name", None)
+
+        config["secret_env"] = getattr(auth, "secret", None)
+
+    elif kind == "jwt":
+        # JWT uses Authorization: Bearer <token>
+        # For source auth, we use a static token from env var
+        config["secret_env"] = getattr(auth, "secret", None)
+
+    elif kind == "basic":
+        # Basic auth uses Authorization: Basic <base64(user:pass)>
+        # Uses BASIC_AUTH_USERS env var by default
+        config["secret_env"] = "BASIC_AUTH_USERS"
+
+    elif kind == "session":
+        # Session auth doesn't make sense for outbound requests
+        # Skip it
+        return None
+
+    return config
 
 
 def _extract_ws_source_params(source):
@@ -112,6 +166,9 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     all_params, query_params = _extract_ws_source_params(source)
     has_params = len(all_params) > 0
 
+    # Extract auth config for outbound requests
+    auth_config = _extract_auth_config(source)
+
     print(f"    Generating WebSocket source client for {source_name}")
     print(f"      Channel: {channel}")
     print(f"      Operations: {operations}")
@@ -119,6 +176,8 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
         print(f"      Params: {all_params} (all query params)")
     if binary_attr_name:
         print(f"      Binary attribute: {binary_attr_name}")
+    if auth_config:
+        print(f"      Auth: {auth_config['kind']}")
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -134,6 +193,8 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
         has_params=has_params,
         all_params=all_params,
         query_params=query_params,
+        # Auth config for outbound requests
+        auth_config=auth_config,
     )
 
     # Write to file

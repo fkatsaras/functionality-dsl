@@ -40,6 +40,14 @@ class FDSLAttribute:
 
 
 @dataclass
+class FDSLAuth:
+    """Represents an FDSL Auth block."""
+    name: str
+    kind: str  # "jwt", "apikey", "basic"
+    config: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class FDSLWSEntity:
     """Represents an FDSL WebSocket entity."""
     name: str
@@ -56,6 +64,7 @@ class FDSLWSSource:
     channel: str
     params: List[str] = field(default_factory=list)
     operations: List[str] = field(default_factory=list)  # subscribe, publish
+    auth_name: Optional[str] = None  # Reference to Auth block name
 
 
 @dataclass
@@ -66,6 +75,8 @@ class FDSLWSModel:
     port: int = 8000
     sources: List[FDSLWSSource] = field(default_factory=list)
     entities: List[FDSLWSEntity] = field(default_factory=list)
+    auth_schemes: List[FDSLAuth] = field(default_factory=list)
+    skipped_schemes: List[str] = field(default_factory=list)  # Unsupported schemes
 
 
 class AsyncAPIParser:
@@ -127,6 +138,165 @@ class AsyncAPIParser:
         # AsyncAPI 3.x: message.payload or direct schema
         if "schema" in message:
             return self.resolve_schema(message["schema"])
+
+        return None
+
+    def get_security_schemes(self) -> Dict[str, Dict[str, Any]]:
+        """Get security scheme definitions from components."""
+        components = self.spec.get("components", {})
+        return components.get("securitySchemes", {})
+
+    def get_server_security(self, server_name: Optional[str] = None) -> List[Dict[str, List[str]]]:
+        """Get security requirements from server definition."""
+        servers = self.get_servers()
+        if not servers:
+            return []
+
+        # Get specific server or first one
+        if server_name and server_name in servers:
+            server = servers[server_name]
+        else:
+            server = next(iter(servers.values()), {})
+
+        return server.get("security", [])
+
+
+class SecuritySchemeConverter:
+    """Converts AsyncAPI securitySchemes to FDSL Auth blocks."""
+
+    # Mapping from AsyncAPI security scheme types to FDSL auth kinds
+    SUPPORTED_TYPES = {
+        "apiKey": "apikey",
+        "httpApiKey": "apikey",
+        "http": {
+            "bearer": "jwt",
+            "basic": "basic",
+        },
+        "userPassword": "basic",
+        "scramSha256": "basic",
+        "scramSha512": "basic",
+    }
+
+    UNSUPPORTED_TYPES = ["oauth2", "openIdConnect", "X509", "symmetricEncryption", "asymmetricEncryption"]
+
+    def __init__(self, parser: AsyncAPIParser):
+        self.parser = parser
+
+    def _sanitize_name(self, name: str) -> str:
+        """Convert scheme name to valid FDSL identifier (PascalCase)."""
+        # Remove non-alphanumeric, split on common delimiters
+        parts = re.split(r'[-_\s]+', name)
+        return ''.join(word.capitalize() for word in parts if word)
+
+    def extract_auth_schemes(self) -> Tuple[List[FDSLAuth], List[str], Dict[str, str]]:
+        """
+        Extract Auth blocks from AsyncAPI securitySchemes.
+
+        Returns:
+            Tuple of (auth_list, skipped_scheme_names, scheme_name_to_auth_name_map)
+        """
+        security_schemes = self.parser.get_security_schemes()
+        auth_list: List[FDSLAuth] = []
+        skipped: List[str] = []
+        name_map: Dict[str, str] = {}  # original_name -> FDSL Auth name
+
+        for scheme_name, scheme_def in security_schemes.items():
+            scheme_type = scheme_def.get("type", "")
+
+            # Check if unsupported
+            if scheme_type in self.UNSUPPORTED_TYPES:
+                skipped.append(f"{scheme_name} ({scheme_type})")
+                continue
+
+            fdsl_auth = self._convert_scheme(scheme_name, scheme_def)
+            if fdsl_auth:
+                auth_list.append(fdsl_auth)
+                name_map[scheme_name] = fdsl_auth.name
+            else:
+                skipped.append(f"{scheme_name} ({scheme_type})")
+
+        return auth_list, skipped, name_map
+
+    def _convert_scheme(self, name: str, scheme: Dict[str, Any]) -> Optional[FDSLAuth]:
+        """Convert a single security scheme to FDSL Auth."""
+        scheme_type = scheme.get("type", "")
+        fdsl_name = self._sanitize_name(name)
+        config: Dict[str, str] = {}
+
+        if scheme_type == "apiKey":
+            # API key in header, query, or user (MQTT-style)
+            location = scheme.get("in", "header")
+            param_name = scheme.get("name", "X-API-Key")
+
+            if location == "header":
+                config["header"] = param_name
+            elif location == "query":
+                config["query"] = param_name
+            elif location == "user":
+                # MQTT-style auth via username field - map to header auth
+                config["header"] = "X-API-Key"
+            else:
+                return None  # Unsupported location (e.g., cookie)
+
+            # Generate env var name from scheme name
+            config["secret"] = f"{name.upper().replace('-', '_')}_KEYS"
+
+            return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
+
+        elif scheme_type == "httpApiKey":
+            # Similar to apiKey but specifically for HTTP
+            param_name = scheme.get("name", "X-API-Key")
+            location = scheme.get("in", "header")
+
+            if location == "header":
+                config["header"] = param_name
+            elif location == "query":
+                config["query"] = param_name
+            else:
+                return None
+
+            config["secret"] = f"{name.upper().replace('-', '_')}_KEYS"
+
+            return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
+
+        elif scheme_type == "http":
+            http_scheme = scheme.get("scheme", "").lower()
+
+            if http_scheme == "bearer":
+                # JWT/Bearer token
+                config["secret"] = f"{name.upper().replace('-', '_')}_SECRET"
+                return FDSLAuth(name=fdsl_name, kind="jwt", config=config)
+
+            elif http_scheme == "basic":
+                # HTTP Basic auth - no config needed (uses BASIC_AUTH_USERS)
+                return FDSLAuth(name=fdsl_name, kind="basic", config={})
+
+            else:
+                return None  # Unsupported HTTP scheme
+
+        elif scheme_type == "userPassword":
+            # Username/password auth -> map to basic
+            return FDSLAuth(name=fdsl_name, kind="basic", config={})
+
+        elif scheme_type in ("scramSha256", "scramSha512"):
+            # SCRAM auth -> map to basic (closest equivalent)
+            return FDSLAuth(name=fdsl_name, kind="basic", config={})
+
+        return None
+
+    def get_server_auth_name(self, name_map: Dict[str, str]) -> Optional[str]:
+        """
+        Get the Auth name to use for sources based on server security.
+
+        Returns the first supported auth scheme from server security requirements.
+        """
+        server_security = self.parser.get_server_security()
+
+        for security_req in server_security:
+            # security_req is like {"api_key": []} or {"oauth2": ["read:pets"]}
+            for scheme_name in security_req.keys():
+                if scheme_name in name_map:
+                    return name_map[scheme_name]
 
         return None
 
@@ -301,8 +471,8 @@ class ChannelProcessor:
                 name = name_parts[-2]
             if not name:
                 name = "Message"
-            # Convert to PascalCase
-            return ''.join(word.capitalize() for word in re.split(r'[-_]', name))
+            # Convert to PascalCase - split on any non-alphanumeric characters (including @, -, _)
+            return ''.join(word.capitalize() for word in re.split(r'[^a-zA-Z0-9]+', name) if word)
 
         return "Message"
 
@@ -367,8 +537,17 @@ class ChannelProcessor:
 
         return None
 
-    def process_channels(self, base_url: str) -> Tuple[List[FDSLWSSource], List[FDSLWSEntity]]:
-        """Process all channels into FDSL sources and entities."""
+    def process_channels(
+        self,
+        base_url: str,
+        default_auth_name: Optional[str] = None
+    ) -> Tuple[List[FDSLWSSource], List[FDSLWSEntity]]:
+        """Process all channels into FDSL sources and entities.
+
+        Args:
+            base_url: Base WebSocket URL
+            default_auth_name: Default auth name to apply to all sources (from server security)
+        """
         channels = self.parser.get_channels()
         sources: Dict[str, FDSLWSSource] = {}
         entities: List[FDSLWSEntity] = []
@@ -395,6 +574,7 @@ class ChannelProcessor:
                     channel=channel_url,
                     params=params,
                     operations=operations,
+                    auth_name=default_auth_name,
                 )
 
             # Get message schema
@@ -448,7 +628,29 @@ class FDSLWSGenerator:
         lines.append("// =============================================================================")
         lines.append("// AUTO-GENERATED FROM ASYNCAPI SPECIFICATION")
         lines.append("// =============================================================================")
+
+        # Warning for skipped security schemes
+        if self.model.skipped_schemes:
+            lines.append("// WARNING: Unsupported security schemes (oauth2/openIdConnect/X509):")
+            for skipped in self.model.skipped_schemes:
+                lines.append(f"//   - {skipped}")
+
         lines.append("")
+
+        # Auth blocks
+        for auth in self.model.auth_schemes:
+            lines.append(f"Auth<{auth.kind}> {auth.name}")
+            if auth.kind == "apikey":
+                if "header" in auth.config:
+                    lines.append(f'  header: "{auth.config["header"]}"')
+                elif "query" in auth.config:
+                    lines.append(f'  query: "{auth.config["query"]}"')
+                lines.append(f'  secret: "{auth.config.get("secret", "API_KEYS")}"')
+            elif auth.kind == "jwt":
+                lines.append(f'  secret: "{auth.config.get("secret", "JWT_SECRET")}"')
+            # basic has no config fields
+            lines.append("end")
+            lines.append("")
 
         # Server
         lines.append(f"Server {self.model.server_name}")
@@ -470,6 +672,8 @@ class FDSLWSGenerator:
             if source.operations:
                 ops_str = ", ".join(source.operations)
                 lines.append(f"  operations: [{ops_str}]")
+            if source.auth_name:
+                lines.append(f"  auth: {source.auth_name}")
             lines.append("end")
 
         # Entities
@@ -588,9 +792,16 @@ def transform_asyncapi_to_fdsl(
         # Convert to valid identifier
         server_name = re.sub(r'[^a-zA-Z0-9]', '', title)
 
+    # Extract security schemes
+    security_converter = SecuritySchemeConverter(parser)
+    auth_schemes, skipped_schemes, auth_name_map = security_converter.extract_auth_schemes()
+
+    # Get default auth name from server security requirements
+    default_auth_name = security_converter.get_server_auth_name(auth_name_map)
+
     # Process channels into sources and entities
     processor = ChannelProcessor(parser)
-    sources, entities = processor.process_channels(base_url)
+    sources, entities = processor.process_channels(base_url, default_auth_name)
 
     # Build model
     model = FDSLWSModel(
@@ -599,6 +810,8 @@ def transform_asyncapi_to_fdsl(
         port=port,
         sources=sources,
         entities=entities,
+        auth_schemes=auth_schemes,
+        skipped_schemes=skipped_schemes,
     )
 
     # Generate FDSL

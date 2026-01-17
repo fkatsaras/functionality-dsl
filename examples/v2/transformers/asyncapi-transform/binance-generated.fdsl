@@ -1,0 +1,53 @@
+// =============================================================================
+// AUTO-GENERATED FROM ASYNCAPI SPECIFICATION
+// =============================================================================
+
+Server BinanceTickerWebSocketAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<WS> EthusdtTickerWS
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BtcusdtTickerWS
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+  operations: [subscribe]
+end
+
+Entity EthusdtTicker
+  type: inbound
+  source: EthusdtTickerWS
+  attributes:
+    - e: string;
+    - E: integer<int64>;
+    - s: string;
+    - c: string;
+    - o: string;
+    - h: string;
+    - l: string;
+    - v: string;
+    - q: string;
+  access: public
+end
+
+Entity BtcusdtTicker
+  type: inbound
+  source: BtcusdtTickerWS
+  attributes:
+    - e: string;
+    - E: integer<int64>;
+    - s: string;
+    - c: string;
+    - o: string;
+    - h: string;
+    - l: string;
+    - v: string;
+    - q: string;
+  access: public
+end
