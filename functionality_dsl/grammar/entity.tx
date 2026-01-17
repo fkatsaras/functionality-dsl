@@ -9,8 +9,8 @@ AttrType:
 // Format qualifiers for types (OpenAPI-aligned)
 // Note: For datetime values, use plain 'string' type (OpenAPI date-time is just a string format hint)
 TypeFormat:
-  // String formats
-  'email' | 'uri' | 'uuid_str' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
+  // String formats (datetime must come before date for correct PEG parsing)
+  'email' | 'uri' | 'uuid' | 'datetime' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
   'byte' | 'binary' | 'password' | 'regex' |
   // Number formats
   'float' | 'double' | 'int32' | 'int64'

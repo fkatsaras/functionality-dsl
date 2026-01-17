@@ -661,5 +661,55 @@ def transform_cmd(context, openapi_path, output_path, server_name, host, port):
         context.exit(1)
 
 
+@cli.command("transform-asyncapi", help="Transform an AsyncAPI spec to FDSL (WebSocket sources)")
+@click.pass_context
+@click.argument("asyncapi_path")
+@click.option("--out", "-o", "output_path", default=None, help="Output FDSL file path (default: print to stdout)")
+@click.option("--server-name", "-n", default=None, help="Override server name (default: from API title)")
+@click.option("--host", "-h", default="localhost", help="Server host (default: localhost)")
+@click.option("--port", "-p", default=8000, type=int, help="Server port (default: 8000)")
+def transform_asyncapi_cmd(context, asyncapi_path, output_path, server_name, host, port):
+    """
+    Transform an AsyncAPI 2.x/3.x specification to FDSL with WebSocket sources.
+
+    Supports YAML (.yaml, .yml) and JSON (.json) AsyncAPI specs.
+
+    Examples:
+        fdsl transform-asyncapi websocket-api.yaml
+        fdsl transform-asyncapi events.yaml --out generated.fdsl
+        fdsl transform-asyncapi api.json --server-name MyWSAPI --port 3000
+    """
+    from ..transformers.asyncapi_to_fdsl import transform_asyncapi_to_fdsl
+
+    try:
+        asyncapi_file = Path(asyncapi_path).resolve()
+
+        if not asyncapi_file.exists():
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {asyncapi_file}", style="red")
+            context.exit(1)
+
+        output_file = Path(output_path).resolve() if output_path else None
+
+        fdsl_content = transform_asyncapi_to_fdsl(
+            asyncapi_path=asyncapi_file,
+            output_path=output_file,
+            server_name=server_name,
+            host=host,
+            port=port,
+        )
+
+        if output_file:
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] FDSL written to: {output_file}", style="green")
+        else:
+            # Print to stdout
+            console.print(fdsl_content)
+
+    except Exception as e:
+        import traceback
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] AsyncAPI transform failed: {e}", style="red")
+        console.print(traceback.format_exc(), style="red")
+        context.exit(1)
+
+
 def main():
     cli(prog_name="fdsl")

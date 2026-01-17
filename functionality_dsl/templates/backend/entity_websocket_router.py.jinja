@@ -31,6 +31,26 @@ async def websocket_{{ entity_name | lower }}_endpoint(websocket: WebSocket):
 
     service = {{ entity_name }}Service()
 
+{% if has_source_params %}
+    # Extract source params from query parameters
+    source_params = {}
+    {% for param in ws_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        source_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Source params: {source_params}")
+{% endif %}
+
+{% if has_target_params %}
+    # Extract target params from query parameters
+    target_params = {}
+    {% for param in ws_target_params %}
+    if "{{ param }}" in websocket.query_params:
+        target_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Target params: {target_params}")
+{% endif %}
+
     try:
         {% if supports_subscribe and ws_source %}
         # Subscribe mode: Stream data from external source through entity transformation
@@ -38,7 +58,11 @@ async def websocket_{{ entity_name | lower }}_endpoint(websocket: WebSocket):
 
         source = {{ ws_source.name }}Source()
 
+{% if has_source_params %}
+        async for raw_message in source.subscribe(source_params):
+{% else %}
         async for raw_message in source.subscribe():
+{% endif %}
             if raw_message is None:
                 continue
 
@@ -73,7 +97,11 @@ async def websocket_{{ entity_name | lower }}_endpoint(websocket: WebSocket):
 
             {% if ws_target %}
             # Publish to external WebSocket target
+{% if has_target_params %}
+            await target_source.publish(transformed_data, target_params)
+{% else %}
             await target_source.publish(transformed_data)
+{% endif %}
             logger.debug(f"Published to external target: {{ ws_target.name }}")
             {% else %}
             # No target specified - message processed but not forwarded

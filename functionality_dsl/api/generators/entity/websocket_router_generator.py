@@ -1,10 +1,30 @@
 """
 Entity-based WebSocket router generator for NEW SYNTAX (entity-centric WebSocket exposure).
 Generates FastAPI WebSocket routers based on entity WebSocket exposure configuration.
+Supports parameterized WebSocket sources with query params.
 """
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+
+
+def _extract_ws_source_params(source):
+    """
+    Extract params list from WebSocket source.
+
+    Returns:
+        list: All param names (for WS, all become query params)
+    """
+    if not source:
+        return []
+
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    return all_params
 
 
 def generate_entity_websocket_router(entity_name, config, model, templates_dir, out_dir):
@@ -66,6 +86,17 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     # For publish operation, check if entity has a target
     ws_target = config.get("target", None)
 
+    # Extract source params for parameterized WebSocket sources
+    ws_source_params = _extract_ws_source_params(ws_source)
+    ws_target_params = _extract_ws_source_params(ws_target)
+    has_source_params = len(ws_source_params) > 0
+    has_target_params = len(ws_target_params) > 0
+
+    if has_source_params:
+        print(f"    Source params: {ws_source_params}")
+    if has_target_params:
+        print(f"    Target params: {ws_target_params}")
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_websocket_router.py.jinja")
@@ -80,6 +111,11 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
         ws_source=ws_source,
         ws_source_entity=ws_source_entity,
         ws_target=ws_target,
+        # Params for parameterized WebSocket sources
+        has_source_params=has_source_params,
+        ws_source_params=ws_source_params,
+        has_target_params=has_target_params,
+        ws_target_params=ws_target_params,
     )
 
     # Write to file
@@ -195,6 +231,17 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             collect_intermediate_services(entity, intermediate_services)
             is_chained_composite = len(intermediate_services) > 0
 
+        # Extract params from all WebSocket sources
+        subscribe_source_params = []
+        for src, _ in ws_sources:
+            subscribe_source_params.extend(_extract_ws_source_params(src))
+        # Remove duplicates while preserving order
+        subscribe_source_params = list(dict.fromkeys(subscribe_source_params))
+        has_subscribe_params = len(subscribe_source_params) > 0
+
+        if has_subscribe_params:
+            print(f"    Subscribe source params: {subscribe_source_params}")
+
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
@@ -202,6 +249,9 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "subscribe_ws_sources": ws_sources,  # List of all WS sources
             "is_chained_composite": is_chained_composite,
             "intermediate_services": intermediate_services,  # Ordered list of services to chain through
+            # Params for parameterized WebSocket sources
+            "has_subscribe_params": has_subscribe_params,
+            "subscribe_source_params": subscribe_source_params,
         })
 
     # Add publish entity details
@@ -237,6 +287,14 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
                 elif len(parent_attrs) == 0:
                     publish_wrapper_key = "value"  # default
 
+        # Get publish entity's source for params
+        publish_source = config.get("source")
+        publish_source_params = _extract_ws_source_params(publish_source)
+        has_publish_params = len(publish_source_params) > 0
+
+        if has_publish_params:
+            print(f"    Publish source params: {publish_source_params}")
+
         context.update({
             "publish_entity_name": entity_name,
             "publish_parents": [p.name for p in parents],
@@ -244,6 +302,9 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "publish_content_type": publish_content_type,  # "application/json", "text/plain", etc.
             "publish_wrapper_key": publish_wrapper_key,  # e.g., "value" for wrapper
             "publish_is_text": publish_is_text,  # True if text/plain, False if JSON
+            # Params for parameterized WebSocket sources
+            "has_publish_params": has_publish_params,
+            "publish_source_params": publish_source_params,
         })
 
     # Get permissions for auth

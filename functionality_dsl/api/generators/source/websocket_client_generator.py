@@ -1,11 +1,36 @@
 """
 WebSocket source client generator for NEW SYNTAX (operations-based WebSocket sources).
 Generates WebSocket client classes that connect to external WebSocket feeds.
+Supports parameterized sources with query params for WebSocket connection URLs.
 """
 
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+
+
+def _extract_ws_source_params(source):
+    """
+    Extract params list from WebSocket source.
+    For WebSocket, all params become query params (no path params in WS URLs).
+
+    Returns:
+        tuple: (all_params, query_params)
+        - all_params: list of all param names
+        - query_params: list of params forwarded as query string
+    """
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    # For WebSocket URLs, all params are query params
+    # (unlike REST where some can be path placeholders like /users/{id})
+    query_params = all_params
+
+    return all_params, query_params
 
 
 def generate_websocket_source_client(source, model, templates_dir, out_dir, exposure_map=None):
@@ -83,9 +108,15 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     supports_subscribe = "subscribe" in operations
     supports_publish = "publish" in operations
 
+    # Extract params for parameterized WebSocket sources
+    all_params, query_params = _extract_ws_source_params(source)
+    has_params = len(all_params) > 0
+
     print(f"    Generating WebSocket source client for {source_name}")
     print(f"      Channel: {channel}")
     print(f"      Operations: {operations}")
+    if has_params:
+        print(f"      Params: {all_params} (all query params)")
     if binary_attr_name:
         print(f"      Binary attribute: {binary_attr_name}")
 
@@ -99,6 +130,10 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
         supports_subscribe=supports_subscribe,
         supports_publish=supports_publish,
         binary_attr=binary_attr_name,  # For automatic binary message wrapping
+        # Params info for parameterized WebSocket sources
+        has_params=has_params,
+        all_params=all_params,
+        query_params=query_params,
     )
 
     # Write to file

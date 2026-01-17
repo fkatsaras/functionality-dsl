@@ -182,6 +182,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     {% if has_subscribe %}
     subscribe_service = {{ subscribe_entity_name }}Service()
+{% if has_subscribe_params %}
+
+    # Extract source params from query parameters
+    subscribe_params = {}
+    {% for param in subscribe_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        subscribe_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Subscribe source params: {subscribe_params}")
+{% endif %}
 
     # Extract filter values from query parameters
     {% if subscribe_filters %}
@@ -208,6 +218,16 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     {% endif %}
     {% if has_publish %}
     publish_service = {{ publish_entity_name }}Service()
+{% if has_publish_params %}
+
+    # Extract source params from query parameters for publish
+    publish_params = {}
+    {% for param in publish_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        publish_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Publish source params: {publish_params}")
+{% endif %}
     {% endif %}
 
     try:
@@ -220,7 +240,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         async def handle_subscribe():
             """Subscribe task: Stream data from external source to client."""
+{% if has_subscribe_params %}
+            async for raw_message in subscribe_source.subscribe(subscribe_params):
+{% else %}
             async for raw_message in subscribe_source.subscribe():
+{% endif %}
                 if raw_message is None:
                     continue
 
@@ -298,7 +322,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
                     logger.debug(f"Transformed message: {transformed_data}")
 
                     # Publish to external WebSocket via service source
+{% if has_publish_params %}
+                    await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
                     await publish_service.source.publish(transformed_data)
+{% endif %}
                     logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
                 except ValidationError as e:
@@ -350,7 +378,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
             """Subscribe to a single WebSocket source and update shared state."""
             try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
                 async for raw_message in source.subscribe():
+{% endif %}
                     if raw_message is None:
                         continue
 
@@ -405,7 +437,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         source = {{ subscribe_ws_source.name }}Source()
 
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
         async for raw_message in source.subscribe():
+{% endif %}
             if raw_message is None:
                 continue
 
@@ -449,7 +485,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
             """Subscribe to a single WebSocket source and update shared state."""
             try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
                 async for raw_message in source.subscribe():
+{% endif %}
                     if raw_message is None:
                         continue
 
@@ -498,7 +538,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
         source = {{ subscribe_ws_source.name }}Source()
 
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
         async for raw_message in source.subscribe():
+{% endif %}
             if raw_message is None:
                 continue
 
@@ -569,7 +613,11 @@ async def websocket_combined_endpoint(websocket: WebSocket):
             logger.debug(f"Transformed message: {transformed_data}")
 
             # Publish to external WebSocket via service source
+{% if has_publish_params %}
+            await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
             await publish_service.source.publish(transformed_data)
+{% endif %}
             logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
 
         {% endif %}

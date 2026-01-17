@@ -124,33 +124,61 @@ class SchemaConverter:
         "object": "object",
     }
 
-    # OpenAPI format -> FDSL type refinement
-    FORMAT_MAP = {
-        "int32": "integer",
-        "int64": "integer",
-        "float": "number",
-        "double": "number",
-        "date": "string",
-        "date-time": "string",
-        "email": "string",
-        "uri": "string",
-        "uuid": "string",
-        "binary": "binary",
+    # OpenAPI format -> FDSL base type (for formats that change the base type)
+    FORMAT_BASE_TYPE_MAP = {
+        "binary": "binary",  # binary format uses binary base type
+    }
+
+    # OpenAPI format -> FDSL format qualifier (type<format>)
+    # Maps OpenAPI formats to FDSL TypeFormat values
+    FORMAT_QUALIFIER_MAP = {
+        # Integer formats
+        "int32": ("integer", "int32"),
+        "int64": ("integer", "int64"),
+        # Number formats
+        "float": ("number", "float"),
+        "double": ("number", "double"),
+        # String formats
+        "date": ("string", "date"),
+        "date-time": ("string", "datetime"),  # FDSL uses 'datetime' (no hyphen)
+        "email": ("string", "email"),
+        "uri": ("string", "uri"),
+        "uuid": ("string", "uuid"),
+        "byte": ("string", "byte"),
+        "password": ("string", "password"),
+        "hostname": ("string", "hostname"),
+        "ipv4": ("string", "ipv4"),
+        "ipv6": ("string", "ipv6"),
+        "time": ("string", "time"),
+        # Binary is special - it changes the base type
+        "binary": ("binary", None),
     }
 
     def __init__(self, parser: OpenAPIParser):
         self.parser = parser
 
     def convert_type(self, schema: Dict[str, Any]) -> str:
-        """Convert OpenAPI type to FDSL type."""
+        """
+        Convert OpenAPI type to FDSL type with optional format qualifier.
+
+        Returns type strings like:
+        - "string" (no format)
+        - "string<email>" (with format)
+        - "integer<int64>" (with format)
+        - "binary" (binary format)
+        """
         schema = self.parser.resolve_schema(schema)
 
         openapi_type = schema.get("type", "string")
         openapi_format = schema.get("format")
 
-        # Check format first for more specific types
-        if openapi_format and openapi_format in self.FORMAT_MAP:
-            return self.FORMAT_MAP[openapi_format]
+        # Check if format maps to a specific FDSL type with qualifier
+        if openapi_format and openapi_format in self.FORMAT_QUALIFIER_MAP:
+            base_type, format_qualifier = self.FORMAT_QUALIFIER_MAP[openapi_format]
+            if format_qualifier:
+                return f"{base_type}<{format_qualifier}>"
+            else:
+                return base_type  # e.g., "binary" has no qualifier
 
         return self.TYPE_MAP.get(openapi_type, "string")
 
@@ -661,6 +689,10 @@ def transform_openapi_to_fdsl(
     # Get base URL from servers
     servers = parser.get_servers()
     base_url = servers[0]["url"] if servers else "http://localhost:8000"
+
+    # Handle relative URLs - prepend default host
+    if base_url.startswith("/"):
+        base_url = f"http://{host}:{port}{base_url}"
 
     # Get server name from API info
     info = parser.get_info()

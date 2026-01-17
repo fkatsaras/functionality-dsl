@@ -4,6 +4,7 @@
 # ========================================================================
 
 import logging
+from datetime import datetime, date, time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -14,6 +15,21 @@ from app.core.error_handlers import RESTErrorHandler
 
 
 logger = logging.getLogger("fdsl.source.{{ source_name }}")
+
+
+def _serialize_for_json(data: Any) -> Any:
+    """Recursively convert datetime objects to ISO format strings for JSON serialization."""
+    if isinstance(data, datetime):
+        return data.isoformat()
+    elif isinstance(data, date):
+        return data.isoformat()
+    elif isinstance(data, time):
+        return data.isoformat()
+    elif isinstance(data, dict):
+        return {k: _serialize_for_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_serialize_for_json(item) for item in data]
+    return data
 
 
 class {{ source_name }}Source:
@@ -166,7 +182,7 @@ class {{ source_name }}Source:
         response = await client.request(
             method="{{ op.method }}",
             url=url,
-            json=data,
+            json=_serialize_for_json(data),
             params=query_params if query_params else None
         )
         response.raise_for_status()
@@ -180,7 +196,7 @@ class {{ source_name }}Source:
         response = await client.request(
             method="{{ op.method }}",
             url=f"{self.base_url}{{ op.path }}",
-            json=data
+            json=_serialize_for_json(data)
         )
         response.raise_for_status()
         return response.json()
@@ -198,7 +214,7 @@ class {{ source_name }}Source:
             response = await client.request(
                 method="{{ op.method }}",
                 url=url,
-                json=data,
+                json=_serialize_for_json(data),
                 params=query_params if query_params else None
             )
             response.raise_for_status()
@@ -214,7 +230,7 @@ class {{ source_name }}Source:
             response = await client.request(
                 method="{{ op.method }}",
                 url=url,
-                json=data
+                json=_serialize_for_json(data)
             )
             response.raise_for_status()
             return response.json()
