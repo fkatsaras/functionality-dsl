@@ -201,11 +201,17 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         # TypeSpec has baseType for primitives/array, or itemEntity for array<Entity>
         if attr_type_spec:
             base_type = getattr(attr_type_spec, "baseType", None)
-            # Check if it's wrapping a primitive or array type (not array<Entity>)
+            item_entity = getattr(attr_type_spec, "itemEntity", None)
+            # Check if it's wrapping a primitive or array type
             if base_type in ("array", "string", "integer", "number", "boolean", "binary"):
                 is_wrapper_entity = True
                 wrapper_attr_name = single_attr.name
                 wrapper_attr_type = base_type
+            # Also handle array<Entity> - source returns raw array, entity wraps it
+            elif item_entity is not None:
+                is_wrapper_entity = True
+                wrapper_attr_name = single_attr.name
+                wrapper_attr_type = "array"
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))

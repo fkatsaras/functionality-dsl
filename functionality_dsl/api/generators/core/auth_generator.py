@@ -124,8 +124,9 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         '',
     ]
 
-    # Track if we have session auth (needs extra exports for login/logout)
+    # Track auth types for special exports
     session_auth_name = None
+    jwt_auth_name = None
 
     # Import each auth module
     for auth_name, config in auth_configs.items():
@@ -138,9 +139,26 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append(")")
         lines.append("")
 
-        # Track session auth for special exports
+        # Track auth types for special exports
         if config.get("auth_type") == "session":
             session_auth_name = auth_name
+        if config.get("auth_type") == "jwt" and jwt_auth_name is None:
+            jwt_auth_name = auth_name
+
+    # If JWT auth exists, import and re-export JWT-specific functions
+    # These are used by auth_routes.py for login/register
+    if jwt_auth_name:
+        jwt_module = f"auth_{jwt_auth_name.lower()}"
+        lines.append("# JWT auth functions for auth_routes.py")
+        lines.append(f"from app.core.{jwt_module} import (")
+        lines.append("    create_access_token,")
+        lines.append(")")
+        lines.append("")
+        # Also export get_current_user and TokenPayload without suffix for auth_routes.py compatibility
+        lines.append("# Re-export JWT auth functions without suffix for auth_routes.py compatibility")
+        lines.append(f"get_current_user = get_current_user_{jwt_auth_name.lower()}")
+        lines.append(f"TokenPayload = TokenPayload_{jwt_auth_name.lower()}")
+        lines.append("")
 
     # If session auth exists, import and re-export session-specific handlers
     # These are used by main.py to register /auth/login, /auth/logout, /auth/me
@@ -238,8 +256,14 @@ def _extract_auth_config(auth, roles, global_authdb=None):
 
     if auth_type == "jwt":
         # Auth<jwt>: secret is directly on auth object
+        # Also set standard JWT config values for template
         config.update({
             "secret": get_or_default("secret", "JWT_SECRET"),
+            "algorithm": "HS256",
+            "user_id_claim": "sub",
+            "roles_claim": "roles",
+            "header": "Authorization",
+            "scheme": "Bearer",
         })
 
     elif auth_type == "session":

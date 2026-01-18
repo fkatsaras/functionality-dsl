@@ -15,7 +15,6 @@
 
 // Auth mechanism
 Auth<basic> BasicAuth
-end
 
 // Roles belong to the auth mechanism
 Role admin uses BasicAuth

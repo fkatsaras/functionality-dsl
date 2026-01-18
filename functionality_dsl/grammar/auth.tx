@@ -146,5 +146,4 @@ APIKeyQuery: 'query:' name=STRING ;
 //   end
 AuthBasic:
   'Auth<' kind='basic' '>' name=ID
-  'end'
 ;

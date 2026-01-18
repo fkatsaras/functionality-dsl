@@ -18,7 +18,7 @@ def generate_random_secret(length: int = 32) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
-def render_infrastructure_files(context, templates_dir, output_dir, target="all"):
+def render_infrastructure_files(context, templates_dir, output_dir, target="all", db_context=None):
     """
     Render infrastructure files (.env, docker-compose.yml, Dockerfile)
     from templates using the provided context.
@@ -28,6 +28,7 @@ def render_infrastructure_files(context, templates_dir, output_dir, target="all"
         templates_dir: Path to templates directory
         output_dir: Output directory for generated files
         target: Generation target ("all", "backend", or "frontend")
+        db_context: Database context for templates (optional)
     """
     # Add target to context for conditional rendering
     context["target"] = target
@@ -240,7 +241,7 @@ def _extract_auth_configs(model):
     return auth_configs
 
 
-def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, target: str = "all") -> Path:
+def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, db_context: dict = None, target: str = "all") -> Path:
     """
     Scaffold the complete backend structure from the model.
     Copies base files and renders environment/Docker configuration.
@@ -251,6 +252,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
         templates_backend_dir: Path to backend Jinja templates
         out_dir: Output directory for generated code
         jwt_secret_value: Pre-generated JWT secret value (optional)
+        db_context: Database context for templates (optional)
         target: Generation target ("all", "backend", or "frontend")
     """
     print("\n[SCAFFOLD] Creating backend structure...")
@@ -276,6 +278,6 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
     _copy_runtime_libs(lib_root, backend_core_dir, templates_backend_dir)
 
     # Render infrastructure files
-    render_infrastructure_files(context, templates_backend_dir, out_dir, target=target)
+    render_infrastructure_files(context, templates_backend_dir, out_dir, target=target, db_context=db_context)
 
     return out_dir

@@ -147,23 +147,23 @@ SourceParamsList:
 // ---------- COMMON ----------
 
 // Content type can be specified for entities, defaults to application/json
-ContentType:
-    'application/json'
-  | 'text/plain'
-  | 'multipart/form-data'
-  | 'application/x-www-form-urlencoded'
-  | 'application/xml'
-  | 'text/html'
-  | 'application/pdf'
-  | 'application/zip'
-  | 'image/png'
-  | 'image/jpeg'
-  | 'application/octet-stream'
-  | 'audio/wav'
-  | 'audio/mpeg'
-  | 'video/mp4'
-;
+// ContentType:
+//     'application/json'
+//   | 'text/plain'
+//   | 'multipart/form-data'
+//   | 'application/x-www-form-urlencoded'
+//   | 'application/xml'
+//   | 'text/html'
+//   | 'application/pdf'
+//   | 'application/zip'
+//   | 'image/png'
+//   | 'image/jpeg'
+//   | 'application/octet-stream'
+//   | 'audio/wav'
+//   | 'audio/mpeg'
+//   | 'video/mp4'
+// ;
 
-HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+// HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 
 StringList: '[' (items+=STRING (',' items+=STRING)*)? ']' ;

@@ -2,13 +2,20 @@
 // Finnhub Stock API - Real-time quotes with company info + Live trades
 // =============================================================================
 
-// API Key authentication for Finnhub REST API (header-based)
+// Inbound auth: JWT for user authentication (uses default DB)
+Auth<jwt> UserAuth
+  secret: "FINNHUB_JWT_SECRET"
+end
+
+Role trader uses UserAuth
+
+// Outbound auth: API Key for Finnhub REST API (header-based)
 Auth<apikey> FinnhubAuth
   header: "X-Finnhub-Token"
   secret: "FINNHUB_API_KEY"
 end
 
-// API Key authentication for Finnhub WebSocket (query param based)
+// Outbound auth: API Key for Finnhub WebSocket (query param based)
 Auth<apikey> FinnhubWSAuth
   query: "token"
   secret: "FINNHUB_API_KEY"
@@ -70,7 +77,7 @@ Entity RawQuote
     - o: number @readonly;       // Open price of the day
     - pc: number @readonly;      // Previous close price
     - t: integer @readonly;      // Timestamp
-  access: public
+  access: [trader]
 end
 
 // Raw company profile from Finnhub
@@ -89,7 +96,7 @@ Entity RawProfile
     - phone: string @readonly;
     - weburl: string @readonly;
     - finnhubIndustry: string @readonly;
-  access: public
+  access: [trader]
 end
 
 // -----------------------------------------------------------------------------
@@ -131,7 +138,7 @@ Entity StockDashboard(RawQuote, RawProfile)
     - dayVolatility: number = round((RawQuote.h - RawQuote.l) / RawQuote.l * 100, 2);
     - isPositive: boolean = RawQuote.d >= 0;
     - trend: string = "up" if RawQuote.d > 0 else ("down" if RawQuote.d < 0 else "flat");
-  access: public
+  access: [trader]
 end
 
 // -----------------------------------------------------------------------------

@@ -142,7 +142,66 @@ def safe_label(text: str, max_len=50, escape_angles=True):
 
     return text
 
-    
+
+def _visualize_metamodel(context, grammar_path, output_dir, engine):
+    """
+    Visualize a TextX grammar metamodel (advanced use case).
+    """
+    try:
+        gpath = Path(grammar_path).resolve()
+        out_dir = Path(output_dir).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build the meta-model
+        mm = metamodel_from_file(str(gpath))
+
+        stem = gpath.stem
+        base_name = f"{stem}_metamodel"
+
+        if engine == "dot":
+            dot_file = out_dir / f"{base_name}.dot"
+            png_file = out_dir / f"{base_name}.png"
+
+            metamodel_export(mm, str(dot_file))
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering metamodel with GraphViz...", style="blue")
+
+            exit_status = os.system(f"dot -Tpng {dot_file} -o {png_file}")
+            if exit_status != 0:
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] GraphViz rendering failed.", style="red")
+                context.exit(1)
+
+            dot_file.unlink(missing_ok=True)
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel diagram: {png_file}", style="green")
+
+        elif engine == "plantuml":
+            pu_file = out_dir / f"{base_name}.puml"
+            svg_file = out_dir / f"{base_name}.svg"
+            png_file = out_dir / f"{base_name}_plant.png"
+
+            metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering metamodel with PlantUML...", style="blue")
+
+            exit_status = os.system(f"plantuml -Tsvg -o . {pu_file}")
+            if exit_status != 0:
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML failed to render.", style="red")
+                context.exit(1)
+
+            if not svg_file.exists():
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML produced no SVG output.", style="red")
+                context.exit(1)
+
+            os.system(f"convert -background white -flatten {svg_file} {png_file}")
+            pu_file.unlink(missing_ok=True)
+            svg_file.unlink(missing_ok=True)
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel diagram: {png_file}", style="green")
+
+        context.exit(0)
+
+    except Exception as e:
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel visualization failed: {e}", style="red")
+        context.exit(1)
+
+
 @click.group()
 @click.pass_context
 def cli(context):
@@ -259,112 +318,29 @@ def generate(context, model_path, target, out_dir):
     else:
         context.exit(0)
         
-@cli.command("visualize", help="Generate a metamodel diagram using GraphViz or PlantUML")
-@click.pass_context
-@click.argument("grammar_path")
-@click.option(
-    "--engine",
-    type=click.Choice(["dot", "plantuml"], case_sensitive=False),
-    default="dot",
-    help="Select visualization engine: dot (GraphViz) or plantuml"
-)
-def visualize_cmd(context, grammar_path, engine):
-    """
-    Docstring for visualize_cmd
-    
-    :param context: click execution context
-    :param grammar_path: The path to the TextX grammar file
-    :param engine: Description
-    """
-    try:
-        gpath = Path(grammar_path).resolve()
-
-        # Output directory
-        out_dir = Path("docs").resolve()
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build the meta-model
-        mm = metamodel_from_file(str(gpath))
-
-        # plantuml + dot require different intermediate formats
-        stem = gpath.stem
-        base_name = f"{stem}_metamodel"
-
-        # ------------------------------------------------------------------
-        # ENGINE: GraphViz (dot)
-        # ------------------------------------------------------------------
-        if engine == "dot":
-            dot_file = out_dir / f"{base_name}.dot"
-            png_file = out_dir / f"{base_name}.png"
-
-            metamodel_export(mm, str(dot_file))
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering with GraphViz...", style="blue")
-
-            exit_status = os.system(f"dot -Tpng {dot_file} -o {png_file}")
-
-            if exit_status != 0:
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] GraphViz rendering failed.", style="red")
-                context.exit(1)
-
-            dot_file.unlink(missing_ok=True)
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Diagram written to: {png_file}", style="green")
-            context.exit(0)
-
-        # ------------------------------------------------------------------
-        # ENGINE: PlantUML (local)
-        # ------------------------------------------------------------------
-        elif engine == "plantuml":
-            pu_file = out_dir / f"{base_name}.puml"
-            svg_file = out_dir / f"{base_name}.svg"
-            png_file = out_dir / f"{base_name}_plant.png"
-
-            metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering with PlantUML...", style="blue")
-
-            # Ensure PlantUML writes SVG into docs/ by using -o relative path
-            # PlantUML expects *folder name*, not full path
-            exit_status = os.system(f"plantuml -Tsvg -o . {pu_file}")
-
-            if exit_status != 0:
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML failed to render.", style="red")
-                context.exit(1)
-
-            # Check if SVG now exists
-            if not svg_file.exists():
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML produced no SVG output.", style="red")
-                context.exit(1)
-
-            # Convert SVG → PNG
-            os.system(f"convert -background white -flatten {svg_file} {png_file}")
-
-            # Cleanup
-            pu_file.unlink(missing_ok=True)
-            svg_file.unlink(missing_ok=True)
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Diagram written to: {png_file}", style="green")
-            context.exit(0)
-
-    except Exception as e:
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Visualization failed with: {e}", style="red")
-        context.exit(1)
-
-@cli.command("visualize-model", help="Visualize an FDSL model.")
+@cli.command("visualize", help="Visualize an FDSL model as a diagram.")
 @click.pass_context
 @click.argument("model_path")
 @click.option("--output", "-o", "output_dir", default="docs", help="Output directory for PNG/DOT files (default: docs)")
 @click.option("--no-components", "-nc", is_flag=True, help="Hide UI components from the diagram")
-def visualize_model_cmd(context, model_path, output_dir, no_components):
+@click.option("--metamodel", is_flag=True, help="Visualize the grammar metamodel instead of an FDSL model (advanced)")
+@click.option("--engine", type=click.Choice(["dot", "plantuml"], case_sensitive=False), default="dot", help="Rendering engine for metamodel visualization")
+def visualize_cmd(context, model_path, output_dir, no_components, metamodel, engine):
     """
-    Build a GraphViz diagram of an FDSL model (v2 syntax):
+    Build a GraphViz diagram of an FDSL model:
     - Server configuration
     - REST Sources (Source<REST>)
     - WS Sources (Source<WS>)
     - Entities (base and composite)
     - Generated API endpoints
     - Components (use --no-components to hide)
+
+    Use --metamodel to visualize the TextX grammar metamodel instead (advanced).
     """
+    # Handle metamodel visualization (special case)
+    if metamodel:
+        _visualize_metamodel(context, model_path, output_dir, engine)
+        return
     from graphviz import Digraph
 
     def get_source_operations(source):
@@ -385,36 +361,40 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
         dot.attr('edge', fontsize="9")
 
         # -------------------------------
-        # Roles (individual nodes - will connect to entities that use them)
-        # -------------------------------
-        for role in model.roles:
-            label = f"ROLE\\n{role.name}"
-            dot.node(f"role_{role.name}", label=label,
-                     shape="box", style="filled,rounded", fillcolor="#fff9c4")
-
-        # -------------------------------
-        # Auth
+        # Auth<type> mechanisms
         # -------------------------------
         for a in model.auth:
-            auth_type = getattr(a, "auth_type", getattr(a, "type", "unknown"))
-            label = f"AUTH\\n{a.name}\\ntype: {auth_type}"
+            # Get auth type from class name (AuthJWT -> jwt, AuthSession -> session, etc.)
+            class_name = a.__class__.__name__
+            if class_name.startswith("Auth"):
+                auth_type = class_name[4:].lower()  # AuthJWT -> jwt
+            else:
+                auth_type = "unknown"
+            label = f"AUTH<{auth_type}>\\n{a.name}"
             dot.node(f"auth_{a.name}", label=label,
                      shape="box", style="filled,rounded", fillcolor="#ffcc80")
 
         # -------------------------------
-        # Server
+        # Roles (with 'uses' relationship to Auth)
+        # -------------------------------
+        for role in model.roles:
+            auth_ref = getattr(role, "auth", None)
+            label = f"ROLE\\n{role.name}"
+            dot.node(f"role_{role.name}", label=label,
+                     shape="box", style="filled,rounded", fillcolor="#fff9c4")
+
+            # Edge: Role -> Auth (uses relationship)
+            if auth_ref:
+                dot.edge(f"role_{role.name}", f"auth_{auth_ref.name}",
+                         label="uses", style="dashed", color="#ff9800")
+
+        # -------------------------------
+        # Server (no auth reference - auth is per-entity now)
         # -------------------------------
         for s in model.servers:
-            auth_ref = getattr(s, "auth", None)
-            auth_str = f"\\nauth: {auth_ref.name}" if auth_ref else ""
-            label = f"SERVER\\n{s.name}\\nhost: {s.host}\\nport: {s.port}{auth_str}"
+            label = f"SERVER\\n{s.name}\\nhost: {s.host}\\nport: {s.port}"
             dot.node(f"server_{s.name}", label=label,
                      shape="box", style="filled,rounded", fillcolor="#bbdefb")
-
-            # Edge: Server -> Auth
-            if auth_ref:
-                dot.edge(f"server_{s.name}", f"auth_{auth_ref.name}",
-                         label="uses", color="#ff9800")
 
         # -------------------------------
         # REST Sources (Source<REST>)
@@ -423,10 +403,16 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
             url = getattr(s, "url", "")
             ops = get_source_operations(s)
             ops_str = ", ".join(ops) if ops else "none"
+            source_auth = getattr(s, "auth", None)
 
-            label = f"SOURCE REST\\n{s.name}\\n{safe_label(url, 40)}\\nops: {ops_str}"
+            label = f"SOURCE<REST>\\n{s.name}\\n{safe_label(url, 40)}\\nops: {ops_str}"
             dot.node(f"source_{s.name}", label=label,
                      shape="note", style="filled", fillcolor="#d1c4e9")
+
+            # Edge: Source -> Auth (if source has auth configured)
+            if source_auth:
+                dot.edge(f"source_{s.name}", f"auth_{source_auth.name}",
+                         label="auth", style="dotted", color="#ff9800")
 
         # -------------------------------
         # WS Sources (Source<WS>)
@@ -435,22 +421,43 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
             # Grammar stores 'channel' value in 'url' attribute
             channel = getattr(s, "url", "")
             ops = get_source_operations(s)
-            ops_str = ", ".join(ops) if ops else "none"
+            ops_str = ", ".join(ops) if ops else "stream"
+            source_auth = getattr(s, "auth", None)
 
-            label = f"SOURCE WS\\n{s.name}\\n{safe_label(channel, 40)}\\nops: {ops_str}"
+            label = f"SOURCE<WS>\\n{s.name}\\n{safe_label(channel, 40)}\\nops: {ops_str}"
             dot.node(f"source_{s.name}", label=label,
                      shape="note", style="filled", fillcolor="#b39ddb")
+
+            # Edge: Source -> Auth (if source has auth configured)
+            if source_auth:
+                dot.edge(f"source_{s.name}", f"auth_{source_auth.name}",
+                         label="auth", style="dotted", color="#ff9800")
 
         # -------------------------------
         # Entities
         # -------------------------------
+        # First pass: identify schema-only entities (used in nested types)
+        schema_only_entities = set()
+        for e in model.entities:
+            for a in e.attributes:
+                type_spec = getattr(a, "type", None)
+                if type_spec:
+                    item_entity = getattr(type_spec, "itemEntity", None)
+                    nested_entity = getattr(type_spec, "nestedEntity", None)
+                    if item_entity:
+                        schema_only_entities.add(item_entity.name)
+                    if nested_entity:
+                        schema_only_entities.add(nested_entity.name)
+
         for e in model.entities:
             parents = getattr(e, "parents", []) or []
             is_composite = len(parents) > 0
-            entity_type = getattr(e, "type", None)  # inbound/outbound for WS
+            entity_type = getattr(e, "ws_flow_type", None)  # inbound/outbound for WS
+            is_schema_only = e.name in schema_only_entities and not getattr(e, "source", None) and not getattr(e, "access", None)
 
-            # Collect attributes
+            # Collect attributes and nested entity references
             attrs_lines = []
+            nested_entity_refs = []  # Track for drawing edges
             for a in e.attributes:
                 type_text = typespec_to_string(a.type)
                 if hasattr(a, "expr") and a.expr:
@@ -458,20 +465,74 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
                     attrs_lines.append(f"{a.name}: {type_text} = {safe_label(expr_text, 30)}")
                 else:
                     attrs_lines.append(f"{a.name}: {type_text}")
+
+                # Track nested entity refs for edges
+                type_spec = getattr(a, "type", None)
+                if type_spec:
+                    item_entity = getattr(type_spec, "itemEntity", None)
+                    nested_entity = getattr(type_spec, "nestedEntity", None)
+                    if item_entity:
+                        nested_entity_refs.append((a.name, item_entity.name, "array"))
+                    if nested_entity:
+                        nested_entity_refs.append((a.name, nested_entity.name, "object"))
+
             attrs = "\\n".join(attrs_lines)
 
-            # Get access control
+            # Get access control (handles new multi-auth syntax)
             access = getattr(e, "access", None)
             access_roles_list = []
+            access_auth_list = []
             if access:
                 access_public = getattr(access, "public_keyword", None)
-                access_roles = getattr(access, "roles", None)
+                access_items = getattr(access, "access_items", None)
+                access_rules = getattr(access, "access_rules", None)
+                auth_ref = getattr(access, "auth_ref", None)
+
                 if access_public:
                     access_str = "public"
-                elif access_roles:
-                    # access_roles contains Role objects, extract names
-                    access_roles_list = [r.name for r in access_roles]
-                    access_str = ", ".join(access_roles_list)
+                elif auth_ref:
+                    # Auth-only access: access: AuthName
+                    access_str = auth_ref.name
+                    access_auth_list.append(auth_ref.name)
+                elif access_items:
+                    # List access: access: [admin, APIKeyAuth, user]
+                    items = []
+                    for item in access_items:
+                        role = getattr(item, "role", None)
+                        auth = getattr(item, "auth", None)
+                        if role:
+                            items.append(role.name)
+                            access_roles_list.append(role.name)
+                        elif auth:
+                            items.append(auth.name)
+                            access_auth_list.append(auth.name)
+                    access_str = ", ".join(items)
+                elif access_rules:
+                    # Per-operation access: read: public create: [admin]
+                    rule_strs = []
+                    for rule in access_rules:
+                        op = getattr(rule, "operation", "?")
+                        rule_public = getattr(rule, "public_keyword", None)
+                        rule_items = getattr(rule, "access_items", None)
+                        rule_auth = getattr(rule, "auth_ref", None)
+                        if rule_public:
+                            rule_strs.append(f"{op}: public")
+                        elif rule_auth:
+                            rule_strs.append(f"{op}: {rule_auth.name}")
+                            access_auth_list.append(rule_auth.name)
+                        elif rule_items:
+                            names = []
+                            for item in rule_items:
+                                role = getattr(item, "role", None)
+                                auth = getattr(item, "auth", None)
+                                if role:
+                                    names.append(role.name)
+                                    access_roles_list.append(role.name)
+                                elif auth:
+                                    names.append(auth.name)
+                                    access_auth_list.append(auth.name)
+                            rule_strs.append(f"{op}: [{', '.join(names)}]")
+                    access_str = "\\n".join(rule_strs)
                 else:
                     access_str = "public"
             else:
@@ -486,6 +547,11 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
                 stereotype = "outbound"
                 fillcolor = "#fce4ec"
                 style = "filled,rounded"
+            elif is_schema_only:
+                # Schema-only entities (used in nested types): lighter color, dotted border
+                stereotype = "schema"
+                fillcolor = "#e8f5e9"  # Lighter green
+                style = "filled,dotted,rounded"
             elif is_composite:
                 # Composite entities: same green as regular entities, but dashed border
                 stereotype = None  # No stereotype label
@@ -496,8 +562,10 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
                 fillcolor = "#c8e6c9"
                 style = "filled,rounded"
 
-            # Build label - only show stereotype for WS entities
-            if stereotype:
+            # Build label - show stereotype for WS entities and schema entities
+            if stereotype == "schema":
+                label = f"[{stereotype}]\\n{e.name}\\n{attrs}"  # No access for schema-only
+            elif stereotype:
                 label = f"[{stereotype}]\\n{e.name}\\naccess: {access_str}\\n{attrs}"
             else:
                 label = f"{e.name}\\naccess: {access_str}\\n{attrs}"
@@ -517,10 +585,20 @@ def visualize_model_cmd(context, model_path, output_dir, no_components):
                 dot.edge(f"entity_{parent_name}", f"entity_{e.name}",
                          label="composes", style="dashed", color="#1976d2")
 
+            # Edge: Entity -> Nested Entity (for array<Entity> and object<Entity>)
+            for attr_name, nested_name, ref_type in nested_entity_refs:
+                dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
+                         label=f"{ref_type}<>", style="solid", color="#4caf50")
+
             # Edge: Role -> Entity (for role-based access)
             for role_name in access_roles_list:
                 dot.edge(f"role_{role_name}", f"entity_{e.name}",
                          label="can access", style="dotted", color="#f9a825")
+
+            # Edge: Auth -> Entity (for auth-ref access)
+            for auth_name in access_auth_list:
+                dot.edge(f"auth_{auth_name}", f"entity_{e.name}",
+                         label="protects", style="dotted", color="#ff9800")
 
         # -------------------------------
         # Generated REST API Endpoints
