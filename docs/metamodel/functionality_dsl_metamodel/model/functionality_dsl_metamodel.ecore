@@ -2,6 +2,9 @@
 <ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" name="functionality_dsl_metamodel" nsURI="http://www.example.org/functionality_dsl_metamodel"
     nsPrefix="functionality_dsl_metamodel">
+  <!-- ============================================================== -->
+  <!-- ENUMS -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EEnum" name="AttrType">
     <eLiterals name="STRING"/>
     <eLiterals name="INTEGER" value="1"/>
@@ -14,20 +17,21 @@
   <eClassifiers xsi:type="ecore:EEnum" name="TypeFormat">
     <eLiterals name="EMAIL"/>
     <eLiterals name="URI" value="1"/>
-    <eLiterals name="UUID_STR" value="2"/>
-    <eLiterals name="DATE" value="3"/>
-    <eLiterals name="TIME" value="4"/>
-    <eLiterals name="HOSTNAME" value="5"/>
-    <eLiterals name="IPV4" value="6"/>
-    <eLiterals name="IPV6" value="7"/>
-    <eLiterals name="BYTE" value="8"/>
-    <eLiterals name="BINARY" value="9"/>
-    <eLiterals name="PASSWORD" value="10"/>
-    <eLiterals name="REGEX" value="11"/>
-    <eLiterals name="FLOAT" value="12"/>
-    <eLiterals name="DOUBLE" value="13"/>
-    <eLiterals name="INT32" value="14"/>
-    <eLiterals name="INT64" value="15"/>
+    <eLiterals name="UUID" value="2"/>
+    <eLiterals name="DATETIME" value="3"/>
+    <eLiterals name="DATE" value="4"/>
+    <eLiterals name="TIME" value="5"/>
+    <eLiterals name="HOSTNAME" value="6"/>
+    <eLiterals name="IPV4" value="7"/>
+    <eLiterals name="IPV6" value="8"/>
+    <eLiterals name="BYTE" value="9"/>
+    <eLiterals name="BINARY" value="10"/>
+    <eLiterals name="PASSWORD" value="11"/>
+    <eLiterals name="REGEX" value="12"/>
+    <eLiterals name="FLOAT" value="13"/>
+    <eLiterals name="DOUBLE" value="14"/>
+    <eLiterals name="INT32" value="15"/>
+    <eLiterals name="INT64" value="16"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EEnum" name="Operation">
     <eLiterals name="READ"/>
@@ -37,21 +41,22 @@
     <eLiterals name="SUBSCRIBE" value="4"/>
     <eLiterals name="PUBLISH" value="5"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EEnum" name="AuthType">
-    <eLiterals name="JWT"/>
-    <eLiterals name="SESSION" value="1"/>
-  </eClassifiers>
   <eClassifiers xsi:type="ecore:EEnum" name="WSFlowType">
     <eLiterals name="INBOUND"/>
     <eLiterals name="OUTBOUND" value="1"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- ROOT MODEL -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="FDSLModel">
     <eStructuralFeatures xsi:type="ecore:EReference" name="imports" upperBound="-1"
         eType="#//Import" containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="roles" upperBound="-1"
-        eType="#//Role" containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="auth" upperBound="-1" eType="#//Auth"
         containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="authdb" upperBound="-1" eType="#//AuthDB"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="roles" upperBound="-1"
+        eType="#//Role" containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="servers" upperBound="-1"
         eType="#//Server" containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="sources" upperBound="-1"
@@ -62,33 +67,23 @@
   <eClassifiers xsi:type="ecore:EClass" name="Import">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="importURI" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="Role">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="PublicAccess"/>
-  <eClassifiers xsi:type="ecore:EClass" name="RoleBasedAccess">
-    <eStructuralFeatures xsi:type="ecore:EReference" name="roles" upperBound="-1"
-        eType="#//Role"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="">
-    <eStructuralFeatures xsi:type="ecore:EReference" name="rules" upperBound="-1"
-        eType="#//AccessRule" containment="true"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="AccessRule">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="operation" eType="#//Operation"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="isPublic" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="roles" upperBound="-1"
-        eType="#//Role"/>
-  </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- AUTHENTICATION -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="Auth">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="type" eType="#//AuthType"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="kind" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="db" eType="#//AuthDB"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="jwt_config" eType="#//JWTAuthConfig"
         containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="session_config" eType="#//SessionAuthConfig"
         containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="apikey_config" eType="#//APIKeyAuthConfig"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="basic_config" eType="#//BasicAuthConfig"
+        containment="true"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="JWTAuthConfig" abstract="true">
+  <eClassifiers xsi:type="ecore:EClass" name="JWTAuthConfig">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="header" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="scheme" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
@@ -100,6 +95,45 @@
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="cookie" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="expiry" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
   </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="APIKeyAuthConfig">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="header" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="query" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="BasicAuthConfig">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- AUTHDB (BYODB) -->
+  <!-- ============================================================== -->
+  <eClassifiers xsi:type="ecore:EClass" name="AuthDB">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="connection" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="table" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="columns" upperBound="-1"
+        eType="#//AuthDBColumn" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="sessions" eType="#//AuthDBSessions"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AuthDBColumn">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="field" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="column" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AuthDBSessions">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="table" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="columns" upperBound="-1"
+        eType="#//AuthDBColumn" containment="true"/>
+  </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- ROLES -->
+  <!-- ============================================================== -->
+  <eClassifiers xsi:type="ecore:EClass" name="Role">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
+  </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- SERVER -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="Server">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="host" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
@@ -109,21 +143,32 @@
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="env" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="loglevel" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="timeout" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- SOURCES -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="Source" abstract="true">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="kind" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="SourceREST" eSuperTypes="#//Source">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="url" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="params" upperBound="-1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="operations" upperBound="-1"
         eType="#//Operation"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="SourceWS" eSuperTypes="#//Source">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="channel" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="params" upperBound="-1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="operations" upperBound="-1"
         eType="#//Operation"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- TYPE SYSTEM -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="TypeConstraint">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="min" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EFloat"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="max" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EFloat"/>
@@ -140,12 +185,18 @@
     <eStructuralFeatures xsi:type="ecore:EReference" name="itemEntity" eType="#//Entity"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="nestedEntity" eType="#//Entity"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- ATTRIBUTES -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="Attribute">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="type" eType="#//TypeSpec"
         containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="expr" eType="#//Expr" containment="true"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- ENTITIES -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="ParentRef">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="alias" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="entity" eType="#//Entity"/>
@@ -159,8 +210,34 @@
     <eStructuralFeatures xsi:type="ecore:EReference" name="source" eType="#//Source"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="attributes" upperBound="-1"
         eType="#//Attribute" containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="accessblock" eType="#//AccessBlock"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="access" eType="#//AccessBlock"
+        containment="true"/>
   </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- ACCESS CONTROL -->
+  <!-- ============================================================== -->
+  <eClassifiers xsi:type="ecore:EClass" name="AccessBlock">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="public_keyword" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth_ref" eType="#//Auth"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="access_items" upperBound="-1"
+        eType="#//AccessItem" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="access_rules" upperBound="-1"
+        eType="#//AccessRule" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AccessItem">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="role" eType="#//Role"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AccessRule">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="operation" eType="#//Operation"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="public_keyword" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth_ref" eType="#//Auth"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="access_items" upperBound="-1"
+        eType="#//AccessItem" containment="true"/>
+  </eClassifiers>
+  <!-- ============================================================== -->
+  <!-- EXPRESSIONS -->
+  <!-- ============================================================== -->
   <eClassifiers xsi:type="ecore:EClass" name="Expr" abstract="true"/>
   <eClassifiers xsi:type="ecore:EClass" name="Literal" eSuperTypes="#//Expr">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="stringValue" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
@@ -200,11 +277,5 @@
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="params" upperBound="-1"
         eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="body" eType="#//Expr" containment="true"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="AccessBlock">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="isPublic" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="role" upperBound="-1" eType="#//Role"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="accessrule" upperBound="-1"
-        eType="#//AccessRule"/>
   </eClassifiers>
 </ecore:EPackage>

@@ -455,6 +455,11 @@ import time
 from typing import List, Optional, Dict, Any
 from fastapi import Depends, HTTPException, status, Response, Request, Cookie
 from pydantic import BaseModel
+{% if authdb %}
+import bcrypt
+from sqlalchemy import create_engine, text
+import os
+{% endif %}
 
 
 # ============================================================================
@@ -467,6 +472,62 @@ SESSION_EXPIRY_SECONDS = {{ expiry }}
 # Declared roles from FDSL
 DECLARED_ROLES = {{ roles }}
 DECLARED_ROLES.append("public")  # Public is always allowed
+
+{% if authdb %}
+# ============================================================================
+# BYODB Configuration
+# ============================================================================
+
+# External database connection (for user authentication)
+BYODB_CONNECTION_ENV = "{{ authdb.connection }}"
+BYODB_USER_TABLE = "{{ authdb.table }}"
+BYODB_ID_COLUMN = "{{ authdb.columns.id }}"
+BYODB_PASSWORD_COLUMN = "{{ authdb.columns.password }}"
+BYODB_ROLE_COLUMN = "{{ authdb.columns.role }}"
+
+
+def _get_byodb_engine():
+    """Get SQLAlchemy engine for external user database."""
+    db_url = os.getenv(BYODB_CONNECTION_ENV)
+    if not db_url:
+        raise RuntimeError(f"Environment variable {BYODB_CONNECTION_ENV} not set")
+    return create_engine(db_url)
+
+
+def verify_user_credentials(email: str, password: str) -> Optional[tuple]:
+    """
+    Verify user credentials against external BYODB.
+
+    Args:
+        email: User email (login identifier)
+        password: Plain text password to verify
+
+    Returns:
+        Tuple of (user_id, role) if valid, None if invalid
+    """
+    engine = _get_byodb_engine()
+
+    # Query user by login identifier
+    query = text(f"""
+        SELECT {BYODB_ID_COLUMN}, {BYODB_PASSWORD_COLUMN}, {BYODB_ROLE_COLUMN}
+        FROM {BYODB_USER_TABLE}
+        WHERE {BYODB_ID_COLUMN} = :email
+    """)
+
+    with engine.connect() as conn:
+        result = conn.execute(query, {"email": email}).fetchone()
+
+    if not result:
+        return None
+
+    user_id, password_hash, role = result
+
+    # Verify password using bcrypt
+    if not bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")):
+        return None
+
+    return (user_id, role)
+{% endif %}
 
 
 # ============================================================================
@@ -718,10 +779,17 @@ def require_all_roles(required_roles: List[str]):
 # Login/Logout Request/Response Models
 # ============================================================================
 
+{% if authdb %}
 class LoginRequest(BaseModel):
-    """Login request body"""
+    """Login request body - BYODB mode (email/password)"""
+    email: str
+    password: str
+{% else %}
+class LoginRequest(BaseModel):
+    """Login request body - dev mode (user specifies own identity)"""
     user_id: str
     roles: List[str]
+{% endif %}
 
 
 class LoginResponse(BaseModel):
@@ -740,9 +808,51 @@ class LogoutResponse(BaseModel):
 # Login/Logout Endpoint Handlers
 # ============================================================================
 
+{% if authdb %}
 async def login_handler(request: LoginRequest, response: Response) -> LoginResponse:
     """
-    Handle login - create session and set cookie.
+    Handle login - verify credentials against external BYODB and create session.
+    """
+    # Verify credentials against external database
+    result = verify_user_credentials(request.email, request.password)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    user_id, role = result
+
+    # Validate that the role from DB is a declared role
+    if role not in DECLARED_ROLES and role != "public":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User role '{role}' is not a valid role. Valid roles: {DECLARED_ROLES}"
+        )
+
+    # Create session with verified identity and role
+    session_id = create_session(user_id, [role])
+
+    # Set session cookie
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=SESSION_EXPIRY_SECONDS,
+        httponly=True,  # Prevent JavaScript access
+        samesite="lax",  # CSRF protection
+        secure=False,  # Set to True in production with HTTPS
+    )
+
+    return LoginResponse(
+        user_id=user_id,
+        roles=[role]
+    )
+{% else %}
+async def login_handler(request: LoginRequest, response: Response) -> LoginResponse:
+    """
+    Handle login - dev mode, user specifies own identity.
+    WARNING: Not for production use!
     """
     # Validate roles
     invalid_roles = [r for r in request.roles if r not in DECLARED_ROLES and r != "public"]
@@ -769,6 +879,7 @@ async def login_handler(request: LoginRequest, response: Response) -> LoginRespo
         user_id=request.user_id,
         roles=request.roles
     )
+{% endif %}
 
 
 async def logout_handler(

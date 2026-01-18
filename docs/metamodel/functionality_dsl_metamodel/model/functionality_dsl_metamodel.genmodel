@@ -23,7 +23,7 @@
     <genEnums typeSafeEnumCompatible="false" ecoreEnum="functionality_dsl_metamodel.ecore#//TypeFormat">
       <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/EMAIL"/>
       <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/URI"/>
-      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/UUID_STR"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/UUID"/>
       <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/DATE"/>
       <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/TIME"/>
       <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/HOSTNAME"/>
