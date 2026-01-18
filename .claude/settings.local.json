@@ -246,7 +246,9 @@
       "Bash(findstr:*)",
       "Bash(docker restart:*)",
       "Bash(../venv_WIN/Scripts/python:*)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(venv_WIN\\\\Scripts\\\\python -m pytest:*)",
+      "Bash(venv_WIN\\\\Scripts\\\\python.exe -m pytest:*)"
     ],
     "deny": [],
     "ask": []

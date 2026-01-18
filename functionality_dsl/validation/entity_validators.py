@@ -970,16 +970,35 @@ def _compute_identity_anchors(model):
         entity._is_composite = len(parent_entities) > 0
 
 
+def _get_source_operations(source):
+    """
+    Get list of operation names from a source.
+    Returns list of operations (e.g., ['read', 'create', 'update', 'delete']).
+    """
+    if not source:
+        return []
+
+    source_ops = getattr(source, "operations", None)
+    if source_ops:
+        return list(getattr(source_ops, "operations", []) or [])
+
+    return []
+
+
 def _validate_composite_entities(model):
     """
     Validate composite entity rules:
     1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
+    2. All parent entities must have readable data paths (sources with 'read' operation)
 
     Rationale:
     - REST composites are read-only transformations of parent data
     - WS inbound composites transform incoming messages before sending to clients
     - WS outbound composites don't make sense (use computed fields on base entity instead)
+    - Parent entities must be readable for the composite to fetch and transform their data
     """
+    from functionality_dsl.api.extractors import find_source_for_entity
+
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
@@ -989,7 +1008,7 @@ def _validate_composite_entities(model):
         if not parent_entities:
             continue
 
-        # Rule: Entities with parents CANNOT have source
+        # Rule 1: Entities with parents CANNOT have source
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
@@ -997,6 +1016,42 @@ def _validate_composite_entities(model):
                 f"Composite entities are read-only views.",
                 **get_location(entity)
             )
+
+        # Rule 2: All parent entities must have readable data paths
+        # Check if composite entity is a WebSocket inbound entity (these use subscribe, not read)
+        ws_flow_type = getattr(entity, "ws_flow_type", None)
+
+        for parent in parent_entities:
+            parent_source, source_type = find_source_for_entity(parent, model)
+
+            # If parent has no source, it might be a nested composite - check recursively
+            # For now, we only validate parents that have direct sources
+            if not parent_source:
+                continue
+
+            # Get operations from parent's source
+            operations = _get_source_operations(parent_source)
+
+            # For REST sources: require 'read' operation
+            if source_type == "REST":
+                if 'read' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references parent '{parent.name}' "
+                        f"whose source does not support 'read' operation. "
+                        f"Parent entities must be readable for composition. "
+                        f"Add 'read' to the source operations: operations: [read, ...]",
+                        **get_location(entity)
+                    )
+
+            # For WS sources: require 'subscribe' operation (for inbound)
+            elif source_type == "WS":
+                parent_ws_flow = getattr(parent, "ws_flow_type", None)
+                if parent_ws_flow == "inbound" and 'subscribe' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references inbound WS parent '{parent.name}' "
+                        f"whose source does not support 'subscribe' operation.",
+                        **get_location(entity)
+                    )
 
 
 # ------------------------------------------------------------------------------

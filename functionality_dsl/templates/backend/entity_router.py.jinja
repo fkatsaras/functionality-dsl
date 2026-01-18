@@ -6,7 +6,7 @@
 import logging
 from typing import List, Optional{% if has_params %}, Dict, Any{% endif %}
 
-from fastapi import APIRouter, HTTPException, Depends{% if has_params %}, Query{% endif %}
+from fastapi import APIRouter, HTTPException, Depends, Request{% if has_params %}, Query{% endif %}
 
 from app.domain.models import {{ entity_name }}
 {%- for op in operations %}
@@ -18,6 +18,7 @@ from app.services.{{ entity_name | lower }}_service import {{ service_name }}
 from app.core.auth_{{ auth_name | lower }} import (
     require_roles as require_roles_{{ auth_name | lower }},
     get_current_user as get_current_user_{{ auth_name | lower }},
+    get_optional_user as get_optional_user_{{ auth_name | lower }},
 )
 {%- endfor %}
 {%- endif %}
@@ -30,6 +31,62 @@ router = APIRouter(
     tags=["{{ entity_name }}"]
 )
 
+{% set ns = namespace(has_multi_auth=false) %}
+{%- for op in operations %}
+{%- if op.multi_auth %}
+{% set ns.has_multi_auth = true %}
+{%- endif %}
+{%- endfor %}
+
+{%- if ns.has_multi_auth %}
+# ============================================================================
+# Multi-Auth Dependencies (OR logic - accept any valid auth)
+# ============================================================================
+
+{%- for op in operations %}
+{%- if op.multi_auth %}
+
+async def _require_any_auth_{{ op.function_name }}(
+{%- for ma in op.multi_auth %}
+    user_{{ ma.auth | lower }} = Depends(get_optional_user_{{ ma.auth | lower }}),
+{%- endfor %}
+):
+    """
+    Accept any of the following auth methods (OR logic):
+    {%- for ma in op.multi_auth %}
+    - {{ ma.auth }}{% if ma.roles %} with roles {{ ma.roles }}{% endif %}
+    {%- endfor %}
+    """
+    errors = []
+    {%- for ma in op.multi_auth %}
+
+    # Try {{ ma.auth }}
+    if user_{{ ma.auth | lower }}:
+        {%- if ma.roles %}
+        if user_{{ ma.auth | lower }}.has_any_role({{ ma.roles }}):
+            return user_{{ ma.auth | lower }}
+        else:
+            errors.append("{{ ma.auth }}: requires one of {{ ma.roles }}")
+        {%- else %}
+        return user_{{ ma.auth | lower }}
+        {%- endif %}
+    {%- endfor %}
+
+    # No auth method succeeded
+    if errors:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. " + "; ".join(errors)
+        )
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Accepts: {% for ma in op.multi_auth %}{{ ma.auth }}{% if ma.roles %} (roles: {{ ma.roles | join(', ') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}"
+    )
+
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+
 
 {% for op in operations %}
 @router.{{ op.method | lower }}(
@@ -38,11 +95,15 @@ router = APIRouter(
     response_model={{ op.response_model }},
     {%- endif %}
     status_code={{ op.status_code }}
-    {%- if not op.is_public and op.auth_name %}
+    {%- if not op.is_public %}
+    {%- if op.multi_auth %},
+    dependencies=[Depends(_require_any_auth_{{ op.function_name }})]
+    {%- elif op.auth_name %}
     {%- if op.required_roles %},
     dependencies=[Depends(require_roles_{{ op.auth_name | lower }}({{ op.required_roles }}))]
     {%- else %},
     dependencies=[Depends(get_current_user_{{ op.auth_name | lower }})]
+    {%- endif %}
     {%- endif %}
     {%- endif %}
 )

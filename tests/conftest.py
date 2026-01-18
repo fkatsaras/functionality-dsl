@@ -1,16 +1,13 @@
 """
-Pytest configuration and shared fixtures for FDSL test suite.
+Pytest configuration and shared fixtures for FDSL v2 test suite.
 """
 
 import pytest
-import os
 import tempfile
 import shutil
 from pathlib import Path
-from textx import metamodel_from_file
 
-from functionality_dsl.language import build_model, get_metamodel
-from functionality_dsl.api.generator import render_domain_files, scaffold_backend_from_model
+from functionality_dsl.language import build_model, build_model_str, get_metamodel
 
 
 @pytest.fixture(scope="session")
@@ -47,38 +44,6 @@ def fdsl_metamodel():
 
 
 @pytest.fixture
-def simple_fdsl_content():
-    """Return a minimal valid FDSL specification."""
-    return """
-Server TestServer
-  host: "localhost"
-  port: 8080
-end
-
-Entity SimpleEntity
-  attributes:
-    - value: string;
-end
-
-Source<REST> SimpleSource
-  url: "http://api.example.com/data"
-  method: GET
-  response:
-    type: object
-    entity: SimpleEntity
-end
-
-Endpoint<REST> GetData
-  path: "/data"
-  method: GET
-  response:
-    type: object
-    entity: SimpleEntity
-end
-"""
-
-
-@pytest.fixture
 def write_fdsl_file(temp_output_dir):
     """Factory fixture to write FDSL content to a temporary file."""
     def _write(content: str, filename: str = "test.fdsl") -> Path:
@@ -89,168 +54,243 @@ def write_fdsl_file(temp_output_dir):
 
 
 @pytest.fixture
-def build_fdsl_model(write_fdsl_file):
-    """Factory fixture to build a model from FDSL content."""
-    def _build(content: str) -> object:
-        file_path = write_fdsl_file(content)
-        return build_model(str(file_path))
+def build_fdsl(write_fdsl_file):
+    """Factory fixture to build a model from FDSL content string."""
+    def _build(content: str):
+        return build_model_str(content)
     return _build
 
 
-@pytest.fixture
-def validate_fdsl():
-    """Factory fixture to validate FDSL content (returns True if valid, error message if not)."""
-    def _validate(content: str, write_fdsl_file) -> tuple[bool, str]:
-        try:
-            file_path = write_fdsl_file(content)
-            build_model(str(file_path))
-            return True, ""
-        except Exception as e:
-            return False, str(e)
-    return _validate
-
+# =============================================================================
+# V2 Syntax Examples
+# =============================================================================
 
 @pytest.fixture
-def generator(project_root):
-    """Return a function to generate code from a model."""
-    def _generate(model, output_dir):
-        from pathlib import Path
-        base_backend_dir = project_root / "functionality_dsl" / "base" / "backend"
-        templates_backend_dir = project_root / "functionality_dsl" / "templates" / "backend"
-
-        scaffold_backend_from_model(
-            model,
-            base_backend_dir=base_backend_dir,
-            templates_backend_dir=templates_backend_dir,
-            out_dir=Path(output_dir)
-        )
-        render_domain_files(model, templates_backend_dir, Path(output_dir))
-    return _generate
-
-
-# Test data fixtures for common scenarios
-
-@pytest.fixture
-def rest_endpoint_fdsl():
-    """FDSL with REST endpoint."""
+def minimal_v2_fdsl():
+    """Minimal valid v2 FDSL specification."""
     return """
 Server TestServer
   host: "localhost"
   port: 8080
+end
+
+Source<REST> DataAPI
+  url: "http://api.example.com/data"
+  operations: [read]
+end
+
+Entity Data
+  source: DataAPI
+  attributes:
+    - value: string;
+  access: public
+end
+"""
+
+
+@pytest.fixture
+def rest_crud_v2_fdsl():
+    """V2 FDSL with REST CRUD operations."""
+    return """
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Source<REST> UserAPI
+  url: "http://api.example.com/users"
+  operations: [read, create, update, delete]
 end
 
 Entity User
+  source: UserAPI
   attributes:
-    - id: string;
     - name: string;
     - email: string;
-end
-
-Source<REST> UserService
-  url: "http://api.example.com/users/{userId}"
-  method: GET
-  parameters:
-    path:
-      - userId: string = GetUser.userId;
-  response:
-    type: object
-    entity: User
-end
-
-Endpoint<REST> GetUser
-  path: "/api/user/{userId}"
-  method: GET
-  parameters:
-    path:
-      - userId: string
-  response:
-    type: object
-    entity: User
+    - age: integer @optional;
+  access: public
 end
 """
 
 
 @pytest.fixture
-def ws_endpoint_fdsl():
-    """FDSL with WebSocket endpoint."""
+def websocket_v2_fdsl():
+    """V2 FDSL with WebSocket entities."""
     return """
 Server TestServer
   host: "localhost"
   port: 8080
 end
 
-Entity ChatMessage
+Source<WS> TickerWS
+  channel: "wss://api.example.com/ticker"
+  operations: [subscribe]
+end
+
+Entity RawTick
+  type: inbound
+  source: TickerWS
   attributes:
-    - text: string;
+    - price: string;
+    - timestamp: integer;
 end
 
-Source<WS> ChatSource
-  channel: "ws://chat.example.com/ws"
-  subscribe:
-    type: object
-    entity: ChatMessage
-end
-
-Endpoint<WS> ChatEndpoint
-  path: "/ws/chat"
-  subscribe:
-    type: object
-    entity: ChatMessage
+Entity Ticker(RawTick)
+  type: inbound
+  attributes:
+    - price: number = toNumber(RawTick.price);
+    - time: integer = RawTick.timestamp;
+  access: public
 end
 """
 
 
 @pytest.fixture
-def entity_with_expressions_fdsl():
-    """FDSL with computed entity attributes."""
+def composite_entity_v2_fdsl():
+    """V2 FDSL with composite entities."""
     return """
 Server TestServer
   host: "localhost"
   port: 8080
 end
 
-Entity ProductRaw
+Source<REST> ProductAPI
+  url: "http://api.example.com/products"
+  operations: [read]
+end
+
+Source<REST> InventoryAPI
+  url: "http://api.example.com/inventory"
+  operations: [read]
+end
+
+Entity Products
+  source: ProductAPI
   attributes:
     - items: array;
+    - total: integer;
+  access: public
 end
 
-Entity ProductList(ProductRaw)
+Entity Inventory
+  source: InventoryAPI
   attributes:
-    - products: array = ProductRaw.items;
-    - count: integer = len(ProductRaw.items);
-    - totalPrice: number = sum(map(ProductRaw.items, p -> p["price"]));
+    - stock: array;
+  access: public
 end
 
-Source<REST> ProductSource
-  url: "http://api.example.com/products"
-  method: GET
-  response:
-    type: array
-    entity: ProductRaw
-end
-
-Endpoint<REST> GetProducts
-  path: "/products"
-  method: GET
-  response:
-    type: object
-    entity: ProductList
+Entity Dashboard(Products, Inventory)
+  attributes:
+    - product_count: integer = Products.total;
+    - stock_count: integer = len(Inventory.stock);
+    - has_products: boolean = Products.total > 0;
+  access: public
 end
 """
 
 
-# Helper functions available to all tests
+@pytest.fixture
+def auth_v2_fdsl():
+    """V2 FDSL with authentication and roles."""
+    return """
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Auth<jwt> JWTAuth
+  secret: "JWT_SECRET"
+end
+
+Role admin uses JWTAuth
+Role user uses JWTAuth
+
+Source<REST> DataAPI
+  url: "http://api.example.com/data"
+  operations: [read, create, delete]
+end
+
+Entity Data
+  source: DataAPI
+  attributes:
+    - value: string;
+  access:
+    read: public
+    create: [user, admin]
+    delete: [admin]
+end
+"""
+
+
+@pytest.fixture
+def parameterized_source_v2_fdsl():
+    """V2 FDSL with parameterized sources."""
+    return """
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Source<REST> ProductAPI
+  url: "http://api.example.com/products"
+  params: [category, search]
+  operations: [read]
+end
+
+Entity Products
+  source: ProductAPI
+  attributes:
+    - items: array;
+    - total: integer;
+  access: public
+end
+"""
+
+
+@pytest.fixture
+def nested_entities_v2_fdsl():
+    """V2 FDSL with nested entity types."""
+    return """
+Server TestServer
+  host: "localhost"
+  port: 8080
+end
+
+Source<REST> OrderAPI
+  url: "http://api.example.com/orders"
+  operations: [read]
+end
+
+Entity Address
+  attributes:
+    - street: string;
+    - city: string;
+    - zip: string;
+end
+
+Entity LineItem
+  attributes:
+    - product_id: integer;
+    - quantity: integer;
+    - price: number;
+end
+
+Entity Order
+  source: OrderAPI
+  attributes:
+    - id: string;
+    - items: array<LineItem>;
+    - shipping: object<Address>;
+    - total: number;
+  access: public
+end
+"""
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
 def fdsl_files_in_dir(directory: Path, pattern: str = "*.fdsl"):
     """Get all FDSL files in a directory matching pattern."""
     return list(directory.rglob(pattern))
-
-
-def is_pass_test(file_path: Path) -> bool:
-    """Determine if an FDSL test file should pass validation."""
-    return "-pass.fdsl" in file_path.name or "valid" in file_path.name
-
-
-def is_fail_test(file_path: Path) -> bool:
-    """Determine if an FDSL test file should fail validation."""
-    return "-fail.fdsl" in file_path.name or "-invalid.fdsl" in file_path.name

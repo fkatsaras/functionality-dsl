@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  # Combined dummy service (all endpoints on one service for simplicity)
+  ecomm-dummy:
+    build: .
+    container_name: ecomm-dummy
+    ports:
+      - "9001:9001"
+    networks:
+      - ecomm-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  ecomm-net:
+    name: ecomm-net

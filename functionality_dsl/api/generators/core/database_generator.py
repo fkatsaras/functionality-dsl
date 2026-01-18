@@ -38,6 +38,15 @@ def _has_session_auth(model) -> bool:
     return False
 
 
+def _has_jwt_auth(model) -> bool:
+    """Check if any JWT auth exists."""
+    auths = getattr(model, "auth", []) or []
+    for auth in auths:
+        if getattr(auth, "kind", None) == "jwt":
+            return True
+    return False
+
+
 def _get_global_authdb(model):
     """Get the global AuthDB if it exists (should be at most one)."""
     authdbs = get_children_of_type("AuthDB", model)
@@ -127,6 +136,10 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     """
     Generate authentication routes (register, login, me).
 
+    Note: This only generates JWT-style auth routes (auth_routes.py.jinja).
+    Session auth uses different handlers that are added directly in main.py
+    via login_handler, logout_handler, me_handler from the session auth module.
+
     Args:
         model: FDSL model
         templates_dir: Path to templates directory
@@ -135,11 +148,15 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if auth routes were generated
     """
-    # Only generate if we have DB-backed auth
-    if not _has_db_backed_auth(model):
+    # Only generate JWT-style auth routes if we have JWT auth
+    # Session auth has its own handlers (login_handler, logout_handler, me_handler)
+    # that are added directly in main.py
+    if not _has_jwt_auth(model):
+        if _has_session_auth(model):
+            print("  Session auth detected - using session handlers in main.py (no separate auth routes)")
         return False
 
-    print("  Generating authentication routes...")
+    print("  Generating JWT authentication routes...")
 
     # Extract auth routes configuration
     routes_config = _extract_auth_routes_config(model)

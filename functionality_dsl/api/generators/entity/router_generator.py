@@ -65,7 +65,12 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
         # Parse access requirement to determine auth module and roles
         auth_info = _parse_access_requirement(access_req)
 
-        if auth_info["auth"]:
+        # Collect auth modules - either from single auth or multi_auth
+        if auth_info["multi_auth"]:
+            for ma in auth_info["multi_auth"]:
+                if ma["auth"]:
+                    auth_modules_needed.add(ma["auth"])
+        elif auth_info["auth"]:
             auth_modules_needed.add(auth_info["auth"])
 
         op_config = {
@@ -84,6 +89,8 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
             "required_roles": auth_info["roles"],
             # Keep old format for backwards compatibility
             "required_roles_list": auth_info["roles"] if auth_info["roles"] else [],
+            # Multi-auth support (OR logic across different auth types)
+            "multi_auth": auth_info["multi_auth"],
         }
 
         # Determine request/response models
@@ -149,29 +156,50 @@ def _parse_access_requirement(access_req):
     Returns:
         dict with:
             - is_public: bool
-            - auth: str or None (auth module name)
-            - roles: list or None (role names)
+            - auth: str or None (primary auth module name, for single-auth)
+            - roles: list or None (role names, for single-auth)
+            - multi_auth: list or None (list of auth options for OR logic)
+                Each item: {"auth": str, "roles": list or None}
     """
     if access_req == "public":
-        return {"is_public": True, "auth": None, "roles": None}
+        return {"is_public": True, "auth": None, "roles": None, "multi_auth": None}
 
     if isinstance(access_req, dict):
         return {
             "is_public": False,
             "auth": access_req.get("auth"),
             "roles": access_req.get("roles"),
+            "multi_auth": None,  # Single auth, no multi-auth
         }
 
     if isinstance(access_req, list):
-        # Multiple auth options - for now, take the first one
-        # TODO: Support OR logic in generated code
-        if len(access_req) > 0:
+        # Multiple auth options - support OR logic
+        if len(access_req) == 0:
+            return {"is_public": True, "auth": None, "roles": None, "multi_auth": None}
+
+        if len(access_req) == 1:
+            # Single option, treat as simple case
             first = access_req[0]
             return {
                 "is_public": False,
                 "auth": first.get("auth"),
                 "roles": first.get("roles"),
+                "multi_auth": None,
             }
 
+        # Multiple options - need OR logic
+        # Use first auth as primary (for backwards compat), but include all in multi_auth
+        first = access_req[0]
+        multi_auth = [
+            {"auth": opt.get("auth"), "roles": opt.get("roles")}
+            for opt in access_req
+        ]
+        return {
+            "is_public": False,
+            "auth": first.get("auth"),
+            "roles": first.get("roles"),
+            "multi_auth": multi_auth,
+        }
+
     # Fallback to public
-    return {"is_public": True, "auth": None, "roles": None}
+    return {"is_public": True, "auth": None, "roles": None, "multi_auth": None}
