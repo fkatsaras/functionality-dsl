@@ -1,0 +1,288 @@
+// =============================================================================
+// Parameterized Sources - Edge Cases & Composite Entities
+// =============================================================================
+// This example demonstrates edge cases with:
+// 1. Path params vs query params
+// 2. Single-parent composites inheriting params
+// 3. Chained composites (composite of composite)
+// 4. Multi-parent composites with SAME source params
+// 5. Mixed params (path + query)
+//
+// External API: JSONPlaceholder (https://jsonplaceholder.typicode.com)
+// =============================================================================
+
+Server ParamEdgeCases
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+// =============================================================================
+// CASE 1: Basic Path Param
+// =============================================================================
+// URL: https://jsonplaceholder.typicode.com/posts/{post_id}
+// - {post_id} is a path param (required, replaced in URL)
+
+Source<REST> PostAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{post_id}"
+  params: [post_id]
+  operations: [read, update, delete]
+end
+
+Entity Post
+  source: PostAPI
+  attributes:
+    - userId: integer;
+    - id: integer @readonly;
+    - title: string;
+    - body: string;
+  access: public
+end
+
+// Endpoints:
+// GET    /api/post?post_id=1   -> GET  .../posts/1
+// PUT    /api/post?post_id=1   -> PUT  .../posts/1
+// DELETE /api/post?post_id=1   -> DELETE .../posts/1
+
+
+// =============================================================================
+// CASE 2: Path Param + Query Params (Mixed)
+// =============================================================================
+// URL: https://jsonplaceholder.typicode.com/users/{user_id}
+// - {user_id} is path param (required)
+// - name, email are query params (optional, forwarded as ?name=...&email=...)
+
+Source<REST> UserAPI
+  url: "https://jsonplaceholder.typicode.com/users/{user_id}"
+  params: [user_id, name, email]
+  operations: [read]
+end
+
+Entity User
+  source: UserAPI
+  attributes:
+    - id: integer;
+    - name: string;
+    - username: string;
+    - email: string;
+    - phone: string;
+    - website: string;
+  access: public
+end
+
+// Endpoints:
+// GET /api/user?user_id=1              -> GET .../users/1
+// GET /api/user?user_id=1&name=John    -> GET .../users/1?name=John (query forwarded)
+
+
+// =============================================================================
+// CASE 3: Multiple Path Params
+// =============================================================================
+// URL: https://jsonplaceholder.typicode.com/posts/{post_id}/comments/{comment_id}
+// Note: JSONPlaceholder doesn't have this endpoint, this is illustrative
+// Using a real endpoint for testing
+
+Source<REST> CommentAPI
+  url: "https://jsonplaceholder.typicode.com/comments/{comment_id}"
+  params: [comment_id]
+  operations: [read]
+end
+
+Entity Comment
+  source: CommentAPI
+  attributes:
+    - postId: integer;
+    - id: integer;
+    - name: string;
+    - email: string;
+    - body: string;
+  access: public
+end
+
+
+// =============================================================================
+// CASE 4: Single-Parent Composite - Inherits Params
+// =============================================================================
+// PostStats inherits post_id param from Post
+
+Entity PostStats(Post)
+  attributes:
+    - postId: integer = Post.id;
+    - authorId: integer = Post.userId;
+    - titlePreview: string = Post.title;
+    - titleLength: integer = len(Post.title);
+    - bodyLength: integer = len(Post.body);
+    - totalLength: integer = len(Post.title) + len(Post.body);
+  access: public
+end
+
+// Endpoints:
+// GET /api/poststats?post_id=1   -> Fetches Post(id=1), transforms to stats
+// Inherits post_id param from Post's source
+
+
+// =============================================================================
+// CASE 5: Chained Composite (Composite of Composite)
+// =============================================================================
+// PostSummary derives from PostStats, which derives from Post
+// Params flow: Post -> PostStats -> PostSummary
+
+Entity PostSummary(PostStats)
+  attributes:
+    - id: integer = PostStats.postId;
+    - author: integer = PostStats.authorId;
+    - preview: string = PostStats.titlePreview;
+    - charCount: integer = PostStats.totalLength;
+    - isLong: boolean = PostStats.totalLength > 500;
+  access: public
+end
+
+// Endpoints:
+// GET /api/postsummary?post_id=1   -> Fetches Post(id=1) -> PostStats -> PostSummary
+// Params inherited transitively from Post
+
+
+// =============================================================================
+// CASE 6: Single-Parent with Mixed Params
+// =============================================================================
+// UserProfile inherits all params from User (user_id path param, name/email query)
+
+Entity UserProfile(User)
+  attributes:
+    - userId: integer = User.id;
+    - displayName: string = User.name;
+    - handle: string = "@" + User.username;
+    - contactEmail: string = User.email;
+    - contactPhone: string = User.phone;
+    - site: string = User.website;
+  access: public
+end
+
+// Endpoints:
+// GET /api/userprofile?user_id=1          -> Fetches User(id=1), transforms
+// GET /api/userprofile?user_id=1&name=X   -> Fetches User with query params forwarded
+
+
+// =============================================================================
+// CASE 7: CommentStats from Comment
+// =============================================================================
+
+Entity CommentStats(Comment)
+  attributes:
+    - commentId: integer = Comment.id;
+    - parentPostId: integer = Comment.postId;
+    - authorName: string = Comment.name;
+    - authorEmail: string = Comment.email;
+    - bodyPreview: string = Comment.body;
+    - bodyLength: integer = len(Comment.body);
+  access: public
+end
+
+// Endpoints:
+// GET /api/commentstats?comment_id=1   -> Fetches Comment(id=1), transforms
+
+
+// =============================================================================
+// CASE 8: Deep Chain - Three Levels
+// =============================================================================
+// PostMeta -> PostSummary -> PostStats -> Post
+
+Entity PostMeta(PostSummary)
+  attributes:
+    - postId: integer = PostSummary.id;
+    - isLongPost: boolean = PostSummary.isLong;
+    - characterCount: integer = PostSummary.charCount;
+    - briefTitle: string = PostSummary.preview;
+  access: public
+end
+
+// Endpoints:
+// GET /api/postmeta?post_id=1   -> Post -> PostStats -> PostSummary -> PostMeta
+// Params inherited through entire chain
+
+
+// =============================================================================
+// CASE 9: Multi-Parent Composite with SAME Params
+// =============================================================================
+// Both parents use the same param name - this works!
+// We create two sources that share the same param name.
+
+// Use /todos/{id} - both Post and Todo can share the same "id" param concept
+// For demo: fetch a Post and a Todo with the same ID
+Source<REST> TodoAPI
+  url: "https://jsonplaceholder.typicode.com/todos/{item_id}"
+  params: [item_id]
+  operations: [read]
+end
+
+Entity Todo
+  source: TodoAPI
+  attributes:
+    - userId: integer;
+    - id: integer;
+    - title: string;
+    - completed: boolean;
+  access: public
+end
+
+// Create another source with same param name
+Source<REST> PostByIdAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{item_id}"
+  params: [item_id]
+  operations: [read]
+end
+
+Entity PostById
+  source: PostByIdAPI
+  attributes:
+    - userId: integer;
+    - id: integer;
+    - title: string;
+    - body: string;
+  access: public
+end
+
+// Now combine them - both use item_id!
+Entity PostAndTodo(PostById, Todo)
+  attributes:
+    - itemId: integer = PostById.id;
+    - postTitle: string = PostById.title;
+    - postBody: string = PostById.body;
+    - todoTitle: string = Todo.title;
+    - todoCompleted: boolean = Todo.completed;
+    - sameUser: boolean = PostById.userId == Todo.userId;
+  access: public
+end
+
+// Endpoints:
+// GET /api/postandtodo?item_id=1
+//   -> Fetches PostById(id=1) AND Todo(id=1), combines them
+// Both parents share the same param (item_id), so this works!
+
+
+// =============================================================================
+// CASE 10: Multi-Parent Composite with DIFFERENT Params (Edge Case)
+// =============================================================================
+// Post needs post_id, User needs user_id - DIFFERENT params!
+// Current behavior: Uses FIRST parent's source params.
+// This will fetch Post correctly, but User fetch will fail or use wrong param.
+
+Entity PostAuthorAttempt(Post, User)
+  attributes:
+    - postId: integer = Post.id;
+    - postTitle: string = Post.title;
+    - authorId: integer = Post.userId;
+    - authorName: string = User.name;
+    - authorEmail: string = User.email;
+  access: public
+end
+
+// Endpoints:
+// GET /api/postauthorattempt?post_id=1
+//   -> Fetches Post(id=1) OK
+//   -> Tries to fetch User with post_id param - WILL FAIL!
+//      User source expects user_id, not post_id
+//
+// This demonstrates the limitation: multi-parent composites should share params

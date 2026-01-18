@@ -56,7 +56,7 @@ def validate_accesscontrol_dependencies(model):
     if not entities_with_access:
         return
 
-    auths = get_children_of_type("Auth", model)
+    auths = getattr(model, "auth", []) or []
     if not auths:
         first_entity = entities_with_access[0]
         raise TextXSemanticError(
@@ -104,7 +104,7 @@ def validate_role_references(model):
 def validate_server_auth_reference(model):
     """Validate that Server auth references point to declared Auth entities."""
     servers = get_children_of_type("Server", model)
-    auths = get_children_of_type("Auth", model)
+    auths = getattr(model, "auth", []) or []
     declared_auths = {auth.name for auth in auths}
 
     for server in servers:
@@ -114,4 +114,94 @@ def validate_server_auth_reference(model):
                 f"Server '{server.name}' references undeclared Auth '{auth_ref}'. "
                 f"Available: {', '.join(sorted(declared_auths)) if declared_auths else 'none'}.",
                 **get_location(server),
+            )
+
+
+def validate_authdb_singleton(model):
+    """Validate that at most one AuthDB is declared (global shared DB)."""
+    authdbs = get_children_of_type("AuthDB", model)
+
+    if len(authdbs) > 1:
+        second = authdbs[1]
+        raise TextXSemanticError(
+            f"Multiple AuthDB declarations found. Only one global AuthDB is allowed.",
+            **get_location(second),
+        )
+
+
+def validate_authdb_config(model):
+    """Validate AuthDB configuration is complete and valid."""
+    authdbs = get_children_of_type("AuthDB", model)
+
+    for authdb in authdbs:
+        # Validate connection string is provided
+        connection = getattr(authdb, "connection", None)
+        if not connection:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'connection:' (environment variable name).",
+                **get_location(authdb),
+            )
+
+        # Validate table name is provided
+        table = getattr(authdb, "table", None)
+        if not table:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'table:' (user table name).",
+                **get_location(authdb),
+            )
+
+        # Validate columns are provided and complete
+        columns = getattr(authdb, "columns", None)
+        if not columns:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' must specify 'columns:' with id, password, and role columns.",
+                **get_location(authdb),
+            )
+
+        # Validate column fields
+        id_col = getattr(columns, "id", None)
+        password_col = getattr(columns, "password", None)
+        role_col = getattr(columns, "role", None)
+
+        if not id_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'id:' (login identifier column).",
+                **get_location(authdb),
+            )
+
+        if not password_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'password:' (password hash column).",
+                **get_location(authdb),
+            )
+
+        if not role_col:
+            raise TextXSemanticError(
+                f"AuthDB '{authdb.name}' columns must specify 'role:' (user role column).",
+                **get_location(authdb),
+            )
+
+
+def validate_session_byodb_requires_sessions_table(model):
+    """Validate that session auth with BYODB requires sessions table config.
+
+    When using BYODB, the AuthDB must include sessions table mapping
+    if any Auth<session> is declared.
+    """
+    authdbs = get_children_of_type("AuthDB", model)
+    if not authdbs:
+        return  # No BYODB, default DB handles sessions
+
+    authdb = authdbs[0]
+    sessions = getattr(authdb, "sessions", None)
+
+    # Check if any session auth exists
+    auths = getattr(model, "auth", []) or []
+    for auth in auths:
+        auth_type = getattr(auth, "kind", None)
+        if auth_type == "session" and not sessions:
+            raise TextXSemanticError(
+                f"Auth<session> '{auth.name}' requires sessions table. "
+                f"Add 'sessions:' config to AuthDB '{authdb.name}'.",
+                **get_location(auth),
             )

@@ -6,7 +6,37 @@ REST paths are flat: /api/{entity_name_lower}
 Operations: read, create, update, delete (NO list operation)
 """
 
+import re
 from textx import get_children_of_type
+
+
+def _extract_source_params(source):
+    """
+    Extract params from source definition.
+
+    Returns:
+        tuple: (all_params, path_params, query_params)
+        - all_params: list of all param names
+        - path_params: list of params that are URL placeholders
+        - query_params: list of params forwarded as query string
+    """
+    if not source:
+        return [], [], []
+
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    # Extract {placeholder} names from URL
+    url = getattr(source, "url", "") or ""
+    path_params = list(set(re.findall(r'\{(\w+)\}', url)))
+
+    # Query params are those not in URL path
+    query_params = [p for p in all_params if p not in path_params]
+
+    return all_params, path_params, query_params
 
 
 def _generate_rest_path(entity):
@@ -141,6 +171,41 @@ def build_exposure_map(model):
             else:
                 access_rules[op] = []  # Empty list means public
 
+        # Extract source params for parameterized sources
+        all_params, path_params, query_params = _extract_source_params(source)
+        has_params = len(all_params) > 0
+
+        # For composite entities, collect params from ALL parent sources
+        # Each parent may have different params (e.g., Post needs post_id, User needs user_id)
+        parent_params_map = {}  # {parent_name: {all_params, path_params, query_params}}
+        if is_composite:
+            all_params_combined = set(all_params)  # Start with direct source params
+            path_params_combined = set(path_params)
+            query_params_combined = set(query_params)
+
+            for parent in parents:
+                parent_source = getattr(parent, "source", None)
+                if not parent_source:
+                    # Parent might be a composite itself - traverse to find source
+                    parent_source = _find_source_in_parents([parent])
+
+                if parent_source:
+                    p_all, p_path, p_query = _extract_source_params(parent_source)
+                    parent_params_map[parent.name] = {
+                        "all_params": p_all,
+                        "path_params": p_path,
+                        "query_params": p_query,
+                    }
+                    all_params_combined.update(p_all)
+                    path_params_combined.update(p_path)
+                    query_params_combined.update(p_query)
+
+            # Update combined params
+            all_params = list(all_params_combined)
+            path_params = list(path_params_combined)
+            query_params = list(query_params_combined)
+            has_params = len(all_params) > 0
+
         exposure_map[entity.name] = {
             "entity": entity,
             "rest_path": rest_path,
@@ -154,6 +219,12 @@ def build_exposure_map(model):
             "access_rules": access_rules,
             "is_transformation": is_composite,
             "parents": parents,
+            # Source params for parameterized sources
+            "has_params": has_params,
+            "all_params": all_params,
+            "path_params": path_params,
+            "query_params": query_params,
+            "parent_params_map": parent_params_map,  # Per-parent param info for composites
         }
 
     return exposure_map
@@ -193,13 +264,14 @@ def _extract_permissions(entity, source):
     """
     Extract permissions from entity access block.
 
-    Supports three forms:
+    Supports four forms (NEW grammar):
     1. access: public - all operations are public
-    2. access: [role1, role2] - all operations require these roles
-    3. access: read: public create: [admin] - per-operation rules
+    2. access: AuthName - all operations require valid auth (no role check)
+    3. access: [item1, item2] - all operations require these roles/auths
+    4. access: read: public create: [admin] - per-operation rules
 
     Returns:
-        dict: {operation: [roles...]}
+        dict: {operation: [roles/auths...]}
     """
     permissions = {}
 
@@ -212,33 +284,55 @@ def _extract_permissions(entity, source):
 
     # Check which form of access block this is
     public_keyword = getattr(access_block, "public_keyword", None)
-    roles_list = getattr(access_block, "roles", []) or []
+    auth_ref = getattr(access_block, "auth_ref", None)
+    access_items = getattr(access_block, "access_items", []) or []
     access_rules = getattr(access_block, "access_rules", []) or []
 
     if public_keyword == "public":
         # Form 1: access: public - all operations are public
         for op in declared_ops:
             permissions[op] = ["public"]
-    elif roles_list:
-        # Form 2: access: [role1, role2] - all operations require these roles
-        # roles_list contains Role objects, extract names
-        role_names = [r.name for r in roles_list]
+    elif auth_ref:
+        # Form 2: access: AuthName - valid auth, no role check
         for op in declared_ops:
-            permissions[op] = role_names
+            permissions[op] = [f"auth:{auth_ref.name}"]
+    elif access_items:
+        # Form 3: access: [item1, item2] - all operations require these roles/auths
+        names = _extract_access_item_names(access_items)
+        for op in declared_ops:
+            permissions[op] = names
     elif access_rules:
-        # Form 3: access: read: public create: [admin] - per-operation rules
+        # Form 4: Per-operation rules
         for rule in access_rules:
             op = rule.operation
             rule_public = getattr(rule, "public_keyword", None)
-            rule_roles = getattr(rule, "roles", []) or []
+            rule_auth_ref = getattr(rule, "auth_ref", None)
+            rule_items = getattr(rule, "access_items", []) or []
 
             if rule_public == "public":
                 permissions[op] = ["public"]
-            elif rule_roles:
-                # rule_roles contains Role objects, extract names
-                permissions[op] = [r.name for r in rule_roles]
+            elif rule_auth_ref:
+                permissions[op] = [f"auth:{rule_auth_ref.name}"]
+            elif rule_items:
+                permissions[op] = _extract_access_item_names(rule_items)
 
     return permissions
+
+
+def _extract_access_item_names(access_items):
+    """
+    Extract names from AccessItem list (can be Role or Auth references).
+    Returns list of role names (prefixed with auth: for auth-only access).
+    """
+    names = []
+    for item in access_items:
+        role_ref = getattr(item, "role", None)
+        auth_ref = getattr(item, "auth", None)
+        if role_ref:
+            names.append(role_ref.name)
+        elif auth_ref:
+            names.append(f"auth:{auth_ref.name}")
+    return names
 
 
 def _get_declared_operations(entity, source):

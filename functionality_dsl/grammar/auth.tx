@@ -2,39 +2,148 @@
 // Authentication Configuration Grammar
 // =============================================================================
 // Defines authentication as a first-class entity, separate from Server
-// Server references Auth by name
+// Uses Auth<type> syntax similar to Source<REST>/Source<WS>
 //
 // Supported auth types:
-// - jwt: Stateless token-based auth (recommended for APIs)
-// - session: Stateful cookie-based auth (traditional web apps)
+// - Auth<jwt>: Stateless token-based auth (recommended for APIs)
+// - Auth<session>: Stateful cookie-based auth (traditional web apps)
+// - Auth<apikey>: API key authentication (header or query param)
+// - Auth<basic>: HTTP Basic authentication (username:password)
+//
+// AuthDB: Optional user database configuration
+// - If not specified: generates default Postgres + SQLModel user store
+// - If specified: connects to external database with user table mapping
 
-// Auth Declaration - first-class citizen
-Auth:
-  'Auth' name=ID
-    'type:' type=AuthType
-    (jwt_config=JWTAuthConfig)?
-    (session_config=SessionAuthConfig)?
-  'end'
+// =============================================================================
+// AuthDB Declaration - User Database Configuration
+// =============================================================================
+// Defines where user credentials and roles are stored
+//
+// Usage:
+// 1. Default (no AuthDB): FDSL generates Postgres container + SQLModel user table
+// 2. External DB: User provides connection string and column mapping
+//
+// Example (external DB with session auth):
+//   AuthDB UserStore
+//     connection: "DATABASE_URL"
+//     table: "users"
+//     columns:
+//       - id: "user_email"
+//       - password: "pwd_hash"
+//       - role: "user_role"
+//     sessions:
+//       table: "sessions"
+//       columns:
+//         - session_id: "sid"
+//         - user_id: "uid"
+//         - roles: "user_roles"
+//         - expires_at: "expiry"
+//   end
+
+AuthDB:
+    'AuthDB' name=ID
+        'connection:' connection=STRING    // Env var name for connection string
+        'table:' table=STRING              // Table name containing users
+        'columns:'
+            columns=AuthDBColumns
+        (sessions=AuthDBSessions)?         // Optional sessions table mapping (for session auth)
+    'end'
 ;
 
-AuthType: 'jwt' | 'session' ;
+// Column definitions for external user database
+// Maps FDSL expected fields to actual column names (uses - prefix like entity attributes)
+AuthDBColumns:
+    '-' 'id:' id=STRING                    // Login identifier column (email, username, etc.)
+    '-' 'password:' password=STRING        // Password hash column
+    '-' 'role:' role=STRING                // Role column (stores role name as string)
+;
+
+// Sessions table configuration for external database (only used with session auth)
+// Maps FDSL session fields to actual column names in external sessions table
+AuthDBSessions:
+    'sessions:'
+        'table:' table=STRING              // Sessions table name
+        'columns:'
+            '-' 'session_id:' session_id=STRING    // Session token column
+            '-' 'user_id:' user_id=STRING          // User identifier column
+            '-' 'roles:' roles=STRING              // Roles column (JSON string)
+            '-' 'expires_at:' expires_at=STRING    // Expiry timestamp column
+;
+
+// =============================================================================
+// Auth Declaration - Authentication Configuration
+// =============================================================================
+// Auth is a union type - one of the specific auth types
+Auth:
+    AuthJWT
+  | AuthSession
+  | AuthAPIKey
+  | AuthBasic
+;
 
 // JWT Authentication - stateless, token in Authorization header
 // Supports RBAC via roles claim in token payload
 // secret: specifies the environment variable name for the JWT secret
-JWTAuthConfig:
+//
+// Example:
+//   Auth<jwt> JWTAuth
+//     secret: "JWT_SECRET"
+//   end
+AuthJWT:
+  'Auth<' kind='jwt' '>' name=ID
     'secret:' secret=STRING
-    ('header:' header=STRING)?
-    ('scheme:' scheme=STRING)?
-    ('algorithm:' algorithm=STRING)?
-    ('user_id_claim:' user_id_claim=STRING)?
-    ('roles_claim:' roles_claim=STRING)?
+  'end'
 ;
 
 // Session Authentication - stateful, cookie-based
 // Uses in-memory session store (suitable for single-server deployments)
 // Supports RBAC via roles stored in session data
-SessionAuthConfig:
-    ('cookie:' cookie=STRING)?
+//
+// Example:
+//   Auth<session> SessionAuth
+//     cookie: "session_id"
+//     expiry: 3600
+//   end
+AuthSession:
+  'Auth<' kind='session' '>' name=ID
+    'cookie:' cookie=STRING
     ('expiry:' expiry=INT)?  // Session expiry in seconds (default: 3600)
+  'end'
+;
+
+// API Key Authentication - simple key-based auth
+// Key can be passed in header or query param (mutually exclusive)
+// secret: environment variable containing valid API keys with roles
+// Format: key1:role1;role2,key2:role3
+//
+// Example (header):
+//   Auth<apikey> APIKeyAuth
+//     header: "X-API-Key"
+//     secret: "API_KEYS"
+//   end
+//
+// Example (query param):
+//   Auth<apikey> APIKeyAuth
+//     query: "api_key"
+//     secret: "API_KEYS"
+//   end
+AuthAPIKey:
+  'Auth<' kind='apikey' '>' name=ID
+    (header=APIKeyHeader | query=APIKeyQuery)
+    'secret:' secret=STRING
+  'end'
+;
+
+APIKeyHeader: 'header:' name=STRING ;
+APIKeyQuery: 'query:' name=STRING ;
+
+// Basic Authentication - HTTP Basic auth (Authorization: Basic base64(user:pass))
+// No configuration needed - uses BASIC_AUTH_USERS env var by default
+// Format: username:password:role1;role2,username2:password2:role3
+//
+// Example:
+//   Auth<basic> BasicAuth
+//   end
+AuthBasic:
+  'Auth<' kind='basic' '>' name=ID
 ;

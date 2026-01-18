@@ -165,7 +165,7 @@ visualize: ## Visualize FDSL model (usage: make visualize FILE=path/to/file.fdsl
 		exit 1; \
 	fi
 	@echo "$(BLUE)Generating model visualization for $(FILE)...$(NC)"
-	$(FDSL) visualize-model $(FILE) --output docs
+	$(FDSL) visualize $(FILE) --output docs
 	@echo "$(GREEN)Visualization generated!$(NC)"
 	@echo "DOT file: docs/$$(basename $(FILE) .fdsl)_diagram.dot"
 	@if command -v dot > /dev/null 2>&1; then \
@@ -184,7 +184,7 @@ viz-no-components: ## Visualize without UI components (usage: make viz-no-compon
 		echo "$(RED)Error: FILE not specified$(NC)"; \
 		exit 1; \
 	fi
-	$(FDSL) visualize-model $(FILE) --output docs --no-components
+	$(FDSL) visualize $(FILE) --output docs --no-components
 
 # ==============================================================================
 # Testing

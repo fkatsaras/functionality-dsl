@@ -37,6 +37,11 @@ from .generators import (
 )
 from .generators.core.auth_generator import generate_auth_module
 from .generators.core.postman_generator import generate_postman_collection
+from .generators.core.database_generator import (
+    generate_database_module,
+    generate_password_module,
+    generate_auth_routes,
+)
 from .exposure_map import build_exposure_map
 from textx import get_children_of_type
 
@@ -73,8 +78,17 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
     generate_domain_models(model, templates_dir, out_dir)
 
     # Generate auth middleware (if configured)
-    print("\n[PHASE 2] Generating authentication middleware...")
-    generate_auth_module(model, templates_dir, out_dir)
+    print("\n[PHASE 2] Generating authentication...")
+    auth_generated = generate_auth_module(model, templates_dir, out_dir)
+
+    # Generate database module and auth routes (if auth is configured)
+    if auth_generated:
+        print("\n[PHASE 2.1] Generating database module...")
+        generate_database_module(model, templates_dir, out_dir)
+        generate_password_module(model, templates_dir, out_dir)
+
+        print("\n[PHASE 2.2] Generating authentication routes...")
+        generate_auth_routes(model, templates_dir, out_dir)
 
     # Generate entity-based routers, services, and source clients
     print("\n[PHASE 3] Generating entity-based API...")

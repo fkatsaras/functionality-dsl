@@ -31,6 +31,9 @@ from functionality_dsl.validation import (
     validate_accesscontrol_dependencies,
     validate_role_references,
     validate_server_auth_reference,
+    validate_authdb_singleton,
+    validate_authdb_config,
+    validate_session_byodb_requires_sessions_table,
     validate_source_syntax,
 )
 
@@ -154,7 +157,7 @@ def _populate_aggregates(model):
 def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
-    Order matters: unique names -> RBAC validation -> server -> endpoints -> entities -> components -> aggregates
+    Order matters: unique names -> RBAC validation -> AuthDB validation -> server -> endpoints -> entities -> components -> aggregates
 
     Note: Imports are handled in build_model() via _expand_imports() before parsing.
     """
@@ -164,6 +167,11 @@ def model_processor(model, metamodel=None):
     validate_accesscontrol_dependencies(model)
     validate_role_references(model)
     validate_server_auth_reference(model)
+
+    # AuthDB validation
+    validate_authdb_singleton(model)
+    validate_authdb_config(model)
+    validate_session_byodb_requires_sessions_table(model)
 
     verify_server(model)
     verify_entities(model)

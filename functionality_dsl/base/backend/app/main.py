@@ -48,6 +48,13 @@ def create_app() -> FastAPI:
         app.state._stack = AsyncExitStack()
         await app.state._stack.enter_async_context(lifespan_http_client())
 
+        # Initialize database if db module exists
+        try:
+            from app.db import init_db
+            init_db()
+        except ImportError:
+            logger.debug("No db module found - skipping database initialization")
+
     @app.on_event("shutdown")
     async def _shutdown():
         await app.state._stack.aclose()
@@ -55,32 +62,58 @@ def create_app() -> FastAPI:
     include_generated_routers(app)
 
     # Register auth routes if auth module exists
+    # Try to include the generated auth router (for JWT auth with database)
     try:
-        from app.core.auth import (
-            login_handler, logout_handler, me_handler,
-            LoginRequest, LoginResponse, LogoutResponse,
-            get_current_user, TokenPayload, SESSION_COOKIE_NAME
-        )
-        from fastapi import Depends
+        from app.api.routers.auth import router as auth_router
+        app.include_router(auth_router)
+        logger.info("Auth routes registered from router: /auth/register, /auth/login, /auth/me")
+    except ImportError:
+        # No generated auth router - try session-based auth handlers
+        try:
+            from app.core.auth import (
+                login_handler, logout_handler, me_handler,
+                LoginRequest, LoginResponse, LogoutResponse,
+                get_current_user, TokenPayload, SESSION_COOKIE_NAME
+            )
+            from fastapi import Depends
 
-        @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
-        async def login(request: LoginRequest, response: Response):
-            """Login and create a session"""
-            return await login_handler(request, response)
+            # Check if login_handler takes db parameter (database-backed sessions)
+            import inspect
+            login_sig = inspect.signature(login_handler)
+            needs_db = 'db' in login_sig.parameters
 
-        @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
-        async def logout(response: Response, session_id: Optional[str] = Cookie(None)):
-            """Logout and clear session"""
-            return await logout_handler(response, session_id)
+            if needs_db:
+                from app.db import get_db
+                from sqlmodel import Session as DBSession
 
-        @app.get("/auth/me", tags=["Auth"])
-        async def me(user: TokenPayload = Depends(get_current_user)):
-            """Get current user info"""
-            return await me_handler(user)
+                @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+                async def login(request: LoginRequest, response: Response, db: DBSession = Depends(get_db)):
+                    """Login and create a session"""
+                    return await login_handler(request, response, db)
 
-        logger.info("Auth routes registered: /auth/login, /auth/logout, /auth/me")
-    except ImportError as e:
-        logger.debug(f"No auth module found - skipping auth routes: {e}")
+                @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
+                async def logout(response: Response, db: DBSession = Depends(get_db), session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
+                    """Logout and clear session"""
+                    return await logout_handler(response, db, session_id)
+            else:
+                @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+                async def login(request: LoginRequest, response: Response):
+                    """Login and create a session"""
+                    return await login_handler(request, response)
+
+                @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
+                async def logout(response: Response, session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
+                    """Logout and clear session"""
+                    return await logout_handler(response, session_id)
+
+            @app.get("/auth/me", tags=["Auth"])
+            async def me(user: TokenPayload = Depends(get_current_user)):
+                """Get current user info"""
+                return await me_handler(user)
+
+            logger.info("Auth routes registered from session handlers: /auth/login, /auth/logout, /auth/me")
+        except ImportError as e:
+            logger.debug(f"No auth module found - skipping auth routes: {e}")
 
     @app.get("/")
     def root():

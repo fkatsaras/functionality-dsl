@@ -1,0 +1,212 @@
+"""
+Database Configuration
+Auto-generated from FDSL Auth configuration
+
+{% if uses_default_db %}
+Uses default FDSL user store with SQLModel + PostgreSQL.
+{% else %}
+Connects to external user database: {{ authdb.table }}
+{% endif %}
+"""
+
+import os
+from typing import Optional
+from datetime import datetime
+
+from sqlmodel import SQLModel, Field, create_engine, Session
+from sqlalchemy.orm import sessionmaker
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+DATABASE_URL = os.getenv("{{ database_url_env }}")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "Database URL environment variable '{{ database_url_env }}' is not set. "
+        "Check your .env file."
+    )
+
+# Create engine with connection pooling
+engine = create_engine(
+    DATABASE_URL,
+    echo={{ 'True' if debug else 'False' }},
+    pool_pre_ping=True,  # Verify connections before use
+)
+
+# Session factory
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    class_=Session,
+)
+
+
+# ============================================================================
+# User Model
+# ============================================================================
+
+{% if uses_default_db %}
+# Column name constants for auth system (defined outside class to avoid Pydantic issues)
+USER_ID_COLUMN = "email"
+USER_PASSWORD_COLUMN = "password_hash"
+USER_ROLE_COLUMN = "role"
+
+
+class User(SQLModel, table=True):
+    """
+    Default FDSL user model.
+    Stores user credentials and role for authentication.
+    """
+    __tablename__ = "users"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(unique=True, index=True, max_length=255)
+    password_hash: str = Field(max_length=255)
+    role: str = Field(default="user", max_length=50)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default=None)
+
+    @property
+    def login_id(self) -> str:
+        """Get login identifier (email)."""
+        return self.email
+
+
+{% if auth_type == 'session' %}
+class SessionRecord(SQLModel, table=True):
+    """
+    Database-backed session storage.
+    Stores session data for stateful authentication.
+    """
+    __tablename__ = "sessions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(unique=True, index=True, max_length=64)
+    user_id: str = Field(index=True, max_length=255)
+    roles: str = Field(max_length=500)  # JSON-encoded list of roles
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(index=True)
+{% endif %}
+{% else %}
+# Column name constants for auth system (mapped from AuthDB config)
+USER_ID_COLUMN = "{{ authdb.columns.id }}"
+USER_PASSWORD_COLUMN = "{{ authdb.columns.password }}"
+USER_ROLE_COLUMN = "{{ authdb.columns.role }}"
+{% if authdb.sessions %}
+
+# Session column name constants (mapped from AuthDB sessions config)
+SESSION_ID_COLUMN = "{{ authdb.sessions.session_id }}"
+SESSION_USER_ID_COLUMN = "{{ authdb.sessions.user_id }}"
+SESSION_ROLES_COLUMN = "{{ authdb.sessions.roles }}"
+SESSION_EXPIRES_AT_COLUMN = "{{ authdb.sessions.expires_at }}"
+{% endif %}
+
+
+class User(SQLModel, table=True):
+    """
+    External user model mapped to existing database.
+    Table: {{ authdb.table }}
+    """
+    __tablename__ = "{{ authdb.table }}"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    {{ authdb.columns.id }}: str = Field(unique=True, index=True, max_length=255)
+    {{ authdb.columns.password }}: str = Field(max_length=255)
+    {{ authdb.columns.role }}: str = Field(default="user", max_length=50)
+
+    @property
+    def login_id(self) -> str:
+        """Get login identifier (email, username, etc.)."""
+        return getattr(self, USER_ID_COLUMN)
+
+    @property
+    def password_hash(self) -> str:
+        """Get password hash."""
+        return getattr(self, USER_PASSWORD_COLUMN)
+
+    @property
+    def role(self) -> str:
+        """Get user role."""
+        return getattr(self, USER_ROLE_COLUMN)
+
+
+{% if authdb.sessions %}
+class SessionRecord(SQLModel, table=True):
+    """
+    External session model mapped to existing database.
+    Table: {{ authdb.sessions.table }}
+    """
+    __tablename__ = "{{ authdb.sessions.table }}"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    {{ authdb.sessions.session_id }}: str = Field(unique=True, index=True, max_length=64)
+    {{ authdb.sessions.user_id }}: str = Field(index=True, max_length=255)
+    {{ authdb.sessions.roles }}: str = Field(max_length=500)  # JSON-encoded list of roles
+    {{ authdb.sessions.expires_at }}: datetime = Field(index=True)
+
+    @property
+    def session_id(self) -> str:
+        """Get session ID."""
+        return getattr(self, SESSION_ID_COLUMN)
+
+    @property
+    def user_id(self) -> str:
+        """Get user ID."""
+        return getattr(self, SESSION_USER_ID_COLUMN)
+
+    @property
+    def roles(self) -> str:
+        """Get roles (JSON string)."""
+        return getattr(self, SESSION_ROLES_COLUMN)
+
+    @property
+    def expires_at(self) -> datetime:
+        """Get expiry timestamp."""
+        return getattr(self, SESSION_EXPIRES_AT_COLUMN)
+{% endif %}
+{% endif %}
+
+
+# ============================================================================
+# Database Session Dependency
+# ============================================================================
+
+def get_db():
+    """
+    FastAPI dependency to get database session.
+    Automatically closes session after request.
+
+    Usage:
+        @app.get("/users")
+        async def get_users(db: Session = Depends(get_db)):
+            return db.query(User).all()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Database Initialization
+# ============================================================================
+
+def init_db():
+    """
+    Initialize database tables.
+    Call this on application startup to create tables if they don't exist.
+    {% if not uses_default_db %}
+    Note: For external databases, this is a no-op as tables already exist.
+    {% endif %}
+    """
+{% if uses_default_db %}
+    SQLModel.metadata.create_all(engine)
+    print("[DB] Database tables initialized")
+{% else %}
+    # External database - tables already exist
+    print("[DB] Using external database: {{ authdb.table }}")
+{% endif %}

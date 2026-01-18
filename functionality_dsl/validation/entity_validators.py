@@ -95,6 +95,134 @@ def _get_all_entity_attributes(entity):
 
 
 # ------------------------------------------------------------------------------
+# Nested entity type validation (array<Entity>, object<Entity>)
+
+def _get_nested_entity_refs(entity):
+    """
+    Get all entity references from array<Entity> and object<Entity> attributes.
+    Returns list of (attr_name, referenced_entity) tuples.
+    """
+    refs = []
+    for attr in getattr(entity, "attributes", []) or []:
+        type_spec = getattr(attr, "type", None)
+        if not type_spec:
+            continue
+
+        # Check for array<Entity>
+        item_entity = getattr(type_spec, "itemEntity", None)
+        if item_entity:
+            refs.append((attr.name, item_entity))
+
+        # Check for object<Entity>
+        nested_entity = getattr(type_spec, "nestedEntity", None)
+        if nested_entity:
+            refs.append((attr.name, nested_entity))
+
+    return refs
+
+
+def _validate_nested_entity_circular_refs(model):
+    """
+    Detect circular references in nested entity types.
+
+    Circular references like:
+      Entity A { b: object<B> }
+      Entity B { a: object<A> }
+
+    Would cause issues in generated Pydantic models (forward reference ordering).
+    """
+    entities = {e.name: e for e in get_children_of_type("Entity", model)}
+
+    def find_cycle(start_name, current_name, visited, path):
+        """DFS to find cycles in entity references."""
+        if current_name in visited:
+            if current_name == start_name:
+                return path  # Found cycle back to start
+            return None  # Already visited but not a cycle to start
+
+        if current_name not in entities:
+            return None
+
+        visited.add(current_name)
+        entity = entities[current_name]
+
+        for attr_name, ref_entity in _get_nested_entity_refs(entity):
+            ref_name = ref_entity.name
+            new_path = path + [(current_name, attr_name, ref_name)]
+            cycle = find_cycle(start_name, ref_name, visited.copy(), new_path)
+            if cycle:
+                return cycle
+
+        return None
+
+    # Check each entity as a potential cycle start
+    for entity_name in entities:
+        cycle = find_cycle(entity_name, entity_name, set(), [])
+        if cycle:
+            # Format cycle path for error message
+            cycle_desc = " -> ".join(
+                f"{src}.{attr} -> {tgt}" for src, attr, tgt in cycle
+            )
+            entity = entities[entity_name]
+            raise TextXSemanticError(
+                f"Circular reference detected in nested entity types: {cycle_desc}. "
+                f"Circular references are not supported in array<Entity> or object<Entity> types.",
+                **get_location(entity)
+            )
+
+
+def _validate_nested_entity_self_refs(model):
+    """
+    Detect self-referencing entities in nested types.
+
+    Self-references like:
+      Entity Node { children: array<Node> }
+
+    Are not currently supported (would require Pydantic forward refs).
+    """
+    for entity in get_children_of_type("Entity", model):
+        for attr_name, ref_entity in _get_nested_entity_refs(entity):
+            if ref_entity.name == entity.name:
+                raise TextXSemanticError(
+                    f"Self-reference detected: attribute '{attr_name}' references "
+                    f"its own entity '{entity.name}'. Self-referencing nested types "
+                    f"are not currently supported.",
+                    **get_location(entity)
+                )
+
+
+def _validate_nested_entity_should_be_schema_only(model):
+    """
+    Warn if an entity used in array<Entity> or object<Entity> has its own
+    source or access (meaning it would be exposed as its own endpoint).
+
+    Nested entities should typically be schema-only (no source, no access).
+    """
+    # Collect all entities that are used as nested types
+    nested_type_entities = set()
+    for entity in get_children_of_type("Entity", model):
+        for _, ref_entity in _get_nested_entity_refs(entity):
+            nested_type_entities.add(ref_entity.name)
+
+    # Check if any nested type entity has its own source or access
+    for entity in get_children_of_type("Entity", model):
+        if entity.name not in nested_type_entities:
+            continue
+
+        has_source = getattr(entity, "source", None) is not None
+        has_access = getattr(entity, "access", None) is not None
+
+        if has_source or has_access:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' is used as a nested type (in array<{entity.name}> "
+                f"or object<{entity.name}>) but also has {'source' if has_source else 'access'} defined. "
+                f"Nested type entities should be schema-only (no source or access). "
+                f"Remove the {'source' if has_source else 'access'} declaration or use a separate schema entity.",
+                **get_location(entity)
+            )
+
+
+# ------------------------------------------------------------------------------
 # Helper functions for model getters
 
 def get_model_internal_rest_endpoints(model):
@@ -842,16 +970,35 @@ def _compute_identity_anchors(model):
         entity._is_composite = len(parent_entities) > 0
 
 
+def _get_source_operations(source):
+    """
+    Get list of operation names from a source.
+    Returns list of operations (e.g., ['read', 'create', 'update', 'delete']).
+    """
+    if not source:
+        return []
+
+    source_ops = getattr(source, "operations", None)
+    if source_ops:
+        return list(getattr(source_ops, "operations", []) or [])
+
+    return []
+
+
 def _validate_composite_entities(model):
     """
     Validate composite entity rules:
     1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
+    2. All parent entities must have readable data paths (sources with 'read' operation)
 
     Rationale:
     - REST composites are read-only transformations of parent data
     - WS inbound composites transform incoming messages before sending to clients
     - WS outbound composites don't make sense (use computed fields on base entity instead)
+    - Parent entities must be readable for the composite to fetch and transform their data
     """
+    from functionality_dsl.api.extractors import find_source_for_entity
+
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
@@ -861,7 +1008,7 @@ def _validate_composite_entities(model):
         if not parent_entities:
             continue
 
-        # Rule: Entities with parents CANNOT have source
+        # Rule 1: Entities with parents CANNOT have source
         source = getattr(entity, "source", None)
         if source:
             raise TextXSemanticError(
@@ -869,6 +1016,42 @@ def _validate_composite_entities(model):
                 f"Composite entities are read-only views.",
                 **get_location(entity)
             )
+
+        # Rule 2: All parent entities must have readable data paths
+        # Check if composite entity is a WebSocket inbound entity (these use subscribe, not read)
+        ws_flow_type = getattr(entity, "ws_flow_type", None)
+
+        for parent in parent_entities:
+            parent_source, source_type = find_source_for_entity(parent, model)
+
+            # If parent has no source, it might be a nested composite - check recursively
+            # For now, we only validate parents that have direct sources
+            if not parent_source:
+                continue
+
+            # Get operations from parent's source
+            operations = _get_source_operations(parent_source)
+
+            # For REST sources: require 'read' operation
+            if source_type == "REST":
+                if 'read' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references parent '{parent.name}' "
+                        f"whose source does not support 'read' operation. "
+                        f"Parent entities must be readable for composition. "
+                        f"Add 'read' to the source operations: operations: [read, ...]",
+                        **get_location(entity)
+                    )
+
+            # For WS sources: require 'subscribe' operation (for inbound)
+            elif source_type == "WS":
+                parent_ws_flow = getattr(parent, "ws_flow_type", None)
+                if parent_ws_flow == "inbound" and 'subscribe' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references inbound WS parent '{parent.name}' "
+                        f"whose source does not support 'subscribe' operation.",
+                        **get_location(entity)
+                    )
 
 
 # ------------------------------------------------------------------------------
@@ -946,6 +1129,11 @@ def verify_entities(model):
     _validate_rest_endpoint_entities(model)
     _validate_source_urls(model)
     _validate_attribute_markers(model)  # Validate @readonly/@optional markers
+
+    # Nested entity type validation (array<Entity>, object<Entity>)
+    _validate_nested_entity_self_refs(model)  # Check self-refs first (more specific error)
+    _validate_nested_entity_circular_refs(model)
+    _validate_nested_entity_should_be_schema_only(model)
 
     # WebSocket validation
     _validate_websocket_entity_relationships(model)  # WebSocket: join semantics

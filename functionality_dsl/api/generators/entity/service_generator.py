@@ -111,6 +111,8 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     parent_sources = []
     parent_ws_sources = []  # WebSocket sources
 
+    # Get parent params map from config (for composites with parameterized sources)
+    parent_params_map = config.get("parent_params_map", {})
 
     # Process each parent ref - all entities are snapshots (no ID-based fetching)
     for idx, parent_ref in enumerate(parent_refs):
@@ -134,23 +136,33 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
             # This matters for WebSocket chained composites where data is already a dict
             parent_is_composite = bool(getattr(parent, "parents", []))
 
+            # Get params specific to this parent's source
+            parent_param_info = parent_params_map.get(parent.name, {})
+            parent_all_params = parent_param_info.get("all_params", [])
+
             parent_services.append({
                 "name": parent.name,
                 "service_class": f"{parent.name}Service",
                 "method": f"get_{parent.name.lower()}",
                 "is_array": bool(is_array),  # Whether this is an array parent
                 "is_first": idx == 0,  # Whether this is the first parent
-                "is_composite": parent_is_composite  # Whether parent is itself a composite
+                "is_composite": parent_is_composite,  # Whether parent is itself a composite
+                "params": parent_all_params,  # Params this parent's source needs
             })
         else:
             # This parent is not exposed - check if it has a direct REST source
             if parent_source and source_type == "REST":
+                # Get params specific to this parent's source
+                parent_param_info = parent_params_map.get(parent.name, {})
+                parent_all_params = parent_param_info.get("all_params", [])
+
                 parent_sources.append({
                     "entity_name": parent.name,
                     "source_name": parent_source.name,
                     "source_class": f"{parent_source.name}Source",
                     "is_array": bool(is_array),  # Whether this is an array parent
-                    "is_first": idx == 0  # Whether this is the first parent
+                    "is_first": idx == 0,  # Whether this is the first parent
+                    "params": parent_all_params,  # Params this parent's source needs
                 })
             # Note: WS sources are already handled at the top of this if-elif chain
 
@@ -170,6 +182,37 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         }
         operation_methods.append(method_config)
 
+    # Get source params info from config
+    has_params = config.get("has_params", False)
+    all_params = config.get("all_params", [])
+
+    # Detect "wrapper entity" pattern - entity with single attribute that wraps
+    # an array or primitive response from source (e.g., items: array, value: string)
+    # This is needed because source returns raw array/primitive, not an object
+    is_wrapper_entity = False
+    wrapper_attr_name = None
+    wrapper_attr_type = None
+
+    # Only applies to entities without parents (direct source access)
+    # and without computed attributes (pass-through)
+    if not has_parents and not has_computed_attrs and len(attributes) == 1:
+        single_attr = attributes[0]
+        attr_type_spec = getattr(single_attr, "type", None)
+        # TypeSpec has baseType for primitives/array, or itemEntity for array<Entity>
+        if attr_type_spec:
+            base_type = getattr(attr_type_spec, "baseType", None)
+            item_entity = getattr(attr_type_spec, "itemEntity", None)
+            # Check if it's wrapping a primitive or array type
+            if base_type in ("array", "string", "integer", "number", "boolean", "binary"):
+                is_wrapper_entity = True
+                wrapper_attr_name = single_attr.name
+                wrapper_attr_type = base_type
+            # Also handle array<Entity> - source returns raw array, entity wraps it
+            elif item_entity is not None:
+                is_wrapper_entity = True
+                wrapper_attr_name = single_attr.name
+                wrapper_attr_type = "array"
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_service.py.jinja")
@@ -188,6 +231,13 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
         parent_sources=parent_sources,
         has_multiple_ws_sources=has_multiple_ws_sources,
         parent_ws_sources=parent_ws_sources,
+        # Source params for parameterized sources
+        has_params=has_params,
+        all_params=all_params,
+        # Wrapper entity pattern (single attr wrapping array/primitive)
+        is_wrapper_entity=is_wrapper_entity,
+        wrapper_attr_name=wrapper_attr_name,
+        wrapper_attr_type=wrapper_attr_type,
     )
 
     # Write to file

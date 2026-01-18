@@ -1,0 +1,134 @@
+Server CryptoTicker
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+
+
+// EXTERNAL WEBSOCKET SOURCES (Binance real-time ticker streams)
+
+// Using coins with similar price ranges for better comparison:
+// - ETH (~$3,500), BNB (~$600), SOL (~$200)
+
+
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BinanceBNB
+  channel: "wss://stream.binance.com:9443/ws/bnbusdt@ticker"
+  operations: [subscribe]
+end
+
+Source<WS> BinanceSOL
+  channel: "wss://stream.binance.com:9443/ws/solusdt@ticker"
+  operations: [subscribe]
+end
+
+
+
+// BASE ENTITIES (Raw ticks from external WebSocket sources)
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - c: string;  // Current price (Binance sends as string)
+    - E: integer; // Event time (milliseconds)
+end
+
+Entity BNBTick
+  type: inbound
+  source: BinanceBNB
+  attributes:
+    - c: string;
+    - E: integer;
+end
+
+Entity SOLTick
+  type: inbound
+  source: BinanceSOL
+  attributes:
+    - c: string;
+    - E: integer;
+end
+
+
+// COMPOSITE ENTITY (Aggregates latest prices from all 3 sources)
+
+// Strategy: Latest Tick Synchronization
+// - Each WebSocket source emits independently
+// - Composite entity maintains latest value from each source
+// - Client receives update whenever ANY source emits (with all latest values)
+
+
+Entity CryptoPrices(ETHTick, BNBTick, SOLTick)
+  type: inbound
+  attributes:
+    - timestamp: integer = ETHTick.E;
+    - eth_price: number = toNumber(ETHTick.c);
+    - bnb_price: number = toNumber(BNBTick.c);
+    - sol_price: number = toNumber(SOLTick.c);
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/cryptoprices
+end
+
+Entity MarketAnalysis(CryptoPrices)
+  type: inbound
+  attributes:
+    - timestamp: integer = CryptoPrices.timestamp;
+    - coins: array = [
+        {"name": "ETH", "price": CryptoPrices.eth_price, "symbol": "Ethereum"},
+        {"name": "BNB", "price": CryptoPrices.bnb_price, "symbol": "Binance Coin"},
+        {"name": "SOL", "price": CryptoPrices.sol_price, "symbol": "Solana"}
+      ];
+    - total_coins: integer = len(MarketAnalysis.coins);
+    - prices: array = map(MarketAnalysis.coins, c => c["price"]);
+    - average_price: number = round(sum(MarketAnalysis.prices) / MarketAnalysis.total_coins, 2);
+    - above_average: array = filter(MarketAnalysis.coins, c => c["price"] > MarketAnalysis.average_price);
+    - below_average: array = filter(MarketAnalysis.coins, c => c["price"] <= MarketAnalysis.average_price);
+    - above_avg_count: integer = len(MarketAnalysis.above_average);
+    - below_avg_count: integer = len(MarketAnalysis.below_average);
+    - above_avg_names: array = map(MarketAnalysis.above_average, c => c["name"]);
+    - below_avg_names: array = map(MarketAnalysis.below_average, c => c["name"]);
+    - all_above_200: boolean = all(map(MarketAnalysis.prices, p => p > 200));
+    - any_below_100: boolean = any(map(MarketAnalysis.prices, p => p < 100));
+    - market_sentiment: string = "bullish" if MarketAnalysis.above_avg_count >= 2 else "bearish";
+    - price_spread: number = round(max(MarketAnalysis.prices) - min(MarketAnalysis.prices), 2);
+  access: public
+  // Auto-generates: ws://localhost:8080/ws/marketanalysis
+end
+
+
+// UI 
+Component<LiveChart> CryptoChart
+  entity: CryptoPrices
+  seriesLabels: ["Ethereum", "Binance Coin", "Solana"]
+  xLabel: "Time"
+  yLabel: "Price (USDT)"
+  windowSize: 50
+end
+
+Component<LiveMetrics> MarketMetrics
+  entity: MarketAnalysis
+  metrics: ["average_price", "price_spread", "above_avg_count", "below_avg_count"]
+  label: "Market Analysis Dashboard"
+end
+
+Component<LiveMetrics> PriceMetrics
+  entity: CryptoPrices
+  metrics: ["eth_price", "bnb_price", "sol_price"]
+  label: "Live Crypto Prices"
+end
+
+Component<LivePieChart> PriceDistribution
+  entity: CryptoPrices
+  slices:
+    - field: "eth_price" label: "Ethereum" color: "#627EEA"
+    - field: "bnb_price" label: "BNB" color: "#F3BA2F"
+    - field: "sol_price" label: "Solana" color: "#9945FF"
+  title: "Price Distribution"
+  size: 220
+end

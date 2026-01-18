@@ -1,0 +1,122 @@
+asyncapi: 2.6.0
+info:
+  title: Crypto Ticker WebSocket API
+  version: 1.0.0
+  description: Real-time cryptocurrency price updates via WebSocket
+
+servers:
+  production:
+    url: stream.example.com:9443
+    protocol: wss
+    description: Production WebSocket server
+
+channels:
+  /ws/ticker/{symbol}:
+    description: Real-time ticker updates for a specific cryptocurrency
+    parameters:
+      symbol:
+        description: Trading pair symbol (e.g., btcusdt, ethusdt)
+        schema:
+          type: string
+    publish:
+      operationId: receiveTicker
+      summary: Receive ticker updates
+      message:
+        name: TickerMessage
+        payload:
+          type: object
+          required:
+            - symbol
+            - price
+            - timestamp
+          properties:
+            symbol:
+              type: string
+              description: Trading pair symbol
+            price:
+              type: number
+              format: double
+              description: Current price
+            volume:
+              type: number
+              format: double
+              description: 24h trading volume
+            change:
+              type: number
+              format: double
+              description: 24h price change percentage
+            timestamp:
+              type: integer
+              format: int64
+              description: Event timestamp in milliseconds
+
+  /ws/orderbook/{symbol}:
+    description: Real-time orderbook updates
+    parameters:
+      symbol:
+        description: Trading pair symbol
+        schema:
+          type: string
+    bindings:
+      ws:
+        query:
+          type: object
+          properties:
+            depth:
+              type: integer
+              description: Number of levels to return
+    publish:
+      operationId: receiveOrderbook
+      summary: Receive orderbook updates
+      message:
+        name: OrderbookMessage
+        payload:
+          type: object
+          required:
+            - symbol
+            - bids
+            - asks
+          properties:
+            symbol:
+              type: string
+            bids:
+              type: array
+              description: List of bid orders
+            asks:
+              type: array
+              description: List of ask orders
+            lastUpdateId:
+              type: integer
+              format: int64
+
+  /ws/trades:
+    description: Submit trade orders
+    subscribe:
+      operationId: submitTrade
+      summary: Submit a trade order
+      message:
+        name: TradeOrder
+        payload:
+          type: object
+          required:
+            - symbol
+            - side
+            - quantity
+          properties:
+            symbol:
+              type: string
+              description: Trading pair symbol
+            side:
+              type: string
+              description: Order side (buy/sell)
+            quantity:
+              type: number
+              format: double
+              description: Order quantity
+            price:
+              type: number
+              format: double
+              description: Limit price (optional for market orders)
+            orderType:
+              type: string
+              description: Order type (market/limit)

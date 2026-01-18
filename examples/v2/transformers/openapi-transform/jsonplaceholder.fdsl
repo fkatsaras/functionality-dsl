@@ -1,0 +1,27 @@
+// =============================================================================
+// AUTO-GENERATED FROM OPENAPI SPECIFICATION
+// =============================================================================
+
+Server JSONPlaceholder
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<REST> PostAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{post_id}"
+  params: [post_id, userId, title]
+  operations: [read, update, delete, create]
+end
+
+Entity Post
+  source: PostAPI
+  attributes:
+    - userId: integer @optional;
+    - id: integer @optional;
+    - title: string @optional;
+    - body: string @optional;
+  access: public
+end

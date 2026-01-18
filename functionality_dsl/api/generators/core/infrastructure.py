@@ -7,6 +7,7 @@ import string
 from pathlib import Path
 from shutil import copytree
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from textx import get_children_of_type
 
 from ...extractors import extract_server_config
 
@@ -17,11 +18,20 @@ def generate_random_secret(length: int = 32) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
-def render_infrastructure_files(context, templates_dir, output_dir):
+def render_infrastructure_files(context, templates_dir, output_dir, target="all", db_context=None):
     """
     Render infrastructure files (.env, docker-compose.yml, Dockerfile)
     from templates using the provided context.
+
+    Args:
+        context: Template context dictionary
+        templates_dir: Path to templates directory
+        output_dir: Output directory for generated files
+        target: Generation target ("all", "backend", or "frontend")
+        db_context: Database context for templates (optional)
     """
+    # Add target to context for conditional rendering
+    context["target"] = target
     env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(disabled_extensions=("jinja",)),
@@ -29,16 +39,73 @@ def render_infrastructure_files(context, templates_dir, output_dir):
         lstrip_blocks=True,
     )
 
-    # Generate JWT secret environment variable
-    # Use pre-generated secret if available, otherwise generate new one
+    # Process auth configurations for environment variables (multi-auth support)
+    auth_env_vars = []
+    auth_configs = context.get("auth_configs", {})
+
+    for auth_name, auth_config in auth_configs.items():
+        auth_type = auth_config.get("auth_type")
+        roles = auth_config.get("roles", [])
+
+        if auth_type == "jwt":
+            # JWT needs a secret key
+            secret_var = auth_config.get("secret", "JWT_SECRET")
+            auth_env_vars.append({
+                "name": secret_var,
+                "value": generate_random_secret(32),
+                "comment": f"JWT Secret for {auth_name} (auto-generated)"
+            })
+
+        elif auth_type == "apikey":
+            # API Key needs a keys list with roles
+            secret_var = auth_config.get("secret", "API_KEYS")
+            # Generate example keys with roles
+            example_keys = []
+            for role in roles[:3]:  # Limit to 3 example keys
+                key = f"{role}_key_{generate_random_secret(8)}"
+                example_keys.append(f"{key}:{role}")
+            if not example_keys:
+                example_keys = [f"default_key_{generate_random_secret(8)}"]
+            auth_env_vars.append({
+                "name": secret_var,
+                "value": ",".join(example_keys),
+                "comment": f"API Keys for {auth_name} (format: key:role1;role2,...)"
+            })
+
+        elif auth_type == "basic":
+            # Basic auth needs username:password:roles
+            users_var = auth_config.get("users", "BASIC_AUTH_USERS")
+            # Generate example users with roles
+            example_users = []
+            for role in roles[:2]:  # Limit to 2 example users
+                password = generate_random_secret(12)
+                example_users.append(f"{role}:{password}:{role}")
+            if not example_users:
+                example_users = [f"admin:{generate_random_secret(12)}:admin"]
+            auth_env_vars.append({
+                "name": users_var,
+                "value": ",".join(example_users),
+                "comment": f"Basic Auth users for {auth_name} (format: user:pass:role1;role2,...)"
+            })
+
+        elif auth_type == "session":
+            # Session doesn't need env vars for secrets (uses in-memory store)
+            pass
+
+    context["auth_env_vars"] = auth_env_vars
+
+    # Legacy support: also set jwt_secret_var for old templates
     auth_config = context.get("auth")
     if auth_config and auth_config.get("type") == "jwt":
         jwt_config = auth_config.get("jwt", {})
         if jwt_config.get("secret"):
             context["jwt_secret_var"] = jwt_config["secret"]
-            # Use existing value if already generated, otherwise generate new one
             if "jwt_secret_value" not in context:
                 context["jwt_secret_value"] = generate_random_secret(32)
+
+    # Merge database context if provided
+    if db_context:
+        context.update(db_context)
 
     # Map output files to their templates
     file_mappings = {
@@ -120,7 +187,61 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         print("  [WARN] templates_dir not provided, skipping error_handlers.py")
 
 
-def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None) -> Path:
+def _extract_auth_configs(model):
+    """
+    Extract auth configurations from the model for env generation.
+
+    Returns dict mapping auth_name -> {auth_type, secret, roles, ...}
+    """
+    auth_configs = {}
+
+    # Get all Auth declarations - access directly from model since Auth is a union type
+    auth_blocks = getattr(model, "auth", []) or []
+
+    # Get all Role declarations to map roles to auths
+    role_blocks = get_children_of_type("Role", model)
+    roles_by_auth = {}
+    for role in role_blocks:
+        auth_name = role.auth.name if role.auth else None
+        if auth_name:
+            if auth_name not in roles_by_auth:
+                roles_by_auth[auth_name] = []
+            roles_by_auth[auth_name].append(role.name)
+
+    for auth in auth_blocks:
+        auth_name = auth.name
+        auth_type = getattr(auth, "kind", None)  # Use 'kind' from Auth<kind> syntax
+
+        if not auth_type:
+            continue
+
+        config = {
+            "auth_type": auth_type,
+            "auth_name": auth_name,
+            "roles": roles_by_auth.get(auth_name, []),
+        }
+
+        # Helper to get value or default
+        def get_or_default(attr, default):
+            val = getattr(auth, attr, None)
+            return val if val is not None and val != "" else default
+
+        # Extract type-specific config (fields are directly on auth object now)
+        if auth_type == "jwt":
+            config["secret"] = get_or_default("secret", "JWT_SECRET")
+
+        elif auth_type == "apikey":
+            config["secret"] = get_or_default("secret", "API_KEYS")
+
+        elif auth_type == "basic":
+            config["users"] = "BASIC_AUTH_USERS"
+
+        auth_configs[auth_name] = config
+
+    return auth_configs
+
+
+def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, db_context: dict = None, target: str = "all") -> Path:
     """
     Scaffold the complete backend structure from the model.
     Copies base files and renders environment/Docker configuration.
@@ -131,11 +252,16 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
         templates_backend_dir: Path to backend Jinja templates
         out_dir: Output directory for generated code
         jwt_secret_value: Pre-generated JWT secret value (optional)
+        db_context: Database context for templates (optional)
+        target: Generation target ("all", "backend", or "frontend")
     """
     print("\n[SCAFFOLD] Creating backend structure...")
 
     # Extract server configuration
     context = extract_server_config(model)
+
+    # Extract auth configurations for multi-auth env generation
+    context["auth_configs"] = _extract_auth_configs(model)
 
     # Use pre-generated JWT secret if provided
     if jwt_secret_value:
@@ -152,6 +278,6 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
     _copy_runtime_libs(lib_root, backend_core_dir, templates_backend_dir)
 
     # Render infrastructure files
-    render_infrastructure_files(context, templates_backend_dir, out_dir)
+    render_infrastructure_files(context, templates_backend_dir, out_dir, target=target, db_context=db_context)
 
     return out_dir

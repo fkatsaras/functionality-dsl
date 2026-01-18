@@ -1,0 +1,55 @@
+"""
+Database Package
+Auto-generated from FDSL Auth configuration
+
+{% if uses_default_db %}
+Uses default FDSL user store with SQLModel + PostgreSQL.
+{% else %}
+Connects to external user database: {{ authdb.table }}
+{% endif %}
+"""
+
+from app.db.database import (
+    get_db,
+    init_db,
+    User,
+    engine,
+    SessionLocal,
+    USER_ID_COLUMN,
+    USER_PASSWORD_COLUMN,
+    USER_ROLE_COLUMN,
+)
+{% if (uses_default_db and auth_type == 'session') or (authdb and authdb.sessions) %}
+from app.db.database import SessionRecord
+{% endif %}
+{% if authdb and authdb.sessions %}
+from app.db.database import (
+    SESSION_ID_COLUMN,
+    SESSION_USER_ID_COLUMN,
+    SESSION_ROLES_COLUMN,
+    SESSION_EXPIRES_AT_COLUMN,
+)
+{% endif %}
+from app.db.password import hash_password, verify_password
+
+__all__ = [
+    "get_db",
+    "init_db",
+    "User",
+    "engine",
+    "SessionLocal",
+    "hash_password",
+    "verify_password",
+    "USER_ID_COLUMN",
+    "USER_PASSWORD_COLUMN",
+    "USER_ROLE_COLUMN",
+{% if (uses_default_db and auth_type == 'session') or (authdb and authdb.sessions) %}
+    "SessionRecord",
+{% endif %}
+{% if authdb and authdb.sessions %}
+    "SESSION_ID_COLUMN",
+    "SESSION_USER_ID_COLUMN",
+    "SESSION_ROLES_COLUMN",
+    "SESSION_EXPIRES_AT_COLUMN",
+{% endif %}
+]

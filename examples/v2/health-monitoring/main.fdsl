@@ -13,20 +13,18 @@
 //               + aggregation (health summaries)
 // =============================================================================
 
-Role patient
-Role doctor
-
-Auth HealthAuth
-  type: jwt
+Auth<jwt> HealthAuth
   secret: "HEALTH_JWT_SECRET"
 end
+
+Role patient uses HealthAuth
+Role doctor uses HealthAuth
 
 Server HealthMonitor
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: HealthAuth
 end
 
 // =============================================================================

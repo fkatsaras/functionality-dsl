@@ -1,10 +1,32 @@
 """
 Entity-based WebSocket router generator for NEW SYNTAX (entity-centric WebSocket exposure).
 Generates FastAPI WebSocket routers based on entity WebSocket exposure configuration.
+Supports parameterized WebSocket sources with query params.
 """
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+
+from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
+
+
+def _extract_ws_source_params(source):
+    """
+    Extract params list from WebSocket source.
+
+    Returns:
+        list: All param names (for WS, all become query params)
+    """
+    if not source:
+        return []
+
+    params_list = getattr(source, "params", None)
+    all_params = []
+
+    if params_list and hasattr(params_list, "params"):
+        all_params = list(params_list.params)
+
+    return all_params
 
 
 def generate_entity_websocket_router(entity_name, config, model, templates_dir, out_dir):
@@ -66,6 +88,17 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     # For publish operation, check if entity has a target
     ws_target = config.get("target", None)
 
+    # Extract source params for parameterized WebSocket sources
+    ws_source_params = _extract_ws_source_params(ws_source)
+    ws_target_params = _extract_ws_source_params(ws_target)
+    has_source_params = len(ws_source_params) > 0
+    has_target_params = len(ws_target_params) > 0
+
+    if has_source_params:
+        print(f"    Source params: {ws_source_params}")
+    if has_target_params:
+        print(f"    Target params: {ws_target_params}")
+
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
     template = env.get_template("entity_websocket_router.py.jinja")
@@ -80,6 +113,11 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
         ws_source=ws_source,
         ws_source_entity=ws_source_entity,
         ws_target=ws_target,
+        # Params for parameterized WebSocket sources
+        has_source_params=has_source_params,
+        ws_source_params=ws_source_params,
+        has_target_params=has_target_params,
+        ws_target_params=ws_target_params,
     )
 
     # Write to file
@@ -195,6 +233,17 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             collect_intermediate_services(entity, intermediate_services)
             is_chained_composite = len(intermediate_services) > 0
 
+        # Extract params from all WebSocket sources
+        subscribe_source_params = []
+        for src, _ in ws_sources:
+            subscribe_source_params.extend(_extract_ws_source_params(src))
+        # Remove duplicates while preserving order
+        subscribe_source_params = list(dict.fromkeys(subscribe_source_params))
+        has_subscribe_params = len(subscribe_source_params) > 0
+
+        if has_subscribe_params:
+            print(f"    Subscribe source params: {subscribe_source_params}")
+
         context.update({
             "subscribe_entity_name": entity_name,
             "subscribe_ws_source": ws_source,
@@ -202,6 +251,9 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "subscribe_ws_sources": ws_sources,  # List of all WS sources
             "is_chained_composite": is_chained_composite,
             "intermediate_services": intermediate_services,  # Ordered list of services to chain through
+            # Params for parameterized WebSocket sources
+            "has_subscribe_params": has_subscribe_params,
+            "subscribe_source_params": subscribe_source_params,
         })
 
     # Add publish entity details
@@ -237,6 +289,14 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
                 elif len(parent_attrs) == 0:
                     publish_wrapper_key = "value"  # default
 
+        # Get publish entity's source for params
+        publish_source = config.get("source")
+        publish_source_params = _extract_ws_source_params(publish_source)
+        has_publish_params = len(publish_source_params) > 0
+
+        if has_publish_params:
+            print(f"    Publish source params: {publish_source_params}")
+
         context.update({
             "publish_entity_name": entity_name,
             "publish_parents": [p.name for p in parents],
@@ -244,34 +304,80 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
             "publish_content_type": publish_content_type,  # "application/json", "text/plain", etc.
             "publish_wrapper_key": publish_wrapper_key,  # e.g., "value" for wrapper
             "publish_is_text": publish_is_text,  # True if text/plain, False if JSON
+            # Params for parameterized WebSocket sources
+            "has_publish_params": has_publish_params,
+            "publish_source_params": publish_source_params,
         })
 
-    # Get permissions for auth
-    subscribe_permissions = ["public"]
-    publish_permissions = ["public"]
+    # Get permissions for auth using the same approach as REST router
+    # Uses get_permission_dependencies for structured auth info
+    subscribe_auth_info = {"is_public": True, "auth": None, "roles": None}
+    publish_auth_info = {"is_public": True, "auth": None, "roles": None}
     has_auth = False
 
     if subscribe_entity:
-        _, config = subscribe_entity
-        permissions = config.get("permissions", {})
-        if "subscribe" in permissions:
-            subscribe_permissions = permissions["subscribe"]
-            has_auth = has_auth or ("public" not in subscribe_permissions)
+        entity_name, config = subscribe_entity
+        entity = config["entity"]
+        # Use get_permission_dependencies to get structured auth info
+        permission_map = get_permission_dependencies(entity, model, operations=["subscribe"])
+        if "subscribe" in permission_map:
+            perm = permission_map["subscribe"]
+            if perm == "public":
+                subscribe_auth_info = {"is_public": True, "auth": None, "roles": None}
+            elif isinstance(perm, dict):
+                subscribe_auth_info = {
+                    "is_public": False,
+                    "auth": perm.get("auth"),
+                    "roles": perm.get("roles"),
+                }
+                has_auth = True
+            elif isinstance(perm, list) and len(perm) > 0:
+                # Multiple auth options - take first one
+                first = perm[0]
+                subscribe_auth_info = {
+                    "is_public": False,
+                    "auth": first.get("auth"),
+                    "roles": first.get("roles"),
+                }
+                has_auth = True
 
     if publish_entity:
-        _, config = publish_entity
-        permissions = config.get("permissions", {})
-        if "publish" in permissions:
-            publish_permissions = permissions["publish"]
-            has_auth = has_auth or ("public" not in publish_permissions)
+        entity_name, config = publish_entity
+        entity = config["entity"]
+        # Use get_permission_dependencies to get structured auth info
+        permission_map = get_permission_dependencies(entity, model, operations=["publish"])
+        if "publish" in permission_map:
+            perm = permission_map["publish"]
+            if perm == "public":
+                publish_auth_info = {"is_public": True, "auth": None, "roles": None}
+            elif isinstance(perm, dict):
+                publish_auth_info = {
+                    "is_public": False,
+                    "auth": perm.get("auth"),
+                    "roles": perm.get("roles"),
+                }
+                has_auth = True
+            elif isinstance(perm, list) and len(perm) > 0:
+                # Multiple auth options - take first one
+                first = perm[0]
+                publish_auth_info = {
+                    "is_public": False,
+                    "auth": first.get("auth"),
+                    "roles": first.get("roles"),
+                }
+                has_auth = True
 
     # Debug output
-    print(f"    Auth config: has_auth={has_auth}, subscribe_roles={subscribe_permissions}, publish_roles={publish_permissions}")
+    print(f"    Auth config: has_auth={has_auth}, subscribe={subscribe_auth_info}, publish={publish_auth_info}")
 
     context.update({
         "has_auth": has_auth,
-        "subscribe_required_roles": subscribe_permissions,
-        "publish_required_roles": publish_permissions,
+        "subscribe_is_public": subscribe_auth_info["is_public"],
+        "subscribe_auth_name": subscribe_auth_info["auth"],
+        "subscribe_required_roles": subscribe_auth_info["roles"],
+        "publish_is_public": publish_auth_info["is_public"],
+        "publish_auth_name": publish_auth_info["auth"],
+        "publish_required_roles": publish_auth_info["roles"],
     })
 
     # Render template
