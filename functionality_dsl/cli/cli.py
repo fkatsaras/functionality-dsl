@@ -547,25 +547,19 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                 stereotype = "outbound"
                 fillcolor = "#fce4ec"
                 style = "filled,rounded"
-            elif is_schema_only:
-                # Schema-only entities (used in nested types): lighter color, dotted border
-                stereotype = "schema"
-                fillcolor = "#e8f5e9"  # Lighter green
-                style = "filled,dotted,rounded"
             elif is_composite:
                 # Composite entities: same green as regular entities, but dashed border
-                stereotype = None  # No stereotype label
+                stereotype = None
                 fillcolor = "#c8e6c9"
                 style = "filled,dashed,rounded"
             else:
-                stereotype = None  # No stereotype label
+                # Regular entities (including schema-only)
+                stereotype = None
                 fillcolor = "#c8e6c9"
                 style = "filled,rounded"
 
-            # Build label - show stereotype for WS entities and schema entities
-            if stereotype == "schema":
-                label = f"[{stereotype}]\\n{e.name}\\n{attrs}"  # No access for schema-only
-            elif stereotype:
+            # Build label
+            if stereotype:
                 label = f"[{stereotype}]\\n{e.name}\\naccess: {access_str}\\n{attrs}"
             else:
                 label = f"{e.name}\\naccess: {access_str}\\n{attrs}"
@@ -587,8 +581,9 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
 
             # Edge: Entity -> Nested Entity (for array<Entity> and object<Entity>)
             for attr_name, nested_name, ref_type in nested_entity_refs:
+                edge_label = "has many" if ref_type == "array" else "has one"
                 dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
-                         label=f"{ref_type}<>", style="solid", color="#4caf50")
+                         label=edge_label, style="solid", color="#4caf50")
 
             # Edge: Role -> Entity (for role-based access)
             for role_name in access_roles_list:
@@ -627,13 +622,13 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
 
             # Edge: Entity -> REST API
             dot.edge(f"entity_{e.name}", f"api_{e.name}",
-                     label="exposes", color="#ff6f00")
+                     label="exposes", style="dashed", color="#ff6f00")
 
         # -------------------------------
         # Generated WS Endpoints
         # -------------------------------
         for e in model.entities:
-            entity_type = getattr(e, "type", None)
+            entity_type = getattr(e, "ws_flow_type", None)
 
             # WS entities need type: inbound or outbound
             if entity_type not in ("inbound", "outbound"):
@@ -648,7 +643,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
 
             # Edge: Entity -> WS API
             dot.edge(f"entity_{e.name}", f"ws_{e.name}",
-                     label="exposes", color="#ff6f00")
+                     label="exposes", style="dashed", color="#ff6f00")
 
         # -------------------------------
         # Components
@@ -665,7 +660,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                 if entity_ref:
                     entity_name = entity_ref.name if hasattr(entity_ref, "name") else str(entity_ref)
                     dot.edge(f"comp_{c.name}", f"entity_{entity_name}",
-                             label="binds", color="#e91e63")
+                             label="binds", style="dashed", color="#e91e63")
 
         # -------------------------------
         # Output
