@@ -31,9 +31,8 @@ from functionality_dsl.validation import (
     validate_accesscontrol_dependencies,
     validate_role_references,
     validate_server_auth_reference,
-    validate_authdb_references,
+    validate_authdb_singleton,
     validate_authdb_config,
-    validate_sessions_jwt_conflict,
     validate_session_byodb_requires_sessions_table,
     validate_source_syntax,
 )
@@ -170,9 +169,8 @@ def model_processor(model, metamodel=None):
     validate_server_auth_reference(model)
 
     # AuthDB validation
-    validate_authdb_references(model)
+    validate_authdb_singleton(model)
     validate_authdb_config(model)
-    validate_sessions_jwt_conflict(model)
     validate_session_byodb_requires_sessions_table(model)
 
     verify_server(model)

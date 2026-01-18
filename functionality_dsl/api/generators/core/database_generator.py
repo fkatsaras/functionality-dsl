@@ -2,6 +2,13 @@
 Database module generator.
 Generates SQLModel database configuration and user model based on Auth/AuthDB configuration.
 
+NEW MODEL (Global AuthDB):
+- AuthDB is global (not attached to specific Auth)
+- If AuthDB exists -> BYODB mode (all DB-backed auths use it)
+- If no AuthDB -> default DB mode (auto-generate Postgres)
+- Only DB-backed auths (jwt, session) need database
+- Non-DB auths (apikey, basic) don't need database
+
 Supports two modes:
 1. Default: Generates PostgreSQL + SQLModel user table (when no AuthDB specified)
 2. External: Connects to user-provided database with column mapping (when AuthDB specified)
@@ -10,6 +17,31 @@ Supports two modes:
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+
+
+def _has_db_backed_auth(model) -> bool:
+    """Check if any DB-backed auth type exists (jwt or session)."""
+    auths = getattr(model, "auth", []) or []
+    for auth in auths:
+        auth_type = getattr(auth, "kind", None)
+        if auth_type in ("jwt", "session"):
+            return True
+    return False
+
+
+def _has_session_auth(model) -> bool:
+    """Check if any session auth exists."""
+    auths = getattr(model, "auth", []) or []
+    for auth in auths:
+        if getattr(auth, "kind", None) == "session":
+            return True
+    return False
+
+
+def _get_global_authdb(model):
+    """Get the global AuthDB if it exists (should be at most one)."""
+    authdbs = get_children_of_type("AuthDB", model)
+    return authdbs[0] if authdbs else None
 
 
 def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
@@ -22,25 +54,17 @@ def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
         out_dir: Output directory for generated code
 
     Returns:
-        bool: True if database module was generated, False if no auth configured
+        bool: True if database module was generated, False if no DB-backed auth
     """
-    # Check if auth is configured
-    servers = getattr(model, "servers", [])
-    if not servers:
-        print("  No server configuration found - skipping database generation")
-        return False
-
-    server = servers[0]
-    auth = getattr(server, "auth", None)
-
-    if not auth:
-        print("  No auth configuration found - skipping database generation")
+    # Only generate database if we have DB-backed auth
+    if not _has_db_backed_auth(model):
+        print("  No DB-backed auth (jwt/session) found - skipping database generation")
         return False
 
     print("  Generating database module...")
 
     # Extract database configuration
-    db_config = _extract_database_config(auth, model)
+    db_config = _extract_database_config(model)
 
     # Create app/db directory
     db_dir = out_dir / "app" / "db"
@@ -77,15 +101,8 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if password module was generated
     """
-    # Check if auth is configured
-    servers = getattr(model, "servers", [])
-    if not servers:
-        return False
-
-    server = servers[0]
-    auth = getattr(server, "auth", None)
-
-    if not auth:
+    # Only generate if we have DB-backed auth
+    if not _has_db_backed_auth(model):
         return False
 
     print("  Generating password utilities...")
@@ -118,21 +135,14 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if auth routes were generated
     """
-    # Check if auth is configured
-    servers = getattr(model, "servers", [])
-    if not servers:
-        return False
-
-    server = servers[0]
-    auth = getattr(server, "auth", None)
-
-    if not auth:
+    # Only generate if we have DB-backed auth
+    if not _has_db_backed_auth(model):
         return False
 
     print("  Generating authentication routes...")
 
     # Extract auth routes configuration
-    routes_config = _extract_auth_routes_config(auth, model)
+    routes_config = _extract_auth_routes_config(model)
 
     # Render auth routes template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -150,23 +160,22 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     return True
 
 
-def _extract_database_config(auth, model) -> dict:
+def _extract_database_config(model) -> dict:
     """
-    Extract database configuration from Auth/AuthDB.
+    Extract database configuration from global AuthDB.
 
     Returns dict with:
     - uses_default_db: bool - whether to use default Postgres
     - database_url_env: str - environment variable name for DB URL
     - authdb: dict - AuthDB mapping config (if external DB)
-    - auth_type: str - 'jwt' or 'session'
+    - has_session_auth: bool - whether session auth exists
     - debug: bool - whether to enable SQL echo
     """
-    # Check if Auth references an AuthDB
-    authdb = getattr(auth, "db", None)
-    auth_type = getattr(auth, "type", "jwt")
+    authdb = _get_global_authdb(model)
+    has_session = _has_session_auth(model)
 
     if authdb:
-        # External database mode
+        # External database mode (BYODB)
         columns = getattr(authdb, "columns", None)
         sessions = getattr(authdb, "sessions", None)
 
@@ -193,7 +202,7 @@ def _extract_database_config(auth, model) -> dict:
                 },
                 "sessions": sessions_config,
             },
-            "auth_type": auth_type,
+            "has_session_auth": has_session,
             "debug": False,
         }
     else:
@@ -202,12 +211,12 @@ def _extract_database_config(auth, model) -> dict:
             "uses_default_db": True,
             "database_url_env": "DATABASE_URL",
             "authdb": None,
-            "auth_type": auth_type,
+            "has_session_auth": has_session,
             "debug": False,
         }
 
 
-def _extract_auth_routes_config(auth, model) -> dict:
+def _extract_auth_routes_config(model) -> dict:
     """
     Extract configuration for auth routes template.
 
@@ -217,8 +226,7 @@ def _extract_auth_routes_config(auth, model) -> dict:
     - default_role: str - default role for new users
     - allow_registration: bool - whether to allow user registration
     """
-    # Check if Auth references an AuthDB
-    authdb = getattr(auth, "db", None)
+    authdb = _get_global_authdb(model)
 
     # Collect roles from Role declarations
     role_blocks = get_children_of_type("Role", model)
@@ -241,21 +249,14 @@ def get_database_context(model) -> dict:
 
     Returns dict with database configuration for docker-compose and .env templates.
     """
-    servers = getattr(model, "servers", [])
-    if not servers:
+    # Only need database context if we have DB-backed auth
+    if not _has_db_backed_auth(model):
         return {}
 
-    server = servers[0]
-    auth = getattr(server, "auth", None)
-
-    if not auth:
-        return {}
-
-    # Check if Auth references an AuthDB
-    authdb = getattr(auth, "db", None)
+    authdb = _get_global_authdb(model)
 
     if authdb:
-        # External database - user provides connection
+        # External database (BYODB) - user provides connection
         return {
             "uses_default_db": False,
             "external_db_url_var": authdb.connection,

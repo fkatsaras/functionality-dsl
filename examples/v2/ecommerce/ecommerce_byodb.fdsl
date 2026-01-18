@@ -4,11 +4,11 @@
 //
 // This example shows how to connect to an existing external database
 // for user authentication instead of using FDSL's auto-generated DB.
+//
+// NEW MODEL: AuthDB is global (not attached to specific Auth)
 // ============================================
 
-Role customer
-Role warehouse
-
+// Global AuthDB - shared by all DB-backed auths
 AuthDB ShopUserStore
   connection: "MY_ECOMM_DB_URL"
   table: "shop_users"
@@ -25,20 +25,20 @@ AuthDB ShopUserStore
       - expires_at: "expires_at"
 end
 
-// Session-based auth with external database
-Auth ShopAuth
-  type: session
+// Session-based auth (uses global AuthDB automatically)
+Auth<session> ShopAuth
   cookie: "shop_session"
   expiry: 7200
-  db: ShopUserStore
 end
+
+Role customer uses ShopAuth
+Role warehouse uses ShopAuth
 
 Server ECommerceAPI
   host: "localhost"
   port: 8080
   cors: "*"
   loglevel: debug
-  auth: ShopAuth
 end
 
 // ============================================

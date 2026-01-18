@@ -117,20 +117,16 @@ def validate_server_auth_reference(model):
             )
 
 
-def validate_authdb_references(model):
-    """Validate that Auth db references point to declared AuthDB entities."""
-    auths = get_children_of_type("Auth", model)
+def validate_authdb_singleton(model):
+    """Validate that at most one AuthDB is declared (global shared DB)."""
     authdbs = get_children_of_type("AuthDB", model)
-    declared_authdbs = {authdb.name for authdb in authdbs}
 
-    for auth in auths:
-        db_ref = getattr(auth, "db", None)
-        if db_ref and isinstance(db_ref, str):
-            raise TextXSemanticError(
-                f"Auth '{auth.name}' references undeclared AuthDB '{db_ref}'. "
-                f"Available: {', '.join(sorted(declared_authdbs)) if declared_authdbs else 'none'}.",
-                **get_location(auth),
-            )
+    if len(authdbs) > 1:
+        second = authdbs[1]
+        raise TextXSemanticError(
+            f"Multiple AuthDB declarations found. Only one global AuthDB is allowed.",
+            **get_location(second),
+        )
 
 
 def validate_authdb_config(model):
@@ -186,54 +182,26 @@ def validate_authdb_config(model):
             )
 
 
-def validate_sessions_jwt_conflict(model):
-    """Validate that sessions table config is not used with JWT auth.
-
-    Sessions table mapping only makes sense for session-based auth.
-    JWT is stateless and doesn't need server-side session storage.
-    """
-    auths = get_children_of_type("Auth", model)
-
-    for auth in auths:
-        auth_type = getattr(auth, "type", "jwt")
-        db_ref = getattr(auth, "db", None)
-
-        if not db_ref:
-            continue
-
-        # Check if AuthDB has sessions config
-        sessions = getattr(db_ref, "sessions", None)
-
-        if sessions and auth_type == "jwt":
-            raise TextXSemanticError(
-                f"Auth '{auth.name}' uses JWT authentication but AuthDB '{db_ref.name}' "
-                f"has 'sessions:' configured. Sessions table is only used with 'type: session' auth. "
-                f"Either remove the sessions config or change to 'type: session'.",
-                **get_location(auth),
-            )
-
-
 def validate_session_byodb_requires_sessions_table(model):
     """Validate that session auth with BYODB requires sessions table config.
 
-    When using BYODB (Bring Your Own Database), the user must explicitly
-    configure the sessions table mapping for session-based auth.
+    When using BYODB, the AuthDB must include sessions table mapping
+    if any Auth<session> is declared.
     """
-    auths = get_children_of_type("Auth", model)
+    authdbs = get_children_of_type("AuthDB", model)
+    if not authdbs:
+        return  # No BYODB, default DB handles sessions
 
+    authdb = authdbs[0]
+    sessions = getattr(authdb, "sessions", None)
+
+    # Check if any session auth exists
+    auths = getattr(model, "auth", []) or []
     for auth in auths:
-        auth_type = getattr(auth, "type", "jwt")
-        db_ref = getattr(auth, "db", None)
-
-        # Only applies to session auth with BYODB
-        if auth_type != "session" or not db_ref:
-            continue
-
-        # Check if AuthDB has sessions config
-        sessions = getattr(db_ref, "sessions", None)
-
-        if not sessions:
+        auth_type = getattr(auth, "kind", None)
+        if auth_type == "session" and not sessions:
             raise TextXSemanticError(
-                f"Auth '{auth.name}': session auth with BYODB requires 'sessions:' config in '{db_ref.name}'.",
+                f"Auth<session> '{auth.name}' requires sessions table. "
+                f"Add 'sessions:' config to AuthDB '{authdb.name}'.",
                 **get_location(auth),
             )

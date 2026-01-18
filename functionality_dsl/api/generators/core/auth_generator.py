@@ -2,22 +2,31 @@
 Auth middleware and dependencies generator.
 Generates FastAPI auth utilities based on Auth declarations.
 
-NEW MODEL:
+NEW MODEL (Global AuthDB):
 - Multiple Auth declarations can exist
 - Roles belong to Auth mechanisms (Role admin uses JWTAuth)
 - Entity access: can reference public, Auth, or Role
 - Auth is inferred from Role when needed
+- AuthDB is GLOBAL (shared by all DB-backed auths)
+- If AuthDB exists -> BYODB mode
+- If no AuthDB -> default DB mode
 
 Supported auth types:
-- jwt: Stateless token-based authentication (Authorization header)
-- session: Stateful cookie-based authentication (in-memory session store)
-- apikey: API key authentication (header or query param)
-- basic: HTTP Basic authentication (username:password)
+- jwt: Stateless token-based authentication (Authorization header) [DB-backed]
+- session: Stateful cookie-based authentication [DB-backed]
+- apikey: API key authentication (header or query param) [NOT DB-backed]
+- basic: HTTP Basic authentication (username:password) [NOT DB-backed]
 """
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+
+
+def _get_global_authdb(model):
+    """Get the global AuthDB if it exists."""
+    authdbs = get_children_of_type("AuthDB", model)
+    return authdbs[0] if authdbs else None
 
 
 def generate_auth_modules(model, templates_dir, out_dir):
@@ -39,6 +48,9 @@ def generate_auth_modules(model, templates_dir, out_dir):
     if not auth_blocks:
         print("  No Auth declarations found - skipping auth generation")
         return {}
+
+    # Get global AuthDB (shared by all DB-backed auths)
+    global_authdb = _get_global_authdb(model)
 
     # Collect roles grouped by their auth
     role_blocks = get_children_of_type("Role", model)
@@ -66,9 +78,9 @@ def generate_auth_modules(model, templates_dir, out_dir):
 
         print(f"  Generating auth module: {auth_name} (type: {auth_type})")
 
-        # Extract config for this auth
+        # Extract config for this auth (pass global authdb for DB-backed types)
         roles_for_auth = roles_by_auth.get(auth_name, [])
-        auth_config = _extract_auth_config(auth, roles_for_auth)
+        auth_config = _extract_auth_config(auth, roles_for_auth, global_authdb)
         auth_configs[auth_name] = auth_config
 
         # Select template based on type
@@ -169,35 +181,35 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
     print(f"    [OK] {auth_file.relative_to(out_dir)}")
 
 
-def _extract_auth_config(auth, roles):
+def _extract_auth_config(auth, roles, global_authdb=None):
     """
     Extract auth configuration into template-friendly dict.
 
-    NEW GRAMMAR: Auth<type> syntax where config fields are directly on auth object.
-    - Auth<jwt>: secret directly on auth
-    - Auth<session>: cookie, expiry directly on auth
-    - Auth<apikey>: header/query, secret directly on auth
-    - Auth<basic>: no config fields
+    NEW MODEL: Global AuthDB shared by all DB-backed auths.
+    - Auth<jwt>: secret directly on auth, uses global AuthDB
+    - Auth<session>: cookie, expiry directly on auth, uses global AuthDB
+    - Auth<apikey>: header/query, secret directly on auth, NO database
+    - Auth<basic>: no config fields, NO database
 
     Args:
         auth: Auth object from FDSL model (AuthJWT, AuthSession, AuthAPIKey, or AuthBasic)
         roles: List of role names that use this auth
+        global_authdb: Global AuthDB object (if BYODB mode)
 
     Returns:
         dict: Auth configuration for template rendering
     """
-    # New grammar uses 'kind' field (from Auth<kind>)
     auth_type = getattr(auth, "kind", None)
     auth_name = auth.name
 
-    # Check if using default database (no AuthDB reference)
-    authdb_ref = getattr(auth, "db", None)
-    uses_default_db = authdb_ref is None
+    # DB-backed types use global AuthDB
+    is_db_backed = auth_type in ("jwt", "session")
+    uses_default_db = global_authdb is None
 
-    # Build authdb config for templates (needed for BYODB sessions)
+    # Build authdb config for templates (only for DB-backed types with BYODB)
     authdb_config = None
-    if authdb_ref:
-        sessions_ref = getattr(authdb_ref, "sessions", None)
+    if is_db_backed and global_authdb:
+        sessions_ref = getattr(global_authdb, "sessions", None)
         sessions_config = None
         if sessions_ref:
             sessions_config = {
@@ -215,7 +227,7 @@ def _extract_auth_config(auth, roles):
         "auth_type": auth_type,
         "auth_name": auth_name,
         "roles": roles,
-        "uses_default_db": uses_default_db,
+        "uses_default_db": uses_default_db if is_db_backed else True,  # Non-DB types don't use DB
         "authdb": authdb_config,
     }
 

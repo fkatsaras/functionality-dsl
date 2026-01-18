@@ -12,14 +12,7 @@
 // =============================================================================
 
 // -----------------------------------------------------------------------------
-// Roles
-// -----------------------------------------------------------------------------
-Role admin
-Role moderator
-Role member
-
-// -----------------------------------------------------------------------------
-// External User Database Configuration
+// External User Database Configuration (Global AuthDB)
 // -----------------------------------------------------------------------------
 // Maps to an existing PostgreSQL database with custom column names.
 // You must set the LEGACY_DB_URL environment variable to your connection string.
@@ -44,12 +37,17 @@ end
 // -----------------------------------------------------------------------------
 // Authentication
 // -----------------------------------------------------------------------------
-// References the external AuthDB - no default database will be generated
-Auth ForumAuth
-  type: jwt
+// Uses global AuthDB automatically - no default database will be generated
+Auth<jwt> ForumAuth
   secret: "FORUM_JWT_SECRET"
-  db: LegacyUsers
 end
+
+// -----------------------------------------------------------------------------
+// Roles
+// -----------------------------------------------------------------------------
+Role admin uses ForumAuth
+Role moderator uses ForumAuth
+Role member uses ForumAuth
 
 // -----------------------------------------------------------------------------
 // Server
@@ -60,7 +58,6 @@ Server ForumAPI
   cors: "*"
   env: dev
   loglevel: debug
-  auth: ForumAuth
 end
 
 // -----------------------------------------------------------------------------

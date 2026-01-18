@@ -42,9 +42,8 @@ from functionality_dsl.validation.rbac_validators import (
     validate_accesscontrol_dependencies,
     validate_role_references,
     validate_server_auth_reference,
-    validate_authdb_references,
+    validate_authdb_singleton,
     validate_authdb_config,
-    validate_sessions_jwt_conflict,
     validate_session_byodb_requires_sessions_table,
 )
 
@@ -76,9 +75,8 @@ __all__ = [
     "validate_accesscontrol_dependencies",
     "validate_role_references",
     "validate_server_auth_reference",
-    "validate_authdb_references",
+    "validate_authdb_singleton",
     "validate_authdb_config",
-    "validate_sessions_jwt_conflict",
     "validate_session_byodb_requires_sessions_table",
     # Source validators
     "validate_source_syntax",
