@@ -389,12 +389,14 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                          label="uses", style="dashed", color="#ff9800")
 
         # -------------------------------
-        # Server (no auth reference - auth is per-entity now)
+        # Server (record shape with sections)
         # -------------------------------
         for s in model.servers:
-            label = f"SERVER\\n{s.name}\\nhost: {s.host}\\nport: {s.port}"
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"host: {s.host}\\lport: {s.port}\\l"
+            label = f"«server»\\n{s.name}|{attrs}"
             dot.node(f"server_{s.name}", label=label,
-                     shape="box", style="filled,rounded", fillcolor="#bbdefb")
+                     shape="record", style="filled", fillcolor="#bbdefb")
 
         # -------------------------------
         # REST Sources (Source<REST>)
@@ -404,10 +406,18 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             ops = get_source_operations(s)
             ops_str = ", ".join(ops) if ops else "none"
             source_auth = getattr(s, "auth", None)
+            # Get params if defined
+            params_obj = getattr(s, "params", None)
+            params_list = getattr(params_obj, "params", []) if params_obj else []
+            params_str = ", ".join(params_list) if params_list else None
 
-            label = f"SOURCE<REST>\\n{s.name}\\n{safe_label(url, 40)}\\nops: {ops_str}"
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"url: {safe_label(url, 40)}\\loperations: {ops_str}\\l"
+            if params_str:
+                attrs += f"params: {params_str}\\l"
+            label = f"«source» REST\\n{s.name}|{attrs}"
             dot.node(f"source_{s.name}", label=label,
-                     shape="note", style="filled", fillcolor="#d1c4e9")
+                     shape="record", style="filled", fillcolor="#d1c4e9")
 
             # Edge: Source -> Auth (if source has auth configured)
             if source_auth:
@@ -423,10 +433,18 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             ops = get_source_operations(s)
             ops_str = ", ".join(ops) if ops else "stream"
             source_auth = getattr(s, "auth", None)
+            # Get params if defined
+            params_obj = getattr(s, "params", None)
+            params_list = getattr(params_obj, "params", []) if params_obj else []
+            params_str = ", ".join(params_list) if params_list else None
 
-            label = f"SOURCE<WS>\\n{s.name}\\n{safe_label(channel, 40)}\\nops: {ops_str}"
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"channel: {safe_label(channel, 40)}\\loperations: {ops_str}\\l"
+            if params_str:
+                attrs += f"params: {params_str}\\l"
+            label = f"«source» WS\\n{s.name}|{attrs}"
             dot.node(f"source_{s.name}", label=label,
-                     shape="note", style="filled", fillcolor="#b39ddb")
+                     shape="record", style="filled", fillcolor="#b39ddb")
 
             # Edge: Source -> Auth (if source has auth configured)
             if source_auth:
@@ -434,7 +452,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                          label="auth", style="dotted", color="#ff9800")
 
         # -------------------------------
-        # Entities
+        # Entities (UML Class Diagram Style)
         # -------------------------------
         # First pass: identify schema-only entities (used in nested types)
         schema_only_entities = set()
@@ -460,11 +478,13 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             nested_entity_refs = []  # Track for drawing edges
             for a in e.attributes:
                 type_text = typespec_to_string(a.type)
+                # Escape angle brackets in type text for record shapes (e.g., integer<int64> -> integer\<int64\>)
+                type_text_escaped = safe_label(type_text, max_len=100, escape_angles=True)
                 if hasattr(a, "expr") and a.expr:
                     expr_text = expr_to_string(a.expr, max_len=30)
-                    attrs_lines.append(f"{a.name}: {type_text} = {safe_label(expr_text, 30)}")
+                    attrs_lines.append(f"+ {a.name}: {type_text_escaped} = {safe_label(expr_text, 30)}\\l")
                 else:
-                    attrs_lines.append(f"{a.name}: {type_text}")
+                    attrs_lines.append(f"+ {a.name}: {type_text_escaped}\\l")
 
                 # Track nested entity refs for edges
                 type_spec = getattr(a, "type", None)
@@ -476,7 +496,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                     if nested_entity:
                         nested_entity_refs.append((a.name, nested_entity.name, "object"))
 
-            attrs = "\\n".join(attrs_lines)
+            attrs = "".join(attrs_lines)
 
             # Get access control (handles new multi-auth syntax)
             access = getattr(e, "access", None)
@@ -532,71 +552,75 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                                     names.append(auth.name)
                                     access_auth_list.append(auth.name)
                             rule_strs.append(f"{op}: [{', '.join(names)}]")
-                    access_str = "\\n".join(rule_strs)
+                    access_str = " / ".join(rule_strs)
                 else:
                     access_str = "public"
             else:
                 access_str = "public"
 
-            # Determine node style based on entity type
+            # Determine stereotype and fill color based on entity type
             if entity_type == "inbound":
-                stereotype = "inbound"
+                stereotype = "«inbound»"
                 fillcolor = "#fff3e0"
-                style = "filled,rounded"
             elif entity_type == "outbound":
-                stereotype = "outbound"
+                stereotype = "«outbound»"
                 fillcolor = "#fce4ec"
-                style = "filled,rounded"
             elif is_composite:
-                # Composite entities: same green as regular entities, but dashed border
-                stereotype = None
+                stereotype = "«composite»"
                 fillcolor = "#c8e6c9"
-                style = "filled,dashed,rounded"
             else:
-                # Regular entities (including schema-only)
                 stereotype = None
                 fillcolor = "#c8e6c9"
-                style = "filled,rounded"
 
-            # Build label
+            # Build UML record-style label with vertical compartments
+            # With rankdir=LR, removing outer braces makes compartments stack vertically
             if stereotype:
-                label = f"[{stereotype}]\\n{e.name}\\naccess: {access_str}\\n{attrs}"
+                header = f"{stereotype}\\n{e.name}"
             else:
-                label = f"{e.name}\\naccess: {access_str}\\n{attrs}"
-            dot.node(f"entity_{e.name}", label=label,
-                     shape="box", style=style, fillcolor=fillcolor)
+                header = e.name
 
-            # Edge: Source -> Entity (for base entities with source)
+            # UML record label format: header|attributes|metadata (no outer braces for vertical)
+            label = f"{header}|{attrs}|access: {access_str}\\l"
+
+            dot.node(f"entity_{e.name}", label=label,
+                     shape="record", style="filled", fillcolor=fillcolor)
+
+            # Edge: Source -> Entity (UML dependency - dashed with open arrow)
             entity_source = getattr(e, "source", None)
             if entity_source:
                 dot.edge(f"source_{entity_source.name}", f"entity_{e.name}",
-                         label="provides", style="dashed", color="#7b1fa2")
+                         label="«provides»", style="dashed", arrowhead="vee", color="#7b1fa2")
 
-            # Edge: Parent -> Composite Entity
+            # Edge: Parent -> Composite Entity (UML composition - filled diamond)
             for parent in parents:
                 parent_entity = getattr(parent, "entity", parent)
                 parent_name = parent_entity.name if hasattr(parent_entity, "name") else str(parent_entity)
                 dot.edge(f"entity_{parent_name}", f"entity_{e.name}",
-                         label="composes", style="dashed", color="#1976d2")
+                         label="1", arrowtail="diamond", arrowhead="none", dir="back", color="#1976d2")
 
-            # Edge: Entity -> Nested Entity (for array<Entity> and object<Entity>)
+            # Edge: Entity -> Nested Entity (UML aggregation/composition)
             for attr_name, nested_name, ref_type in nested_entity_refs:
-                edge_label = "has many" if ref_type == "array" else "has one"
-                dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
-                         label=edge_label, style="solid", color="#4caf50")
+                if ref_type == "array":
+                    # Aggregation with multiplicity 1..*
+                    dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
+                             label="1..*", arrowtail="odiamond", arrowhead="none", dir="back", color="#4caf50")
+                else:
+                    # Composition with multiplicity 1
+                    dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
+                             label="1", arrowtail="diamond", arrowhead="none", dir="back", color="#4caf50")
 
             # Edge: Role -> Entity (for role-based access)
             for role_name in access_roles_list:
                 dot.edge(f"role_{role_name}", f"entity_{e.name}",
-                         label="can access", style="dotted", color="#f9a825")
+                         arrowhead="vee", style="dashed", color="#f9a825")
 
             # Edge: Auth -> Entity (for auth-ref access)
             for auth_name in access_auth_list:
                 dot.edge(f"auth_{auth_name}", f"entity_{e.name}",
-                         label="protects", style="dotted", color="#ff9800")
+                         arrowhead="vee", style="dashed", color="#ff9800")
 
         # -------------------------------
-        # Generated REST API Endpoints
+        # Generated REST API Endpoints (UML Interface)
         # -------------------------------
         for e in model.entities:
             entity_source = getattr(e, "source", None)
@@ -613,19 +637,20 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             if not ops:
                 continue
 
-            # Create REST API endpoint node
+            # Create REST API endpoint node (UML interface style with record shape)
             api_path = f"/api/{e.name.lower()}"
             ops_str = ", ".join(ops)
-            label = f"REST API\\n{api_path}\\nops: {ops_str}"
+            # UML interface: «interface» stereotype with operations (vertical layout)
+            label = f"«interface»\\nREST API|{api_path}\\l|{ops_str}\\l"
             dot.node(f"api_{e.name}", label=label,
-                     shape="box", style="filled", fillcolor="#ffe0b2")
+                     shape="record", style="filled", fillcolor="#ffe0b2")
 
-            # Edge: Entity -> REST API
+            # Edge: Entity -> REST API (UML realization - dashed with empty triangle)
             dot.edge(f"entity_{e.name}", f"api_{e.name}",
-                     label="exposes", style="dashed", color="#ff6f00")
+                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
 
         # -------------------------------
-        # Generated WS Endpoints
+        # Generated WS Endpoints (UML Interface)
         # -------------------------------
         for e in model.entities:
             entity_type = getattr(e, "ws_flow_type", None)
@@ -634,33 +659,35 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             if entity_type not in ("inbound", "outbound"):
                 continue
 
-            # Create WS endpoint node
+            # Create WS endpoint node (UML interface style)
             ws_path = f"/ws/{e.name.lower()}"
             direction = "subscribe" if entity_type == "inbound" else "publish"
-            label = f"WS API\\n{ws_path}\\n{direction}"
+            # UML interface: «interface» stereotype with direction (vertical layout)
+            label = f"«interface»\\nWS API|{ws_path}\\l|{direction}\\l"
             dot.node(f"ws_{e.name}", label=label,
-                     shape="box", style="filled", fillcolor="#ffccbc")
+                     shape="record", style="filled", fillcolor="#ffccbc")
 
-            # Edge: Entity -> WS API
+            # Edge: Entity -> WS API (UML realization - dashed with empty triangle)
             dot.edge(f"entity_{e.name}", f"ws_{e.name}",
-                     label="exposes", style="dashed", color="#ff6f00")
+                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
 
         # -------------------------------
-        # Components
+        # Components (UML Component notation)
         # -------------------------------
         if show_components:
             for c in model.components:
                 comp_type = c.__class__.__name__.replace("Component", "")
-                label = f"COMPONENT\\n{c.name}\\ntype: {comp_type}"
+                # UML component: «component» stereotype (vertical layout)
+                label = f"«component»\\n{c.name}|type: {comp_type}\\l"
                 dot.node(f"comp_{c.name}", label=label,
-                         shape="ellipse", style="filled", fillcolor="#f8bbd0")
+                         shape="record", style="filled", fillcolor="#f8bbd0")
 
-                # Edge: Component -> Entity
+                # Edge: Component -> Entity (UML dependency)
                 entity_ref = getattr(c, "entity_ref", None) or getattr(c, "entity", None)
                 if entity_ref:
                     entity_name = entity_ref.name if hasattr(entity_ref, "name") else str(entity_ref)
                     dot.edge(f"comp_{c.name}", f"entity_{entity_name}",
-                             label="binds", style="dashed", color="#e91e63")
+                             arrowhead="vee", style="dashed", color="#e91e63")
 
         # -------------------------------
         # Output
