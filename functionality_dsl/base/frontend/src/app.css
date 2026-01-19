@@ -34,7 +34,7 @@ select {
 }
 
 /* -------------------------------------------------------
-     Theme Variables
+     Theme Variables - Dark (default)
 ------------------------------------------------------- */
 :root {
     --canvas: #0d1117;
@@ -51,6 +51,28 @@ select {
     --red-tint: #3a1a1a;
     --red-text: #f87171;
     --warning-text: #fb923c;
+    --dot-color: rgba(255, 255, 255, 0.05);
+}
+
+/* -------------------------------------------------------
+     Theme Variables - Light
+------------------------------------------------------- */
+[data-theme="light"] {
+    --canvas: #f8fafc;
+    --surface: #ffffff;
+    --card: #ffffff;
+    --edge: #d1d5db;
+    --edge-soft: #e5e7eb;
+    --edge-light: #6b7280;
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --green-tint: #dcfce7;
+    --green-text: #16a34a;
+    --red-tint: #fee2e2;
+    --red-text: #dc2626;
+    --warning-text: #ea580c;
+    --dot-color: rgba(0, 0, 0, 0.06);
 }
 
 /* -------------------------------------------------------
@@ -62,7 +84,7 @@ body {
     background-color: var(--canvas);
     color: var(--text);
     /* Dagster dotted blueprint background */
-    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 2px, transparent 2px);
+    background-image: radial-gradient(var(--dot-color) 2px, transparent 2px);
     background-size: 40px 40px;
     background-position: -20px -20px;
 }
@@ -256,12 +278,13 @@ div::-webkit-scrollbar-thumb:hover {
      Auth Components
 ------------------------------------------------------- */
 
-/* Dashboard header with auth info */
+/* Dashboard header with auth info and theme toggle */
 .dashboard-header {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
+    gap: 1rem;
 }
 
 .auth-info {
