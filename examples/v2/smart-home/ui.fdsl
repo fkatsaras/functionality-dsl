@@ -1,10 +1,10 @@
 
 // Device Controls
-Component<DataCard> ThermostatCard
+Component<Thermostat> ThermostatControl
   entity: Thermostat
-  fields: ["current_temp_f", "target_temp_f", "mode", "humidity_percent"]
-  title: "Thermostat"
-  highlight: "current_temp_f"
+  title: "Living Room"
+  minTemp: 50
+  maxTemp: 90
 end
 
 Component<DataCard> ClimateCard

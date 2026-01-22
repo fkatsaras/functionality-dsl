@@ -4,6 +4,10 @@
 
 version: "3.9"
 
+networks:
+  ecomm-net:
+    name: ecomm-net
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -21,6 +25,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - ecomm-net
 
 volumes:
   byodb_data:

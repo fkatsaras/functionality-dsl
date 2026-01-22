@@ -34,6 +34,7 @@ Component:
   | AlertComponent
   | LiveAlertComponent
   | PublishFormComponent
+  | ThermostatComponent
 ;
 
 // Column definition with type specification
@@ -393,6 +394,19 @@ PublishFormComponent:
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('submitLabel:' submitLabel=STRING)?
     ('label:' label=STRING)?
+  )#
+  'end'
+;
+
+// Thermostat component - visual thermostat control with dial
+// Requires entity with: current_temp_f, target_temp_f, mode, humidity_percent
+ThermostatComponent:
+  'Component' '<' 'Thermostat' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('title:' title=STRING)?
+    ('minTemp:' minTemp=INT)?
+    ('maxTemp:' maxTemp=INT)?
   )#
   'end'
 ;

@@ -7,20 +7,13 @@
 // --- AUTHENTICATION ---
 
 // External user database (BYODB)
-AuthDB UserStore
-  connection: "ECOMMERCE_DB_URL"
-  table: "users"
-  columns:
-    - id: "email"
-    - password: "password_hash"
-    - role: "user_role"
-  sessions:
-    table: "sessions"
-    columns:
-      - session_id: "token"
-      - user_id: "email"
-      - roles: "roles"
-      - expires_at: "expires_at"
+AuthDB ShopUserStore
+  connection: "MY_ECOMM_DB_URL"
+  table: "shop_users"
+  columns: 
+    id="email" 
+    password="password_hash" 
+    role="user_role"
 end
 
 // Session auth for web/mobile users

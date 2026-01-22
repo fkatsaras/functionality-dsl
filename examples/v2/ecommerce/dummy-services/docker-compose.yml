@@ -1,5 +1,9 @@
 version: "3.8"
 
+networks:
+  ecomm-net:
+    external: true
+
 services:
   # Combined dummy service (all endpoints on one service for simplicity)
   ecomm-dummy:
@@ -14,7 +18,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-
-networks:
-  ecomm-net:
-    name: ecomm-net

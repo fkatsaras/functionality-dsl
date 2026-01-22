@@ -514,6 +514,170 @@ class TestSourceValidation:
         with pytest.raises((TextXSemanticError, TextXSyntaxError)):
             build_model_str(fdsl_code)
 
+    def test_rest_source_with_subscribe_fails(self):
+        """Test that REST source with 'subscribe' operation fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<REST> BadSource
+          url: "http://api.example.com/data"
+          operations: [subscribe]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "subscribe" in error_msg
+        assert "invalid operation" in error_msg
+
+    def test_rest_source_with_publish_fails(self):
+        """Test that REST source with 'publish' operation fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<REST> BadSource
+          url: "http://api.example.com/data"
+          operations: [publish]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "publish" in error_msg
+        assert "invalid operation" in error_msg
+
+    def test_rest_source_with_mixed_valid_and_ws_ops_fails(self):
+        """Test that REST source with valid + WS operations fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<REST> BadSource
+          url: "http://api.example.com/data"
+          operations: [read, subscribe]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "subscribe" in error_msg
+
+    def test_ws_source_with_read_fails(self):
+        """Test that WS source with 'read' operation fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<WS> BadSource
+          channel: "ws://api.example.com/stream"
+          operations: [read]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "read" in error_msg
+        assert "invalid operation" in error_msg
+
+    def test_ws_source_with_crud_ops_fails(self):
+        """Test that WS source with CRUD operations fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<WS> BadSource
+          channel: "ws://api.example.com/stream"
+          operations: [create, update, delete]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "invalid operation" in error_msg
+
+    def test_ws_source_with_mixed_valid_and_rest_ops_fails(self):
+        """Test that WS source with valid + REST operations fails."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<WS> BadSource
+          channel: "ws://api.example.com/stream"
+          operations: [subscribe, read]
+        end
+        """
+        with pytest.raises(TextXSemanticError) as exc_info:
+            build_model_str(fdsl_code)
+
+        error_msg = str(exc_info.value).lower()
+        assert "read" in error_msg
+
+    def test_rest_source_with_valid_ops_succeeds(self):
+        """Test that REST source with valid operations succeeds."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<REST> GoodSource
+          url: "http://api.example.com/data"
+          operations: [create, read, update, delete]
+        end
+
+        Entity Data
+          source: GoodSource
+          attributes:
+            - id: integer @readonly;
+            - value: string;
+          access: public
+        end
+        """
+        model = build_model_str(fdsl_code)
+        assert model is not None
+
+    def test_ws_source_with_valid_ops_succeeds(self):
+        """Test that WS source with valid operations succeeds."""
+        fdsl_code = """
+        Server TestServer
+          host: "localhost"
+          port: 8080
+        end
+
+        Source<WS> GoodSource
+          channel: "ws://api.example.com/stream"
+          operations: [subscribe, publish]
+        end
+
+        Entity DataTick
+          type: inbound
+          source: GoodSource
+          attributes:
+            - value: string;
+        end
+        """
+        model = build_model_str(fdsl_code)
+        assert model is not None
+
 
 # =============================================================================
 # Syntax Error Tests

@@ -251,7 +251,8 @@
       "Bash(venv_WIN\\\\Scripts\\\\python.exe -m pytest:*)",
       "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_v2.py -v --tb=short)",
       "Bash(powershell:*)",
-      "Bash(venv_WIN/Scripts/pip install:*)"
+      "Bash(venv_WIN/Scripts/pip install:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

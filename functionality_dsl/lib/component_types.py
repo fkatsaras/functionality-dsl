@@ -1426,6 +1426,40 @@ class PublishFormComponent(_BaseComponent):
 
 
 @register_component
+class ThermostatComponent(_BaseComponent):
+    """
+    <Component<Thermostat> ...>
+      entity: <Entity> (REST entity with thermostat fields)
+      title: optional string title
+      minTemp: optional int (minimum temperature, default 50)
+      maxTemp: optional int (maximum temperature, default 90)
+
+    Visual thermostat control with:
+    - Digital display showing current temperature
+    - Circular dial for adjusting target temperature
+    - Humidity and mode indicators
+    - Heating/cooling status in footer
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, title=None, minTemp=None, maxTemp=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.title = _strip_quotes(title)
+        self.minTemp = int(minTemp) if minTemp is not None else 50
+        self.maxTemp = int(maxTemp) if maxTemp is not None else 90
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "title": self.title or self.entity_ref.name,
+            "minTemp": self.minTemp,
+            "maxTemp": self.maxTemp,
+        }
+
+
+@register_component
 class DownloadFormComponent(_BaseComponent):
     """
     <Component<DownloadForm> ...>
