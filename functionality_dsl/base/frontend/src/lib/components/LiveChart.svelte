@@ -24,6 +24,7 @@
         yScale?: number;  // Y-axis scale factor (e.g., 0.01 to divide by 100)
         // Bind to attribute name (like Chart component's 'values: data')
         values?: string;  // Attribute name containing the value to plot
+        fullWidth?: boolean;  // Span full width of grid
     }>();
 
     // CHART DATA
@@ -131,7 +132,7 @@
         hoverLegend = e.detail;
 </script>
 
-<Card>
+<Card fullWidth={props.fullWidth}>
     <svelte:fragment slot="header">
         <div class="w-full flex justify-between items-center">
             <span class="font-approachmono text-xl">

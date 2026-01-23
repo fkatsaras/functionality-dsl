@@ -1,10 +1,12 @@
 import { writable, get } from 'svelte/store';
 
-export type AuthType = 'jwt' | 'session';
+export type AuthType = 'jwt' | 'session' | 'apikey' | 'basic';
 
 export interface AuthState {
     authType: AuthType;
     token: string | null;      // For JWT auth
+    apiKey: string | null;     // For API key auth
+    apiKeyHeader: string | null;  // Header name for API key
     userId: string | null;
     roles: string[];
     isAuthenticated: boolean;
@@ -12,11 +14,13 @@ export interface AuthState {
 
 const STORAGE_KEY = 'fdsl_auth';
 
-// Initialize from localStorage if available (JWT) or check session (Session)
+// Initialize from localStorage if available (JWT/APIKey) or check session (Session)
 function getInitialState(): AuthState {
     const defaultState: AuthState = {
         authType: 'jwt',
         token: null,
+        apiKey: null,
+        apiKeyHeader: null,
         userId: null,
         roles: [],
         isAuthenticated: false
@@ -33,7 +37,7 @@ function getInitialState(): AuthState {
             return {
                 ...defaultState,
                 ...parsed,
-                isAuthenticated: !!(parsed.token || parsed.userId)
+                isAuthenticated: !!(parsed.token || parsed.userId || parsed.apiKey)
             };
         } catch {
             return defaultState;
@@ -63,6 +67,8 @@ function createAuthStore() {
             const state: AuthState = {
                 authType: 'jwt',
                 token,
+                apiKey: null,
+                apiKeyHeader: null,
                 userId,
                 roles,
                 isAuthenticated: true
@@ -79,8 +85,51 @@ function createAuthStore() {
         loginSession: (userId: string, roles: string[]) => {
             const state: AuthState = {
                 authType: 'session',
-                token: null,  // Session auth doesn't use tokens
+                token: null,
+                apiKey: null,
+                apiKeyHeader: null,
                 userId,
+                roles,
+                isAuthenticated: true
+            };
+            set(state);
+            if (typeof window !== 'undefined') {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            }
+        },
+
+        /**
+         * Login with API key (store key for header injection)
+         */
+        loginAPIKey: (apiKey: string, headerName: string, userId: string, roles: string[]) => {
+            const state: AuthState = {
+                authType: 'apikey',
+                token: null,
+                apiKey,
+                apiKeyHeader: headerName,
+                userId,
+                roles,
+                isAuthenticated: true
+            };
+            set(state);
+            if (typeof window !== 'undefined') {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            }
+        },
+
+        /**
+         * Login with HTTP Basic auth (store base64-encoded credentials)
+         * Basic auth is stateless - credentials are sent with every request
+         */
+        loginBasic: (username: string, password: string, roles: string[]) => {
+            // Encode credentials as base64 for the Authorization header
+            const credentials = btoa(`${username}:${password}`);
+            const state: AuthState = {
+                authType: 'basic',
+                token: credentials,  // Store base64 encoded credentials in token field
+                apiKey: null,
+                apiKeyHeader: null,
+                userId: username,
                 roles,
                 isAuthenticated: true
             };
@@ -97,6 +146,8 @@ function createAuthStore() {
             const state: AuthState = {
                 authType: 'jwt',
                 token,
+                apiKey: null,
+                apiKeyHeader: null,
                 userId,
                 roles,
                 isAuthenticated: true
@@ -128,6 +179,8 @@ function createAuthStore() {
             const state: AuthState = {
                 authType: currentState.authType,
                 token: null,
+                apiKey: null,
+                apiKeyHeader: null,
                 userId: null,
                 roles: [],
                 isAuthenticated: false

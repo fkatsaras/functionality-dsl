@@ -5,8 +5,8 @@
 version: "3.9"
 
 networks:
-  ecomm-net:
-    name: ecomm-net
+  thesis_fdsl_net:
+    external: true
 
 services:
   postgres:
@@ -26,7 +26,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - ecomm-net
+      - thesis_fdsl_net
 
 volumes:
   byodb_data:

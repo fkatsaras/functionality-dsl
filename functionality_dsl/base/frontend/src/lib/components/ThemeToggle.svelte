@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { Sun, Moon } from "lucide-svelte";
 
-    let theme = $state<"light" | "dark">("dark");
+    let theme = $state<"light" | "dark">("light");
 
     function toggleTheme() {
         theme = theme === "dark" ? "light" : "dark";
@@ -19,13 +19,12 @@
     }
 
     onMount(() => {
-        // Check localStorage first, then system preference
+        // Check localStorage first, otherwise default to light
         const stored = localStorage.getItem("fdsl-theme") as "light" | "dark" | null;
         if (stored) {
             theme = stored;
-        } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-            theme = "light";
         }
+        // Default is already light, no need for system preference check
         applyTheme(theme);
     });
 </script>

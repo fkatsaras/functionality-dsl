@@ -254,13 +254,53 @@ class TableComponent(_BaseComponent):
         n = getattr(a, "name", None)
         return n
 
+    def _get_entity_operations(self):
+        """Extract operations from entity's source."""
+        entity = self.entity_ref
+        source = getattr(entity, "source", None)
+        if source:
+            ops = getattr(source, "operations", None)
+            if ops:
+                # operations is a SourceOperationsList with .operations attribute
+                op_list = getattr(ops, "operations", None)
+                if op_list:
+                    return [str(op) for op in op_list]
+        return []
+
+    def _get_readonly_fields(self):
+        """Extract readonly field names from entity attributes."""
+        entity = self.entity_ref
+        readonly = []
+        attributes = getattr(entity, "attributes", []) or []
+        for attr in attributes:
+            attr_type = getattr(attr, "type", None)
+            if attr_type and getattr(attr_type, "readonlyMarker", None):
+                readonly.append(attr.name)
+        return readonly
+
+    def _get_all_fields(self):
+        """Get all entity attribute names for create/edit forms."""
+        entity = self.entity_ref
+        fields = []
+        attributes = getattr(entity, "attributes", []) or []
+        for attr in attributes:
+            fields.append(attr.name)
+        return fields
+
     def to_props(self):
         # Table component fetches entity data from REST endpoint
         # All entities are snapshots - single endpoint at /api/{entity_name}
+        operations = self._get_entity_operations()
+        readonly_fields = self._get_readonly_fields()
+        all_fields = self._get_all_fields()
+
         return {
             "endpointPath": self._endpoint_path(""),
             "colNames": self.colNames,
             "columns": self.columns,
+            "operations": operations,
+            "readonlyFields": readonly_fields,
+            "allFields": all_fields,
         }
 
 
@@ -465,6 +505,7 @@ class LiveChartComponent(_BaseComponent):
         yScale=None,
         windowSize=None,
         height=None,
+        fullWidth=None,
     ):
         super().__init__(parent, name, entity_ref or endpoint)
         self.values = values  # Just the attribute name (string)
@@ -479,6 +520,7 @@ class LiveChartComponent(_BaseComponent):
         self.yScale = float(yScale) if yScale is not None else 1.0  # Global Y-axis scale (zoom)
         self.windowSize = int(windowSize) if windowSize is not None else 50  # Default window for streaming
         self.height = int(height) if height is not None else 300
+        self.fullWidth = bool(fullWidth) if fullWidth is not None else False
 
         if entity_ref is None and endpoint is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
@@ -502,6 +544,7 @@ class LiveChartComponent(_BaseComponent):
             "yLabel": self.yLabel,
             "windowSize": self.windowSize,
             "height": self.height,
+            "fullWidth": self.fullWidth,
         }
 
 
@@ -575,8 +618,8 @@ class QueryFormComponent(_BaseComponent):
     QueryForm component for GET requests with query parameters.
     Unlike ActionForm which uses request body, QueryForm builds URL query parameters.
     """
-    def __init__(self, parent=None, name=None, entity=None, fields=None, submitLabel=None):
-        super().__init__(parent, name, entity)
+    def __init__(self, parent=None, name=None, entity=None, entity_ref=None, fields=None, submitLabel=None):
+        super().__init__(parent, name, entity or entity_ref)
 
         self.fields = fields or []
         self.submitLabel = submitLabel
@@ -871,48 +914,6 @@ class CameraComponent(_BaseComponent):
         }
 
 @register_component
-class LiveMetricsComponent(_BaseComponent):
-    """
-    <Component<LiveMetrics> ...>
-      entity: <Entity>
-      metrics: ["totalDeliveries", "activeDeliveries", ...]
-      label: optional string label
-
-    Displays real-time metrics from a WebSocket entity.
-    Metrics can be simple keys or nested paths (e.g., "stats.total").
-    """
-    def __init__(self, parent=None, name=None, entity_ref=None, endpoint=None, metrics=None, label=None):
-        # Support both entity_ref (new) and endpoint (old) for backwards compatibility
-        entity = entity_ref or endpoint
-        super().__init__(parent, name, entity)
-
-        if entity is None:
-            raise ValueError(f"Component '{name}' must bind an 'entity:' Entity.")
-
-        # Validate: LiveMetrics only works with WebSocket entities
-        # Check if entity has 'type' attribute and is 'inbound' (WebSocket)
-        if hasattr(entity, 'type') and entity.type != 'inbound':
-            raise ValueError(f"Component '{name}': LiveMetrics requires WebSocket entity (type: inbound), got type: {entity.type}")
-
-        # Parse metrics list - strip quotes from each metric key
-        self.metrics = [_strip_quotes(m) for m in (metrics or [])]
-        self.label = _strip_quotes(label) or ""
-
-        if not self.metrics:
-            raise ValueError(f"Component '{name}': 'metrics:' list cannot be empty.")
-
-    def to_props(self):
-        """
-        Props for LiveMetrics.svelte component.
-        Provides the WebSocket URL and list of metric keys to display.
-        """
-        return {
-            "streamPath": self._endpoint_path(""),
-            "metrics": self.metrics,
-            "name": self.label or self.endpoint.name,
-        }
-
-@register_component
 class MapComponent(_BaseComponent):
     """
     <Component<Map> ...>
@@ -966,51 +967,24 @@ class MapComponent(_BaseComponent):
         }
 
 @register_component
-class MetricComponent(_BaseComponent):
+class EntityCardComponent(_BaseComponent):
     """
-    <Component<Metric> ...>
-      entity: <Entity> (REST entity)
-      field: required string (field name to display)
-      label: optional string label
-      format: optional string ("number" | "currency" | "percent")
-      refreshMs: optional int (auto-refresh interval)
-    """
-    def __init__(self, parent=None, name=None, entity_ref=None, field=None, label=None, format=None, refreshMs=None):
-        super().__init__(parent, name, entity_ref)
-
-        self.field = _strip_quotes(field) if field else None
-        self.label = _strip_quotes(label)
-        self.format = _strip_quotes(format)
-        self.refreshMs = int(refreshMs) if refreshMs is not None else None
-
-        if entity_ref is None:
-            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
-        if not self.field:
-            raise ValueError(f"Component '{name}': 'field:' is required.")
-
-    def to_props(self):
-        return {
-            "endpointPath": self._endpoint_path(""),
-            "field": self.field,
-            "label": self.label or self.field,
-            "format": self.format or "number",
-            "refreshMs": self.refreshMs,
-        }
-
-
-@register_component
-class DataCardComponent(_BaseComponent):
-    """
-    <Component<DataCard> ...>
-      entity: <Entity> (REST entity)
-      fields: required list of field names to display
+    <Component<EntityCard> ...>
+      entity: <Entity> (REST or WebSocket entity)
+      type: required "rest" or "ws" - determines data fetching strategy
+      fields: optional list of field names to display (auto-detects if not provided)
       title: optional string title
       highlight: optional string (field name to highlight)
-      refreshMs: optional int (auto-refresh interval)
+      refreshMs: optional int (auto-refresh interval, only for type=rest)
+
+    Displays entity scalar fields (non-binary, non-array, non-object) in a card format.
+    Supports inline editing when entity has 'update' operation.
     """
-    def __init__(self, parent=None, name=None, entity_ref=None, fields=None, title=None, highlight=None, refreshMs=None):
+    def __init__(self, parent=None, name=None, entity_ref=None, cardType=None, fields=None, title=None, highlight=None, refreshMs=None):
         super().__init__(parent, name, entity_ref)
 
+        # cardType is required and comes from grammar as "rest" or "ws"
+        self.cardType = str(cardType).lower() if cardType else None
         self.fields = [_strip_quotes(f) for f in (fields or [])]
         self.title = _strip_quotes(title)
         self.highlight = _strip_quotes(highlight)
@@ -1018,17 +992,61 @@ class DataCardComponent(_BaseComponent):
 
         if entity_ref is None:
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
-        if not self.fields:
-            raise ValueError(f"Component '{name}': 'fields:' cannot be empty.")
+        if not self.cardType or self.cardType not in ('rest', 'ws'):
+            raise ValueError(f"Component '{name}': 'type:' must be 'rest' or 'ws'.")
+
+        # Validate entity type matches card type
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if self.cardType == 'ws' and ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': type=ws requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+
+    def _get_entity_operations(self):
+        """Extract operations from entity's source."""
+        entity = self.entity_ref
+        source = getattr(entity, "source", None)
+        if source:
+            ops = getattr(source, "operations", None)
+            if ops:
+                # operations is a SourceOperationsList with .operations attribute
+                op_list = getattr(ops, "operations", None)
+                if op_list:
+                    return [str(op) for op in op_list]
+        return []
+
+    def _get_readonly_fields(self):
+        """Extract readonly field names from entity attributes."""
+        entity = self.entity_ref
+        readonly = []
+        attributes = getattr(entity, "attributes", []) or []
+        for attr in attributes:
+            attr_type = getattr(attr, "type", None)
+            if attr_type and getattr(attr_type, "readonlyMarker", None):
+                readonly.append(attr.name)
+        return readonly
 
     def to_props(self):
-        return {
-            "endpointPath": self._endpoint_path(""),
-            "fields": self.fields,
-            "title": self.title or self.entity_ref.name,
-            "highlight": self.highlight,
-            "refreshMs": self.refreshMs,
-        }
+        operations = self._get_entity_operations()
+        readonly_fields = self._get_readonly_fields()
+
+        if self.cardType == 'ws':
+            return {
+                "wsUrl": self._endpoint_path(""),
+                "fields": self.fields,
+                "title": self.title or self.entity_ref.name,
+                "highlight": self.highlight,
+                "operations": operations,
+                "readonlyFields": readonly_fields,
+            }
+        else:  # rest
+            return {
+                "endpointPath": self._endpoint_path(""),
+                "fields": self.fields,
+                "title": self.title or self.entity_ref.name,
+                "highlight": self.highlight,
+                "refreshMs": self.refreshMs,
+                "operations": operations,
+                "readonlyFields": readonly_fields,
+            }
 
 
 @register_component
@@ -1390,6 +1408,54 @@ class ToggleComponent(_BaseComponent):
 
 
 @register_component
+class TogglePanelComponent(_BaseComponent):
+    """
+    <Component<TogglePanel> ...>
+      entity: Entity (REST entity with boolean fields)
+      toggles: list of toggle definitions [{field: "fieldName", label: "Display Label"}, ...]
+      title: optional string title
+      refreshMs: optional int (auto-refresh interval)
+
+    Groups multiple toggles into a single card, all controlling fields on the same entity.
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        name=None,
+        entity_ref=None,
+        toggles=None,
+        title=None,
+        refreshMs=None,
+    ):
+        super().__init__(parent, name, entity_ref)
+
+        # Parse toggles from grammar
+        self.toggles = []
+        for toggle_def in (toggles or []):
+            self.toggles.append({
+                "field": _strip_quotes(getattr(toggle_def, "field", None)),
+                "label": _strip_quotes(getattr(toggle_def, "label", None)),
+            })
+
+        self.title = _strip_quotes(title)
+        self.refreshMs = int(refreshMs) if refreshMs is not None else None
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+        if not self.toggles:
+            raise ValueError(f"Component '{name}': 'toggles:' cannot be empty.")
+
+    def to_props(self):
+        return {
+            "endpointPath": self._endpoint_path(""),
+            "toggles": self.toggles,
+            "title": self.title or self.entity_ref.name,
+            "refreshMs": self.refreshMs,
+        }
+
+
+@register_component
 class PublishFormComponent(_BaseComponent):
     """
     <Component<PublishForm> ...>
@@ -1514,3 +1580,127 @@ class DownloadFormComponent(_BaseComponent):
             "autoDownload": self.autoDownload,
             "showPreview": self.showPreview,
         }
+
+
+# =============================================================================
+# SHOWCASE COMPONENTS - Domain-specific, visually rich components for demos
+# =============================================================================
+
+@register_component
+class OrderTimelineComponent(_BaseComponent):
+    """
+    <Component<OrderTimeline> ...>
+      entity: <Entity> (WebSocket entity with order status)
+      title: optional string title
+
+    Visual order status timeline showing progression through stages:
+    Placed -> Processing -> Shipped -> Delivered
+
+    Designed for e-commerce showcase demos.
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, title=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.title = _strip_quotes(title)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Validate: OrderTimeline requires inbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': OrderTimeline requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+
+    def to_props(self):
+        return {
+            "wsUrl": self._endpoint_path(""),
+            "title": self.title or "Order Timeline",
+        }
+
+
+@register_component
+class VitalsPanelComponent(_BaseComponent):
+    """
+    <Component<VitalsPanel> ...>
+      entity: <Entity> (WebSocket entity with heart rate data)
+      restEntity: optional <Entity> (REST entity with vitals snapshot)
+      title: optional string title
+
+    Medical-style vitals monitor showing:
+    - Real-time heart rate with mini chart
+    - Blood pressure, O2 saturation, temperature
+    - Status indicators and alerts
+
+    Designed for health monitoring showcase demos.
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, restEntity=None, title=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.restEntity = restEntity
+        self.title = _strip_quotes(title)
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Validate: VitalsPanel requires inbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': VitalsPanel requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+
+    def to_props(self):
+        props = {
+            "wsUrl": self._endpoint_path(""),
+            "title": self.title or "Vitals Monitor",
+        }
+
+        # Add REST endpoint if provided
+        if self.restEntity:
+            props["restUrl"] = f"/api/{self.restEntity.name.lower()}"
+
+        return props
+
+
+@register_component
+class DeviceGridComponent(_BaseComponent):
+    """
+    <Component<DeviceGrid> ...>
+      entity: <Entity> (WebSocket entity with device status)
+      commandEntity: optional <Entity> (outbound WebSocket entity for commands)
+      title: optional string title
+      deviceType: optional string ("streetlight" | "bulb" | "switch")
+
+    Grid of IoT devices showing:
+    - Device status (on/off) with visual indicators
+    - Brightness levels with progress bars
+    - Control buttons (on/dim/off)
+    - Alert messages
+
+    Designed for IoT/streetlights showcase demos.
+    """
+    def __init__(self, parent=None, name=None, entity_ref=None, commandEntity=None, title=None, deviceType=None):
+        super().__init__(parent, name, entity_ref)
+
+        self.commandEntity = commandEntity
+        self.title = _strip_quotes(title)
+        self.deviceType = _strip_quotes(deviceType) or "streetlight"
+
+        if entity_ref is None:
+            raise ValueError(f"Component '{name}' must bind an 'entity:'.")
+
+        # Validate: DeviceGrid requires inbound WebSocket entity
+        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
+        if ws_flow_type != 'inbound':
+            raise ValueError(f"Component '{name}': DeviceGrid requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+
+    def to_props(self):
+        props = {
+            "wsUrl": self._endpoint_path(""),
+            "title": self.title or "Device Grid",
+            "deviceType": self.deviceType,
+        }
+
+        # Add command WebSocket if provided
+        if self.commandEntity:
+            props["commandWsUrl"] = f"/ws/{self.commandEntity.name.lower()}"
+
+        return props

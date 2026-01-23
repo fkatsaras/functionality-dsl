@@ -646,10 +646,11 @@ class FDSLWSGenerator:
                 elif "query" in auth.config:
                     lines.append(f'  query: "{auth.config["query"]}"')
                 lines.append(f'  secret: "{auth.config.get("secret", "API_KEYS")}"')
+                lines.append("end")
             elif auth.kind == "jwt":
                 lines.append(f'  secret: "{auth.config.get("secret", "JWT_SECRET")}"')
-            # basic has no config fields
-            lines.append("end")
+                lines.append("end")
+            # basic has no config fields and no 'end' keyword
             lines.append("")
 
         # Server

@@ -18,14 +18,13 @@ Component:
   | GaugeComponent
   | InputComponent
   | LiveViewComponent
-  | LiveMetricsComponent
   | MapComponent
   | ToggleComponent
+  | TogglePanelComponent
   | ObjectViewComponent
   | CameraComponent
   | DownloadFormComponent
-  | MetricComponent
-  | DataCardComponent
+  | EntityCardComponent
   | PieChartComponent
   | LivePieChartComponent
   | BarChartComponent
@@ -35,6 +34,9 @@ Component:
   | LiveAlertComponent
   | PublishFormComponent
   | ThermostatComponent
+  | OrderTimelineComponent
+  | VitalsPanelComponent
+  | DeviceGridComponent
 ;
 
 // Column definition with type specification
@@ -124,6 +126,7 @@ LiveChartComponent:
     ('yLabel:' yLabel=STRING)?
     ('windowSize:' windowSize=INT)?
     ('height:' height=INT)?
+    ('fullWidth:' fullWidth=BOOL)?
   )#
   'end'
 ;
@@ -219,6 +222,23 @@ ToggleComponent:
   'end'
 ;
 
+// ToggleField defines a single toggle in a TogglePanel
+ToggleField:
+  'field:' field=STRING 'label:' label=STRING
+;
+
+// TogglePanel groups multiple toggles for the same entity in one card
+TogglePanelComponent:
+  'Component' '<' 'TogglePanel' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('toggles:' '-' toggles+=ToggleField ('-' toggles+=ToggleField)*)?
+    ('title:' title=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
 CameraComponent:
   'Component' '<' 'Camera' '>' name=ID
   'entity' ':' entity_ref=[entity.Entity]
@@ -240,15 +260,6 @@ DownloadFormComponent:
   'end'
 ;
 
-LiveMetricsComponent:
-  'Component' '<' 'LiveMetrics' '>' name=ID
-  'entity' ':' entity_ref=[entity.Entity]
-  'metrics:' '[' metrics+=STRING (',' metrics+=STRING)* ']'
-  ( ('label:' label=STRING)
-  )*
-  'end'
-;
-
 MapComponent:
   'Component' '<' 'Map' '>' name=ID
   'entity' ':' entity_ref=[entity.Entity]
@@ -264,21 +275,12 @@ MapComponent:
   'end'
 ;
 
-MetricComponent:
-  'Component' '<' 'Metric' '>' name=ID
+// EntityCard - displays entity scalar fields (non-binary, non-array, non-object)
+// type: "rest" for REST polling, "ws" for WebSocket streaming
+EntityCardComponent:
+  'Component' '<' 'EntityCard' '>' name=ID
   'entity:' entity_ref=[entity.Entity]
-  (
-    ('field:' field=STRING)?
-    ('label:' label=STRING)?
-    ('format:' format=STRING)?
-    ('refreshMs:' refreshMs=INT)?
-  )#
-  'end'
-;
-
-DataCardComponent:
-  'Component' '<' 'DataCard' '>' name=ID
-  'entity:' entity_ref=[entity.Entity]
+  'type:' cardType=EntityCardType
   (
     ('fields:' '[' fields+=STRING (',' fields+=STRING)* ']')?
     ('title:' title=STRING)?
@@ -286,6 +288,10 @@ DataCardComponent:
     ('refreshMs:' refreshMs=INT)?
   )#
   'end'
+;
+
+EntityCardType:
+  'rest' | 'ws'
 ;
 
 // SliceField defines a mapping from entity field to pie chart slice
@@ -407,6 +413,46 @@ ThermostatComponent:
     ('title:' title=STRING)?
     ('minTemp:' minTemp=INT)?
     ('maxTemp:' maxTemp=INT)?
+  )#
+  'end'
+;
+
+// =============================================================================
+// SHOWCASE COMPONENTS - Domain-specific, visually rich components for demos
+// =============================================================================
+
+// OrderTimeline - E-commerce order status timeline visualization
+// Shows progression: Placed -> Processing -> Shipped -> Delivered
+OrderTimelineComponent:
+  'Component' '<' 'OrderTimeline' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('title:' title=STRING)?
+  )#
+  'end'
+;
+
+// VitalsPanel - Health monitoring vitals display
+// Shows heart rate (live), blood pressure, O2, temperature with alerts
+VitalsPanelComponent:
+  'Component' '<' 'VitalsPanel' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('restEntity:' restEntity=[entity.Entity])?
+    ('title:' title=STRING)?
+  )#
+  'end'
+;
+
+// DeviceGrid - IoT device grid with status and controls
+// Shows device on/off status, brightness, and optional command buttons
+DeviceGridComponent:
+  'Component' '<' 'DeviceGrid' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('commandEntity:' commandEntity=[entity.Entity])?
+    ('title:' title=STRING)?
+    ('deviceType:' deviceType=STRING)?
   )#
   'end'
 ;

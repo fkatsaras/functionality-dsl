@@ -1,0 +1,14 @@
+{# components/DeviceGrid.jinja #}
+{% set wsUrl = props.get('wsUrl') %}
+<DeviceGrid
+  wsUrl="{{ wsUrl }}"
+  {%- if props.get('commandWsUrl') %}
+  commandWsUrl="{{ props.get('commandWsUrl') }}"
+  {%- endif %}
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+  {%- if props.get('deviceType') %}
+  deviceType="{{ props.get('deviceType') }}"
+  {%- endif %}
+/>

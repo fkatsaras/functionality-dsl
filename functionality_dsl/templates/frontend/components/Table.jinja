@@ -3,6 +3,9 @@
 {# props.endpointPath: the bound APIEndpoint<REST> endpoint #}
 {# props.pathParams: list of path parameter names #}
 {# props.queryParams: list of query parameter names #}
+{# props.operations: list of CRUD operations available, e.g. ["read", "create", "update", "delete"] #}
+{# props.readonlyFields: list of readonly field names #}
+{# props.allFields: list of all entity field names #}
 
 <Table
   name="{{ common.name }}"
@@ -11,4 +14,7 @@
   columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}
   pathParams={{ "{" }}{{ props.get('pathParams', []) | tojson }}{{ "}" }}
   queryParams={{ "{" }}{{ props.get('queryParams', []) | tojson }}{{ "}" }}
+  operations={{ "{" }}{{ props.get('operations', []) | tojson }}{{ "}" }}
+  readonlyFields={{ "{" }}{{ props.get('readonlyFields', []) | tojson }}{{ "}" }}
+  allFields={{ "{" }}{{ props.get('allFields', []) | tojson }}{{ "}" }}
 />

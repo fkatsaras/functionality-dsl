@@ -193,50 +193,60 @@ end
 // UI COMPONENTS
 // =============================================================================
 
-Component<ActionForm> UpdateProfile
+// 1. PATIENT PROFILE - EntityCard with update capability (doctors/patients can edit)
+Component<EntityCard> PatientCard
   entity: PatientProfile
-  operation: update
-  fields: [name, weight_kg, height_cm, emergency_contact]
-  submitLabel: "Update Profile"
+  type: rest
+  fields: ["patient_id", "name", "age", "weight_kg", "height_cm", "blood_type", "emergency_contact"]
+  title: "Patient Profile"
+  highlight: "name"
 end
 
-Component<ActionForm> CreateGoal
+// 2. HEALTH GOAL - Full CRUD EntityCard (patients can create/update/delete their goals)
+Component<EntityCard> GoalCard
   entity: HealthGoal
-  operation: create
-  fields: [type, target_value, deadline]
-  submitLabel: "Set New Goal"
+  type: rest
+  fields: ["goal_id", "type", "target_value", "current_value", "deadline"]
+  title: "Health Goal"
+  highlight: "type"
 end
 
-Component<ActionForm> AddMedication
+// 3. MEDICATION - Per-operation access demo (patients read/create, doctors update/delete)
+Component<EntityCard> MedicationCard
   entity: Medication
-  operation: create
-  fields: [name, dosage, frequency, time_of_day, notes]
-  submitLabel: "Add Medication"
+  type: rest
+  fields: ["medication_id", "name", "dosage", "frequency", "time_of_day", "active"]
+  title: "Medication"
+  highlight: "name"
 end
 
-Component<LiveMetrics> VitalSigns
+// 4. LIVE CHART - Real-time heart rate visualization
+Component<LiveChart> HeartRateChart
   entity: HeartRateMonitor
-  metrics: ["current_bpm", "status"]
-  label: "Real-time Heart Rate"
+  values: current_bpm
+  seriesLabels: ["Heart Rate"]
+  xLabel: "Time"
+  yLabel: "BPM"
+  windowSize: 60
+  height: 300
+  fullWidth: true
 end
 
-Component<DataCard> HealthOverview
+// 5. HEART RATE GAUGE - Live heart rate monitoring
+Component<Gauge> HeartRateGauge
+  entity: HeartRateMonitor
+  value: "current_bpm"
+  min: 40
+  max: 160
+  label: "Heart Rate"
+  unit: "bpm"
+end
+
+// 6. HEALTH SUMMARY - Aggregated health overview
+Component<EntityCard> HealthOverview
   entity: HealthSummary
+  type: rest
   fields: ["patient_name", "bmi", "bmi_category", "blood_pressure", "bp_status", "oxygen_level", "overall_status"]
   title: "Health Summary"
   highlight: "overall_status"
-end
-
-Component<Metric> BMIDisplay
-  entity: HealthSummary
-  field: "bmi"
-  label: "Body Mass Index"
-  format: "number"
-end
-
-Component<Metric> OxygenLevel
-  entity: HealthSummary
-  field: "oxygen_level"
-  label: "Oxygen Saturation"
-  format: "percent"
 end

@@ -52,27 +52,45 @@ select {
     --red-text: #f87171;
     --warning-text: #fb923c;
     --dot-color: rgba(255, 255, 255, 0.05);
+    /* Additional semantic colors for showcase components */
+    --blue-tint: #1a2a3a;
+    --blue-text: #60a5fa;
+    --purple-tint: #2a1a3a;
+    --purple-text: #a78bfa;
+    --cyan-tint: #1a3a3a;
+    --cyan-text: #22d3ee;
+    --yellow-tint: #3a3a1a;
+    --yellow-text: #fbbf24;
 }
 
 /* -------------------------------------------------------
-     Theme Variables - Light
+     Theme Variables - Light (PDF-friendly with warm tint)
 ------------------------------------------------------- */
 [data-theme="light"] {
-    --canvas: #f8fafc;
-    --surface: #ffffff;
-    --card: #ffffff;
-    --edge: #d1d5db;
-    --edge-soft: #e5e7eb;
-    --edge-light: #6b7280;
-    --text: #1f2937;
-    --text-muted: #6b7280;
-    --accent: #6366f1;
-    --green-tint: #dcfce7;
-    --green-text: #16a34a;
-    --red-tint: #fee2e2;
-    --red-text: #dc2626;
-    --warning-text: #ea580c;
-    --dot-color: rgba(0, 0, 0, 0.06);
+    --canvas: #f7f6f3;
+    --surface: #fdfcfa;
+    --card: #fffffe;
+    --edge: #d4d0c8;
+    --edge-soft: #e8e5de;
+    --edge-light: #6b6560;
+    --text: #2d2a26;
+    --text-muted: #6b6560;
+    --accent: #5a5fcf;
+    --green-tint: #e8f2e8;
+    --green-text: #2d7a4e;
+    --red-tint: #f8e8e8;
+    --red-text: #b83c3c;
+    --warning-text: #b85c21;
+    --dot-color: rgba(45, 42, 38, 0.035);
+    /* Additional semantic colors for showcase components */
+    --blue-tint: #e8f0f8;
+    --blue-text: #2563eb;
+    --purple-tint: #f0e8f8;
+    --purple-text: #7c3aed;
+    --cyan-tint: #e8f5f8;
+    --cyan-text: #0891b2;
+    --yellow-tint: #f8f5e8;
+    --yellow-text: #b8860b;
 }
 
 /* -------------------------------------------------------

@@ -67,11 +67,12 @@ def _extract_auth_config(source):
 def _extract_ws_source_params(source):
     """
     Extract params list from WebSocket source.
-    For WebSocket, all params become query params (no path params in WS URLs).
+    WebSocket URLs can have path params (like /ws/status/{order_id}) or query params.
 
     Returns:
-        tuple: (all_params, query_params)
+        tuple: (all_params, path_params, query_params)
         - all_params: list of all param names
+        - path_params: list of params that are URL placeholders
         - query_params: list of params forwarded as query string
     """
     params_list = getattr(source, "params", None)
@@ -80,11 +81,16 @@ def _extract_ws_source_params(source):
     if params_list and hasattr(params_list, "params"):
         all_params = list(params_list.params)
 
-    # For WebSocket URLs, all params are query params
-    # (unlike REST where some can be path placeholders like /users/{id})
-    query_params = all_params
+    # Get the channel URL to find path placeholders
+    url = getattr(source, "url", "") or ""
 
-    return all_params, query_params
+    # Find params that are placeholders in the URL path (e.g., {order_id})
+    path_params = set(re.findall(r'\{(\w+)\}', url))
+
+    # Query params are those not in the URL path
+    query_params = [p for p in all_params if p not in path_params]
+
+    return all_params, list(path_params), query_params
 
 
 def generate_websocket_source_client(source, model, templates_dir, out_dir, exposure_map=None):
@@ -163,7 +169,7 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     supports_publish = "publish" in operations
 
     # Extract params for parameterized WebSocket sources
-    all_params, query_params = _extract_ws_source_params(source)
+    all_params, path_params, query_params = _extract_ws_source_params(source)
     has_params = len(all_params) > 0
 
     # Extract auth config for outbound requests
@@ -173,7 +179,7 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     print(f"      Channel: {channel}")
     print(f"      Operations: {operations}")
     if has_params:
-        print(f"      Params: {all_params} (all query params)")
+        print(f"      Params: {all_params} (path: {path_params}, query: {query_params})")
     if binary_attr_name:
         print(f"      Binary attribute: {binary_attr_name}")
     if auth_config:
@@ -192,6 +198,7 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
         # Params info for parameterized WebSocket sources
         has_params=has_params,
         all_params=all_params,
+        path_params=path_params,
         query_params=query_params,
         # Auth config for outbound requests
         auth_config=auth_config,

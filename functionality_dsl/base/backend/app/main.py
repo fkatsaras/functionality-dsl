@@ -71,8 +71,9 @@ def create_app() -> FastAPI:
         # No generated auth router - try session-based auth handlers
         try:
             from app.core.auth import (
-                login_handler, logout_handler, me_handler,
+                login_handler, logout_handler, register_handler, me_handler,
                 LoginRequest, LoginResponse, LogoutResponse,
+                RegisterRequest, RegisterResponse,
                 get_current_user, TokenPayload, SESSION_COOKIE_NAME
             )
             from fastapi import Depends
@@ -81,6 +82,10 @@ def create_app() -> FastAPI:
             import inspect
             login_sig = inspect.signature(login_handler)
             needs_db = 'db' in login_sig.parameters
+
+            # Check if register_handler takes db parameter
+            register_sig = inspect.signature(register_handler)
+            register_needs_db = 'db' in register_sig.parameters
 
             if needs_db:
                 from app.db import get_db
@@ -95,6 +100,17 @@ def create_app() -> FastAPI:
                 async def logout(response: Response, db: DBSession = Depends(get_db), session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
                     """Logout and clear session"""
                     return await logout_handler(response, db, session_id)
+
+                if register_needs_db:
+                    @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                    async def register(request: RegisterRequest, db: DBSession = Depends(get_db)):
+                        """Register a new user"""
+                        return await register_handler(request, db)
+                else:
+                    @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                    async def register(request: RegisterRequest):
+                        """Register a new user"""
+                        return await register_handler(request)
             else:
                 @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
                 async def login(request: LoginRequest, response: Response):
@@ -106,12 +122,17 @@ def create_app() -> FastAPI:
                     """Logout and clear session"""
                     return await logout_handler(response, session_id)
 
+                @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                async def register(request: RegisterRequest):
+                    """Register a new user"""
+                    return await register_handler(request)
+
             @app.get("/auth/me", tags=["Auth"])
             async def me(user: TokenPayload = Depends(get_current_user)):
                 """Get current user info"""
                 return await me_handler(user)
 
-            logger.info("Auth routes registered from session handlers: /auth/login, /auth/logout, /auth/me")
+            logger.info("Auth routes registered from session handlers: /auth/register, /auth/login, /auth/logout, /auth/me")
         except ImportError as e:
             logger.debug(f"No auth module found - skipping auth routes: {e}")
 

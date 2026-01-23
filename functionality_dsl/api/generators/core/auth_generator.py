@@ -161,17 +161,20 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append("")
 
     # If session auth exists, import and re-export session-specific handlers
-    # These are used by main.py to register /auth/login, /auth/logout, /auth/me
+    # These are used by main.py to register /auth/login, /auth/logout, /auth/register, /auth/me
     if session_auth_name:
         session_module = f"auth_{session_auth_name.lower()}"
         lines.append("# Session auth handlers for main.py")
         lines.append(f"from app.core.{session_module} import (")
         lines.append("    login_handler,")
         lines.append("    logout_handler,")
+        lines.append("    register_handler,")
         lines.append("    me_handler,")
         lines.append("    LoginRequest,")
         lines.append("    LoginResponse,")
         lines.append("    LogoutResponse,")
+        lines.append("    RegisterRequest,")
+        lines.append("    RegisterResponse,")
         lines.append("    SESSION_COOKIE_NAME,")
         lines.append(")")
         lines.append("")

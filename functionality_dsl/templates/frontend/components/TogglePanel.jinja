@@ -1,0 +1,12 @@
+<TogglePanel
+  name="{{ common.name }}"
+  url="{{ props.get('endpointPath') }}"
+  toggles={{ "{" }}{{ props.get('toggles') | tojson }}{{ "}" }}
+  {%- if props.get('title') %}
+  title="{{ props.get('title') }}"
+  {%- endif %}
+  {%- if props.get('refreshMs') %}
+  refreshMs={{ props.get('refreshMs') }}
+  {%- endif %}
+>
+</TogglePanel>

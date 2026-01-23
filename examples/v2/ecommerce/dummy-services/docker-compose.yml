@@ -1,7 +1,7 @@
 version: "3.8"
 
 networks:
-  ecomm-net:
+  thesis_fdsl_net:
     external: true
 
 services:
@@ -12,7 +12,7 @@ services:
     ports:
       - "9001:9001"
     networks:
-      - ecomm-net
+      - "thesis_fdsl_net"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9001/"]
       interval: 10s

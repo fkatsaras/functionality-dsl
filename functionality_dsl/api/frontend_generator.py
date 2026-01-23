@@ -43,31 +43,96 @@ def _get_server_ctx(model):
         # treat anything not 'dev' as production
         env_val = ""
 
-    # Extract auth configuration
-    auth_config = None
-    auth = getattr(s, "auth", None)
-    if auth:
-        auth_type = getattr(auth, "type", None)
-        if auth_type == "jwt":
-            jwt_config = getattr(auth, "jwt_config", None)
-            secret = getattr(jwt_config, "secret", None) if jwt_config else None
-            auth_config = {
-                "type": "jwt",
-                "secret": secret,
-            }
-        elif auth_type == "session":
-            session_config = getattr(auth, "session_config", None)
-            cookie = getattr(session_config, "cookie", "session_id") if session_config else "session_id"
-            # Handle empty string from textX
-            if not cookie:
-                cookie = "session_id"
-            auth_config = {
-                "type": "session",
-                "cookie": cookie,
-            }
+    # Extract ALL auth mechanisms with their roles
+    # This enables the unified AuthLogin component to show multiple auth options
+    auth_mechanisms = []
+    all_roles = get_children_of_type("Role", model)
 
-    # Extract roles
-    roles = [r.name for r in get_children_of_type("Role", model)]
+    # Helper to get roles for a specific auth mechanism
+    def get_roles_for_auth(auth_name):
+        return [r.name for r in all_roles if r.auth and r.auth.name == auth_name]
+
+    # Check for AuthSession
+    session_auths = list(get_children_of_type("AuthSession", model))
+    for auth in session_auths:
+        cookie = getattr(auth, "cookie", "session_id") or "session_id"
+        auth_mechanisms.append({
+            "type": "session",
+            "name": auth.name,
+            "cookie": cookie,
+            "roles": get_roles_for_auth(auth.name),
+        })
+
+    # Check for AuthJWT
+    jwt_auths = list(get_children_of_type("AuthJWT", model))
+    for auth in jwt_auths:
+        auth_mechanisms.append({
+            "type": "jwt",
+            "name": auth.name,
+            "roles": get_roles_for_auth(auth.name),
+        })
+
+    # Check for AuthAPIKey
+    apikey_auths = list(get_children_of_type("AuthAPIKey", model))
+    for auth in apikey_auths:
+        # Get header name - can be string or object
+        header = getattr(auth, "header", None)
+        if header and hasattr(header, "name"):
+            header = header.name
+        elif not header:
+            header = "X-API-Key"
+        auth_mechanisms.append({
+            "type": "apikey",
+            "name": auth.name,
+            "header": header,
+            "roles": get_roles_for_auth(auth.name),
+        })
+
+    # Check for AuthBasic
+    basic_auths = list(get_children_of_type("AuthBasic", model))
+    for auth in basic_auths:
+        auth_mechanisms.append({
+            "type": "basic",
+            "name": auth.name,
+            "roles": get_roles_for_auth(auth.name),
+        })
+
+    # Fallback to old-style auth on Server (for backwards compatibility)
+    if not auth_mechanisms:
+        auth = getattr(s, "auth", None)
+        if auth:
+            auth_type = getattr(auth, "type", None)
+            auth_name = getattr(auth, "name", "Auth")
+            if auth_type == "jwt":
+                auth_mechanisms.append({
+                    "type": "jwt",
+                    "name": auth_name,
+                    "roles": get_roles_for_auth(auth_name),
+                })
+            elif auth_type == "session":
+                session_config = getattr(auth, "session_config", None)
+                cookie = getattr(session_config, "cookie", "session_id") if session_config else "session_id"
+                auth_mechanisms.append({
+                    "type": "session",
+                    "name": auth_name,
+                    "cookie": cookie or "session_id",
+                    "roles": get_roles_for_auth(auth_name),
+                })
+
+    # For backwards compatibility, also provide the primary auth config
+    # Priority: session > jwt > apikey > basic
+    auth_config = None
+    if auth_mechanisms:
+        for auth_type in ["session", "jwt", "apikey", "basic"]:
+            for mech in auth_mechanisms:
+                if mech["type"] == auth_type:
+                    auth_config = mech
+                    break
+            if auth_config:
+                break
+
+    # Extract all roles (for backwards compat with old templates)
+    roles = [r.name for r in all_roles]
 
     return {
         "server": {
@@ -78,6 +143,7 @@ def _get_server_ctx(model):
             "env": env_val,
         },
         "auth": auth_config,
+        "auth_mechanisms": auth_mechanisms,  # All auth mechanisms with their roles
         "roles": roles,
     }
 
@@ -167,10 +233,29 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
         # Get all permission dependencies for this entity
         perm_deps = get_permission_dependencies(entity, model)
 
+        # Helper to extract roles from permission dependency
+        def extract_roles(perm):
+            """Extract role list from permission dependency.
+
+            Permission can be:
+            - "public" -> ["public"]
+            - {"auth": "AuthName"} -> ["authenticated"]
+            - {"auth": "AuthName", "roles": ["role1", "role2"]} -> ["role1", "role2"]
+            """
+            if perm == "public":
+                return ["public"]
+            if isinstance(perm, dict):
+                if "roles" in perm:
+                    return perm["roles"]
+                # Auth-only (no specific roles) - user just needs to be authenticated
+                return ["authenticated"]
+            return ["public"]
+
         # Store per-component: either specific operation or default to "read"
         if operation:
             # ActionForm - specific operation
-            roles = perm_deps.get(operation, ["public"])
+            perm = perm_deps.get(operation, "public")
+            roles = extract_roles(perm)
             component_permissions[cmp.name] = {
                 "entity": entity_name,
                 "operation": operation,
@@ -178,7 +263,8 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
             }
         else:
             # Other components - use "read" operation by default
-            roles = perm_deps.get("read", ["public"])
+            perm = perm_deps.get("read", "public")
+            roles = extract_roles(perm)
             component_permissions[cmp.name] = {
                 "entity": entity_name,
                 "operation": "read",
@@ -193,6 +279,7 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
             ws_entities=ws_entities,
             computed_ws_entities=computed_ws_entities,
             auth=ctx.get("auth"),
+            auth_mechanisms=ctx.get("auth_mechanisms", []),
             roles=ctx.get("roles", []),
             component_permissions=component_permissions,
         ),

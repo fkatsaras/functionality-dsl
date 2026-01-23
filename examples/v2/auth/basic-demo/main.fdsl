@@ -97,3 +97,32 @@ Entity UserDashboard(Post, Todo)
     - summary: string = "Post: " + Post.title + " | Todo: " + Todo.title;
   access: [admin, user]  // Only admin and user can see dashboard
 end
+
+// =============================================================================
+// UI Components - Table with CRUD Row Actions
+// =============================================================================
+
+// Post table with full CRUD operations (create/update/delete via row actions)
+// - Admin and user can create/update
+// - Only admin can delete
+// - Anyone can read (public)
+Component<Table> PostTable
+  entity: Post
+  colNames: ["id", "userId", "title", "body"]
+end
+
+// Todo table with CRUD operations
+// - Must be logged in to read
+// - Admin and user can create/update
+// - Only admin can delete
+Component<Table> TodoTable
+  entity: Todo
+  colNames: ["id", "userId", "title", "completed"]
+end
+
+// Album table (read-only - source only has read operation)
+// - Any authenticated user with a role can view
+Component<Table> AlbumTable
+  entity: Album
+  colNames: ["id", "userId", "title"]
+end

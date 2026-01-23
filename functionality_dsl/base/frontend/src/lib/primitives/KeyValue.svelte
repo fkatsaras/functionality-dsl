@@ -12,7 +12,7 @@
     }>();
 </script>
 
-<div class={`flex justify-between items-center py-2 px-1 border-b border-[var(--edge)] last:border-b-0 ${className}`}>
+<div class={`w-full flex justify-between items-center py-2 px-1 border-b border-[var(--edge)] last:border-b-0 ${className}`}>
     <span class="text-sm text-[var(--text-muted)] font-approachmono">
         {label}
     </span>

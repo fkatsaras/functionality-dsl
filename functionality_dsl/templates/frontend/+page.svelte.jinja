@@ -13,11 +13,7 @@
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     {% if auth %}
     import { authStore } from "$lib/stores/authStore";
-    {% if auth.type == "jwt" %}
-    import AuthPage from "$lib/components/AuthPage.svelte";
-    {% elif auth.type == "session" %}
-    import SessionLogin from "$lib/components/SessionLogin.svelte";
-    {% endif %}
+    import AuthLogin from "$lib/components/AuthLogin.svelte";
     import Unauthorized from "$lib/components/Unauthorized.svelte";
     {% endif %}
     {% for k in uniq.kinds %}
@@ -50,11 +46,7 @@
 
 {% if auth %}
 {% raw %}{#if !authState.isAuthenticated}{% endraw %}
-    {% if auth.type == "jwt" %}
-    <AuthPage roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
-    {% elif auth.type == "session" %}
-    <SessionLogin roles={[{% for role in roles %}"{{ role }}"{% if not loop.last %}, {% endif %}{% endfor %}]} />
-    {% endif %}
+    <AuthLogin authMechanisms={{ '{' }}{{ auth_mechanisms | tojson }}{{ '}' }} />
 {% raw %}{:else}{% endraw %}
     <div class="dashboard-container mx-auto max-w-[1800px] px-10 py-12">
         <div class="dashboard-header mb-6">

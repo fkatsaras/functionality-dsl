@@ -28,6 +28,7 @@ class {{ source_name }}Source:
         self._connection_lock = None
 {% if has_params %}
         # Source params configuration
+        self.path_params = {{ path_params }}  # Params that go into URL path
         self.query_params = {{ query_params }}  # Params forwarded as query string
 {% endif %}
 {% if auth_config %}
@@ -95,14 +96,21 @@ class {{ source_name }}Source:
 {% if has_params %}
     def _build_url(self, params: Dict[str, Any]) -> str:
         """
-        Build final WebSocket URL by appending query params.
+        Build final WebSocket URL by replacing path placeholders and appending query params.
 
         Args:
             params: Dict of param_name -> value from client query string
 
         Returns:
-            str: Final WebSocket URL with query params
+            str: Final WebSocket URL with path params replaced and query params appended
         """
+        url = self.base_url
+
+        # Replace {placeholder} with actual values
+        for param in self.path_params:
+            if param in params:
+                url = url.replace("{" + param + "}", str(params[param]))
+
         # Collect query params to forward
         query = {}
         for param in self.query_params:
@@ -110,10 +118,10 @@ class {{ source_name }}Source:
                 query[param] = params[param]
 
         if not query:
-            return self.base_url
+            return url
 
-        # Parse the base URL and append query params
-        parsed = urlparse(self.base_url)
+        # Parse the URL and append query params
+        parsed = urlparse(url)
         # Combine existing query string with new params
         existing_query = parsed.query
         if existing_query:

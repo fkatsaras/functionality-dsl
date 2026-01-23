@@ -259,18 +259,30 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-@app.websocket("/ws/status")
-async def websocket_order_status(websocket: WebSocket):
-    """WebSocket endpoint for real-time order status updates"""
+@app.websocket("/ws/status/{order_id}")
+async def websocket_order_status(websocket: WebSocket, order_id: str):
+    """WebSocket endpoint for real-time order status updates for a specific order"""
     await manager.connect(websocket)
     try:
+        # Find the order or create a temporary one for demo
+        order = next((o for o in ORDERS if o["id"] == order_id), None)
+        if not order:
+            # Create a temporary order for demo purposes
+            order = {
+                "id": order_id,
+                "status": "pending",
+                "items": [],
+                "shipping": {},
+                "total": 0,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            ORDERS.append(order)
+
         # Simulate order status updates every 5 seconds
         statuses = ["pending", "processing", "shipped", "delivered"]
         tracking_prefixes = ["1Z", "9400", "7489"]
 
         while True:
-            # Pick a random order to update
-            order = random.choice(ORDERS)
             current_idx = statuses.index(order["status"]) if order["status"] in statuses else 0
 
             # Progress to next status (or stay if delivered)
@@ -306,7 +318,7 @@ async def root():
             "cart": "GET/PUT/DELETE /cart",
             "orders": "GET/POST /orders",
             "shipping": "GET /rates",
-            "websocket": "WS /ws/status"
+            "websocket": "WS /ws/status/{order_id}"
         },
         "note": "All services combined for simplicity. In production, these would be separate microservices."
     }

@@ -23,5 +23,8 @@
   {%- if props.get('height') %}
   height={{ props.get('height') }}
   {%- endif %}
+  {%- if props.get('fullWidth') %}
+  fullWidth={{ "{" }}true{{ "}" }}
+  {%- endif %}
 >
 </LiveChart>

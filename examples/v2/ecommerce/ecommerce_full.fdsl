@@ -66,7 +66,8 @@ Source<REST> ShippingAPI
 end
 
 Source<WS> OrderUpdatesWS
-  channel: "ws://ecomm-dummy:9001/ws/status"
+  channel: "ws://ecomm-dummy:9001/ws/status/{order_id}"
+  params: [order_id]
   operations: [subscribe]
 end
 
@@ -229,22 +230,43 @@ end
 // UI COMPONENTS
 // ============================================================================
 
-Component<Metric> CartTotal
+Component<EntityCard> CartTotalCard
   entity: CartSummary
-  field: "total"
-  label: "Cart Total"
-  format: "currency"
+  type: rest
+  fields: ["total"]
+  title: "Cart Total"
+  highlight: "total"
 end
 
-Component<DataCard> CheckoutCard
+Component<EntityCard> CheckoutCard
   entity: Checkout
+  type: rest
   fields: ["subtotal", "tax", "cheapest_ship", "total"]
   title: "Checkout"
   highlight: "total"
 end
 
-Component<LiveMetrics> OrderTracker
+Component<EntityCard> OrderTracker
   entity: OrderStatus
-  metrics: ["order_id", "status", "is_shipped", "is_delivered"]
-  label: "Order Status"
+  type: ws
+  fields: ["order_id", "status", "is_shipped", "is_delivered"]
+  title: "Order Status"
+end
+
+// Showcase component: Visual order timeline showing order progression
+Component<OrderTimeline> OrderProgress
+  entity: OrderStatus
+  title: "Order Progress"
+end
+
+// ============================================================================
+// EDITABLE ENTITY CARD - Showcase inline editing with RBAC
+// Cart has update operation, so EntityCard will show pencil icon
+// updated_at is @readonly so it will show lock icon in edit mode
+// ============================================================================
+Component<EntityCard> CartEditor
+  entity: Cart
+  type: rest
+  fields: ["items", "updated_at"]
+  title: "Shopping Cart"
 end

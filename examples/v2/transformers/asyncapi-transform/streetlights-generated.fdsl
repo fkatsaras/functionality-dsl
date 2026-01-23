@@ -14,7 +14,6 @@ Auth<jwt> Bearerauth
 end
 
 Auth<basic> Basicauth
-end
 
 Server StreetlightsMQTTAPI
   host: "localhost"
@@ -73,4 +72,23 @@ Entity Alerts
     - message: string;
     - timestamp: integer<int64>;
   access: public
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+// Showcase component: IoT device grid showing streetlight status and controls
+Component<DeviceGrid> StreetlightGrid
+  entity: Status
+  commandEntity: Commands
+  title: "Streetlight Control Panel"
+  deviceType: "streetlight"
+end
+
+// Live alerts viewer
+Component<LiveMetrics> AlertsPanel
+  entity: Alerts
+  metrics: ["level", "message"]
+  label: "System Alerts"
 end

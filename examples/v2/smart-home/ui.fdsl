@@ -1,24 +1,36 @@
+// =============================================================================
+// Smart Home Dashboard - UI Components
+// =============================================================================
 
-// Device Controls
-Component<Thermostat> ThermostatControl
-  entity: Thermostat
-  title: "Living Room"
-  minTemp: 50
-  maxTemp: 90
+// 1. ENERGY CONSUMPTION CHART - Real-time energy monitoring (wide)
+Component<LiveChart> EnergyChart
+  entity: EnergyMetrics
+  seriesLabels: ["HVAC", "Lighting", "Appliances", "Total"]
+  xLabel: "Time"
+  yLabel: "kWh"
+  windowSize: 60
+  height: 400
+  fullWidth: true
 end
 
-Component<DataCard> ClimateCard
-  entity: Climate
-  fields: ["current_temp_c", "target_temp_c", "humidity", "comfort_status"]
-  title: "Climate Summary"
-  highlight: "comfort_status"
+// 2. HUMIDITY GAUGE - Live humidity monitoring
+Component<Gauge> HumidityGauge
+  entity: ClimateAlerts
+  value: "humidity"
+  min: 0
+  max: 100
+  label: "Humidity"
+  unit: "%"
 end
 
-Component<DataCard> HomeStatusCard
-  entity: HomeStatus
-  fields: ["active_devices", "climate_active", "any_lights_on", "oven_active"]
-  title: "Home Status"
-  highlight: "active_devices"
+// 3. LIGHT & APPLIANCE CONTROLS - Toggle panel (one card, multiple switches)
+Component<TogglePanel> LightControls
+  entity: Lights
+  toggles:
+    - field: "living_room" label: "Living Room"
+    - field: "bedroom" label: "Bedroom"
+    - field: "kitchen" label: "Kitchen"
+  title: "Light Controls"
 end
 
 Component<Toggle> OvenToggle
@@ -27,73 +39,27 @@ Component<Toggle> OvenToggle
   label: "Oven Power"
 end
 
-Component<Toggle> LivingRoomLight
-  entity: Lights
-  field: "living_room"
-  label: "Living Room"
-end
-
-Component<Toggle> BedroomLight
-  entity: Lights
-  field: "bedroom"
-  label: "Bedroom"
-end
-
-Component<Toggle> KitchenLight
-  entity: Lights
-  field: "kitchen"
-  label: "Kitchen"
-end
-
-// Real-time
-
-Component<LiveChart> EnergyConsumptionChart
-  entity: EnergyMetrics
-  seriesLabels: ["HVAC", "Lighting", "Appliances", "Total"]
-  xLabel: "Time"
-  yLabel: "kWh"
-  windowSize: 60
-end
-
-Component<LiveMetrics> EnergyMonitor
-  entity: EnergyMetrics
-  metrics: ["total_kwh", "estimated_cost", "hvac_kwh", "lighting_kwh"]
-  label: "Energy Consumption"
-end
-
-Component<LiveMetrics> ClimateMonitor
-  entity: ClimateAlerts
-  metrics: ["temp_c", "humidity", "status"]
-  label: "Climate Monitor"
-end
-
-Component<Gauge> LiveHumidityGauge
-  entity: ClimateAlerts
-  value: "humidity"
-  min: 0
-  max: 100
-  label: "Live Humidity"
-  unit: "%"
-end
-
-Component<Gauge> LiveTemperatureGauge
+// TEMPERATURE GAUGE - Live temperature monitoring
+Component<Gauge> TemperatureGauge
   entity: ClimateAlerts
   value: "temp_f"
   min: 50
   max: 100
-  label: "Live Temperature"
+  label: "Temperature"
   unit: "°F"
 end
 
+// 4. SECURITY CAMERA - Live camera feed with day/night adaptation
 Component<Camera> SecurityCamera
   entity: AdaptiveCamera
-  label: "Front Door Camera (Auto Day/Night)"
+  label: "Front Door Camera"
 end
 
-// Roomba Control
-Component<PublishForm> RoombaControl
-  entity: RoombaCommand
-  fields: [command, room, power]
-  submitLabel: "Send Command"
-  label: "Roomba Control"
+// 5. HOME STATUS CARD - Overview of all devices
+Component<EntityCard> HomeStatusCard
+  entity: HomeStatus
+  type: rest
+  fields: ["active_devices", "climate_active", "any_lights_on", "lights_on_count", "oven_active"]
+  title: "Home Status"
+  highlight: "active_devices"
 end
