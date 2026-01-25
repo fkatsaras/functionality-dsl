@@ -28,17 +28,15 @@
 AuthDB LegacyUsers
   connection: "LEGACY_DB_URL"
   table: "app_users"
-  columns:
-    - id: "user_email"
-    - password: "pwd_hash"
-    - role: "user_role"
+  columns: id="user_email" password="pwd_hash" role="user_role"
 end
 
 // -----------------------------------------------------------------------------
 // Authentication
 // -----------------------------------------------------------------------------
 // Uses global AuthDB automatically - no default database will be generated
-Auth<jwt> ForumAuth
+Auth<http> ForumAuth
+  scheme: bearer
   secret: "FORUM_JWT_SECRET"
 end
 

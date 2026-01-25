@@ -1,24 +1,22 @@
 """
 API Key Authentication Module
-Auto-generated from FDSL Server auth configuration
+Auto-generated from FDSL Auth<apikey> configuration
 
 Configuration:
   Type: API Key
   Location: {{ location }}
   Name: {{ name }}
-  Secret Env Var: {{ secret }}
   Roles: {{ roles }}
 
-API Key Format in environment variable:
-  Simple keys: key1,key2,key3
-  Keys with roles: key1:admin,key2:user;editor,key3:viewer
-  (colon separates key from roles, semicolon separates multiple roles)
+API keys belong to users and inherit role from the user.
 """
 
-import os
-from typing import List, Optional, Dict
-from fastapi import Depends, HTTPException, status, Request, Query, Cookie
+from typing import List, Optional, Tuple
+from fastapi import Depends, HTTPException, status, Cookie
 from fastapi.security import APIKeyHeader, APIKeyQuery
+from sqlmodel import Session, select
+
+from app.db.database import get_db, APIKey, User
 
 
 # ============================================================================
@@ -27,59 +25,10 @@ from fastapi.security import APIKeyHeader, APIKeyQuery
 
 API_KEY_LOCATION = "{{ location }}"
 API_KEY_NAME = "{{ name }}"
-API_KEYS_ENV_VAR = "{{ secret }}"
 
 # Declared roles from FDSL
 DECLARED_ROLES = {{ roles }}
 DECLARED_ROLES.append("public")  # Public is always allowed
-
-
-# ============================================================================
-# API Key Storage
-# ============================================================================
-
-# Parse API keys from environment variable
-# Format: key1,key2,key3 OR key1:role1;role2,key2:role3
-_api_keys: Dict[str, List[str]] = {}
-
-def _parse_api_keys():
-    """Parse API keys from environment variable"""
-    global _api_keys
-    raw_keys = os.getenv(API_KEYS_ENV_VAR, "")
-    if not raw_keys:
-        return
-
-    for entry in raw_keys.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-
-        if ":" in entry:
-            # Key with roles: key:role1;role2
-            key, roles_str = entry.split(":", 1)
-            roles = [r.strip() for r in roles_str.split(";") if r.strip()]
-        else:
-            # Key without roles - default to empty roles (authenticated only)
-            key = entry
-            roles = []
-
-        _api_keys[key.strip()] = roles
-
-# Parse on module load
-_parse_api_keys()
-
-
-def get_api_key_roles(api_key: str) -> Optional[List[str]]:
-    """
-    Validate API key and return associated roles.
-
-    Args:
-        api_key: The API key to validate
-
-    Returns:
-        List of roles if key is valid, None if invalid
-    """
-    return _api_keys.get(api_key)
 
 
 # ============================================================================
@@ -88,11 +37,48 @@ def get_api_key_roles(api_key: str) -> Optional[List[str]]:
 
 {% if location == "header" %}
 # Header-based API key
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+api_key_scheme = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 {% elif location == "query" %}
 # Query parameter-based API key
-api_key_query = APIKeyQuery(name=API_KEY_NAME, auto_error=False)
+api_key_scheme = APIKeyQuery(name=API_KEY_NAME, auto_error=False)
+{% elif location == "cookie" %}
+# Cookie-based API key (session-like behavior)
+# Note: FastAPI doesn't have APIKeyCookie, we handle it manually
 {% endif %}
+
+
+# ============================================================================
+# Database validation
+# ============================================================================
+
+def validate_api_key(db: Session, api_key: str) -> Optional[Tuple[int, str]]:
+    """
+    Validate API key against database and return (user_id, role) if valid.
+
+    Args:
+        db: Database session
+        api_key: The API key to validate
+
+    Returns:
+        Tuple of (user_id, role) if key is valid, None if invalid
+    """
+    # Query the apikeys table with user relationship
+    statement = select(APIKey).where(APIKey.key == api_key)
+    api_key_record = db.exec(statement).first()
+
+    if api_key_record is None:
+        return None
+
+    # Check if key is active
+    if not api_key_record.is_active:
+        return None
+
+    # Get the user to retrieve their role
+    user = db.exec(select(User).where(User.id == api_key_record.user_id)).first()
+    if user is None:
+        return None
+
+    return (user.id, user.role)
 
 
 # ============================================================================
@@ -103,15 +89,15 @@ class TokenPayload:
     """API Key payload - compatible interface with JWT TokenPayload"""
 
     def __init__(self, user_id: str, roles: List[str]):
-        self.user_id = user_id  # For API keys, this is the key itself (or a hash)
+        self.user_id = user_id  # The actual user ID from the database
         self.roles = roles
 
     def has_role(self, role: str) -> bool:
-        """Check if API key has a specific role"""
+        """Check if user has a specific role"""
         return role in self.roles
 
     def has_any_role(self, roles: List[str]) -> bool:
-        """Check if API key has any of the specified roles"""
+        """Check if user has any of the specified roles"""
         return any(self.has_role(role) for role in roles)
 
 
@@ -121,7 +107,8 @@ class TokenPayload:
 
 {% if location == "header" %}
 async def get_current_user(
-    api_key: Optional[str] = Depends(api_key_header)
+    api_key: Optional[str] = Depends(api_key_scheme),
+    db: Session = Depends(get_db)
 ) -> TokenPayload:
     """
     Dependency to get current authenticated user from API key in header.
@@ -129,7 +116,7 @@ async def get_current_user(
     Usage:
         @app.get("/protected")
         async def protected_route(user: TokenPayload = Depends(get_current_user)):
-            return {"api_key_id": user.user_id, "roles": user.roles}
+            return {"user_id": user.user_id, "roles": user.roles}
     """
     if not api_key:
         raise HTTPException(
@@ -138,20 +125,21 @@ async def get_current_user(
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    roles = get_api_key_roles(api_key)
-    if roles is None:
+    result = validate_api_key(db, api_key)
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    # Use first 8 chars of key as user_id (for logging, don't expose full key)
-    return TokenPayload(user_id=f"apikey_{api_key[:8]}...", roles=roles)
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
 
 
 async def get_optional_user(
-    api_key: Optional[str] = Depends(api_key_header)
+    api_key: Optional[str] = Depends(api_key_scheme),
+    db: Session = Depends(get_db)
 ) -> Optional[TokenPayload]:
     """
     Dependency to optionally get current user (doesn't fail if no API key).
@@ -159,15 +147,17 @@ async def get_optional_user(
     if not api_key:
         return None
 
-    roles = get_api_key_roles(api_key)
-    if roles is None:
+    result = validate_api_key(db, api_key)
+    if result is None:
         return None
 
-    return TokenPayload(user_id=f"apikey_{api_key[:8]}...", roles=roles)
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
 
 {% elif location == "query" %}
 async def get_current_user(
-    api_key: Optional[str] = Depends(api_key_query)
+    api_key: Optional[str] = Depends(api_key_scheme),
+    db: Session = Depends(get_db)
 ) -> TokenPayload:
     """
     Dependency to get current authenticated user from API key in query param.
@@ -175,7 +165,7 @@ async def get_current_user(
     Usage:
         @app.get("/protected")
         async def protected_route(user: TokenPayload = Depends(get_current_user)):
-            return {"api_key_id": user.user_id, "roles": user.roles}
+            return {"user_id": user.user_id, "roles": user.roles}
     """
     if not api_key:
         raise HTTPException(
@@ -184,19 +174,21 @@ async def get_current_user(
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    roles = get_api_key_roles(api_key)
-    if roles is None:
+    result = validate_api_key(db, api_key)
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    return TokenPayload(user_id=f"apikey_{api_key[:8]}...", roles=roles)
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
 
 
 async def get_optional_user(
-    api_key: Optional[str] = Depends(api_key_query)
+    api_key: Optional[str] = Depends(api_key_scheme),
+    db: Session = Depends(get_db)
 ) -> Optional[TokenPayload]:
     """
     Dependency to optionally get current user (doesn't fail if no API key).
@@ -204,11 +196,60 @@ async def get_optional_user(
     if not api_key:
         return None
 
-    roles = get_api_key_roles(api_key)
-    if roles is None:
+    result = validate_api_key(db, api_key)
+    if result is None:
         return None
 
-    return TokenPayload(user_id=f"apikey_{api_key[:8]}...", roles=roles)
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
+
+{% elif location == "cookie" %}
+async def get_current_user(
+    api_key: Optional[str] = Cookie(None, alias=API_KEY_NAME),
+    db: Session = Depends(get_db)
+) -> TokenPayload:
+    """
+    Dependency to get current authenticated user from API key in cookie.
+    This provides session-like behavior using API keys stored in cookies.
+
+    Usage:
+        @app.get("/protected")
+        async def protected_route(user: TokenPayload = Depends(get_current_user)):
+            return {"user_id": user.user_id, "roles": user.roles}
+    """
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session cookie required",
+        )
+
+    result = validate_api_key(db, api_key)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session",
+        )
+
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
+
+
+async def get_optional_user(
+    api_key: Optional[str] = Cookie(None, alias=API_KEY_NAME),
+    db: Session = Depends(get_db)
+) -> Optional[TokenPayload]:
+    """
+    Dependency to optionally get current user (doesn't fail if no cookie).
+    """
+    if not api_key:
+        return None
+
+    result = validate_api_key(db, api_key)
+    if result is None:
+        return None
+
+    user_id, role = result
+    return TokenPayload(user_id=str(user_id), roles=[role])
 {% endif %}
 
 

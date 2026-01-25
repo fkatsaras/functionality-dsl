@@ -39,69 +39,10 @@ def render_infrastructure_files(context, templates_dir, output_dir, target="all"
         lstrip_blocks=True,
     )
 
-    # Process auth configurations for environment variables (multi-auth support)
-    auth_env_vars = []
-    auth_configs = context.get("auth_configs", {})
-
-    for auth_name, auth_config in auth_configs.items():
-        auth_type = auth_config.get("auth_type")
-        roles = auth_config.get("roles", [])
-
-        if auth_type == "jwt":
-            # JWT needs a secret key
-            secret_var = auth_config.get("secret", "JWT_SECRET")
-            auth_env_vars.append({
-                "name": secret_var,
-                "value": generate_random_secret(32),
-                "comment": f"JWT Secret for {auth_name} (auto-generated)"
-            })
-
-        elif auth_type == "apikey":
-            # API Key needs a keys list with roles
-            secret_var = auth_config.get("secret", "API_KEYS")
-            # Generate example keys with roles
-            example_keys = []
-            for role in roles[:3]:  # Limit to 3 example keys
-                key = f"{role}_key_{generate_random_secret(8)}"
-                example_keys.append(f"{key}:{role}")
-            if not example_keys:
-                example_keys = [f"default_key_{generate_random_secret(8)}"]
-            auth_env_vars.append({
-                "name": secret_var,
-                "value": ",".join(example_keys),
-                "comment": f"API Keys for {auth_name} (format: key:role1;role2,...)"
-            })
-
-        elif auth_type == "basic":
-            # Basic auth needs username:password:roles
-            users_var = auth_config.get("users", "BASIC_AUTH_USERS")
-            # Generate example users with roles
-            example_users = []
-            for role in roles[:2]:  # Limit to 2 example users
-                password = generate_random_secret(12)
-                example_users.append(f"{role}:{password}:{role}")
-            if not example_users:
-                example_users = [f"admin:{generate_random_secret(12)}:admin"]
-            auth_env_vars.append({
-                "name": users_var,
-                "value": ",".join(example_users),
-                "comment": f"Basic Auth users for {auth_name} (format: user:pass:role1;role2,...)"
-            })
-
-        elif auth_type == "session":
-            # Session doesn't need env vars for secrets (uses in-memory store)
-            pass
-
-    context["auth_env_vars"] = auth_env_vars
-
-    # Legacy support: also set jwt_secret_var for old templates
-    auth_config = context.get("auth")
-    if auth_config and auth_config.get("type") == "jwt":
-        jwt_config = auth_config.get("jwt", {})
-        if jwt_config.get("secret"):
-            context["jwt_secret_var"] = jwt_config["secret"]
-            if "jwt_secret_value" not in context:
-                context["jwt_secret_value"] = generate_random_secret(32)
+    # Entity auth is DB-backed - no env vars needed for entity auth secrets
+    # Source auth uses env vars for static credentials to external APIs
+    context["auth_env_vars"] = []  # Entity auth (unused)
+    context["source_auth_env_vars"] = context.get("source_auth_env_vars", [])
 
     # Merge database context if provided
     if db_context:
@@ -189,9 +130,15 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
 
 def _extract_auth_configs(model):
     """
-    Extract auth configurations from the model for env generation.
+    Extract auth configurations from the model.
 
-    Returns dict mapping auth_name -> {auth_type, secret, roles, ...}
+    Auth types (from grammar):
+    - Auth<http> with scheme: bearer | basic
+    - Auth<apikey> with in: header | query | cookie
+
+    All auth is DB-backed - no env vars needed.
+
+    Returns dict mapping auth_name -> {auth_type, scheme/location, roles, ...}
     """
     auth_configs = {}
 
@@ -221,20 +168,13 @@ def _extract_auth_configs(model):
             "roles": roles_by_auth.get(auth_name, []),
         }
 
-        # Helper to get value or default
-        def get_or_default(attr, default):
-            val = getattr(auth, attr, None)
-            return val if val is not None and val != "" else default
-
-        # Extract type-specific config (fields are directly on auth object now)
-        if auth_type == "jwt":
-            config["secret"] = get_or_default("secret", "JWT_SECRET")
+        # Extract type-specific config
+        if auth_type == "http":
+            config["scheme"] = getattr(auth, "scheme", "bearer")
 
         elif auth_type == "apikey":
-            config["secret"] = get_or_default("secret", "API_KEYS")
-
-        elif auth_type == "basic":
-            config["users"] = "BASIC_AUTH_USERS"
+            config["location"] = getattr(auth, "location", "header")
+            config["name"] = getattr(auth, "keyName", "X-API-Key")
 
         auth_configs[auth_name] = config
 

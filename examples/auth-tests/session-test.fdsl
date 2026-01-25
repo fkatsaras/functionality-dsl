@@ -1,12 +1,11 @@
-// Minimal Session Auth Test
+// Minimal Cookie-based Auth Test (session-like behavior using API keys in cookies)
 // Test with:
-//   1. Register: curl -X POST http://localhost:8000/auth/register -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123","role":"admin"}'
-//   2. Login: curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123"}' -c cookies.txt
-//   3. Access: curl http://localhost:8000/api/secretpost -b cookies.txt
+//   1. Set cookie: curl http://localhost:8000/api/secretpost -b "session_id=admin_session_key"
+//   Where admin_session_key is defined in SESSION_KEYS env var: admin_session_key:admin,user_session_key:user
 
-Auth<session> SessionAuth
-  cookie: "session_id"
-  expiry: 3600
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "session_id"
 end
 
 Role admin uses SessionAuth

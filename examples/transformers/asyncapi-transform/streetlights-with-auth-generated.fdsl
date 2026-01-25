@@ -5,15 +5,17 @@
 //   - oauth2 (oauth2)
 
 Auth<apikey> Apikey
-  header: "X-API-Key"
-  secret: "APIKEY_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
-Auth<jwt> Bearerauth
+Auth<http> Bearerauth
+  scheme: bearer
   secret: "BEARERAUTH_SECRET"
 end
 
-Auth<basic> Basicauth
+Auth<http> Basicauth
+  scheme: basic
 end
 
 Server StreetlightsMQTTAPI

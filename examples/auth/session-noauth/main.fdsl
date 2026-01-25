@@ -1,19 +1,20 @@
 // =============================================================================
-// Session Auth Demo - Auth-Only (No Roles)
+// Cookie Auth Demo - Auth-Only (No Roles)
 // =============================================================================
-// Demonstrates session authentication without role-based access.
+// Demonstrates cookie-based authentication without role-based access.
 // Uses `access: SessionAuth` which requires valid session but no role check.
 //
-// Test flow:
-//   1. Login: POST /auth/login with {"username": "test", "password": "test"}
-//   2. Use cookie for subsequent requests
-//   3. Logout: POST /auth/logout
+// Configure session keys via environment variable:
+//   SESSION_KEYS=user_session_key,admin_session_key
+//
+// Test:
+//   curl http://localhost:8000/api/user -b "my_session=user_session_key"
 // =============================================================================
 
-// Auth mechanism - no roles defined!
-Auth<session> SessionAuth
-  cookie: "my_session"
-  expiry: 3600
+// Auth mechanism - no roles defined! (just validates the key exists)
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "my_session"
 end
 
 // Server config

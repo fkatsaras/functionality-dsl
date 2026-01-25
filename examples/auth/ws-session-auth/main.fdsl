@@ -1,5 +1,8 @@
-// WebSocket with Session Auth Demo
-// Tests WebSocket authentication with session auth and roles
+// WebSocket with Cookie Auth Demo
+// Tests WebSocket authentication with cookie-based auth and roles
+//
+// Configure session keys via environment variable:
+//   SESSION_KEYS=admin_key:admin,user_key:user
 
 Server WSAuthDemo
   host: "localhost"
@@ -8,10 +11,10 @@ Server WSAuthDemo
   loglevel: debug
 end
 
-// Session auth with roles
-Auth<session> SessionAuth
-  cookie: "ws_session"
-  expiry: 3600
+// Cookie-based auth with roles
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "ws_session"
 end
 
 Role admin uses SessionAuth

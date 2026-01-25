@@ -1,12 +1,14 @@
 import { writable, get } from 'svelte/store';
 
-export type AuthType = 'jwt' | 'session' | 'apikey' | 'basic';
+export type AuthType = 'jwt' | 'apikey' | 'basic';
+export type APIKeyLocation = 'header' | 'query' | 'cookie';
 
 export interface AuthState {
     authType: AuthType;
-    token: string | null;      // For JWT auth
-    apiKey: string | null;     // For API key auth
-    apiKeyHeader: string | null;  // Header name for API key
+    token: string | null;           // For JWT auth (and Basic auth base64 credentials)
+    apiKey: string | null;          // For API key auth
+    apiKeyHeader: string | null;    // Header/query/cookie name for API key
+    apiKeyLocation: APIKeyLocation | null;  // Where to send the API key
     userId: string | null;
     roles: string[];
     isAuthenticated: boolean;
@@ -14,13 +16,14 @@ export interface AuthState {
 
 const STORAGE_KEY = 'fdsl_auth';
 
-// Initialize from localStorage if available (JWT/APIKey) or check session (Session)
+// Initialize from localStorage if available
 function getInitialState(): AuthState {
     const defaultState: AuthState = {
         authType: 'jwt',
         token: null,
         apiKey: null,
         apiKeyHeader: null,
+        apiKeyLocation: null,
         userId: null,
         roles: [],
         isAuthenticated: false
@@ -69,6 +72,7 @@ function createAuthStore() {
                 token,
                 apiKey: null,
                 apiKeyHeader: null,
+                apiKeyLocation: null,
                 userId,
                 roles,
                 isAuthenticated: true
@@ -80,33 +84,20 @@ function createAuthStore() {
         },
 
         /**
-         * Login with session (server sets cookie, we just store user info)
+         * Login with API key (store key for header/query injection, or just track for cookie)
+         * @param apiKey - The API key value
+         * @param keyName - The header name, query param name, or cookie name
+         * @param userId - User identifier
+         * @param roles - User roles
+         * @param location - Where the key is sent: "header", "query", or "cookie"
          */
-        loginSession: (userId: string, roles: string[]) => {
-            const state: AuthState = {
-                authType: 'session',
-                token: null,
-                apiKey: null,
-                apiKeyHeader: null,
-                userId,
-                roles,
-                isAuthenticated: true
-            };
-            set(state);
-            if (typeof window !== 'undefined') {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-            }
-        },
-
-        /**
-         * Login with API key (store key for header injection)
-         */
-        loginAPIKey: (apiKey: string, headerName: string, userId: string, roles: string[]) => {
+        loginAPIKey: (apiKey: string, keyName: string, userId: string, roles: string[], location: APIKeyLocation = 'header') => {
             const state: AuthState = {
                 authType: 'apikey',
                 token: null,
                 apiKey,
-                apiKeyHeader: headerName,
+                apiKeyHeader: keyName,
+                apiKeyLocation: location,
                 userId,
                 roles,
                 isAuthenticated: true
@@ -129,6 +120,7 @@ function createAuthStore() {
                 token: credentials,  // Store base64 encoded credentials in token field
                 apiKey: null,
                 apiKeyHeader: null,
+                apiKeyLocation: null,
                 userId: username,
                 roles,
                 isAuthenticated: true
@@ -148,6 +140,7 @@ function createAuthStore() {
                 token,
                 apiKey: null,
                 apiKeyHeader: null,
+                apiKeyLocation: null,
                 userId,
                 roles,
                 isAuthenticated: true
@@ -159,13 +152,14 @@ function createAuthStore() {
         },
 
         /**
-         * Logout - clears local state (for session auth, also call server logout)
+         * Logout - clears local state
+         * For cookie-based API key auth, also clears the cookie via server endpoint
          */
         logout: async () => {
             const currentState = get({ subscribe });
 
-            // For session auth, call the server logout endpoint
-            if (currentState.authType === 'session') {
+            // For cookie-based apikey auth, call server logout to clear the cookie
+            if (currentState.authType === 'apikey' && currentState.apiKeyLocation === 'cookie') {
                 try {
                     await fetch('/auth/logout', {
                         method: 'POST',
@@ -181,6 +175,7 @@ function createAuthStore() {
                 token: null,
                 apiKey: null,
                 apiKeyHeader: null,
+                apiKeyLocation: null,
                 userId: null,
                 roles: [],
                 isAuthenticated: false

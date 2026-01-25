@@ -1,7 +1,9 @@
-// Minimal Basic Auth Test
+// Minimal HTTP Basic Auth Test
 // Test with: curl -u admin:admin123 http://localhost:8000/api/post
 
-Auth<basic> BasicAuth
+Auth<http> BasicAuth
+  scheme: basic
+end
 
 Role admin uses BasicAuth
 Role user uses BasicAuth

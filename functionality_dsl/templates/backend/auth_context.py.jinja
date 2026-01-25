@@ -1,0 +1,76 @@
+# ========================================================================
+# AUTO-GENERATED AUTH CONTEXT
+# Extracts and forwards authentication credentials to external sources
+# ========================================================================
+
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+from fastapi import Request
+
+
+@dataclass
+class AuthContext:
+    """
+    Holds authentication credentials extracted from an incoming request.
+    Can be applied to outbound requests (REST/WebSocket) to forward auth.
+    """
+    headers: Dict[str, str] = field(default_factory=dict)
+    query_params: Dict[str, str] = field(default_factory=dict)
+    cookies: Dict[str, str] = field(default_factory=dict)
+
+    def apply_to_headers(self, existing_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Merge auth headers into existing headers dict for REST requests."""
+        result = dict(existing_headers) if existing_headers else {}
+        result.update(self.headers)
+        return result
+
+    def apply_to_params(self, existing_params: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Merge auth query params into existing params dict for REST requests."""
+        result = dict(existing_params) if existing_params else {}
+        result.update(self.query_params)
+        return result
+
+    def apply_to_url(self, url: str) -> str:
+        """Append auth query params to URL for WebSocket connections."""
+        if not self.query_params:
+            return url
+        separator = "&" if "?" in url else "?"
+        params_str = "&".join(f"{k}={v}" for k, v in self.query_params.items())
+        return f"{url}{separator}{params_str}"
+
+
+# Auth header names to extract (based on declared Auth configurations)
+AUTH_HEADERS = {{ auth_headers | tojson }}
+AUTH_QUERY_PARAMS = {{ auth_query_params | tojson }}
+AUTH_COOKIES = {{ auth_cookies | tojson }}
+
+
+def extract_auth_context(request: Request) -> AuthContext:
+    """
+    Extract authentication credentials from incoming request.
+
+    Extracts headers, query params, and cookies based on the Auth declarations
+    in the FDSL model. These credentials can then be forwarded to external sources.
+    """
+    ctx = AuthContext()
+
+    # Extract configured headers
+    for header_name in AUTH_HEADERS:
+        # Try exact case and lowercase
+        value = request.headers.get(header_name) or request.headers.get(header_name.lower())
+        if value:
+            ctx.headers[header_name] = value
+
+    # Extract configured query params
+    for param_name in AUTH_QUERY_PARAMS:
+        value = request.query_params.get(param_name)
+        if value:
+            ctx.query_params[param_name] = value
+
+    # Extract configured cookies
+    for cookie_name in AUTH_COOKIES:
+        value = request.cookies.get(cookie_name)
+        if value:
+            ctx.cookies[cookie_name] = value
+
+    return ctx

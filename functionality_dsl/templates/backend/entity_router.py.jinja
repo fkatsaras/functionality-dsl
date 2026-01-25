@@ -4,9 +4,9 @@
 # ========================================================================
 
 import logging
-from typing import List, Optional{% if has_params %}, Dict, Any{% endif %}
+from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Request{% if has_params %}, Query{% endif %}
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 
 from app.domain.models import {{ entity_name }}
 {%- for op in operations %}

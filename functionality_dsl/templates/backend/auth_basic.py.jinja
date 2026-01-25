@@ -1,31 +1,27 @@
 """
 HTTP Basic Authentication Module
-Auto-generated from FDSL Server auth configuration
+Auto-generated from FDSL Auth<http> configuration with scheme: basic
 
 Configuration:
-  Type: HTTP Basic Auth
-  Users Env Var: {{ users }}
+  Type: HTTP Basic
   Roles: {{ roles }}
 
-User Format in environment variable:
-  username:password:role1;role2,username2:password2:role3
-  (colon separates username, password, and roles; semicolon separates multiple roles)
-  Example: admin:secret123:admin;superuser,reader:pass456:viewer
+Users are stored in the database and validated on each request.
 """
 
-import os
-import base64
 import secrets
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlmodel import Session, select
+
+from app.db.database import get_db, User, USER_ID_COLUMN, USER_PASSWORD_COLUMN, USER_ROLE_COLUMN
+from app.db.password import verify_password
 
 
 # ============================================================================
 # Configuration
 # ============================================================================
-
-BASIC_AUTH_USERS_ENV_VAR = "{{ users }}"
 
 # Declared roles from FDSL
 DECLARED_ROLES = {{ roles }}
@@ -33,74 +29,79 @@ DECLARED_ROLES.append("public")  # Public is always allowed
 
 
 # ============================================================================
-# User Storage
-# ============================================================================
-
-# Parse users from environment variable
-# Format: username:password:role1;role2,username2:password2:role3
-_users: Dict[str, Tuple[str, List[str]]] = {}  # username -> (password, roles)
-
-def _parse_users():
-    """Parse users from environment variable"""
-    global _users
-    raw_users = os.getenv(BASIC_AUTH_USERS_ENV_VAR, "")
-    if not raw_users:
-        return
-
-    for entry in raw_users.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-
-        parts = entry.split(":")
-        if len(parts) < 2:
-            continue  # Invalid format, skip
-
-        username = parts[0].strip()
-        password = parts[1].strip()
-
-        if len(parts) >= 3:
-            # Has roles
-            roles = [r.strip() for r in parts[2].split(";") if r.strip()]
-        else:
-            # No roles specified
-            roles = []
-
-        _users[username] = (password, roles)
-
-# Parse on module load
-_parse_users()
-
-
-def validate_credentials(username: str, password: str) -> Optional[List[str]]:
-    """
-    Validate username and password, return roles if valid.
-
-    Args:
-        username: The username
-        password: The password
-
-    Returns:
-        List of roles if credentials are valid, None if invalid
-    """
-    user_data = _users.get(username)
-    if user_data is None:
-        return None
-
-    stored_password, roles = user_data
-
-    # Use constant-time comparison to prevent timing attacks
-    if not secrets.compare_digest(password.encode(), stored_password.encode()):
-        return None
-
-    return roles
-
-
-# ============================================================================
 # Security scheme
 # ============================================================================
 
 security = HTTPBasic()
+
+
+# ============================================================================
+# Database validation
+# ============================================================================
+
+def validate_credentials(db: Session, username: str, password: str) -> Optional[str]:
+    """
+    Validate username and password against database, return role if valid.
+
+    Args:
+        db: Database session
+        username: The username
+        password: The password (plaintext, will be verified against hash)
+
+    Returns:
+        Role string if credentials are valid, None if invalid
+    """
+    # Query the users table for this username
+{% if uses_default_db %}
+    statement = select(User).where(User.email == username)
+{% else %}
+    statement = select(User).where(User.login_identifier == username)
+{% endif %}
+    user = db.exec(statement).first()
+
+    if user is None:
+        return None
+
+    # Both default and BYODB use property accessors (password_hash, role)
+    stored_hash = user.password_hash
+    role = user.role
+
+    # Verify password
+    if not verify_password(password, stored_hash):
+        return None
+
+    return role
+
+
+def validate_basic_credentials(db: Session, username: str, password: str) -> Optional[tuple]:
+    """
+    Validate Basic auth credentials and return (user_id, role) if valid.
+    This is for use in WebSocket handlers where the full user info is needed.
+
+    Args:
+        db: Database session
+        username: The username
+        password: The password (plaintext)
+
+    Returns:
+        Tuple of (user_id, role) if valid, None if invalid
+    """
+    # Query the users table for this username
+{% if uses_default_db %}
+    statement = select(User).where(User.email == username)
+{% else %}
+    statement = select(User).where(User.login_identifier == username)
+{% endif %}
+    user = db.exec(statement).first()
+
+    if user is None:
+        return None
+
+    # Verify password
+    if not verify_password(password, user.password_hash):
+        return None
+
+    return (user.id, user.role)
 
 
 # ============================================================================
@@ -128,7 +129,8 @@ class TokenPayload:
 # ============================================================================
 
 async def get_current_user(
-    credentials: HTTPBasicCredentials = Depends(security)
+    credentials: HTTPBasicCredentials = Depends(security),
+    db: Session = Depends(get_db)
 ) -> TokenPayload:
     """
     Dependency to get current authenticated user from HTTP Basic auth.
@@ -138,20 +140,21 @@ async def get_current_user(
         async def protected_route(user: TokenPayload = Depends(get_current_user)):
             return {"user_id": user.user_id, "roles": user.roles}
     """
-    roles = validate_credentials(credentials.username, credentials.password)
+    role = validate_credentials(db, credentials.username, credentials.password)
 
-    if roles is None:
+    if role is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    return TokenPayload(user_id=credentials.username, roles=roles)
+    return TokenPayload(user_id=credentials.username, roles=[role])
 
 
 async def get_optional_user(
-    request: Request
+    request: Request,
+    db: Session = Depends(get_db)
 ) -> Optional[TokenPayload]:
     """
     Dependency to optionally get current user (doesn't fail if no credentials).
@@ -163,6 +166,8 @@ async def get_optional_user(
                 return {"message": f"Hello {user.user_id}"}
             return {"message": "Hello anonymous"}
     """
+    import base64
+
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Basic "):
         return None
@@ -173,11 +178,11 @@ async def get_optional_user(
         decoded = base64.b64decode(encoded).decode("utf-8")
         username, password = decoded.split(":", 1)
 
-        roles = validate_credentials(username, password)
-        if roles is None:
+        role = validate_credentials(db, username, password)
+        if role is None:
             return None
 
-        return TokenPayload(user_id=username, roles=roles)
+        return TokenPayload(user_id=username, roles=[role])
     except Exception:
         return None
 

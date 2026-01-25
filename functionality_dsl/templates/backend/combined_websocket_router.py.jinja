@@ -24,32 +24,28 @@ from app.core.error_handlers import (
 )
 {% if has_auth %}
 # Import auth utilities based on configured auth module
-{% if subscribe_auth_name %}
-from app.core.auth_{{ subscribe_auth_name | lower }} import (
-    get_current_user as get_current_user_{{ subscribe_auth_name | lower }},
-    TokenPayload as TokenPayload_{{ subscribe_auth_name | lower }},
-)
-{% endif %}
-{% if publish_auth_name and publish_auth_name != subscribe_auth_name %}
-from app.core.auth_{{ publish_auth_name | lower }} import (
-    get_current_user as get_current_user_{{ publish_auth_name | lower }},
-    TokenPayload as TokenPayload_{{ publish_auth_name | lower }},
-)
-{% endif %}
-
-# Import auth-type specific utilities for WebSocket authentication
 {% set auth_name = subscribe_auth_name or publish_auth_name %}
 {% if auth_name %}
+from app.core.auth_{{ auth_name | lower }} import TokenPayload
+
+# Detect auth type and import specific utilities
 try:
     from app.core.auth_{{ auth_name | lower }} import decode_token
     AUTH_TYPE = "jwt"
 except ImportError:
     try:
-        from app.core.auth_{{ auth_name | lower }} import get_session, SESSION_COOKIE_NAME
-        AUTH_TYPE = "session"
-    except ImportError:
-        # API key or basic auth - check header/query param
+        from app.core.auth_{{ auth_name | lower }} import validate_api_key, API_KEY_LOCATION, API_KEY_NAME
         AUTH_TYPE = "apikey"
+    except ImportError:
+        try:
+            from app.core.auth_{{ auth_name | lower }} import validate_basic_credentials
+            AUTH_TYPE = "basic"
+        except ImportError:
+            AUTH_TYPE = None
+
+# For API key and Basic auth, we need synchronous database access
+if AUTH_TYPE in ("apikey", "basic"):
+    from app.db.database import get_db_sync
 {% endif %}
 {% endif %}
 
@@ -97,8 +93,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
     # Authenticate before accepting connection
     {% set auth_name = subscribe_auth_name or publish_auth_name %}
     user = None
-    token = None
-    session_id = None
+    credential = None  # Generic credential holder (token, api_key, etc.)
 
     # Extract credentials based on auth type
     if AUTH_TYPE == "jwt":
@@ -106,21 +101,37 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         # Note: Browsers don't support custom headers for WebSocket, so we also check query params
         auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header[7:]  # Remove "Bearer " prefix
+            credential = auth_header[7:]  # Remove "Bearer " prefix
 
         # Fallback to query parameter for browser WebSocket connections
-        if not token:
-            token = websocket.query_params.get("token")
-    elif AUTH_TYPE == "session":
-        # Session auth: Extract session cookie
-        # WebSocket cookies come from the Cookie header
-        cookie_header = websocket.headers.get("cookie", "")
-        if cookie_header:
-            for cookie in cookie_header.split(";"):
-                cookie = cookie.strip()
-                if cookie.startswith(f"{SESSION_COOKIE_NAME}="):
-                    session_id = cookie[len(SESSION_COOKIE_NAME) + 1:]
-                    break
+        if not credential:
+            credential = websocket.query_params.get("token")
+
+    elif AUTH_TYPE == "apikey":
+        # API Key auth: Extract based on configured location (header, query, or cookie)
+        if API_KEY_LOCATION == "header":
+            # Check both original case and lowercase
+            credential = websocket.headers.get(API_KEY_NAME) or websocket.headers.get(API_KEY_NAME.lower())
+            # Fallback to query param for browser WebSocket (browsers can't set custom headers)
+            if not credential:
+                credential = websocket.query_params.get("token") or websocket.query_params.get(API_KEY_NAME)
+        elif API_KEY_LOCATION == "query":
+            credential = websocket.query_params.get(API_KEY_NAME)
+        elif API_KEY_LOCATION == "cookie":
+            # Extract from Cookie header
+            cookie_header = websocket.headers.get("cookie", "")
+            if cookie_header:
+                for cookie in cookie_header.split(";"):
+                    cookie = cookie.strip()
+                    if cookie.startswith(f"{API_KEY_NAME}="):
+                        credential = cookie[len(API_KEY_NAME) + 1:]
+                        break
+
+    elif AUTH_TYPE == "basic":
+        # Basic auth: Extract from Authorization header
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Basic "):
+            credential = auth_header[6:]  # Base64 encoded credentials
 
     # Check if authentication is required for each operation
     {% if not subscribe_is_public %}
@@ -148,7 +159,7 @@ async def websocket_combined_endpoint(websocket: WebSocket):
 
     # Verify credentials if required
     if subscribe_requires_auth or publish_requires_auth:
-        has_credentials = (AUTH_TYPE == "jwt" and token) or (AUTH_TYPE == "session" and session_id)
+        has_credentials = credential is not None
 
         # Case 1: Both operations require auth - reject if no credentials
         if subscribe_requires_auth and publish_requires_auth:
@@ -171,14 +182,36 @@ async def websocket_combined_endpoint(websocket: WebSocket):
         if has_credentials:
             try:
                 if AUTH_TYPE == "jwt":
-                    user = decode_token(token)
-                else:
-                    # Session auth - get session data
-                    session = get_session(session_id)
-                    if not session:
-                        raise Exception("Invalid or expired session")
-                    from app.core.auth_{{ auth_name | lower }} import TokenPayload
-                    user = TokenPayload(user_id=session.user_id, roles=session.roles)
+                    user = decode_token(credential)
+
+                elif AUTH_TYPE == "apikey":
+                    # Validate API key against database
+                    db = get_db_sync()
+                    try:
+                        result = validate_api_key(db, credential)
+                        if result is None:
+                            raise Exception("Invalid API key")
+                        user_id, role = result
+                        user = TokenPayload(user_id=str(user_id), roles=[role])
+                    finally:
+                        db.close()
+
+                elif AUTH_TYPE == "basic":
+                    # Basic auth validation
+                    import base64
+                    db = get_db_sync()
+                    try:
+                        decoded = base64.b64decode(credential).decode('utf-8')
+                        username, password = decoded.split(':', 1)
+                        result = validate_basic_credentials(db, username, password)
+                        if result is None:
+                            raise Exception("Invalid credentials")
+                        user_id, role = result
+                        user = TokenPayload(user_id=str(user_id), roles=[role])
+                    except Exception as e:
+                        raise Exception(f"Invalid Basic auth credentials: {str(e)}")
+                    finally:
+                        db.close()
 
                 logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
 

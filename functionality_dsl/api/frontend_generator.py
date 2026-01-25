@@ -52,78 +52,49 @@ def _get_server_ctx(model):
     def get_roles_for_auth(auth_name):
         return [r.name for r in all_roles if r.auth and r.auth.name == auth_name]
 
-    # Check for AuthSession
-    session_auths = list(get_children_of_type("AuthSession", model))
-    for auth in session_auths:
-        cookie = getattr(auth, "cookie", "session_id") or "session_id"
-        auth_mechanisms.append({
-            "type": "session",
-            "name": auth.name,
-            "cookie": cookie,
-            "roles": get_roles_for_auth(auth.name),
-        })
+    # NEW GRAMMAR: Auth<http> with scheme: bearer | basic
+    http_auths = list(get_children_of_type("AuthHTTP", model))
+    for auth in http_auths:
+        scheme = getattr(auth, "scheme", "bearer")
+        if scheme == "bearer":
+            # JWT authentication
+            auth_mechanisms.append({
+                "type": "jwt",
+                "name": auth.name,
+                "roles": get_roles_for_auth(auth.name),
+            })
+        elif scheme == "basic":
+            # HTTP Basic authentication
+            auth_mechanisms.append({
+                "type": "basic",
+                "name": auth.name,
+                "roles": get_roles_for_auth(auth.name),
+            })
 
-    # Check for AuthJWT
-    jwt_auths = list(get_children_of_type("AuthJWT", model))
-    for auth in jwt_auths:
-        auth_mechanisms.append({
-            "type": "jwt",
-            "name": auth.name,
-            "roles": get_roles_for_auth(auth.name),
-        })
-
-    # Check for AuthAPIKey
+    # NEW GRAMMAR: Auth<apikey> with in: header | query | cookie
+    # Note: All apikey auth is stateless - the key itself is validated against DB
+    # Cookie-based apikey provides session-like UX but is NOT server-side session state
     apikey_auths = list(get_children_of_type("AuthAPIKey", model))
     for auth in apikey_auths:
-        # Get header name - can be string or object
-        header = getattr(auth, "header", None)
-        if header and hasattr(header, "name"):
-            header = header.name
-        elif not header:
-            header = "X-API-Key"
+        location = getattr(auth, "location", "header")
+        key_name = getattr(auth, "keyName", "X-API-Key")
+
+        # All apikey locations use the same type - just different transport
         auth_mechanisms.append({
             "type": "apikey",
             "name": auth.name,
-            "header": header,
+            "header": key_name,  # Key name (header name, query param, or cookie name)
+            "location": location,  # "header", "query", or "cookie"
             "roles": get_roles_for_auth(auth.name),
         })
 
-    # Check for AuthBasic
-    basic_auths = list(get_children_of_type("AuthBasic", model))
-    for auth in basic_auths:
-        auth_mechanisms.append({
-            "type": "basic",
-            "name": auth.name,
-            "roles": get_roles_for_auth(auth.name),
-        })
-
-    # Fallback to old-style auth on Server (for backwards compatibility)
-    if not auth_mechanisms:
-        auth = getattr(s, "auth", None)
-        if auth:
-            auth_type = getattr(auth, "type", None)
-            auth_name = getattr(auth, "name", "Auth")
-            if auth_type == "jwt":
-                auth_mechanisms.append({
-                    "type": "jwt",
-                    "name": auth_name,
-                    "roles": get_roles_for_auth(auth_name),
-                })
-            elif auth_type == "session":
-                session_config = getattr(auth, "session_config", None)
-                cookie = getattr(session_config, "cookie", "session_id") if session_config else "session_id"
-                auth_mechanisms.append({
-                    "type": "session",
-                    "name": auth_name,
-                    "cookie": cookie or "session_id",
-                    "roles": get_roles_for_auth(auth_name),
-                })
+    # No fallback needed - auth is always declared via Auth<http> or Auth<apikey>
 
     # For backwards compatibility, also provide the primary auth config
-    # Priority: session > jwt > apikey > basic
+    # Priority: jwt > apikey > basic
     auth_config = None
     if auth_mechanisms:
-        for auth_type in ["session", "jwt", "apikey", "basic"]:
+        for auth_type in ["jwt", "apikey", "basic"]:
             for mech in auth_mechanisms:
                 if mech["type"] == auth_type:
                     auth_config = mech

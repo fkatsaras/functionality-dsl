@@ -196,3 +196,59 @@ def validate_session_byodb_requires_sessions_table(model):
     BYODB only maps the users table; sessions table is created automatically.
     """
     pass  # No validation needed
+
+
+def validate_auth_config(model):
+    """Validate Auth configuration is complete and valid.
+
+    Auth types (OpenAPI-aligned):
+    - Auth<http>: HTTP authentication (scheme: bearer | basic)
+    - Auth<apikey>: API key authentication (in: header | query | cookie)
+    """
+    auths = getattr(model, "auth", []) or []
+
+    for auth in auths:
+        auth_kind = getattr(auth, "kind", None)
+        auth_name = getattr(auth, "name", "unknown")
+
+        if auth_kind == "http":
+            # Validate scheme is provided
+            scheme = getattr(auth, "scheme", None)
+            if not scheme:
+                raise TextXSemanticError(
+                    f"Auth<http> '{auth_name}' must specify 'scheme:' (bearer or basic).",
+                    **get_location(auth),
+                )
+
+            # Validate scheme value
+            if scheme not in ("bearer", "basic"):
+                raise TextXSemanticError(
+                    f"Auth<http> '{auth_name}' has invalid scheme '{scheme}'. "
+                    f"Valid schemes: bearer, basic.",
+                    **get_location(auth),
+                )
+
+        elif auth_kind == "apikey":
+            # Validate location is provided
+            location = getattr(auth, "location", None)
+            if not location:
+                raise TextXSemanticError(
+                    f"Auth<apikey> '{auth_name}' must specify 'in:' (header, query, or cookie).",
+                    **get_location(auth),
+                )
+
+            # Validate location value
+            if location not in ("header", "query", "cookie"):
+                raise TextXSemanticError(
+                    f"Auth<apikey> '{auth_name}' has invalid location '{location}'. "
+                    f"Valid locations: header, query, cookie.",
+                    **get_location(auth),
+                )
+
+            # Validate name is provided
+            key_name = getattr(auth, "keyName", None)
+            if not key_name:
+                raise TextXSemanticError(
+                    f"Auth<apikey> '{auth_name}' must specify 'name:' (header/query/cookie name).",
+                    **get_location(auth),
+                )

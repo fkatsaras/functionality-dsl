@@ -1,18 +1,23 @@
 <script lang="ts">
-    import { authStore } from "$lib/stores/authStore";
+    import { authStore, type APIKeyLocation } from "$lib/stores/authStore";
     import Card from "$lib/primitives/Card.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /**
      * Auth mechanism configuration
      * Each auth mechanism has a type, name, roles, and optional config
+     *
+     * Types:
+     * - jwt: Bearer token (JWT) in Authorization header
+     * - basic: HTTP Basic auth
+     * - apikey: API key in header, query, or cookie
      */
     interface AuthMechanism {
-        type: "session" | "jwt" | "apikey" | "basic";
+        type: "jwt" | "apikey" | "basic";
         name: string;
         roles: string[];
-        header?: string;  // For apikey
-        cookie?: string;  // For session
+        header?: string;           // Key/header name for apikey
+        location?: APIKeyLocation; // "header" | "query" | "cookie" for apikey
     }
 
     const props = $props<{
@@ -21,33 +26,38 @@
     }>();
 
     // Determine which auth types are available
-    const hasSession = $derived(props.authMechanisms.some(a => a.type === "session"));
     const hasJWT = $derived(props.authMechanisms.some(a => a.type === "jwt"));
-    const hasAPIKey = $derived(props.authMechanisms.some(a => a.type === "apikey"));
     const hasBasic = $derived(props.authMechanisms.some(a => a.type === "basic"));
+    const hasAPIKey = $derived(props.authMechanisms.some(a => a.type === "apikey"));
 
-    // Group: credential-based (session, jwt, basic) vs key-based (apikey)
-    const hasCredentialAuth = $derived(hasSession || hasJWT || hasBasic);
+    // Check if there's a non-cookie apikey (for optional "I have a key" tab)
+    const hasAPIKeyManual = $derived(props.authMechanisms.some(a => a.type === "apikey" && a.location !== "cookie"));
+
+    // All auth types support credential-based login (register/login flow)
+    // The auth type determines how credentials are validated and tokens are returned
+    const hasCredentialAuth = $derived(hasJWT || hasBasic || hasAPIKey);
+
+    // Primary auth type for determining login behavior
+    // Priority: jwt > apikey > basic
     const credentialAuthType = $derived(
-        hasSession ? "session" : hasJWT ? "jwt" : hasBasic ? "basic" : null
+        hasJWT ? "jwt" : hasAPIKey ? "apikey" : hasBasic ? "basic" : null
     );
 
-    // Get roles for each auth type (unique values only)
-    const credentialRoles = $derived(
+    // ALL roles from ALL auth mechanisms - unified registration
+    // Role determines what you can access, auth mechanism determines how credentials are transported
+    const allRoles = $derived(
         props.authMechanisms
-            .filter(a => a.type === "session" || a.type === "jwt" || a.type === "basic")
             .flatMap(a => a.roles || [])
             .filter((r, i, arr) => arr.indexOf(r) === i)
     );
-    const apiKeyRoles = $derived(
-        props.authMechanisms
-            .filter(a => a.type === "apikey")
-            .flatMap(a => a.roles || [])
-            .filter((r, i, arr) => arr.indexOf(r) === i)
+
+    // For manual API key entry tab (optional "I already have a key" flow)
+    const apiKeyConfig = $derived(
+        props.authMechanisms.find(a => a.type === "apikey" && a.location !== "cookie") ||
+        props.authMechanisms.find(a => a.type === "apikey")
     );
-    const apiKeyHeader = $derived(
-        props.authMechanisms.find(a => a.type === "apikey")?.header || "X-API-Key"
-    );
+    const apiKeyHeader = $derived(apiKeyConfig?.header || "X-API-Key");
+    const apiKeyLocation = $derived(apiKeyConfig?.location || "header");
 
     // UI State
     type AuthTab = "credentials" | "apikey";
@@ -57,7 +67,7 @@
     let credentialMode = $state<CredentialMode>("login");
 
     // Form fields
-    let email = $state("");
+    let loginId = $state("");
     let password = $state("");
     let confirmPassword = $state("");
     let selectedRole = $state<string>("");
@@ -70,16 +80,17 @@
 
     const apiBase = props.apiBase || "";
 
-    // Initialize selected role when credentialRoles becomes available
+    // Initialize selected role when allRoles becomes available
     $effect(() => {
-        if (credentialRoles.length > 0 && !selectedRole) {
-            selectedRole = credentialRoles[0];
+        if (allRoles.length > 0 && !selectedRole) {
+            selectedRole = allRoles[0];
         }
     });
 
     // Initialize active tab based on available auth types
     $effect(() => {
-        if (!hasCredentialAuth && hasAPIKey) {
+        // Only show API key tab as default if there's manual apikey (header/query) and no credential auth
+        if (!hasCredentialAuth && hasAPIKeyManual) {
             activeTab = "apikey";
         }
     });
@@ -154,8 +165,8 @@
         error = null;
         success = null;
 
-        if (!email.trim()) {
-            error = credentialAuthType === "basic" ? "Username is required" : "Email is required";
+        if (!loginId.trim()) {
+            error = credentialAuthType === "basic" ? "Username is required" : "Login ID is required";
             return;
         }
 
@@ -169,7 +180,7 @@
         try {
             if (credentialAuthType === "basic") {
                 // Basic auth - validate by making a test request
-                const credentials = btoa(`${email.trim()}:${password}`);
+                const credentials = btoa(`${loginId.trim()}:${password}`);
                 const response = await fetch(`${apiBase}/api/`, {
                     method: 'GET',
                     headers: { 'Authorization': `Basic ${credentials}` }
@@ -180,15 +191,15 @@
                 }
 
                 // For basic auth, use declared roles since server doesn't return them
-                authStore.loginBasic(email.trim(), password, credentialRoles);
+                authStore.loginBasic(loginId.trim(), password, allRoles);
             } else {
-                // JWT and Session auth use the login endpoint
+                // JWT and API key auth use the login endpoint
                 const response = await fetch(`${apiBase}/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
+                    credentials: 'include',  // Important for cookie-based apikey
                     body: JSON.stringify({
-                        login_id: email.trim(),
+                        login_id: loginId.trim(),
                         password: password
                     })
                 });
@@ -204,15 +215,29 @@
                     // JWT: decode the token to extract user_id and roles
                     const decoded = decodeJWT(data.access_token);
                     if (decoded) {
-                        authStore.loginJWT(data.access_token, decoded.sub || email.trim(), decoded.roles);
+                        authStore.loginJWT(data.access_token, decoded.sub || loginId.trim(), decoded.roles);
                     } else {
                         // Fallback if decoding fails - shouldn't happen with valid tokens
                         console.warn('Failed to decode JWT token');
-                        authStore.loginJWT(data.access_token, email.trim(), []);
+                        authStore.loginJWT(data.access_token, loginId.trim(), []);
                     }
-                } else {
-                    // Session: server returns user info directly
-                    authStore.loginSession(data.user_id || email.trim(), data.roles || []);
+                } else if (credentialAuthType === "apikey" && data.api_key) {
+                    // API key auth: server returns api_key, location, key_name, and user info
+                    // For cookie-based apikey, server already set the cookie via Set-Cookie header
+                    // For header/query-based apikey, we store it for manual injection
+                    const keyLocation = (data.location || apiKeyLocation) as APIKeyLocation;
+                    const keyName = data.key_name || apiKeyHeader;
+
+                    // Extract actual user role from server response
+                    // Server returns user.role (string) or roles (array)
+                    const userRoles: string[] = data.roles
+                        ? (Array.isArray(data.roles) ? data.roles : [data.roles])
+                        : data.user?.role
+                            ? [data.user.role]
+                            : [];
+
+                    // Store the API key with its location and ACTUAL user roles
+                    authStore.loginAPIKey(data.api_key, keyName, loginId.trim(), userRoles, keyLocation);
                 }
             }
 
@@ -227,8 +252,8 @@
         error = null;
         success = null;
 
-        if (!email.trim()) {
-            error = "Email is required";
+        if (!loginId.trim()) {
+            error = "Login ID is required";
             return;
         }
 
@@ -260,7 +285,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
-                    login_id: email.trim(),
+                    login_id: loginId.trim(),
                     password: password,
                     role: selectedRole
                 })
@@ -295,9 +320,10 @@
         loading = true;
 
         try {
-            // For API key auth, store the key directly
+            // For manual API key entry, store the key directly
             // Role verification happens server-side on each request
-            authStore.loginAPIKey(apiKey.trim(), apiKeyHeader, "api-user", apiKeyRoles);
+            // Manual entry is only for header/query based apikey (not cookie)
+            authStore.loginAPIKey(apiKey.trim(), apiKeyHeader, "api-user", allRoles, apiKeyLocation as APIKeyLocation);
         } catch (e: any) {
             error = e.message || "Failed to set API key";
         } finally {
@@ -310,9 +336,11 @@
     <div class="theme-toggle-wrapper">
         <ThemeToggle />
     </div>
+    <div class="card-wrapper">
     <Card>
         <svelte:fragment slot="header">
-            {#if hasCredentialAuth && hasAPIKey}
+            {#if hasCredentialAuth && hasAPIKeyManual}
+                <!-- Show tabs when both credential auth AND manual API key entry are available -->
                 <div class="auth-tabs">
                     <button
                         class="auth-tab"
@@ -349,7 +377,7 @@
         </svelte:fragment>
 
         <div class="login-form">
-            <!-- Credential-based auth (Session/JWT/Basic) -->
+            <!-- Credential-based auth (JWT/Basic/APIKey) -->
             {#if activeTab === "credentials" && hasCredentialAuth}
                 <!-- Login/Register toggle for session/jwt -->
                 {#if credentialAuthType !== "basic"}
@@ -371,16 +399,16 @@
                     </div>
                 {/if}
 
-                <!-- Email/Username -->
+                <!-- Login ID -->
                 <div class="form-group">
-                    <label for="email" class="form-label">
-                        {credentialAuthType === "basic" ? "Username" : "Email"}
+                    <label for="loginId" class="form-label">
+                        {credentialAuthType === "basic" ? "Username" : "Login ID"}
                     </label>
                     <input
-                        id="email"
-                        type={credentialAuthType === "basic" ? "text" : "email"}
-                        bind:value={email}
-                        placeholder={credentialAuthType === "basic" ? "Enter your username" : "Enter your email"}
+                        id="loginId"
+                        type="text"
+                        bind:value={loginId}
+                        placeholder={credentialAuthType === "basic" ? "Enter your username" : "Enter your login ID"}
                         class="form-input"
                         disabled={loading}
                     />
@@ -414,11 +442,11 @@
                     </div>
 
                     <!-- Role Selection (register only) -->
-                    {#if credentialRoles.length > 0}
+                    {#if allRoles.length > 0}
                         <div class="form-group">
                             <label class="form-label">Select Role</label>
                             <div class="roles-grid">
-                                {#each credentialRoles as role}
+                                {#each allRoles as role}
                                     <button
                                         type="button"
                                         class="role-button"
@@ -453,8 +481,8 @@
                     {/if}
                 </button>
 
-            <!-- API Key auth -->
-            {:else if activeTab === "apikey" && hasAPIKey}
+            <!-- API Key auth (manual entry for header/query based) -->
+            {:else if activeTab === "apikey" && hasAPIKeyManual}
                 <div class="form-group">
                     <label for="apiKey" class="form-label">API Key</label>
                     <input
@@ -465,13 +493,13 @@
                         class="form-input"
                         disabled={loading}
                     />
-                    <p class="form-hint">Header: {apiKeyHeader}</p>
+                    <p class="form-hint">{apiKeyLocation === "header" ? "Header" : "Query param"}: {apiKeyHeader}</p>
                 </div>
 
-                {#if apiKeyRoles.length > 0}
+                {#if allRoles.length > 0}
                     <div class="roles-info">
                         <span class="roles-label">Available roles:</span>
-                        <span class="roles-list">{apiKeyRoles.join(", ")}</span>
+                        <span class="roles-list">{allRoles.join(", ")}</span>
                     </div>
                 {/if}
 
@@ -503,14 +531,18 @@
             <div class="info-text">
                 {#if activeTab === "credentials"}
                     <p class="info-title">
-                        {credentialAuthType === "session" ? "Session-based" : credentialAuthType === "jwt" ? "Token-based" : "Basic"} authentication
+                        {credentialAuthType === "jwt" ? "Token-based" : credentialAuthType === "apikey" ? "API Key" : "Basic"} authentication
                     </p>
                     <p class="info-desc">
                         {#if credentialMode === "login"}
-                            {#if credentialAuthType === "session"}
-                                Your session is stored server-side. A cookie will be set to identify your session.
-                            {:else if credentialAuthType === "jwt"}
+                            {#if credentialAuthType === "jwt"}
                                 A JWT token will be issued and stored locally for API authentication.
+                            {:else if credentialAuthType === "apikey"}
+                                {#if apiKeyLocation === "cookie"}
+                                    An API key will be set as a cookie for seamless authentication.
+                                {:else}
+                                    An API key will be issued for {apiKeyLocation}-based authentication.
+                                {/if}
                             {:else}
                                 Credentials are validated with each request using HTTP Basic auth.
                             {/if}
@@ -521,12 +553,13 @@
                 {:else}
                     <p class="info-title">API Key authentication</p>
                     <p class="info-desc">
-                        Enter your API key to authenticate. The key will be sent with each request in the <code>{apiKeyHeader}</code> header.
+                        Enter your API key to authenticate. The key will be sent with each request in the <code>{apiKeyHeader}</code> {apiKeyLocation}.
                     </p>
                 {/if}
             </div>
         </div>
     </Card>
+    </div>
 </div>
 
 <style>
@@ -535,6 +568,7 @@
         flex-direction: column;
         justify-content: center;
         align-items: center;
+        min-height: 100vh;
         padding: 2rem 1rem;
         position: relative;
     }
@@ -543,6 +577,16 @@
         position: absolute;
         top: 1rem;
         right: 1rem;
+    }
+
+    .card-wrapper {
+        width: 100%;
+        max-width: 380px;
+    }
+
+    .card-wrapper :global(.card) {
+        max-width: 380px;
+        margin: 0 auto;
     }
 
     .auth-tabs {

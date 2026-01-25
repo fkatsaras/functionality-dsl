@@ -16,16 +16,17 @@ AuthDB ShopUserStore
     role="user_role"
 end
 
-// Session auth for web/mobile users
-Auth<session> UserAuth
-  cookie: "ecomm_session"
-  expiry: 7200
+// Cookie auth for web/mobile users (session-like)
+// Keys: SESSION_KEYS=customer_session:customer,admin_session:admin
+Auth<apikey> UserAuth
+  in: cookie
+  name: "ecomm_session"
 end
 
 // API key for third-party integrations (shipping, analytics)
 Auth<apikey> IntegrationAuth
-  header: "X-API-Key"
-  secret: "INTEGRATION_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
 // Roles - different auth mechanisms

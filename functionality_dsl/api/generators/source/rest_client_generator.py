@@ -34,15 +34,17 @@ def _extract_auth_config(source):
     config = {"kind": kind}
 
     if kind == "apikey":
-        # API key can be in header or query
-        header_obj = getattr(auth, "header", None)
-        query_obj = getattr(auth, "query", None)
+        # API key can be in header, query, or cookie
+        location = getattr(auth, "location", None)
+        key_name = getattr(auth, "keyName", None)
 
-        if header_obj:
-            config["header_name"] = getattr(header_obj, "name", None)
-        elif query_obj:
-            config["query_name"] = getattr(query_obj, "name", None)
+        if location == "header":
+            config["header_name"] = key_name
+        elif location == "query":
+            config["query_name"] = key_name
+        # cookie not typically used for outbound REST
 
+        # secret is env var name for static API key (source auth)
         config["secret_env"] = getattr(auth, "secret", None)
 
     elif kind == "jwt":

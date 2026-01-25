@@ -1,10 +1,11 @@
-// Minimal JWT Auth Test
+// Minimal HTTP Bearer (JWT) Auth Test
 // Test with:
 //   1. Register: curl -X POST http://localhost:8000/auth/register -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123","role":"admin"}'
 //   2. Login: curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123"}'
 //   3. Access: curl http://localhost:8000/api/secretpost -H "Authorization: Bearer <token>"
 
-Auth<jwt> JWTAuth
+Auth<http> JWTAuth
+  scheme: bearer
   secret: "JWT_SECRET"
 end
 

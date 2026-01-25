@@ -2,23 +2,17 @@
 Auth middleware and dependencies generator.
 Generates FastAPI auth utilities based on Auth declarations.
 
-NEW MODEL (Global AuthDB):
-- Multiple Auth declarations can exist
-- Roles belong to Auth mechanisms (Role admin uses JWTAuth)
-- Entity access: can reference public, Auth, or Role
-- Auth is inferred from Role when needed
-- AuthDB is GLOBAL (shared by DB-backed auths)
-- If AuthDB exists -> BYODB mode
-- If no AuthDB -> default DB mode (for JWT/Session only)
+Auth Model (OpenAPI-aligned, all DB-backed):
+- Auth<http>: HTTP authentication (scheme: bearer | basic)
+- Auth<apikey>: API key authentication (in: header | query | cookie)
 
-Supported auth types:
-- jwt: DB-backed, stateless token-based authentication (Authorization header)
-- session: DB-backed, stateful cookie-based authentication (sessions table)
-- apikey: Env-var based, API key authentication (header or query param)
-- basic: Env-var based, HTTP Basic authentication (username:password)
+All auth types use database for validation:
+- http/bearer -> Token looked up in DB (opaque token, no JWT crypto)
+- http/basic -> Username/password verified against DB
+- apikey/* -> API key looked up in DB
 
-Only JWT and Session support login/register endpoints (user-facing auth).
-APIKey and Basic are admin-configured access control (no DB, no registration).
+AuthDB is optional for BYODB (Bring Your Own Database) mode.
+Without AuthDB, a default Postgres database is used.
 """
 
 from pathlib import Path
@@ -45,7 +39,6 @@ def generate_auth_modules(model, templates_dir, out_dir):
         dict: Mapping of auth_name -> auth_config for use by router generator
     """
     # Get all Auth declarations - access directly from model since Auth is a union type
-    # (get_children_of_type doesn't work with union types)
     auth_blocks = getattr(model, "auth", []) or []
 
     if not auth_blocks:
@@ -73,31 +66,24 @@ def generate_auth_modules(model, templates_dir, out_dir):
 
     for auth in auth_blocks:
         auth_name = auth.name
-        auth_type = getattr(auth, "kind", None)
+        auth_kind = getattr(auth, "kind", None)
 
-        if not auth_type:
+        if not auth_kind:
             print(f"  Auth {auth_name} has no kind - skipping")
             continue
 
-        print(f"  Generating auth module: {auth_name} (type: {auth_type})")
-
-        # Extract config for this auth (pass global authdb for DB-backed types)
+        # Extract config for this auth
         roles_for_auth = roles_by_auth.get(auth_name, [])
         auth_config = _extract_auth_config(auth, roles_for_auth, global_authdb)
         auth_configs[auth_name] = auth_config
 
-        # Select template based on type
-        template_map = {
-            "jwt": "auth_jwt.py.jinja",
-            "session": "auth_session.py.jinja",
-            "apikey": "auth_apikey.py.jinja",
-            "basic": "auth_basic.py.jinja",
-        }
-
-        template_name = template_map.get(auth_type)
+        # Determine template based on type and scheme/location
+        template_name = _get_template_name(auth_config)
         if not template_name:
-            print(f"    Unknown auth type: {auth_type} - skipping")
+            print(f"    Unknown auth configuration for {auth_name} - skipping")
             continue
+
+        print(f"  Generating auth module: {auth_name} (type: {auth_config['auth_type']})")
 
         template = env.get_template(template_name)
         rendered = template.render(**auth_config)
@@ -112,7 +98,35 @@ def generate_auth_modules(model, templates_dir, out_dir):
     if auth_configs:
         _generate_unified_auth_module(auth_configs, core_dir, out_dir)
 
+    # Generate auth_context.py for forwarding auth to sources
+    _generate_auth_context(auth_configs, env, core_dir, out_dir)
+
     return auth_configs
+
+
+def _get_template_name(auth_config):
+    """
+    Get the appropriate template based on auth configuration.
+
+    Mapping:
+    - http/bearer -> auth_bearer.py.jinja (DB-backed token auth)
+    - http/basic -> auth_basic.py.jinja (HTTP Basic auth)
+    - apikey/* -> auth_apikey.py.jinja (API key in header/query/cookie)
+
+    All auth types use database for credential/role lookup.
+    """
+    auth_type = auth_config.get("auth_type")
+
+    if auth_type == "http":
+        scheme = auth_config.get("scheme")
+        if scheme == "bearer":
+            return "auth_bearer.py.jinja"
+        elif scheme == "basic":
+            return "auth_basic.py.jinja"
+    elif auth_type == "apikey":
+        return "auth_apikey.py.jinja"
+
+    return None
 
 
 def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
@@ -127,12 +141,11 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         '',
     ]
 
-    # Track auth types for special exports (priority: session > basic > apikey > jwt)
-    # We pick ONE primary auth for login/register handlers
-    session_auth_name = None
-    jwt_auth_name = None
+    # Track auth types for special exports
+    bearer_auth_name = None
     basic_auth_name = None
     apikey_auth_name = None
+    cookie_auth_name = None  # For session-like behavior
 
     # Import each auth module
     for auth_name, config in auth_configs.items():
@@ -145,64 +158,59 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append(")")
         lines.append("")
 
-        # Track auth types for special exports
+        # Track auth types
         auth_type = config.get("auth_type")
-        if auth_type == "session":
-            session_auth_name = auth_name
-        elif auth_type == "jwt" and jwt_auth_name is None:
-            jwt_auth_name = auth_name
-        elif auth_type == "basic" and basic_auth_name is None:
-            basic_auth_name = auth_name
-        elif auth_type == "apikey" and apikey_auth_name is None:
-            apikey_auth_name = auth_name
+        if auth_type == "http":
+            scheme = config.get("scheme")
+            if scheme == "bearer" and bearer_auth_name is None:
+                bearer_auth_name = auth_name
+            elif scheme == "basic" and basic_auth_name is None:
+                basic_auth_name = auth_name
+        elif auth_type == "apikey":
+            location = config.get("location")
+            if location == "cookie" and cookie_auth_name is None:
+                cookie_auth_name = auth_name
+            elif apikey_auth_name is None:
+                apikey_auth_name = auth_name
 
-    # If JWT auth exists, import and re-export JWT-specific functions
-    # These are used by auth_routes.py for login/register
-    if jwt_auth_name:
-        jwt_module = f"auth_{jwt_auth_name.lower()}"
-        lines.append("# JWT auth functions for auth_routes.py")
+    # If bearer (JWT) auth exists, import and re-export JWT-specific functions
+    if bearer_auth_name:
+        jwt_module = f"auth_{bearer_auth_name.lower()}"
+        lines.append("# HTTP Bearer (JWT) auth functions for auth_routes.py")
         lines.append(f"from app.core.{jwt_module} import (")
         lines.append("    create_access_token,")
         lines.append(")")
         lines.append("")
-        # Also export get_current_user and TokenPayload without suffix for auth_routes.py compatibility
-        lines.append("# Re-export JWT auth functions without suffix for auth_routes.py compatibility")
-        lines.append(f"get_current_user = get_current_user_{jwt_auth_name.lower()}")
-        lines.append(f"TokenPayload = TokenPayload_{jwt_auth_name.lower()}")
+        lines.append("# Re-export bearer auth functions without suffix for auth_routes.py compatibility")
+        lines.append(f"get_current_user = get_current_user_{bearer_auth_name.lower()}")
+        lines.append(f"TokenPayload = TokenPayload_{bearer_auth_name.lower()}")
         lines.append("")
 
     # Import auth handlers from the primary auth type
-    # Only JWT and Session have login/register endpoints (DB-backed, user-facing auth)
-    # Basic and APIKey are env-var based (admin-configured, no registration)
-    if session_auth_name:
-        auth_module = f"auth_{session_auth_name.lower()}"
-        lines.append("# Session auth handlers for main.py")
-        lines.append(f"from app.core.{auth_module} import (")
-        lines.append("    login_handler,")
-        lines.append("    logout_handler,")
-        lines.append("    register_handler,")
-        lines.append("    me_handler,")
-        lines.append("    LoginRequest,")
-        lines.append("    LoginResponse,")
-        lines.append("    LogoutResponse,")
-        lines.append("    RegisterRequest,")
-        lines.append("    RegisterResponse,")
-        lines.append("    SESSION_COOKIE_NAME,")
-        lines.append(")")
-        lines.append("")
-        # Also export get_current_user and TokenPayload without suffix for main.py
-        lines.append("# Re-export session auth functions without suffix for main.py compatibility")
-        lines.append(f"get_current_user = get_current_user_{session_auth_name.lower()}")
-        lines.append(f"TokenPayload = TokenPayload_{session_auth_name.lower()}")
-        lines.append("")
+    # Priority: cookie (session-like) > bearer (JWT) > basic > apikey
+    primary_auth = cookie_auth_name or bearer_auth_name
+    if primary_auth:
+        auth_module = f"auth_{primary_auth.lower()}"
+        config = auth_configs[primary_auth]
+
+        # Only bearer and cookie-based apikey have login/register
+        if config.get("auth_type") == "http" and config.get("scheme") == "bearer":
+            lines.append("# Bearer auth handlers for main.py (login/register)")
+            lines.append(f"from app.core.{auth_module} import (")
+            lines.append("    login_handler,")
+            lines.append("    register_handler,")
+            lines.append("    LoginRequest,")
+            lines.append("    LoginResponse,")
+            lines.append("    RegisterRequest,")
+            lines.append("    RegisterResponse,")
+            lines.append(")")
+            lines.append("")
     elif basic_auth_name:
-        # Basic auth - no login/register handlers, just re-export dependencies
         lines.append("# Re-export basic auth functions without suffix for main.py compatibility")
         lines.append(f"get_current_user = get_current_user_{basic_auth_name.lower()}")
         lines.append(f"TokenPayload = TokenPayload_{basic_auth_name.lower()}")
         lines.append("")
     elif apikey_auth_name:
-        # API Key auth - no login/register handlers, just re-export dependencies
         lines.append("# Re-export apikey auth functions without suffix for main.py compatibility")
         lines.append(f"get_current_user = get_current_user_{apikey_auth_name.lower()}")
         lines.append(f"TokenPayload = TokenPayload_{apikey_auth_name.lower()}")
@@ -212,11 +220,18 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
     lines.append("# Auth module mapping for router generation")
     lines.append("AUTH_MODULES = {")
     for auth_name, config in auth_configs.items():
+        auth_type = config["auth_type"]
+        # Include scheme/location for more specific identification
+        if auth_type == "http":
+            type_detail = f"http/{config.get('scheme', 'unknown')}"
+        else:
+            type_detail = f"apikey/{config.get('location', 'unknown')}"
+
         lines.append(f'    "{auth_name}": {{')
         lines.append(f'        "get_current_user": get_current_user_{auth_name.lower()},')
         lines.append(f'        "get_optional_user": get_optional_user_{auth_name.lower()},')
         lines.append(f'        "require_roles": require_roles_{auth_name.lower()},')
-        lines.append(f'        "type": "{config["auth_type"]}",')
+        lines.append(f'        "type": "{type_detail}",')
         lines.append(f'    }},')
     lines.append("}")
     lines.append("")
@@ -226,34 +241,83 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
     print(f"    [OK] {auth_file.relative_to(out_dir)}")
 
 
+def _generate_auth_context(auth_configs, env, core_dir, out_dir):
+    """
+    Generate auth_context.py for extracting and forwarding auth credentials.
+
+    This module provides a generic way to extract auth credentials from incoming
+    requests and forward them to external sources (REST/WebSocket).
+    """
+    # Collect all headers, query params, and cookies to extract
+    auth_headers = []
+    auth_query_params = []
+    auth_cookies = []
+
+    for auth_name, config in auth_configs.items():
+        auth_type = config.get("auth_type")
+
+        if auth_type == "http":
+            # HTTP auth (bearer/basic) always uses Authorization header
+            if "Authorization" not in auth_headers:
+                auth_headers.append("Authorization")
+
+        elif auth_type == "apikey":
+            location = config.get("location", "header")
+            key_name = config.get("name", "X-API-Key")
+
+            if location == "header":
+                if key_name not in auth_headers:
+                    auth_headers.append(key_name)
+            elif location == "query":
+                if key_name not in auth_query_params:
+                    auth_query_params.append(key_name)
+            elif location == "cookie":
+                if key_name not in auth_cookies:
+                    auth_cookies.append(key_name)
+
+    # Render template
+    template = env.get_template("auth_context.py.jinja")
+    rendered = template.render(
+        auth_headers=auth_headers,
+        auth_query_params=auth_query_params,
+        auth_cookies=auth_cookies,
+    )
+
+    auth_context_file = core_dir / "auth_context.py"
+    auth_context_file.write_text(rendered, encoding="utf-8")
+    print(f"    [OK] {auth_context_file.relative_to(out_dir)}")
+
+
 def _extract_auth_config(auth, roles, global_authdb=None):
     """
     Extract auth configuration into template-friendly dict.
 
-    Auth types have different storage models:
-    - Auth<jwt>: DB-backed (uses global AuthDB or default DB)
-    - Auth<session>: DB-backed (uses global AuthDB or default DB)
-    - Auth<apikey>: Env-var based (no DB, uses secret env var)
-    - Auth<basic>: Env-var based (no DB, uses users env var)
+    ALL auth types are ALWAYS DB-backed. The difference is:
+    - Without AuthDB: uses default Postgres database
+    - With AuthDB: uses external database (BYODB)
 
     Args:
-        auth: Auth object from FDSL model (AuthJWT, AuthSession, AuthAPIKey, or AuthBasic)
+        auth: Auth object from FDSL model (AuthHTTP or AuthAPIKey)
         roles: List of role names that use this auth
-        global_authdb: Global AuthDB object (if BYODB mode, only for JWT/Session)
+        global_authdb: Global AuthDB object (if BYODB mode)
 
     Returns:
         dict: Auth configuration for template rendering
     """
-    auth_type = getattr(auth, "kind", None)
+    auth_kind = getattr(auth, "kind", None)
     auth_name = auth.name
 
-    # Only JWT and Session are DB-backed
-    is_db_backed = auth_type in ("jwt", "session")
-    uses_default_db = is_db_backed and (global_authdb is None)
+    # Helper to get value or default
+    def get_or_default(attr, default):
+        val = getattr(auth, attr, None)
+        return val if val is not None and val != "" else default
 
-    # Build authdb config for templates (only for DB-backed types with BYODB)
+    # Determine if using default DB or external DB (BYODB)
+    uses_default_db = global_authdb is None
+
+    # Build authdb config for templates (used for BYODB column mapping)
     authdb_config = None
-    if is_db_backed and global_authdb:
+    if global_authdb:
         columns_ref = getattr(global_authdb, "columns", None)
         columns_config = None
         if columns_ref:
@@ -262,7 +326,6 @@ def _extract_auth_config(auth, roles, global_authdb=None):
                 "password": columns_ref.password,
                 "role": columns_ref.role,
             }
-
         authdb_config = {
             "connection": global_authdb.connection,
             "table": global_authdb.table,
@@ -270,64 +333,30 @@ def _extract_auth_config(auth, roles, global_authdb=None):
         }
 
     config = {
-        "auth_type": auth_type,
+        "auth_type": auth_kind,
         "auth_name": auth_name,
         "roles": roles,
-        "is_db_backed": is_db_backed,
-        "uses_default_db": uses_default_db,
         "authdb": authdb_config,
+        "uses_default_db": uses_default_db,  # All templates need this
     }
 
-    # Helper to get value or default
-    def get_or_default(attr, default):
-        val = getattr(auth, attr, None)
-        return val if val is not None and val != "" else default
+    if auth_kind == "http":
+        scheme = getattr(auth, "scheme", "bearer")
+        config["scheme"] = scheme
+        config["header"] = "Authorization"
 
-    if auth_type == "jwt":
-        # Auth<jwt>: secret is directly on auth object
-        # Also set standard JWT config values for template
-        config.update({
-            "secret": get_or_default("secret", "JWT_SECRET"),
-            "algorithm": "HS256",
-            "user_id_claim": "sub",
-            "roles_claim": "roles",
-            "header": "Authorization",
-            "scheme": "Bearer",
-        })
+        # Both bearer and basic use database for validation
+        # - bearer: token looked up in DB
+        # - basic: username/password verified against DB
 
-    elif auth_type == "session":
-        # Auth<session>: cookie and expiry are directly on auth object
-        config.update({
-            "cookie": get_or_default("cookie", "session_id"),
-            "expiry": get_or_default("expiry", 3600),
-        })
-
-    elif auth_type == "apikey":
-        # Auth<apikey>: header/query and secret are directly on auth object
-        header_config = getattr(auth, "header", None)
-        query_config = getattr(auth, "query", None)
-
-        location = "header"
-        name = "X-API-Key"
-
-        if header_config:
-            location = "header"
-            name = getattr(header_config, "name", "X-API-Key")
-        elif query_config:
-            location = "query"
-            name = getattr(query_config, "name", "api_key")
+    elif auth_kind == "apikey":
+        # API key auth - uses apikeys table
+        location = getattr(auth, "location", "header")
+        key_name = getattr(auth, "keyName", "X-API-Key")
 
         config.update({
             "location": location,
-            "name": name,
-            "secret": get_or_default("secret", "API_KEYS"),
-        })
-
-    elif auth_type == "basic":
-        # Auth<basic>: env-var based (no DB)
-        # Uses BASIC_AUTH_USERS env var by default
-        config.update({
-            "users": get_or_default("users", "BASIC_AUTH_USERS"),
+            "name": key_name,
         })
 
     return config
@@ -337,7 +366,7 @@ def get_permission_dependencies(entity, model, operations=None):
     """
     Get permission requirements for each operation of an entity.
 
-    NEW MODEL: Returns structured info about auth and roles:
+    Returns structured info about auth and roles:
     - "public" = no auth required
     - {"auth": "AuthName"} = valid auth of that type, no role check
     - {"auth": "AuthName", "roles": ["role1", "role2"]} = auth with specific roles
@@ -349,11 +378,6 @@ def get_permission_dependencies(entity, model, operations=None):
 
     Returns:
         dict: Mapping of operation -> access requirement
-              Example: {
-                  "read": "public",
-                  "create": {"auth": "JWTAuth", "roles": ["admin", "user"]},
-                  "delete": {"auth": "APIKeyAuth"}
-              }
     """
     # Build role -> auth mapping
     role_blocks = get_children_of_type("Role", model)

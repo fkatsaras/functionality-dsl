@@ -1,17 +1,19 @@
 """
 Database module generator.
-Generates SQLModel database configuration and user model based on Auth/AuthDB configuration.
+Generates SQLModel database configuration based on Auth/AuthDB configuration.
 
-NEW MODEL (Global AuthDB):
-- AuthDB is global (not attached to specific Auth)
-- Only JWT and Session auth types are DB-backed
-- APIKey and Basic auth are env-var based (no DB needed)
-- If AuthDB exists -> BYODB mode (for JWT/Session)
-- If no AuthDB -> default DB mode (auto-generate Postgres for JWT/Session)
+ALL auth types are ALWAYS DB-backed. The difference is:
+- Without AuthDB: FDSL generates default PostgreSQL database with appropriate tables
+- With AuthDB: User brings their own database (BYODB) with custom table/column mapping
 
-Supports two modes:
-1. Default: Generates PostgreSQL + SQLModel user table (when no AuthDB specified)
-2. External: Connects to user-provided database with column mapping (when AuthDB specified)
+Auth Types and Tables:
+- All auth types need the users table (for registration/login)
+- Auth<apikey> additionally needs apikeys table (with user_id FK)
+
+AuthDB Configuration (BYODB):
+- connection: Environment variable name for database URL
+- table: User/credentials table name
+- columns: Maps FDSL fields to your column names (id, password, role)
 """
 
 from pathlib import Path
@@ -19,34 +21,56 @@ from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
 
 
-def _has_db_backed_auth(model) -> bool:
-    """Check if any DB-backed auth type exists (JWT or Session only)."""
+def _get_auth_types(model) -> dict:
+    """
+    Analyze auth declarations and return their types.
+
+    Returns dict with:
+    - has_bearer: bool - Auth<http> scheme: bearer exists
+    - has_basic: bool - Auth<http> scheme: basic exists
+    - has_apikey: bool - Auth<apikey> exists
+    - bearer_auths: list - Bearer auth names
+    - basic_auths: list - Basic auth names
+    - apikey_auths: list - API key auth names with their config
+    """
     auths = getattr(model, "auth", []) or []
-    # Only JWT and Session are DB-backed
-    # APIKey and Basic are env-var based (no DB needed)
+
+    result = {
+        "has_bearer": False,
+        "has_basic": False,
+        "has_apikey": False,
+        "bearer_auths": [],
+        "basic_auths": [],
+        "apikey_auths": [],
+    }
+
     for auth in auths:
-        auth_type = getattr(auth, "kind", None)
-        if auth_type in ("jwt", "session"):
-            return True
-    return False
+        auth_kind = getattr(auth, "kind", None)
+        auth_name = getattr(auth, "name", "unknown")
+
+        if auth_kind == "http":
+            scheme = getattr(auth, "scheme", None)
+            if scheme == "bearer":
+                result["has_bearer"] = True
+                result["bearer_auths"].append(auth_name)
+            elif scheme == "basic":
+                result["has_basic"] = True
+                result["basic_auths"].append(auth_name)
+        elif auth_kind == "apikey":
+            result["has_apikey"] = True
+            result["apikey_auths"].append({
+                "name": auth_name,
+                "location": getattr(auth, "location", "header"),
+                "key_name": getattr(auth, "keyName", "X-API-Key"),
+            })
+
+    return result
 
 
-def _has_session_auth(model) -> bool:
-    """Check if any session auth exists."""
+def _get_first_auth(model):
+    """Get the first auth declaration (for determining primary auth type)."""
     auths = getattr(model, "auth", []) or []
-    for auth in auths:
-        if getattr(auth, "kind", None) == "session":
-            return True
-    return False
-
-
-def _has_jwt_auth(model) -> bool:
-    """Check if any JWT auth exists."""
-    auths = getattr(model, "auth", []) or []
-    for auth in auths:
-        if getattr(auth, "kind", None) == "jwt":
-            return True
-    return False
+    return auths[0] if auths else None
 
 
 def _get_global_authdb(model):
@@ -55,9 +79,47 @@ def _get_global_authdb(model):
     return authdbs[0] if authdbs else None
 
 
+def _has_any_auth(model) -> bool:
+    """Check if any auth declaration exists."""
+    auth_types = _get_auth_types(model)
+    return auth_types["has_bearer"] or auth_types["has_basic"] or auth_types["has_apikey"]
+
+
+def _needs_database(model) -> bool:
+    """
+    Determine if database generation is needed.
+
+    Database is needed when ANY auth declaration exists.
+    All auth types are DB-backed.
+    """
+    return _has_any_auth(model)
+
+
+def _needs_auth_routes(model) -> bool:
+    """
+    Determine if login/register routes are needed.
+
+    Auth routes are generated for ALL auth types now.
+    - Bearer: returns JWT token
+    - Basic: returns success message (use credentials with Basic auth)
+    - API Key: returns API key
+    """
+    return _has_any_auth(model)
+
+
+def _needs_apikeys_table(model) -> bool:
+    """
+    Determine if apikeys table is needed.
+
+    API keys table is needed for Auth<apikey> in any location.
+    """
+    auth_types = _get_auth_types(model)
+    return auth_types["has_apikey"]
+
+
 def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
     """
-    Generate database module with SQLModel User model.
+    Generate database module with SQLModel models.
 
     Args:
         model: FDSL model
@@ -65,11 +127,10 @@ def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
         out_dir: Output directory for generated code
 
     Returns:
-        bool: True if database module was generated, False if no DB-backed auth
+        bool: True if database module was generated
     """
-    # Only generate database if we have DB-backed auth (JWT or Session)
-    if not _has_db_backed_auth(model):
-        print("  No DB-backed auth (JWT/Session) found - skipping database generation")
+    if not _needs_database(model):
+        print("  No auth declarations found - skipping database generation")
         return False
 
     print("  Generating database module...")
@@ -104,6 +165,8 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
     """
     Generate password hashing utilities.
 
+    Needed for any auth type (all use password-based registration).
+
     Args:
         model: FDSL model
         templates_dir: Path to templates directory
@@ -112,8 +175,7 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if password module was generated
     """
-    # Only generate if we have any auth (all are now DB-backed)
-    if not _has_db_backed_auth(model):
+    if not _has_any_auth(model):
         return False
 
     print("  Generating password utilities...")
@@ -138,9 +200,7 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     """
     Generate authentication routes (register, login, me).
 
-    Note: This only generates JWT-style auth routes (auth_routes.py.jinja).
-    Session auth uses different handlers that are added directly in main.py
-    via login_handler, logout_handler, me_handler from the session auth module.
+    Generated for ALL auth types now with appropriate response format.
 
     Args:
         model: FDSL model
@@ -150,18 +210,27 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if auth routes were generated
     """
-    # Only generate JWT-style auth routes if we have JWT auth
-    # Session auth has its own handlers (login_handler, logout_handler, me_handler)
-    # that are added directly in main.py
-    if not _has_jwt_auth(model):
-        if _has_session_auth(model):
-            print("  Session auth detected - using session handlers in main.py (no separate auth routes)")
+    if not _needs_auth_routes(model):
         return False
 
-    print("  Generating JWT authentication routes...")
+    # Determine auth type for routing
+    auth = _get_first_auth(model)
+    auth_kind = getattr(auth, "kind", None)
+
+    if auth_kind == "http":
+        scheme = getattr(auth, "scheme", "bearer")
+        if scheme == "bearer":
+            auth_type = "bearer"
+            print("  Generating JWT authentication routes...")
+        else:
+            auth_type = "basic"
+            print("  Generating Basic authentication routes...")
+    else:
+        auth_type = "apikey"
+        print("  Generating API Key authentication routes...")
 
     # Extract auth routes configuration
-    routes_config = _extract_auth_routes_config(model)
+    routes_config = _extract_auth_routes_config(model, auth_type)
 
     # Render auth routes template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -181,35 +250,30 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
 
 def _extract_database_config(model) -> dict:
     """
-    Extract database configuration from global AuthDB.
+    Extract database configuration.
 
     Returns dict with:
     - uses_default_db: bool - whether to use default Postgres
     - database_url_env: str - environment variable name for DB URL
     - authdb: dict - AuthDB mapping config (if external DB)
-    - has_session_auth: bool - whether session auth exists
+    - auth_types: dict - which auth types exist
+    - needs_apikeys_table: bool - whether to generate apikeys table
     - debug: bool - whether to enable SQL echo
     """
     authdb = _get_global_authdb(model)
-    has_session = _has_session_auth(model)
+    auth_types = _get_auth_types(model)
+
+    base_config = {
+        "auth_types": auth_types,
+        "needs_apikeys_table": _needs_apikeys_table(model),
+        "debug": False,
+    }
 
     if authdb:
         # External database mode (BYODB)
         columns = getattr(authdb, "columns", None)
-        sessions = getattr(authdb, "sessions", None)
 
-        # Build sessions config if present
-        sessions_config = None
-        if sessions:
-            sessions_config = {
-                "table": sessions.table,
-                "session_id": sessions.session_id,
-                "user_id": sessions.user_id,
-                "roles": sessions.roles,
-                "expires_at": sessions.expires_at,
-            }
-
-        return {
+        base_config.update({
             "uses_default_db": False,
             "database_url_env": authdb.connection,
             "authdb": {
@@ -219,33 +283,38 @@ def _extract_database_config(model) -> dict:
                     "password": columns.password,
                     "role": columns.role,
                 },
-                "sessions": sessions_config,
             },
-            "has_session_auth": has_session,
-            "debug": False,
-        }
+        })
     else:
         # Default database mode
-        return {
+        base_config.update({
             "uses_default_db": True,
             "database_url_env": "DATABASE_URL",
             "authdb": None,
-            "has_session_auth": has_session,
-            "debug": False,
-        }
+        })
+
+    return base_config
 
 
-def _extract_auth_routes_config(model) -> dict:
+def _extract_auth_routes_config(model, auth_type: str) -> dict:
     """
     Extract configuration for auth routes template.
 
+    Args:
+        model: FDSL model
+        auth_type: One of "bearer", "basic", "apikey"
+
     Returns dict with:
+    - auth_type: str - the auth type
     - uses_default_db: bool
     - roles: list of role names
     - default_role: str - default role for new users
     - allow_registration: bool - whether to allow user registration
+    - apikey_location: str - for apikey auth, where the key goes
+    - apikey_name: str - for apikey auth, the header/cookie/query name
     """
     authdb = _get_global_authdb(model)
+    auth = _get_first_auth(model)
 
     # Collect roles from Role declarations
     role_blocks = get_children_of_type("Role", model)
@@ -254,12 +323,24 @@ def _extract_auth_routes_config(model) -> dict:
     # Default role is first declared role, or "user"
     default_role = roles[0] if roles else "user"
 
-    return {
+    # Get the auth name for import path
+    auth_name = getattr(auth, "name", "auth") if auth else "auth"
+
+    config = {
+        "auth_type": auth_type,
+        "auth_name": auth_name,
         "uses_default_db": authdb is None,
         "roles": roles,
         "default_role": default_role,
         "allow_registration": True,  # Could be configurable later
     }
+
+    # Add apikey-specific config
+    if auth_type == "apikey" and auth:
+        config["apikey_location"] = getattr(auth, "location", "header")
+        config["apikey_name"] = getattr(auth, "keyName", "X-API-Key")
+
+    return config
 
 
 def get_database_context(model) -> dict:
@@ -268,17 +349,18 @@ def get_database_context(model) -> dict:
 
     Returns dict with database configuration for docker-compose and .env templates.
     """
-    # Only need database context if we have any auth (all are now DB-backed)
-    if not _has_db_backed_auth(model):
+    if not _needs_database(model):
         return {}
 
     authdb = _get_global_authdb(model)
+    auth_types = _get_auth_types(model)
 
     if authdb:
         # External database (BYODB) - user provides connection
         return {
             "uses_default_db": False,
             "external_db_url_var": authdb.connection,
+            "auth_types": auth_types,
         }
     else:
         # Default database - generate Postgres config
@@ -295,4 +377,28 @@ def get_database_context(model) -> dict:
             "db_password": db_password,
             "db_name": "fdsl_db",
             "db_port": 5432,
+            "auth_types": auth_types,
         }
+
+
+def is_auth_db_backed(model, auth_name: str) -> bool:
+    """
+    Check if a specific auth mechanism is DB-backed.
+
+    All auth mechanisms are DB-backed, so this always returns True
+    if the auth exists.
+
+    Args:
+        model: FDSL model
+        auth_name: Name of the auth mechanism
+
+    Returns:
+        bool: True if this auth exists (all auths are DB-backed)
+    """
+    auths = getattr(model, "auth", []) or []
+
+    for auth in auths:
+        if getattr(auth, "name", None) == auth_name:
+            return True
+
+    return False

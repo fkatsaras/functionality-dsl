@@ -3,18 +3,26 @@ Database Configuration
 Auto-generated from FDSL Auth configuration
 
 {% if uses_default_db %}
-Uses default FDSL user store with SQLModel + PostgreSQL.
+Uses default FDSL database with SQLModel + PostgreSQL.
 {% else %}
-Connects to external user database: {{ authdb.table }}
+Connects to external database (BYODB): {{ authdb.table }}
 {% endif %}
 """
 
 import os
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 
-from sqlmodel import SQLModel, Field, create_engine, Session
+from sqlmodel import SQLModel, Field, create_engine, Session, Relationship
 from sqlalchemy.orm import sessionmaker
+{% if not uses_default_db %}
+from sqlalchemy import Column, String, Integer
+{% endif %}
+
+{% if needs_apikeys_table %}
+if TYPE_CHECKING:
+    pass  # Forward references handled by SQLModel
+{% endif %}
 
 
 # ============================================================================
@@ -45,11 +53,11 @@ SessionLocal = sessionmaker(
 
 
 # ============================================================================
-# User Model
+# User Model (always generated for any auth type)
 # ============================================================================
 
 {% if uses_default_db %}
-# Column name constants for auth system (defined outside class to avoid Pydantic issues)
+# Column name constants for auth system (default schema)
 USER_ID_COLUMN = "email"
 USER_PASSWORD_COLUMN = "password_hash"
 USER_ROLE_COLUMN = "role"
@@ -69,30 +77,18 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default=None)
 
+{% if needs_apikeys_table %}
+    # Relationship to API keys
+    api_keys: List["APIKey"] = Relationship(back_populates="user")
+{% endif %}
+
     @property
     def login_id(self) -> str:
         """Get login identifier (email)."""
         return self.email
 
-
-{% if has_session_auth %}
-class SessionRecord(SQLModel, table=True):
-    """
-    Database-backed session storage.
-    Stores session data for stateful authentication.
-    """
-    __tablename__ = "sessions"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    session_id: str = Field(unique=True, index=True, max_length=64)
-    user_id: str = Field(index=True, max_length=255)
-    roles: str = Field(max_length=500)  # JSON-encoded list of roles
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: datetime = Field(index=True)
-{% endif %}
 {% else %}
 # Column name constants for auth system (mapped from AuthDB columns config)
-# AuthDB maps: id="column" password="column" role="column"
 USER_ID_COLUMN = "{{ authdb.columns.id }}"
 USER_PASSWORD_COLUMN = "{{ authdb.columns.password }}"
 USER_ROLE_COLUMN = "{{ authdb.columns.role }}"
@@ -100,46 +96,99 @@ USER_ROLE_COLUMN = "{{ authdb.columns.role }}"
 
 class User(SQLModel, table=True):
     """
-    External user model mapped to existing database.
+    External user model mapped to existing database (BYODB).
     Table: {{ authdb.table }}
+
+    Column mappings:
+    - Login ID: {{ authdb.columns.id }}
+    - Password Hash: {{ authdb.columns.password }}
+    - Role: {{ authdb.columns.role }}
     """
     __tablename__ = "{{ authdb.table }}"
 
+    # Primary key - always 'id' internally
     id: Optional[int] = Field(default=None, primary_key=True)
-    {{ authdb.columns.id }}: str = Field(unique=True, index=True, max_length=255)
-    {{ authdb.columns.password }}: str = Field(max_length=255)
-    {{ authdb.columns.role }}: str = Field(default="user", max_length=50)
+
+    # Map FDSL fields to external column names using sa_column
+    # This allows any column name in the external DB
+    login_identifier: str = Field(
+        sa_column=Column("{{ authdb.columns.id }}", String(255), unique=True, index=True)
+    )
+    pwd_hash: str = Field(
+        sa_column=Column("{{ authdb.columns.password }}", String(255))
+    )
+    user_role: str = Field(
+        sa_column=Column("{{ authdb.columns.role }}", String(50), default="user")
+    )
+
+{% if needs_apikeys_table %}
+    # Relationship to API keys
+    api_keys: List["APIKey"] = Relationship(back_populates="user")
+{% endif %}
 
     @property
     def login_id(self) -> str:
-        """Get login identifier (email, username, etc.)."""
-        return getattr(self, USER_ID_COLUMN)
+        """Get login identifier."""
+        return self.login_identifier
 
     @property
     def password_hash(self) -> str:
         """Get password hash."""
-        return getattr(self, USER_PASSWORD_COLUMN)
+        return self.pwd_hash
 
     @property
     def role(self) -> str:
         """Get user role."""
-        return getattr(self, USER_ROLE_COLUMN)
+        return self.user_role
+
+{% endif %}
+
+{% if needs_apikeys_table %}
+# ============================================================================
+# API Key Model (generated for Auth<apikey>)
+# ============================================================================
+
+# API Key column constants
+APIKEY_KEY_COLUMN = "key"
+APIKEY_USER_ID_COLUMN = "user_id"
 
 
-# Sessions are auto-generated by FDSL (same schema as default mode)
-class SessionRecord(SQLModel, table=True):
+class APIKey(SQLModel, table=True):
     """
-    FDSL-managed session storage.
-    Sessions are auto-generated even in BYODB mode.
+    API key model - keys belong to users.
+    Used by: Auth<apikey> in: header | query | cookie
+
+    Role is inherited from the associated user.
+{% if not uses_default_db %}
+
+    NOTE (BYODB): This table must exist in your external database.
+    Required schema:
+        CREATE TABLE apikeys (
+            id SERIAL PRIMARY KEY,
+            key VARCHAR(255) UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES {{ authdb.table }}(id),
+            description VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW(),
+            is_active BOOLEAN DEFAULT TRUE
+        );
+{% endif %}
     """
-    __tablename__ = "sessions"
+    __tablename__ = "apikeys"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    session_id: str = Field(unique=True, index=True, max_length=64)
-    user_id: str = Field(index=True, max_length=255)
-    roles: str = Field(max_length=500)  # JSON-encoded list of roles
+    key: str = Field(unique=True, index=True, max_length=255)
+{% if uses_default_db %}
+    user_id: int = Field(foreign_key="users.id", index=True)
+{% else %}
+    user_id: int = Field(foreign_key="{{ authdb.table }}.id", index=True)
+{% endif %}
+    description: Optional[str] = Field(default=None, max_length=255)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: datetime = Field(index=True)
+    is_active: bool = Field(default=True)
+
+    # Relationship to user
+    user: User = Relationship(back_populates="api_keys")
+
 {% endif %}
 
 
@@ -164,6 +213,24 @@ def get_db():
         db.close()
 
 
+def get_db_sync() -> Session:
+    """
+    Get a database session synchronously (non-generator).
+    Caller is responsible for closing the session.
+
+    Usage:
+        db = get_db_sync()
+        try:
+            user = db.query(User).first()
+        finally:
+            db.close()
+
+    This is useful for WebSocket handlers and other contexts where
+    FastAPI's Depends() injection isn't available.
+    """
+    return SessionLocal()
+
+
 # ============================================================================
 # Database Initialization
 # ============================================================================
@@ -172,14 +239,34 @@ def init_db():
     """
     Initialize database tables.
     Call this on application startup to create tables if they don't exist.
-    {% if not uses_default_db %}
-    Note: For external databases, this is a no-op as tables already exist.
-    {% endif %}
+{% if not uses_default_db %}
+
+    NOTE (BYODB): For external databases, your tables should already exist.
+    This function will attempt to create missing tables but may fail if
+    your database schema doesn't match exactly.
+{% if needs_apikeys_table %}
+
+    IMPORTANT: If using Auth<apikey>, ensure the 'apikeys' table exists:
+        CREATE TABLE apikeys (
+            id SERIAL PRIMARY KEY,
+            key VARCHAR(255) UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES {{ authdb.table }}(id),
+            description VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW(),
+            is_active BOOLEAN DEFAULT TRUE
+        );
+{% endif %}
+{% endif %}
     """
 {% if uses_default_db %}
     SQLModel.metadata.create_all(engine)
     print("[DB] Database tables initialized")
 {% else %}
-    # External database - tables already exist
+    # External database - tables should already exist
+    # Only try to create if they don't exist (safe operation)
+    SQLModel.metadata.create_all(engine, checkfirst=True)
     print("[DB] Using external database: {{ authdb.table }}")
+{% if needs_apikeys_table %}
+    print("[DB] NOTE: Ensure 'apikeys' table exists in your database")
+{% endif %}
 {% endif %}

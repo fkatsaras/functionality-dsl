@@ -252,7 +252,17 @@
       "Bash(venv_WIN/Scripts/pytest tests/integration/test_validation_v2.py -v --tb=short)",
       "Bash(powershell:*)",
       "Bash(venv_WIN/Scripts/pip install:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "WebFetch(domain:swagger.io)",
+      "Bash(API_KEY=\"ugUrQDmi8Mhl0L7r0d-jNfAX8TRx7wFGdJzPefCGbkA\")",
+      "Bash(__NEW_LINE_103deb314ac0edd4__ echo \"=== 5. GET /api/cart \\(with cookie auth - should work for customer\\) ===\")",
+      "Bash(__NEW_LINE_5ffe40057cf4cff7__ echo \"=== 6. GET /auth/me \\(check current user\\) ===\")",
+      "Bash(CUSTOMER_KEY=\"ugUrQDmi8Mhl0L7r0d-jNfAX8TRx7wFGdJzPefCGbkA\")",
+      "Bash(__NEW_LINE_0c0f6d4ea467444c__ echo \"=== 7. POST /api/products as customer \\(should FAIL - admin only\\) ===\")",
+      "Bash(__NEW_LINE_0c0f6d4ea467444c__ echo \"\")",
+      "Bash(ADMIN_KEY=\"KxvYYfeh_5_uKqazreVfol4jWb5tzGHb1SW3Cky5Xpo\")",
+      "Bash(__NEW_LINE_133a73bc1b25d82a__ echo \"=== 10. GET /api/productstats as admin \\(should WORK\\) ===\")",
+      "Bash(__NEW_LINE_133a73bc1b25d82a__ echo \"\")"
     ],
     "deny": [],
     "ask": []

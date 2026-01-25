@@ -60,70 +60,70 @@ FDSL uses a **multi-auth architecture** where:
 
 ### Auth Types
 
-FDSL supports four authentication types using the `Auth<type>` syntax (similar to `Source<REST>` / `Source<WS>`):
-- `Auth<jwt>` - Stateless token-based auth (recommended for APIs)
-- `Auth<session>` - Stateful cookie-based auth (traditional web apps)
-- `Auth<apikey>` - API key authentication (header or query param)
-- `Auth<basic>` - HTTP Basic authentication (username:password)
+FDSL supports two authentication types aligned with OpenAPI security schemes:
+- `Auth<http>` - HTTP authentication (Bearer token or Basic auth)
+- `Auth<apikey>` - API key authentication (header, query, or cookie)
 
-**JWT Authentication** (stateless, token in header):
+All auth is **database-backed** - credentials and roles are stored in the database.
+
+**HTTP Bearer Authentication** (token in Authorization header):
 ```fdsl
-Auth<jwt> JWTAuth
-  secret: "JWT_SECRET"  // environment variable name
+Auth<http> BearerAuth
+  scheme: bearer
 end
 ```
 
-The `secret:` field specifies the environment variable name for the JWT secret. This variable is automatically added to the generated `.env` file with a random 32-character alphanumeric value.
+Bearer tokens are stored in the database. When a request comes in, the token is looked up to get user_id and roles.
 
-**Session Authentication** (stateful, cookie-based):
+**HTTP Basic Authentication** (username:password):
 ```fdsl
-Auth<session> SessionAuth
-  cookie: "session_id"
-  expiry: 3600  // Session expiry in seconds (default: 3600)
+Auth<http> BasicAuth
+  scheme: basic
 end
 ```
 
-**API Key Authentication** (simple key-based):
+Credentials are verified against the users table in the database.
+
+**API Key Authentication** (key in header, query, or cookie):
 ```fdsl
+// API key in custom header
 Auth<apikey> APIKeyAuth
-  header: "X-API-Key"   // OR query: "api_key" (mutually exclusive)
-  secret: "API_KEYS"    // env var name for valid keys
+  in: header
+  name: "X-API-Key"
+end
+
+// API key in query parameter
+Auth<apikey> QueryAuth
+  in: query
+  name: "token"
+end
+
+// API key in cookie (session-like)
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "session_id"
 end
 ```
 
-API keys are configured via environment variable. Format options:
-- Simple keys: `key1,key2,key3`
-- Keys with roles: `key1:admin,key2:user;editor,key3:viewer`
-  (colon separates key from roles, semicolon separates multiple roles)
-
-**Basic Authentication** (HTTP Basic auth):
-```fdsl
-Auth<basic> BasicAuth
-end
-```
-
-Uses `BASIC_AUTH_USERS` env var by default. Format:
-`username:password:role1;role2,username2:password2:role3`
-
-Example: `admin:secret123:admin;superuser,reader:pass456:viewer`
+API keys are stored in the database with associated user_id and roles.
 
 ### Roles
 
 Roles **belong to** Auth mechanisms using the `uses` keyword:
 
 ```fdsl
-Auth<jwt> JWTAuth
-  secret: "JWT_SECRET"
+Auth<http> BearerAuth
+  scheme: bearer
 end
 
 Auth<apikey> APIKeyAuth
-  header: "X-API-Key"
-  secret: "API_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
 // Roles reference their auth mechanism
-Role admin uses JWTAuth
-Role user uses JWTAuth
+Role admin uses BearerAuth
+Role user uses BearerAuth
 Role service uses APIKeyAuth  // Different auth for service accounts
 ```
 
@@ -141,18 +141,17 @@ end
 ```
 
 **Auth Type Comparison:**
-| Aspect | JWT | Session | API Key | Basic |
-|--------|-----|---------|---------|-------|
-| State | Stateless | Stateful | Stateless | Stateless |
-| Storage | Client | Server | Client/Config | Client |
-| Revocation | Hard | Easy | Easy (remove key) | Easy (remove user) |
-| Use case | APIs, mobile | Web apps | Third-party integrations | Simple tools, testing |
+| Aspect | HTTP Bearer | HTTP Basic | API Key |
+|--------|-------------|------------|---------|
+| Header | `Authorization: Bearer <token>` | `Authorization: Basic <base64>` | Custom header/query/cookie |
+| Storage | DB (tokens table) | DB (users table) | DB (apikeys table) |
+| Use case | APIs, mobile apps | Simple tools, testing | Third-party integrations, sessions |
 
 ### User Database Configuration (AuthDB)
 
-By default, FDSL generates a PostgreSQL database with a `users` table for storing credentials. For existing databases (BYODB - Bring Your Own Database), use `AuthDB`:
+By default, FDSL generates a PostgreSQL database with tables for storing credentials. For existing databases (BYODB - Bring Your Own Database), use `AuthDB`:
 
-**Default (no AuthDB):** FDSL generates PostgreSQL + users table automatically.
+**Default (no AuthDB):** FDSL generates PostgreSQL + users/tokens/apikeys tables automatically.
 
 **External Database (BYODB):**
 ```fdsl
@@ -160,50 +159,15 @@ AuthDB UserStore
   connection: "MY_DATABASE_URL"  // Environment variable name
   table: "users"                 // Your existing users table
   columns:
-    - id: "user_email"           // Login identifier column
-    - password: "pwd_hash"       // Password hash column (bcrypt)
-    - role: "user_role"          // Role column
+    id="user_email"              // Login identifier column
+    password="pwd_hash"          // Password hash column (bcrypt)
+    role="user_role"             // Role column
 end
 
-Auth MyAuth
-  type: jwt
-  secret: "JWT_SECRET"
-  db: UserStore              // Reference to AuthDB
+Auth<http> MyAuth
+  scheme: bearer
 end
 ```
-
-**BYODB with Session Storage (for session auth only):**
-```fdsl
-AuthDB UserStore
-  connection: "MY_DATABASE_URL"
-  table: "users"
-  columns:
-    - id: "user_email"
-    - password: "pwd_hash"
-    - role: "user_role"
-  sessions:                      // Optional: persistent sessions
-    table: "sessions"            // Your sessions table
-    columns:
-      - session_id: "sid"        // Session token column
-      - user_id: "uid"           // User ID column
-      - roles: "user_roles"      // Roles column (JSON string)
-      - expires_at: "expiry"     // Expiry timestamp column
-end
-
-Auth MyAuth
-  type: session
-  cookie: "session_id"
-  db: UserStore
-end
-```
-
-**Note:** The `sessions:` config is only valid with `type: session`. JWT auth is stateless and doesn't need session storage.
-
-**Auth + Database Matrix:**
-| Auth Type | No AuthDB | AuthDB (no sessions) | AuthDB (with sessions) |
-|-----------|-----------|---------------------|------------------------|
-| JWT | ✅ Default DB | ✅ External DB | ❌ Invalid (JWT is stateless) |
-| Session | ✅ Default DB (DB sessions) | ⚠️ In-memory sessions | ✅ External DB sessions |
 
 ---
 
@@ -421,8 +385,8 @@ Different operations can have different access requirements:
 
 ```fdsl
 Auth<apikey> APIKeyAuth
-  header: "X-API-Key"
-  secret: "API_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
 Role admin uses APIKeyAuth
@@ -448,17 +412,17 @@ end
 You can mix auth types within the same API:
 
 ```fdsl
-Auth<jwt> JWTAuth
-  secret: "JWT_SECRET"
+Auth<http> BearerAuth
+  scheme: bearer
 end
 
 Auth<apikey> APIKeyAuth
-  header: "X-API-Key"
-  secret: "API_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
-Role admin uses JWTAuth
-Role user uses JWTAuth
+Role admin uses BearerAuth
+Role user uses BearerAuth
 Role service uses APIKeyAuth
 
 Entity Config
@@ -466,8 +430,8 @@ Entity Config
   attributes:
     - setting: string;
   access:
-    read: [admin, user, service]  // JWT users or API key service
-    update: [admin]               // Only JWT admin
+    read: [admin, user, service]  // Bearer users or API key service
+    update: [admin]               // Only Bearer admin
 end
 ```
 
@@ -802,8 +766,8 @@ Server SmartHome
 end
 
 // NEW (Auth<type> syntax, roles use 'uses', no auth in Server)
-Auth<jwt> HomeAuth
-  secret: "JWT_SECRET"
+Auth<http> HomeAuth
+  scheme: bearer
 end
 Role admin uses HomeAuth
 Server SmartHome

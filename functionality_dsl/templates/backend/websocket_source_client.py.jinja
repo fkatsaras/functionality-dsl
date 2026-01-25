@@ -8,10 +8,8 @@ import os
 import websockets
 import json
 from typing import AsyncIterator, Optional, Dict, Any
-{% if has_params or (auth_config and auth_config.query_name) %}
 from urllib.parse import urlencode{% if has_params %}, urlparse, urlunparse{% endif %}
 
-{% endif %}
 {% if auth_config and auth_config.kind == 'basic' %}
 import base64
 {% endif %}
@@ -174,7 +172,7 @@ class {{ source_name }}Source:
         """
         url = self._build_url(params or {})
 {% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
-        # Merge auth query params into URL
+        # Add auth query params from env
         auth_query = self._get_auth_query_params()
         if auth_query:
             separator = "&" if "?" in url else "?"
@@ -219,7 +217,7 @@ class {{ source_name }}Source:
         """
         url = self.base_url
 {% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
-        # Merge auth query params into URL
+        # Add auth query params from env
         auth_query = self._get_auth_query_params()
         if auth_query:
             separator = "&" if "?" in url else "?"

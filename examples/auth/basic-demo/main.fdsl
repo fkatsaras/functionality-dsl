@@ -14,7 +14,9 @@
 // Or in browser - it will prompt for username/password
 
 // Auth mechanism
-Auth<basic> BasicAuth
+Auth<http> BasicAuth
+  scheme: basic
+end
 
 // Roles belong to the auth mechanism
 Role admin uses BasicAuth

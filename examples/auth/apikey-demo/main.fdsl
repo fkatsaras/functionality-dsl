@@ -13,8 +13,8 @@
 
 // Auth mechanism
 Auth<apikey> APIKeyAuth
-  header: "X-API-Key"
-  secret: "API_KEYS"
+  in: header
+  name: "X-API-Key"
 end
 
 // Roles belong to the auth mechanism

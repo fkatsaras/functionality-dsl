@@ -1,46 +1,12 @@
 """
 Server validation logic for FDSL.
 
-Validates Server blocks including authentication configurations.
+Validates Server blocks (host, port, cors, loglevel).
+Auth validation is handled separately in rbac_validators.py.
 """
 
 from textx import get_location
 from textx.exceptions import TextXSemanticError
-
-
-def _validate_auth_config(auth_block):
-    """
-    Validate authentication configuration based on auth type.
-
-    Args:
-        auth_block: The AuthBlock from the grammar
-
-    Raises:
-        TextXSemanticError: If configuration is invalid
-    """
-    if not auth_block:
-        return
-
-    auth_type = auth_block.type
-
-    # JWT validation
-    if auth_type == "jwt":
-        if not auth_block.jwt_config:
-            raise TextXSemanticError(
-                "JWT authentication requires 'secret:' field.",
-                **get_location(auth_block),
-            )
-
-        jwt_config = auth_block.jwt_config
-        if not jwt_config.secret:
-            raise TextXSemanticError(
-                "JWT configuration must specify 'secret:' (environment variable name).",
-                **get_location(auth_block),
-            )
-
-    # Session validation - all fields are optional, no validation needed
-    elif auth_type == "session":
-        pass
 
 
 def verify_server(model):
@@ -57,7 +23,22 @@ def verify_server(model):
     if not server:
         return
 
-    # Validate auth block if present
-    auth = getattr(server, "auth", None)
-    if auth:
-        _validate_auth_config(auth)
+    # Validate port is in valid range
+    port = getattr(server, "port", None)
+    if port is not None:
+        if port < 1 or port > 65535:
+            raise TextXSemanticError(
+                f"Server port {port} is invalid. Must be between 1 and 65535.",
+                **get_location(server),
+            )
+
+    # Validate loglevel if present
+    loglevel = getattr(server, "loglevel", None)
+    if loglevel is not None:
+        valid_levels = {"debug", "info", "warning", "error", "critical"}
+        if loglevel.lower() not in valid_levels:
+            raise TextXSemanticError(
+                f"Server loglevel '{loglevel}' is invalid. "
+                f"Valid levels: {', '.join(sorted(valid_levels))}.",
+                **get_location(server),
+            )

@@ -45,6 +45,7 @@ from functionality_dsl.validation.rbac_validators import (
     validate_authdb_singleton,
     validate_authdb_config,
     validate_session_byodb_requires_sessions_table,
+    validate_auth_config,
 )
 
 from functionality_dsl.validation.source_validators import (
@@ -78,6 +79,7 @@ __all__ = [
     "validate_authdb_singleton",
     "validate_authdb_config",
     "validate_session_byodb_requires_sessions_table",
+    "validate_auth_config",
     # Source validators
     "validate_source_syntax",
 ]

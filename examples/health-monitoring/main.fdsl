@@ -13,7 +13,8 @@
 //               + aggregation (health summaries)
 // =============================================================================
 
-Auth<jwt> HealthAuth
+Auth<http> HealthAuth
+  scheme: bearer
   secret: "HEALTH_JWT_SECRET"
 end
 

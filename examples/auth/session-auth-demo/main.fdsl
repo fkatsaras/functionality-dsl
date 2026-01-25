@@ -1,20 +1,21 @@
 // =============================================================================
-// Session Auth Demo - Using DummyJSON
+// Cookie-based Auth Demo - Using DummyJSON
 // =============================================================================
-// Demonstrates session-based authentication with RBAC
+// Demonstrates cookie-based authentication with RBAC using API keys in cookies.
 //
-// Key differences from JWT:
-// - Server stores session data (in-memory)
-// - Client receives session cookie
-// - Easy session revocation (logout deletes server-side session)
+// Session keys are configured via environment variable:
+//   SESSION_KEYS=admin_session:admin,user_session:user
+//
+// Test with:
+//   curl http://localhost:8080/api/userprofile -b "demo_session=admin_session"
 //
 // Uses DummyJSON.com as the backing API for testing
 // =============================================================================
 
-// Auth mechanism
-Auth<session> SessionAuth
-  cookie: "demo_session"
-  expiry: 3600
+// Auth mechanism (cookie-based API key for session-like behavior)
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "demo_session"
 end
 
 // Roles belong to the auth mechanism

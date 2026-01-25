@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-RUN pip install --no-cache-dir flask pyjwt
+RUN pip install --no-cache-dir flask pyjwt flask-sock
 
 # Copy dummy service
 COPY dummy-service.py .

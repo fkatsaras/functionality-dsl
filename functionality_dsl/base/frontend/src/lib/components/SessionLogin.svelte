@@ -10,7 +10,7 @@
 
     // Form state
     let mode = $state<"login" | "register">("login");
-    let email = $state("");
+    let loginId = $state("");
     let password = $state("");
     let confirmPassword = $state("");
     let selectedRole = $state<string>(props.roles[0] || "");
@@ -24,8 +24,8 @@
         error = null;
         success = null;
 
-        if (!email.trim()) {
-            error = "Email is required";
+        if (!loginId.trim()) {
+            error = "Login ID is required";
             return;
         }
 
@@ -44,7 +44,7 @@
                 },
                 credentials: 'include',
                 body: JSON.stringify({
-                    email: email.trim(),
+                    login_id: loginId.trim(),
                     password: password
                 })
             });
@@ -70,8 +70,8 @@
         error = null;
         success = null;
 
-        if (!email.trim()) {
-            error = "Email is required";
+        if (!loginId.trim()) {
+            error = "Login ID is required";
             return;
         }
 
@@ -105,7 +105,7 @@
                 },
                 credentials: 'include',
                 body: JSON.stringify({
-                    email: email.trim(),
+                    login_id: loginId.trim(),
                     password: password,
                     role: selectedRole
                 })
@@ -163,14 +163,14 @@
         </svelte:fragment>
 
         <div class="login-form">
-            <!-- Email -->
+            <!-- Login ID -->
             <div class="form-group">
-                <label for="email" class="form-label">Email</label>
+                <label for="loginId" class="form-label">Login ID</label>
                 <input
-                    id="email"
-                    type="email"
-                    bind:value={email}
-                    placeholder="Enter your email"
+                    id="loginId"
+                    type="text"
+                    bind:value={loginId}
+                    placeholder="Enter your login ID (email, username, etc.)"
                     class="form-input"
                     disabled={loading}
                 />

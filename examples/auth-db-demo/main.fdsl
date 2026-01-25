@@ -27,7 +27,8 @@
 // - Password hashing with bcrypt
 // - JWT token creation/validation
 
-Auth<jwt> AppAuth
+Auth<http> AppAuth
+  scheme: bearer
   secret: "AUTH_DB_DEMO_SECRET"
 end
 

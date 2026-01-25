@@ -102,25 +102,13 @@ Entity MarketAnalysis(CryptoPrices)
 end
 
 
-// UI 
+// UI
 Component<LiveChart> CryptoChart
   entity: CryptoPrices
   seriesLabels: ["Ethereum", "Binance Coin", "Solana"]
   xLabel: "Time"
   yLabel: "Price (USDT)"
   windowSize: 50
-end
-
-Component<LiveMetrics> MarketMetrics
-  entity: MarketAnalysis
-  metrics: ["average_price", "price_spread", "above_avg_count", "below_avg_count"]
-  label: "Market Analysis Dashboard"
-end
-
-Component<LiveMetrics> PriceMetrics
-  entity: CryptoPrices
-  metrics: ["eth_price", "bnb_price", "sol_price"]
-  label: "Live Crypto Prices"
 end
 
 Component<LivePieChart> PriceDistribution

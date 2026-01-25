@@ -18,6 +18,7 @@ from functionality_dsl.api.generators.core.database_generator import get_databas
 from functionality_dsl.language import build_model
 from functionality_dsl.language import THIS_DIR as PKG_DIR
 from functionality_dsl.transformers import transform_openapi_to_fdsl
+from textx import get_children_of_type
 
 pretty.install()
 console = Console()
@@ -26,6 +27,29 @@ def make_executable(path: str):
     mode = os.stat(path).st_mode
     mode |= (mode & 0o444) >> 2
     os.chmod(path, mode)
+
+
+def extract_source_auth_secrets(model):
+    """
+    Extract auth secrets from sources that reference Auth with secret field.
+
+    Returns list of env var names for source auth (e.g., ["FINNHUB_API_KEY"])
+    """
+    secrets = set()
+
+    # Get all REST and WS sources
+    rest_sources = get_children_of_type("SourceREST", model)
+    ws_sources = get_children_of_type("SourceWS", model)
+
+    for source in list(rest_sources) + list(ws_sources):
+        auth = getattr(source, "auth", None)
+        if auth:
+            # Check if auth has a secret field (source-level auth)
+            secret = getattr(auth, "secret", None)
+            if secret:
+                secrets.add(secret)
+
+    return list(secrets)
 
 def typespec_to_string(type_spec) -> str:
     """
@@ -258,6 +282,11 @@ def generate(context, model_path, target, out_dir):
 
             # Get database context for infrastructure templates
             db_context = get_database_context(model)
+
+            # Extract source auth secrets (env vars for external API auth)
+            source_auth_secrets = extract_source_auth_secrets(model)
+            if source_auth_secrets:
+                db_context["source_auth_env_vars"] = source_auth_secrets
 
             scaffold_backend_from_model(
                 model,

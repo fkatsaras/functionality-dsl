@@ -5,8 +5,8 @@
 //   - petstore_auth (oauth2)
 
 Auth<apikey> ApiKey
-  header: "api_key"
-  secret: "API_KEY_KEYS"
+  in: header
+  name: "api_key"
 end
 
 Server SwaggerPetstoreOpenAPI30
