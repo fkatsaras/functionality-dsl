@@ -92,8 +92,8 @@ def build_exposure_map(model):
 
         if not ((source_ref or is_composite) and has_access):
             # Check for WebSocket outbound entities (can have access without source)
-            ws_flow_type = getattr(entity, "ws_flow_type", None)
-            if not (ws_flow_type == "outbound" and has_access):
+            flow = getattr(entity, "flow", None)
+            if not (flow == "outbound" and has_access):
                 continue
 
         # Get direct source or find source through parents
@@ -104,13 +104,13 @@ def build_exposure_map(model):
 
         # Get operations based on entity type
         operations = []
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        flow = getattr(entity, "flow", None)
 
-        if ws_flow_type:
+        if flow:
             # WebSocket entity
-            if ws_flow_type == "inbound":
+            if flow == "inbound":
                 operations = ['subscribe']
-            elif ws_flow_type == "outbound":
+            elif flow == "outbound":
                 operations = ['publish']
         elif source:
             # REST entity - get operations from source
@@ -343,11 +343,11 @@ def _get_declared_operations(entity, source):
     For WS entities: based on flow type (inbound -> subscribe, outbound -> publish)
     """
     # Check for WebSocket flow type
-    ws_flow_type = getattr(entity, "ws_flow_type", None)
-    if ws_flow_type:
-        if ws_flow_type == "inbound":
+    flow = getattr(entity, "flow", None)
+    if flow:
+        if flow == "inbound":
             return ['subscribe']
-        elif ws_flow_type == "outbound":
+        elif flow == "outbound":
             return ['publish']
 
     # Check if entity is composite

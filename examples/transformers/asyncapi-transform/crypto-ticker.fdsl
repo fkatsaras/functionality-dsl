@@ -1,0 +1,63 @@
+// =============================================================================
+// AUTO-GENERATED FROM ASYNCAPI SPECIFICATION
+// =============================================================================
+
+Server CryptoTickerWebSocketAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<WS> TickerWS
+  channel: "wss://stream.example.com:9443/ws/ticker/{symbol}"
+  params: [symbol]
+  operations: [subscribe]
+end
+
+Source<WS> OrderbookWS
+  channel: "wss://stream.example.com:9443/ws/orderbook/{symbol}"
+  params: [symbol, depth]
+  operations: [subscribe]
+end
+
+Source<WS> TradesWS
+  channel: "wss://stream.example.com:9443/ws/trades"
+  operations: [publish]
+end
+
+Entity Ticker
+  flow: inbound
+  source: TickerWS
+  attributes:
+    - symbol: string;
+    - price: number<double>;
+    - volume: number<double>;
+    - change: number<double>;
+    - timestamp: integer<int64>;
+  access: public
+end
+
+Entity Orderbook
+  flow: inbound
+  source: OrderbookWS
+  attributes:
+    - symbol: string;
+    - bids: array;
+    - asks: array;
+    - lastUpdateId: integer<int64>;
+  access: public
+end
+
+Entity Trades
+  flow: outbound
+  source: TradesWS
+  attributes:
+    - symbol: string;
+    - side: string;
+    - quantity: number<double>;
+    - price: number<double> @optional;
+    - orderType: string @optional;
+  access: public
+end

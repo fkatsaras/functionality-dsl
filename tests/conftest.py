@@ -128,7 +128,7 @@ Source<WS> TickerWS
 end
 
 Entity RawTick
-  type: inbound
+  flow: inbound
   source: TickerWS
   attributes:
     - price: string;
@@ -136,7 +136,7 @@ Entity RawTick
 end
 
 Entity Ticker(RawTick)
-  type: inbound
+  flow: inbound
   attributes:
     - price: number = toNumber(RawTick.price);
     - time: integer = RawTick.timestamp;

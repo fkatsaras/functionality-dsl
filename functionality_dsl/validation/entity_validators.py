@@ -349,8 +349,8 @@ def _validate_computed_attrs(model, metamodel=None):
 
         # For WebSocket outbound entities, they are schema entities
         # (they receive data from client to publish to external WS)
-        ws_flow_type = getattr(ent, "ws_flow_type", None)
-        if ws_flow_type == "outbound":
+        flow = getattr(ent, "flow", None)
+        if flow == "outbound":
             schema_entities.add(ent.name)
 
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
@@ -889,18 +889,18 @@ def _validate_websocket_entity_relationships(model):
         # Count WebSocket parents and check their types
         from functionality_dsl.api.extractors import find_source_for_entity
         ws_parents = []
-        ws_parent_types = []  # Track the ws_flow_type of each WS parent
+        ws_parent_types = []  # Track the flow of each WS parent
 
         for parent in parent_entities:
             source, source_type = find_source_for_entity(parent, model)
             if source_type == "WS":
                 ws_parents.append(parent.name)
-                parent_ws_flow_type = getattr(parent, "ws_flow_type", None)
-                ws_parent_types.append(parent_ws_flow_type)
+                parent_flow = getattr(parent, "flow", None)
+                ws_parent_types.append(parent_flow)
 
         # RULE: Multiple WebSocket parents are allowed ONLY if they're all the same type (inbound)
         if len(ws_parents) > 1:
-            # Check if all WS parents have the same ws_flow_type
+            # Check if all WS parents have the same flow
             unique_types = set(ws_parent_types)
 
             if len(unique_types) > 1:
@@ -942,9 +942,9 @@ def _validate_outbound_entities_not_composed(model):
         # Check if any parent is outbound
         parent_entities = _get_parent_entities(entity)
         for parent in parent_entities:
-            parent_ws_flow_type = getattr(parent, "ws_flow_type", None)
+            parent_flow = getattr(parent, "flow", None)
 
-            if parent_ws_flow_type == "outbound":
+            if parent_flow == "outbound":
                 raise TextXSemanticError(
                     f"Entity '{entity.name}' cannot extend outbound entity '{parent.name}'. "
                     f"Outbound entities cannot be composed.",
@@ -1019,7 +1019,7 @@ def _validate_composite_entities(model):
 
         # Rule 2: All parent entities must have readable data paths
         # Check if composite entity is a WebSocket inbound entity (these use subscribe, not read)
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        flow = getattr(entity, "flow", None)
 
         for parent in parent_entities:
             parent_source, source_type = find_source_for_entity(parent, model)
@@ -1045,7 +1045,7 @@ def _validate_composite_entities(model):
 
             # For WS sources: require 'subscribe' operation (for inbound)
             elif source_type == "WS":
-                parent_ws_flow = getattr(parent, "ws_flow_type", None)
+                parent_ws_flow = getattr(parent, "flow", None)
                 if parent_ws_flow == "inbound" and 'subscribe' not in operations:
                     raise TextXSemanticError(
                         f"Composite entity '{entity.name}' references inbound WS parent '{parent.name}' "
@@ -1072,7 +1072,7 @@ def _validate_attribute_markers(model):
     for entity in entities:
         parent_entities = _get_parent_entities(entity)
         is_composite = len(parent_entities) > 0
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        flow = getattr(entity, "flow", None)
 
         attrs = getattr(entity, "attributes", []) or []
 
@@ -1107,7 +1107,7 @@ def _validate_attribute_markers(model):
             # Rule 4: @readonly/@optional on inbound WS entities is invalid
             # Inbound entities only output data to clients - they have no input schemas
             # These markers only affect Create/Update schemas which don't exist for inbound WS
-            if ws_flow_type == "inbound" and (is_optional or is_readonly):
+            if flow == "inbound" and (is_optional or is_readonly):
                 marker = "@optional" if is_optional else "@readonly"
                 raise TextXSemanticError(
                     f"'{attr.name}': {marker} cannot be used on inbound WebSocket entities. "

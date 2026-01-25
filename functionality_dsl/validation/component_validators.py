@@ -54,9 +54,9 @@ def _validate_camera_component(comp):
         )
 
     # Verify it's an inbound WebSocket entity
-    ws_flow_type = getattr(comp.entity_ref, "ws_flow_type", None)
-    if ws_flow_type != "inbound":
+    flow = getattr(comp.entity_ref, "flow", None)
+    if flow != "inbound":
         raise TextXSemanticError(
-            f"Camera '{comp.name}' requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}.",
+            f"Camera '{comp.name}' requires entity with 'type: inbound' for WebSocket streaming, got type={flow}.",
             **get_location(comp)
         )

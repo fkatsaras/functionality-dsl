@@ -1,0 +1,85 @@
+// WebSocket with Session Auth Demo
+// Tests WebSocket authentication with session auth and roles
+
+Server WSAuthDemo
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// Session auth with roles
+Auth<session> SessionAuth
+  cookie: "ws_session"
+  expiry: 3600
+end
+
+Role admin uses SessionAuth
+Role user uses SessionAuth
+
+// External WebSocket sources (Binance for real data)
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+  operations: [subscribe]
+end
+
+// Base tick entity - inbound from Binance
+Entity ETHTick
+  flow: inbound
+  source: BinanceETH
+  attributes:
+    - c: string;
+    - E: integer<int64>;
+end
+
+// Public price entity - no auth required
+// Auto-generates: ws://localhost:8000/ws/cryptopricepublic
+Entity CryptoPricePublic(ETHTick)
+  flow: inbound
+  attributes:
+    - timestamp: integer<int64> = ETHTick.E;
+    - price: number = toNumber(ETHTick.c);
+    - symbol: string = "ETH";
+  access: public
+end
+
+// Protected price entity - requires SessionAuth (auth-only, no roles)
+// Auto-generates: ws://localhost:8000/ws/cryptopriceprotected
+Entity CryptoPriceProtected(ETHTick)
+  flow: inbound
+  attributes:
+    - timestamp: integer<int64> = ETHTick.E;
+    - price: number = toNumber(ETHTick.c);
+    - symbol: string = "ETH";
+    - premium: boolean = true;
+  access: SessionAuth
+end
+
+// Admin-only price entity - requires admin role
+// Auto-generates: ws://localhost:8000/ws/cryptopriceadmin
+Entity CryptoPriceAdmin(ETHTick)
+  flow: inbound
+  attributes:
+    - timestamp: integer<int64> = ETHTick.E;
+    - price: number = toNumber(ETHTick.c);
+    - symbol: string = "ETH";
+    - adminOnly: boolean = true;
+    - internalId: string = "ADMIN-ETH-" + toString(ETHTick.E);
+  access: [admin]
+end
+
+// REST endpoint for checking auth status (public)
+Source<REST> JSONPlaceholderUsers
+  url: "https://jsonplaceholder.typicode.com/users/{id}"
+  params: [id]
+  operations: [read]
+end
+
+Entity User
+  source: JSONPlaceholderUsers
+  attributes:
+    - id: integer<int64> @readonly;
+    - name: string;
+    - email: string;
+  access: public
+end

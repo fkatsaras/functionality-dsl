@@ -68,8 +68,8 @@ class _BaseComponent:
         All paths are flat - no /{id} suffixes (snapshot entities only).
         """
         # Check for WebSocket flow type (type: inbound/outbound)
-        ws_flow_type = getattr(self.entity_ref, "ws_flow_type", None)
-        if ws_flow_type:
+        flow = getattr(self.entity_ref, "flow", None)
+        if flow:
             return f"/ws/{self.entity_ref.name.lower()}" + (suffix or "")
 
         # Check if entity has source to determine REST vs WebSocket
@@ -517,9 +517,9 @@ class LiveTableComponent(_BaseComponent):
 
         # Check if entity is a WebSocket inbound entity
         if entity_ref:
-            ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-            if ws_flow_type != 'inbound':
-                raise ValueError(f"Component '{name}': LiveTable requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+            flow = getattr(entity_ref, "flow", None)
+            if flow != 'inbound':
+                raise ValueError(f"Component '{name}': LiveTable requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
         if not self.keyField:
             raise ValueError(f"Component '{name}': 'keyField:' is required for LiveTable.")
@@ -680,9 +680,9 @@ class LiveChartComponent(_BaseComponent):
 
         # Validate entity is inbound WebSocket
         if entity_ref:
-            ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-            if ws_flow_type != 'inbound':
-                raise ValueError(f"Component '{name}': LiveChart requires entity with 'type: inbound' for real-time streaming, got type={ws_flow_type}")
+            flow = getattr(entity_ref, "flow", None)
+            if flow != 'inbound':
+                raise ValueError(f"Component '{name}': LiveChart requires entity with 'type: inbound' for real-time streaming, got type={flow}")
 
     def to_props(self):
         return {
@@ -1049,9 +1049,9 @@ class CameraComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
         # Validate: Camera requires inbound WebSocket entity
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if ws_flow_type != 'inbound':
-            raise ValueError(f"Component '{name}': Camera requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if flow != 'inbound':
+            raise ValueError(f"Component '{name}': Camera requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
         self.label = _strip_quotes(label) or "Camera"
 
@@ -1148,9 +1148,9 @@ class EntityCardComponent(_BaseComponent):
             raise ValueError(f"Component '{name}': 'type:' must be 'rest' or 'ws'.")
 
         # Validate entity type matches card type
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if self.cardType == 'ws' and ws_flow_type != 'inbound':
-            raise ValueError(f"Component '{name}': type=ws requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if self.cardType == 'ws' and flow != 'inbound':
+            raise ValueError(f"Component '{name}': type=ws requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
     def _get_entity_operations(self):
         """Extract operations from entity's source."""
@@ -1679,9 +1679,9 @@ class PublishFormComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
         # Validate: PublishForm requires outbound WebSocket entity
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if ws_flow_type != 'outbound':
-            raise ValueError(f"Component '{name}': PublishForm requires entity with 'type: outbound' for WebSocket publishing, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if flow != 'outbound':
+            raise ValueError(f"Component '{name}': PublishForm requires entity with 'type: outbound' for WebSocket publishing, got type={flow}")
 
     def to_props(self):
         return {
@@ -1808,9 +1808,9 @@ class OrderTimelineComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
         # Validate: OrderTimeline requires inbound WebSocket entity
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if ws_flow_type != 'inbound':
-            raise ValueError(f"Component '{name}': OrderTimeline requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if flow != 'inbound':
+            raise ValueError(f"Component '{name}': OrderTimeline requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
     def _get_ws_source_params(self):
         """Extract WebSocket source params by traversing parent chain to find WS source."""
@@ -1893,9 +1893,9 @@ class VitalsPanelComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
         # Validate: VitalsPanel requires inbound WebSocket entity
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if ws_flow_type != 'inbound':
-            raise ValueError(f"Component '{name}': VitalsPanel requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if flow != 'inbound':
+            raise ValueError(f"Component '{name}': VitalsPanel requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
     def to_props(self):
         props = {
@@ -1938,9 +1938,9 @@ class DeviceGridComponent(_BaseComponent):
             raise ValueError(f"Component '{name}' must bind an 'entity:'.")
 
         # Validate: DeviceGrid requires inbound WebSocket entity
-        ws_flow_type = getattr(entity_ref, "ws_flow_type", None)
-        if ws_flow_type != 'inbound':
-            raise ValueError(f"Component '{name}': DeviceGrid requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
+        flow = getattr(entity_ref, "flow", None)
+        if flow != 'inbound':
+            raise ValueError(f"Component '{name}': DeviceGrid requires entity with 'type: inbound' for WebSocket streaming, got type={flow}")
 
     def to_props(self):
         props = {

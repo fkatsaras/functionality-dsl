@@ -44,7 +44,7 @@ class TestBasicParsing:
         assert model is not None
 
         # Find inbound entities
-        inbound_entities = [e for e in model.entities if getattr(e, 'ws_flow_type', None) == 'inbound']
+        inbound_entities = [e for e in model.entities if getattr(e, 'flow', None) == 'inbound']
         assert len(inbound_entities) >= 1
 
     def test_composite_entity_parses(self, composite_entity_v2_fdsl):
@@ -345,7 +345,7 @@ class TestWebSocketValidation:
         end
 
         Entity DataTick
-          type: inbound
+          flow: inbound
           source: DataWS
           attributes:
             - value: string @optional;
@@ -370,7 +370,7 @@ class TestWebSocketValidation:
         end
 
         Entity DataTick
-          type: inbound
+          flow: inbound
           source: DataWS
           attributes:
             - value: string @readonly;
@@ -395,7 +395,7 @@ class TestWebSocketValidation:
         end
 
         Entity Command
-          type: outbound
+          flow: outbound
           source: CommandWS
           attributes:
             - action: string;
@@ -669,7 +669,7 @@ class TestSourceValidation:
         end
 
         Entity DataTick
-          type: inbound
+          flow: inbound
           source: GoodSource
           attributes:
             - value: string;

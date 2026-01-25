@@ -455,7 +455,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
         for e in model.entities:
             parents = getattr(e, "parents", []) or []
             is_composite = len(parents) > 0
-            entity_type = getattr(e, "ws_flow_type", None)  # inbound/outbound for WS
+            entity_type = getattr(e, "flow", None)  # inbound/outbound for WS
             is_schema_only = e.name in schema_only_entities and not getattr(e, "source", None) and not getattr(e, "access", None)
 
             # Collect attributes and nested entity references
@@ -638,7 +638,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
         # Generated WS Endpoints (UML Interface)
         # -------------------------------
         for e in model.entities:
-            entity_type = getattr(e, "ws_flow_type", None)
+            entity_type = getattr(e, "flow", None)
 
             # WS entities need type: inbound or outbound
             if entity_type not in ("inbound", "outbound"):

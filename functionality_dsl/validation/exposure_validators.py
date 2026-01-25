@@ -61,8 +61,8 @@ def _validate_exposure_blocks(model, metamodel=None):
             source = _find_source_in_parents(parent_entities)
 
         # WebSocket outbound entities don't need source (they publish to external WS)
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
-        if ws_flow_type == "outbound":
+        flow = getattr(entity, "flow", None)
+        if flow == "outbound":
             # Outbound entities are valid without source
             continue
 
@@ -88,9 +88,9 @@ def _validate_ws_entities(model, metamodel=None):
     entities = get_children_of_type("Entity", model)
 
     for entity in entities:
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        flow = getattr(entity, "flow", None)
 
-        if not ws_flow_type:
+        if not flow:
             continue  # Not a WebSocket entity
 
         source = getattr(entity, "source", None)
@@ -101,7 +101,7 @@ def _validate_ws_entities(model, metamodel=None):
             source = _find_source_in_parents(parent_entities)
 
         # Validate inbound entities
-        if ws_flow_type == "inbound":
+        if flow == "inbound":
             if not source:
                 raise TextXSemanticError(
                     f"WebSocket entity '{entity.name}' with 'type: inbound' must have 'source:' field "
@@ -119,7 +119,7 @@ def _validate_ws_entities(model, metamodel=None):
                 )
 
         # Validate outbound entities
-        elif ws_flow_type == "outbound":
+        elif flow == "outbound":
             # Outbound entities can have source (for sending) or be standalone (for client publish)
             pass  # No additional validation required
 
@@ -153,11 +153,11 @@ def _validate_entity_access_blocks(model, metamodel=None):
             source = getattr(first_parent, "source", None)
 
         # Determine available operations
-        ws_flow_type = getattr(entity, "ws_flow_type", None)
+        flow = getattr(entity, "flow", None)
 
-        if ws_flow_type:
+        if flow:
             # WebSocket entity
-            if ws_flow_type == "inbound":
+            if flow == "inbound":
                 available_ops = {'subscribe'}
             else:
                 available_ops = {'publish'}
