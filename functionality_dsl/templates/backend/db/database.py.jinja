@@ -75,7 +75,7 @@ class User(SQLModel, table=True):
         return self.email
 
 
-{% if auth_type == 'session' %}
+{% if has_session_auth %}
 class SessionRecord(SQLModel, table=True):
     """
     Database-backed session storage.

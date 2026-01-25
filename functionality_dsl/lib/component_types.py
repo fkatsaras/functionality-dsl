@@ -172,16 +172,49 @@ def _strip_quotes(s):
 
 @register_component
 class TableComponent(_BaseComponent):
-    def __init__(self, parent=None, name=None, entity_ref=None, colNames=None, columns=None):
+    """
+    Table component for displaying tabular data from REST entities.
+
+    Supports two modes:
+    1. Entity mode (default): Displays entity attributes as columns, CRUD on whole entity
+    2. Item mode (arrayField): Displays items from an array field, CRUD on individual items
+
+    In item mode, the component:
+    - Extracts items from the specified arrayField (or auto-detects single array<T> attribute)
+    - Uses keyField to identify rows (auto-detects 'id' or first field)
+    - Extracts columns from the nested entity T's attributes
+    - CRUD operations modify the array and PUT the entire parent entity back
+    """
+
+    def __init__(self, parent=None, name=None, entity_ref=None, colNames=None, columns=None,
+                 arrayField=None, keyField=None):
         super().__init__(parent, name, entity_ref)
 
-        # Support both legacy colNames and new typed columns
+        # Store arrayField and keyField (strip quotes if present)
+        self.arrayField = self._strip_column_name(arrayField) if arrayField else None
+        self.keyField = self._strip_column_name(keyField) if keyField else None
+        self._item_entity = None
+
+        # Auto-detect arrayField if not specified
+        if self.arrayField is None:
+            detected_field, detected_entity = self._auto_detect_array_field()
+            if detected_field:
+                self.arrayField = detected_field
+                self._item_entity = detected_entity
+        else:
+            self._item_entity = self._get_item_entity(self.arrayField)
+
+        # Auto-detect keyField from item entity
+        if self.keyField is None and self._item_entity:
+            self.keyField = self._auto_detect_key_field()
+
+        # Process columns - either explicit or from item entity
         if columns:
-            # New typed columns format
+            # New typed columns format (explicit)
             self.columns = []
             for col_def in columns:
                 col_name = self._strip_column_name(col_def.name)
-                col_type = self._extract_type_info(col_def)  # Pass the whole col_def, not col_def.type
+                col_type = self._extract_type_info(col_def)
                 self.columns.append({
                     "name": col_name,
                     "type": col_type
@@ -195,8 +228,10 @@ class TableComponent(_BaseComponent):
                 col_items = colNames or []
 
             self.colNames = [self._attr_name(c) for c in col_items]
-            # Create columns list with default string type
-            self.columns = [{"name": name, "type": {"baseType": "string"}} for name in self.colNames]
+            self.columns = [{"name": n, "type": {"baseType": "string"}} for n in self.colNames]
+        elif self._item_entity:
+            # Auto-extract columns from nested item entity
+            self.colNames, self.columns = self._extract_columns_from_item_entity()
         else:
             self.colNames = []
             self.columns = []
@@ -214,6 +249,67 @@ class TableComponent(_BaseComponent):
                 return s[1:-1]
             return s
         return str(name)
+
+    def _auto_detect_array_field(self):
+        """Auto-detect arrayField if entity has single array<T> attribute."""
+        entity = self.entity_ref
+        array_attrs = []
+
+        for attr in getattr(entity, "attributes", []) or []:
+            type_spec = getattr(attr, "type", None)
+            if type_spec and hasattr(type_spec, "itemEntity") and type_spec.itemEntity:
+                array_attrs.append((attr.name, type_spec.itemEntity))
+
+        if len(array_attrs) == 1:
+            return array_attrs[0]  # (field_name, item_entity)
+        # Multiple arrays or no arrays - don't auto-detect
+        return None, None
+
+    def _get_item_entity(self, field_name):
+        """Get item entity for a specific arrayField."""
+        entity = self.entity_ref
+        for attr in getattr(entity, "attributes", []) or []:
+            if attr.name == field_name:
+                type_spec = getattr(attr, "type", None)
+                if type_spec and hasattr(type_spec, "itemEntity"):
+                    return type_spec.itemEntity
+        return None
+
+    def _auto_detect_key_field(self):
+        """Auto-detect keyField from item entity - prefer 'id' or first field."""
+        if not self._item_entity:
+            return None
+
+        attrs = getattr(self._item_entity, "attributes", []) or []
+        if not attrs:
+            return None
+
+        # Prefer 'id' field
+        for attr in attrs:
+            if attr.name.lower() == 'id':
+                return attr.name
+
+        # Otherwise use first field
+        return attrs[0].name
+
+    def _extract_columns_from_item_entity(self):
+        """Extract column definitions from nested item entity."""
+        if not self._item_entity:
+            return [], []
+
+        attrs = getattr(self._item_entity, "attributes", []) or []
+
+        col_names = []
+        columns = []
+
+        for attr in attrs:
+            col_names.append(attr.name)
+            columns.append({
+                "name": attr.name,
+                "type": self._extract_type_info_from_attr(attr)
+            })
+
+        return col_names, columns
 
     def _extract_type_info(self, type_spec):
         """Extract type information from ColumnDef node."""
@@ -243,6 +339,33 @@ class TableComponent(_BaseComponent):
 
         return result
 
+    def _extract_type_info_from_attr(self, attr):
+        """Extract type information from an entity attribute."""
+        type_spec = getattr(attr, "type", None)
+        if not type_spec:
+            return {"baseType": "string"}
+
+        result = {}
+
+        # Check for array<Entity> or object<Entity>
+        if hasattr(type_spec, "itemEntity") and type_spec.itemEntity:
+            result["baseType"] = "array"
+        elif hasattr(type_spec, "nestedEntity") and type_spec.nestedEntity:
+            result["baseType"] = "object"
+        elif hasattr(type_spec, "baseType") and type_spec.baseType:
+            result["baseType"] = type_spec.baseType
+            # Extract format if present
+            if hasattr(type_spec, "format") and type_spec.format:
+                result["format"] = type_spec.format
+        else:
+            result["baseType"] = "string"
+
+        # Check if nullable
+        if hasattr(type_spec, "nullable") and type_spec.nullable:
+            result["nullable"] = True
+
+        return result
+
     def _attr_name(self, a):
         if a is None:
             return None
@@ -261,7 +384,6 @@ class TableComponent(_BaseComponent):
         if source:
             ops = getattr(source, "operations", None)
             if ops:
-                # operations is a SourceOperationsList with .operations attribute
                 op_list = getattr(ops, "operations", None)
                 if op_list:
                     return [str(op) for op in op_list]
@@ -278,6 +400,19 @@ class TableComponent(_BaseComponent):
                 readonly.append(attr.name)
         return readonly
 
+    def _get_item_entity_readonly_fields(self):
+        """Get readonly fields from the nested item entity."""
+        if not self._item_entity:
+            return self._get_readonly_fields()
+
+        readonly = []
+        attrs = getattr(self._item_entity, "attributes", []) or []
+        for attr in attrs:
+            attr_type = getattr(attr, "type", None)
+            if attr_type and getattr(attr_type, "readonlyMarker", None):
+                readonly.append(attr.name)
+        return readonly
+
     def _get_all_fields(self):
         """Get all entity attribute names for create/edit forms."""
         entity = self.entity_ref
@@ -287,12 +422,25 @@ class TableComponent(_BaseComponent):
             fields.append(attr.name)
         return fields
 
+    def _get_item_entity_all_fields(self):
+        """Get all fields from the nested item entity."""
+        if not self._item_entity:
+            return self._get_all_fields()
+
+        attrs = getattr(self._item_entity, "attributes", []) or []
+        return [attr.name for attr in attrs]
+
     def to_props(self):
         # Table component fetches entity data from REST endpoint
-        # All entities are snapshots - single endpoint at /api/{entity_name}
         operations = self._get_entity_operations()
-        readonly_fields = self._get_readonly_fields()
-        all_fields = self._get_all_fields()
+
+        # Determine readonly and all fields based on item mode
+        if self.arrayField and self._item_entity:
+            readonly_fields = self._get_item_entity_readonly_fields()
+            all_fields = self._get_item_entity_all_fields()
+        else:
+            readonly_fields = self._get_readonly_fields()
+            all_fields = self._get_all_fields()
 
         return {
             "endpointPath": self._endpoint_path(""),
@@ -301,6 +449,10 @@ class TableComponent(_BaseComponent):
             "operations": operations,
             "readonlyFields": readonly_fields,
             "allFields": all_fields,
+            # Item mode props
+            "arrayField": self.arrayField,
+            "keyField": self.keyField,
+            "itemMode": bool(self.arrayField),
         }
 
 
@@ -1024,13 +1176,62 @@ class EntityCardComponent(_BaseComponent):
                 readonly.append(attr.name)
         return readonly
 
+    def _get_ws_source_params(self):
+        """Extract WebSocket source params by traversing parent chain to find WS source."""
+        from collections import deque
+
+        def get_source_params(source):
+            """Extract params list from a source."""
+            params_list = getattr(source, "params", None)
+            if params_list and hasattr(params_list, "params"):
+                return list(params_list.params)
+            return []
+
+        # Start with the entity itself
+        entity = self.entity_ref
+        source = getattr(entity, "source", None)
+        if source:
+            source_class = source.__class__.__name__
+            if source_class in ("SourceWS", "WSSource", "WSEndpoint"):
+                return get_source_params(source)
+
+        # Traverse parent chain using BFS
+        parents = getattr(entity, "parents", []) or []
+        if not parents:
+            return []
+
+        queue = deque(parents)
+        visited = set()
+
+        while queue:
+            parent_ref = queue.popleft()
+            parent = parent_ref.entity if hasattr(parent_ref, 'entity') else parent_ref
+            parent_id = id(parent)
+
+            if parent_id in visited:
+                continue
+            visited.add(parent_id)
+
+            source = getattr(parent, "source", None)
+            if source:
+                source_class = source.__class__.__name__
+                if source_class in ("SourceWS", "WSSource", "WSEndpoint"):
+                    return get_source_params(source)
+
+            parent_parents = getattr(parent, "parents", []) or []
+            queue.extend(parent_parents)
+
+        return []
+
     def to_props(self):
         operations = self._get_entity_operations()
         readonly_fields = self._get_readonly_fields()
 
         if self.cardType == 'ws':
+            ws_params = self._get_ws_source_params()
             return {
                 "wsUrl": self._endpoint_path(""),
+                "wsParams": ws_params,
                 "fields": self.fields,
                 "title": self.title or self.entity_ref.name,
                 "highlight": self.highlight,
@@ -1611,9 +1812,58 @@ class OrderTimelineComponent(_BaseComponent):
         if ws_flow_type != 'inbound':
             raise ValueError(f"Component '{name}': OrderTimeline requires entity with 'type: inbound' for WebSocket streaming, got type={ws_flow_type}")
 
+    def _get_ws_source_params(self):
+        """Extract WebSocket source params by traversing parent chain to find WS source."""
+        from collections import deque
+
+        def get_source_params(source):
+            """Extract params list from a source."""
+            params_list = getattr(source, "params", None)
+            if params_list and hasattr(params_list, "params"):
+                return list(params_list.params)
+            return []
+
+        # Start with the entity itself
+        entity = self.entity_ref
+        source = getattr(entity, "source", None)
+        if source:
+            source_class = source.__class__.__name__
+            if source_class in ("SourceWS", "WSSource", "WSEndpoint"):
+                return get_source_params(source)
+
+        # Traverse parent chain using BFS
+        parents = getattr(entity, "parents", []) or []
+        if not parents:
+            return []
+
+        queue = deque(parents)
+        visited = set()
+
+        while queue:
+            parent_ref = queue.popleft()
+            parent = parent_ref.entity if hasattr(parent_ref, 'entity') else parent_ref
+            parent_id = id(parent)
+
+            if parent_id in visited:
+                continue
+            visited.add(parent_id)
+
+            source = getattr(parent, "source", None)
+            if source:
+                source_class = source.__class__.__name__
+                if source_class in ("SourceWS", "WSSource", "WSEndpoint"):
+                    return get_source_params(source)
+
+            parent_parents = getattr(parent, "parents", []) or []
+            queue.extend(parent_parents)
+
+        return []
+
     def to_props(self):
+        ws_params = self._get_ws_source_params()
         return {
             "wsUrl": self._endpoint_path(""),
+            "wsParams": ws_params,
             "title": self.title or "Order Timeline",
         }
 

@@ -1,9 +1,13 @@
 {% set endpoint = props.get('endpointPath') %}
 {% set wsUrl = props.get('wsUrl') %}
+{% set wsParams = props.get('wsParams', []) %}
 <EntityCard
   name="{{ common.name }}"
   {%- if wsUrl %}
   wsUrl="{{ wsUrl }}"
+  {%- if wsParams %}
+  wsParams={{ "{" }}{{ wsParams | tojson }}{{ "}" }}
+  {%- endif %}
   {%- else %}
   url="{{ endpoint }}"
   {%- endif %}

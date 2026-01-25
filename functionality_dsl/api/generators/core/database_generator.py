@@ -4,10 +4,10 @@ Generates SQLModel database configuration and user model based on Auth/AuthDB co
 
 NEW MODEL (Global AuthDB):
 - AuthDB is global (not attached to specific Auth)
-- If AuthDB exists -> BYODB mode (all DB-backed auths use it)
-- If no AuthDB -> default DB mode (auto-generate Postgres)
-- Only DB-backed auths (jwt, session) need database
-- Non-DB auths (apikey, basic) don't need database
+- Only JWT and Session auth types are DB-backed
+- APIKey and Basic auth are env-var based (no DB needed)
+- If AuthDB exists -> BYODB mode (for JWT/Session)
+- If no AuthDB -> default DB mode (auto-generate Postgres for JWT/Session)
 
 Supports two modes:
 1. Default: Generates PostgreSQL + SQLModel user table (when no AuthDB specified)
@@ -20,8 +20,10 @@ from textx import get_children_of_type
 
 
 def _has_db_backed_auth(model) -> bool:
-    """Check if any DB-backed auth type exists (jwt or session)."""
+    """Check if any DB-backed auth type exists (JWT or Session only)."""
     auths = getattr(model, "auth", []) or []
+    # Only JWT and Session are DB-backed
+    # APIKey and Basic are env-var based (no DB needed)
     for auth in auths:
         auth_type = getattr(auth, "kind", None)
         if auth_type in ("jwt", "session"):
@@ -65,9 +67,9 @@ def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if database module was generated, False if no DB-backed auth
     """
-    # Only generate database if we have DB-backed auth
+    # Only generate database if we have DB-backed auth (JWT or Session)
     if not _has_db_backed_auth(model):
-        print("  No DB-backed auth (jwt/session) found - skipping database generation")
+        print("  No DB-backed auth (JWT/Session) found - skipping database generation")
         return False
 
     print("  Generating database module...")
@@ -110,7 +112,7 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
     Returns:
         bool: True if password module was generated
     """
-    # Only generate if we have DB-backed auth
+    # Only generate if we have any auth (all are now DB-backed)
     if not _has_db_backed_auth(model):
         return False
 
@@ -266,7 +268,7 @@ def get_database_context(model) -> dict:
 
     Returns dict with database configuration for docker-compose and .env templates.
     """
-    # Only need database context if we have DB-backed auth
+    # Only need database context if we have any auth (all are now DB-backed)
     if not _has_db_backed_auth(model):
         return {}
 

@@ -17,6 +17,7 @@
         refreshMs?: number;
         // WebSocket mode props
         wsUrl?: string;
+        wsParams?: string[];  // Parameter names required for WebSocket connection
         // Common props
         fields: string[];
         title?: string;
@@ -35,6 +36,10 @@
     let interval: ReturnType<typeof setInterval> | null = null;
     let ws: WebSocket | null = null;
 
+    // WebSocket params state
+    let wsParamValues = $state<Record<string, string>>({});
+    let wsParamsProvided = $state(false);
+
     // Get initial auth state synchronously
     const initialAuth = authStore.getState();
     let authToken = $state<string | null>(initialAuth.token);
@@ -48,6 +53,11 @@
 
     // Determine mode based on props
     const isWebSocketMode = $derived(!!props.wsUrl);
+
+    // Check if we need params before connecting
+    const needsWsParams = $derived(
+        isWebSocketMode && props.wsParams && props.wsParams.length > 0 && !wsParamsProvided
+    );
 
     // Check if update operation is available
     const canEdit = $derived(
@@ -186,7 +196,22 @@
         try {
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
             const wsPath = props.wsUrl.startsWith("/") ? props.wsUrl : `/${props.wsUrl}`;
-            const fullUrl = `${protocol}//${window.location.host}${wsPath}`;
+
+            // Build query string from wsParamValues
+            let queryString = "";
+            if (props.wsParams && props.wsParams.length > 0) {
+                const params = new URLSearchParams();
+                for (const param of props.wsParams) {
+                    if (wsParamValues[param]) {
+                        params.append(param, wsParamValues[param]);
+                    }
+                }
+                queryString = params.toString();
+            }
+
+            const fullUrl = queryString
+                ? `${protocol}//${window.location.host}${wsPath}?${queryString}`
+                : `${protocol}//${window.location.host}${wsPath}`;
 
             ws = new WebSocket(fullUrl);
 
@@ -220,6 +245,24 @@
             error = e.message || "Failed to connect WebSocket";
             loading = false;
         }
+    }
+
+    // ============================================================================
+    // WebSocket Params Form
+    // ============================================================================
+    function submitWsParams() {
+        // Validate all params are provided
+        if (props.wsParams) {
+            for (const param of props.wsParams) {
+                if (!wsParamValues[param] || wsParamValues[param].trim() === "") {
+                    error = `Parameter "${param}" is required`;
+                    return;
+                }
+            }
+        }
+        wsParamsProvided = true;
+        error = null;
+        connectWebSocket();
     }
 
     // ============================================================================
@@ -269,7 +312,13 @@
     // ============================================================================
     onMount(() => {
         if (isWebSocketMode) {
-            connectWebSocket();
+            // Only auto-connect if no params are needed
+            if (!props.wsParams || props.wsParams.length === 0) {
+                connectWebSocket();
+            } else {
+                // Wait for user to provide params
+                loading = false;
+            }
         } else {
             fetchData();
 
@@ -290,7 +339,7 @@
 
 <Card fullWidth>
     {#snippet header()}
-        <div class="card-header">
+        <div class="card-header-inner">
             <h3 class="card-title">{props.title || ""}</h3>
             <div class="header-actions">
                 {#if editMode}
@@ -329,7 +378,31 @@
         </div>
     {/snippet}
 
-    {#if loading}
+    {#if needsWsParams}
+        <!-- WebSocket params form -->
+        <div class="params-form">
+            <p class="params-hint">Enter parameters to connect:</p>
+            {#if error}
+                <div class="edit-error">{error}</div>
+            {/if}
+            {#each props.wsParams || [] as param}
+                <div class="param-row">
+                    <label class="param-label" for={param}>{formatFieldName(param)}</label>
+                    <input
+                        type="text"
+                        id={param}
+                        class="param-input"
+                        placeholder={param}
+                        bind:value={wsParamValues[param]}
+                        onkeydown={(e) => e.key === 'Enter' && submitWsParams()}
+                    />
+                </div>
+            {/each}
+            <button class="connect-btn" onclick={submitWsParams}>
+                Connect
+            </button>
+        </div>
+    {:else if loading}
         <div class="state-container">
             <EmptyState />
         </div>
@@ -426,7 +499,7 @@
 </Card>
 
 <style>
-    .card-header {
+    .card-header-inner {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -638,5 +711,64 @@
     .json-error-msg {
         font-size: 0.7rem;
         color: var(--red-text, #dc2626);
+    }
+
+    /* WebSocket params form styles */
+    .params-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
+    .params-hint {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    .param-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .param-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .param-input {
+        padding: 0.5rem;
+        border: 1px solid var(--edge);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 0.875rem;
+    }
+
+    .param-input:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+
+    .connect-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 4px;
+        background: var(--accent);
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.15s;
+        margin-top: 0.5rem;
+    }
+
+    .connect-btn:hover {
+        opacity: 0.9;
     }
 </style>

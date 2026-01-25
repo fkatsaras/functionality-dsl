@@ -7,15 +7,18 @@ NEW MODEL (Global AuthDB):
 - Roles belong to Auth mechanisms (Role admin uses JWTAuth)
 - Entity access: can reference public, Auth, or Role
 - Auth is inferred from Role when needed
-- AuthDB is GLOBAL (shared by all DB-backed auths)
+- AuthDB is GLOBAL (shared by DB-backed auths)
 - If AuthDB exists -> BYODB mode
-- If no AuthDB -> default DB mode
+- If no AuthDB -> default DB mode (for JWT/Session only)
 
 Supported auth types:
-- jwt: Stateless token-based authentication (Authorization header) [DB-backed]
-- session: Stateful cookie-based authentication [DB-backed]
-- apikey: API key authentication (header or query param) [NOT DB-backed]
-- basic: HTTP Basic authentication (username:password) [NOT DB-backed]
+- jwt: DB-backed, stateless token-based authentication (Authorization header)
+- session: DB-backed, stateful cookie-based authentication (sessions table)
+- apikey: Env-var based, API key authentication (header or query param)
+- basic: Env-var based, HTTP Basic authentication (username:password)
+
+Only JWT and Session support login/register endpoints (user-facing auth).
+APIKey and Basic are admin-configured access control (no DB, no registration).
 """
 
 from pathlib import Path
@@ -124,9 +127,12 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         '',
     ]
 
-    # Track auth types for special exports
+    # Track auth types for special exports (priority: session > basic > apikey > jwt)
+    # We pick ONE primary auth for login/register handlers
     session_auth_name = None
     jwt_auth_name = None
+    basic_auth_name = None
+    apikey_auth_name = None
 
     # Import each auth module
     for auth_name, config in auth_configs.items():
@@ -140,10 +146,15 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append("")
 
         # Track auth types for special exports
-        if config.get("auth_type") == "session":
+        auth_type = config.get("auth_type")
+        if auth_type == "session":
             session_auth_name = auth_name
-        if config.get("auth_type") == "jwt" and jwt_auth_name is None:
+        elif auth_type == "jwt" and jwt_auth_name is None:
             jwt_auth_name = auth_name
+        elif auth_type == "basic" and basic_auth_name is None:
+            basic_auth_name = auth_name
+        elif auth_type == "apikey" and apikey_auth_name is None:
+            apikey_auth_name = auth_name
 
     # If JWT auth exists, import and re-export JWT-specific functions
     # These are used by auth_routes.py for login/register
@@ -160,12 +171,13 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append(f"TokenPayload = TokenPayload_{jwt_auth_name.lower()}")
         lines.append("")
 
-    # If session auth exists, import and re-export session-specific handlers
-    # These are used by main.py to register /auth/login, /auth/logout, /auth/register, /auth/me
+    # Import auth handlers from the primary auth type
+    # Only JWT and Session have login/register endpoints (DB-backed, user-facing auth)
+    # Basic and APIKey are env-var based (admin-configured, no registration)
     if session_auth_name:
-        session_module = f"auth_{session_auth_name.lower()}"
+        auth_module = f"auth_{session_auth_name.lower()}"
         lines.append("# Session auth handlers for main.py")
-        lines.append(f"from app.core.{session_module} import (")
+        lines.append(f"from app.core.{auth_module} import (")
         lines.append("    login_handler,")
         lines.append("    logout_handler,")
         lines.append("    register_handler,")
@@ -182,6 +194,18 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
         lines.append("# Re-export session auth functions without suffix for main.py compatibility")
         lines.append(f"get_current_user = get_current_user_{session_auth_name.lower()}")
         lines.append(f"TokenPayload = TokenPayload_{session_auth_name.lower()}")
+        lines.append("")
+    elif basic_auth_name:
+        # Basic auth - no login/register handlers, just re-export dependencies
+        lines.append("# Re-export basic auth functions without suffix for main.py compatibility")
+        lines.append(f"get_current_user = get_current_user_{basic_auth_name.lower()}")
+        lines.append(f"TokenPayload = TokenPayload_{basic_auth_name.lower()}")
+        lines.append("")
+    elif apikey_auth_name:
+        # API Key auth - no login/register handlers, just re-export dependencies
+        lines.append("# Re-export apikey auth functions without suffix for main.py compatibility")
+        lines.append(f"get_current_user = get_current_user_{apikey_auth_name.lower()}")
+        lines.append(f"TokenPayload = TokenPayload_{apikey_auth_name.lower()}")
         lines.append("")
 
     # Export mapping for router generator to use
@@ -206,16 +230,16 @@ def _extract_auth_config(auth, roles, global_authdb=None):
     """
     Extract auth configuration into template-friendly dict.
 
-    NEW MODEL: Global AuthDB shared by all DB-backed auths.
-    - Auth<jwt>: secret directly on auth, uses global AuthDB
-    - Auth<session>: cookie, expiry directly on auth, uses global AuthDB
-    - Auth<apikey>: header/query, secret directly on auth, NO database
-    - Auth<basic>: no config fields, NO database
+    Auth types have different storage models:
+    - Auth<jwt>: DB-backed (uses global AuthDB or default DB)
+    - Auth<session>: DB-backed (uses global AuthDB or default DB)
+    - Auth<apikey>: Env-var based (no DB, uses secret env var)
+    - Auth<basic>: Env-var based (no DB, uses users env var)
 
     Args:
         auth: Auth object from FDSL model (AuthJWT, AuthSession, AuthAPIKey, or AuthBasic)
         roles: List of role names that use this auth
-        global_authdb: Global AuthDB object (if BYODB mode)
+        global_authdb: Global AuthDB object (if BYODB mode, only for JWT/Session)
 
     Returns:
         dict: Auth configuration for template rendering
@@ -223,18 +247,11 @@ def _extract_auth_config(auth, roles, global_authdb=None):
     auth_type = getattr(auth, "kind", None)
     auth_name = auth.name
 
-    # DB-backed types use global AuthDB
+    # Only JWT and Session are DB-backed
     is_db_backed = auth_type in ("jwt", "session")
-    uses_default_db = global_authdb is None
+    uses_default_db = is_db_backed and (global_authdb is None)
 
     # Build authdb config for templates (only for DB-backed types with BYODB)
-    # New simplified structure:
-    #   AuthDB Name
-    #     connection: "ENV_VAR"
-    #     table: "users_table"
-    #     columns: id="email" password="hash" role="role"
-    #   end
-    # Sessions are auto-generated by FDSL (not mapped from external DB)
     authdb_config = None
     if is_db_backed and global_authdb:
         columns_ref = getattr(global_authdb, "columns", None)
@@ -256,7 +273,8 @@ def _extract_auth_config(auth, roles, global_authdb=None):
         "auth_type": auth_type,
         "auth_name": auth_name,
         "roles": roles,
-        "uses_default_db": uses_default_db if is_db_backed else True,  # Non-DB types don't use DB
+        "is_db_backed": is_db_backed,
+        "uses_default_db": uses_default_db,
         "authdb": authdb_config,
     }
 
@@ -306,9 +324,10 @@ def _extract_auth_config(auth, roles, global_authdb=None):
         })
 
     elif auth_type == "basic":
-        # Auth<basic>: no config fields, uses default env var
+        # Auth<basic>: env-var based (no DB)
+        # Uses BASIC_AUTH_USERS env var by default
         config.update({
-            "users": "BASIC_AUTH_USERS",
+            "users": get_or_default("users", "BASIC_AUTH_USERS"),
         })
 
     return config

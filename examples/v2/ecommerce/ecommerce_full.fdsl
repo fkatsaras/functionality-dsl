@@ -39,34 +39,35 @@ Server EcommerceAPI
   host: "localhost"
   port: 8080
   cors: "*"
+  loglevel: debug
 end
 
 Source<REST> ProductsAPI
-  url: "http://ecomm-dummy:9001/products"
+  url: "http://dummy-ecomm-service:9001/products"
   params: [category, search]
   operations: [read, create, update, delete]
 end
 
 Source<REST> CartAPI
-  url: "http://ecomm-dummy:9001/cart"
+  url: "http://dummy-ecomm-service:9001/cart"
   operations: [read, update, delete]
 end
 
 Source<REST> OrdersAPI
-  url: "http://ecomm-dummy:9001/orders"
+  url: "http://dummy-ecomm-service:9001/orders"
   params: [order_id]
   operations: [read, create]
 end
 
 Source<REST> ShippingAPI
-  url: "http://ecomm-dummy:9001/rates"
+  url: "http://dummy-ecomm-service:9001/rates"
   params: [zip_code, weight]
   operations: [read]
-  auth: IntegrationAuth
+  auth: IntegrationAuth  // API key auth disabled for now
 end
 
 Source<WS> OrderUpdatesWS
-  channel: "ws://ecomm-dummy:9001/ws/status/{order_id}"
+  channel: "ws://dummy-ecomm-service:9001/ws/status/{order_id}"
   params: [order_id]
   operations: [subscribe]
 end
@@ -253,12 +254,6 @@ Component<EntityCard> OrderTracker
   title: "Order Status"
 end
 
-// Showcase component: Visual order timeline showing order progression
-Component<OrderTimeline> OrderProgress
-  entity: OrderStatus
-  title: "Order Progress"
-end
-
 // ============================================================================
 // EDITABLE ENTITY CARD - Showcase inline editing with RBAC
 // Cart has update operation, so EntityCard will show pencil icon
@@ -269,4 +264,21 @@ Component<EntityCard> CartEditor
   type: rest
   fields: ["items", "updated_at"]
   title: "Shopping Cart"
+end
+
+// ============================================================================
+// TABLE WITH ITEM-LEVEL CRUD - Showcase array field CRUD
+// Cart has items: array<LineItem>, Table auto-detects and enables item-level CRUD
+// Operations modify individual items in the array and PUT the whole entity back
+// ============================================================================
+Component<Table> CartItemsTable
+  entity: Cart
+  arrayField: "items"
+  keyField: "product_id"
+end
+
+// Products Table - auto-detects items: array<Product>
+Component<Table> ProductsTable
+  entity: Products
+  colNames: ["id", "sku", "name", "price", "stock"]
 end

@@ -25,7 +25,11 @@
         name = "Table",
         operations = [],
         readonlyFields = [],
-        allFields = []
+        allFields = [],
+        // Item mode props for array field CRUD
+        arrayField = null,
+        keyField = null,
+        itemMode = false,
     } = $props<{
         url?: string | null;
         colNames?: string[];
@@ -34,8 +38,14 @@
         operations?: string[];
         readonlyFields?: string[];
         allFields?: string[];
+        arrayField?: string | null;
+        keyField?: string | null;
+        itemMode?: boolean;
     }>();
 
+    // Full entity data (for itemMode, this is the parent entity used for PUT)
+    let entityData = $state<Record<string, any> | null>(null);
+    // Items to display in table (extracted from arrayField in itemMode)
     let data = $state<any[]>([]);
     let loading = $state(false);
     let error = $state<string | null>(null);
@@ -105,49 +115,62 @@
 
             const json = await response.json();
 
-            if (Array.isArray(json)) {
-                if (
-                    json.length === 1 &&
-                    typeof json[0] === "object" &&
-                    Object.keys(json[0]).length === 1
-                ) {
-                    const firstKey = Object.keys(json[0])[0];
-                    data = json[0][firstKey];
-                } else {
-                    data = json;
+            // Item mode: store full entity, extract items from arrayField
+            if (itemMode && arrayField) {
+                entityData = json;
+                data = json[arrayField] || [];
+                if (data.length > 0 && typeof data[0] === "object") {
+                    entityKeys = Object.keys(data[0]);
                 }
-            } else if (json && typeof json === "object") {
-                const keys = Object.keys(json);
-                if (keys.length === 1) {
-                    const first = json[keys[0]];
-                    if (Array.isArray(first)) {
-                        data = first;
-                    } else if (first && typeof first === "object") {
-                        const innerKeys = Object.keys(first);
-                        if (innerKeys.length === 1 && Array.isArray(first[innerKeys[0]])) {
-                            data = first[innerKeys[0]];
+            } else {
+                // Entity mode: heuristic extraction (backwards compatible)
+                entityData = null;
+
+                if (Array.isArray(json)) {
+                    if (
+                        json.length === 1 &&
+                        typeof json[0] === "object" &&
+                        Object.keys(json[0]).length === 1
+                    ) {
+                        const firstKey = Object.keys(json[0])[0];
+                        data = json[0][firstKey];
+                    } else {
+                        data = json;
+                    }
+                } else if (json && typeof json === "object") {
+                    const keys = Object.keys(json);
+                    if (keys.length === 1) {
+                        const first = json[keys[0]];
+                        if (Array.isArray(first)) {
+                            data = first;
+                        } else if (first && typeof first === "object") {
+                            const innerKeys = Object.keys(first);
+                            if (innerKeys.length === 1 && Array.isArray(first[innerKeys[0]])) {
+                                data = first[innerKeys[0]];
+                            } else {
+                                throw new Error("Expected object with single array field inside entity.");
+                            }
                         } else {
-                            throw new Error("Expected object with single array field inside entity.");
+                            throw new Error("Expected entity object or array.");
                         }
                     } else {
-                        throw new Error("Expected entity object or array.");
-                    }
-                } else {
-                    const arrayKey = keys.find(k => Array.isArray(json[k]));
-                    if (arrayKey) {
-                        data = json[arrayKey];
-                    } else {
-                        throw new Error("Expected single entity key or an object with an array field.");
+                        const arrayKey = keys.find(k => Array.isArray(json[k]));
+                        if (arrayKey) {
+                            data = json[arrayKey];
+                        } else {
+                            throw new Error("Expected single entity key or an object with an array field.");
+                        }
                     }
                 }
-            }
 
-            if (data.length > 0 && typeof data[0] === "object") {
-                entityKeys = Object.keys(data[0]);
+                if (data.length > 0 && typeof data[0] === "object") {
+                    entityKeys = Object.keys(data[0]);
+                }
             }
         } catch (err: any) {
             error = err?.message ?? "Failed to load data from source.";
             data = [];
+            entityData = null;
             entityKeys = [];
         } finally {
             loading = false;
@@ -180,11 +203,26 @@
             const { headers, fetchOptions } = getAuthHeaders();
             headers['Content-Type'] = 'application/json';
 
+            let payload: any;
+
+            if (itemMode && arrayField && entityData) {
+                // Item mode: update item in array, PUT entire entity
+                const updatedItems = [...data];
+                updatedItems[editingRow] = editData;
+                payload = {
+                    ...entityData,
+                    [arrayField]: updatedItems
+                };
+            } else {
+                // Entity mode: PUT the edited data directly
+                payload = editData;
+            }
+
             const response = await fetch(url, {
                 ...fetchOptions,
                 method: 'PUT',
                 headers,
-                body: JSON.stringify(editData),
+                body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
@@ -229,11 +267,28 @@
             const { headers, fetchOptions } = getAuthHeaders();
             headers['Content-Type'] = 'application/json';
 
+            let method: string;
+            let payload: any;
+
+            if (itemMode && arrayField && entityData) {
+                // Item mode: add item to array, PUT entire entity
+                const updatedItems = [...data, createData];
+                payload = {
+                    ...entityData,
+                    [arrayField]: updatedItems
+                };
+                method = 'PUT';  // PUT the whole entity, not POST
+            } else {
+                // Entity mode: POST the new data
+                payload = createData;
+                method = 'POST';
+            }
+
             const response = await fetch(url, {
                 ...fetchOptions,
-                method: 'POST',
+                method,
                 headers,
-                body: JSON.stringify(createData),
+                body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
@@ -272,13 +327,28 @@
             const { headers, fetchOptions } = getAuthHeaders();
             headers['Content-Type'] = 'application/json';
 
-            const rowData = data[deleteConfirmRow];
+            let method: string;
+            let payload: any;
+
+            if (itemMode && arrayField && entityData) {
+                // Item mode: remove item from array, PUT entire entity
+                const updatedItems = data.filter((_, idx) => idx !== deleteConfirmRow);
+                payload = {
+                    ...entityData,
+                    [arrayField]: updatedItems
+                };
+                method = 'PUT';  // PUT the whole entity, not DELETE
+            } else {
+                // Entity mode: DELETE with row data
+                payload = data[deleteConfirmRow];
+                method = 'DELETE';
+            }
 
             const response = await fetch(url, {
                 ...fetchOptions,
-                method: 'DELETE',
+                method,
                 headers,
-                body: JSON.stringify(rowData),
+                body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
@@ -642,13 +712,14 @@
     }
 
     thead th {
-        background: #0f141c;
-        border-bottom: 2px solid var(--edge-light);
+        background: var(--surface-secondary);
+        border-bottom: 2px solid var(--edge);
         font-weight: 700;
         font-size: 0.85rem;
         letter-spacing: 0.03em;
         padding-top: 0.75rem;
         padding-bottom: 0.75rem;
+        color: var(--text);
     }
 
     th {

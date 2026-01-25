@@ -9,6 +9,7 @@
 
     const props = $props<{
         wsUrl: string;
+        wsParams?: string[];  // Parameter names required for WebSocket connection
         title?: string;
     }>();
 
@@ -25,6 +26,15 @@
     let connected = $state(false);
     let error = $state<string | null>(null);
     let unsub: (() => void) | null = null;
+
+    // WebSocket params state
+    let wsParamValues = $state<Record<string, string>>({});
+    let wsParamsProvided = $state(false);
+
+    // Check if we need params before connecting
+    const needsWsParams = $derived(
+        props.wsParams && props.wsParams.length > 0 && !wsParamsProvided
+    );
 
     // Status progression stages
     const stages = [
@@ -57,12 +67,62 @@
         data = msg;
     }
 
-    onMount(() => {
+    function buildWsUrl(): string {
+        let url = props.wsUrl;
+        if (props.wsParams && props.wsParams.length > 0) {
+            const params = new URLSearchParams();
+            for (const param of props.wsParams) {
+                if (wsParamValues[param]) {
+                    params.append(param, wsParamValues[param]);
+                }
+            }
+            const queryString = params.toString();
+            if (queryString) {
+                url = url.includes('?') ? `${url}&${queryString}` : `${url}?${queryString}`;
+            }
+        }
+        return url;
+    }
+
+    function connectWebSocket() {
         if (!props.wsUrl || props.wsUrl === "None") {
             error = "No WebSocket URL provided";
             return;
         }
-        unsub = wsSubscribe(props.wsUrl, handleMessage);
+        const url = buildWsUrl();
+        unsub = wsSubscribe(url, handleMessage);
+    }
+
+    function submitWsParams() {
+        // Validate all params are provided
+        if (props.wsParams) {
+            for (const param of props.wsParams) {
+                if (!wsParamValues[param] || wsParamValues[param].trim() === "") {
+                    error = `Parameter "${param}" is required`;
+                    return;
+                }
+            }
+        }
+        wsParamsProvided = true;
+        error = null;
+        connectWebSocket();
+    }
+
+    function formatFieldName(field: string): string {
+        return field
+            .replace(/_/g, " ")
+            .replace(/([A-Z])/g, " $1")
+            .trim()
+            .split(" ")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ");
+    }
+
+    onMount(() => {
+        // Only auto-connect if no params are needed
+        if (!props.wsParams || props.wsParams.length === 0) {
+            connectWebSocket();
+        }
     });
 
     onDestroy(() => {
@@ -93,7 +153,31 @@
     </svelte:fragment>
 
     <div class="timeline-body">
-        {#if error}
+        {#if needsWsParams}
+            <!-- WebSocket params form -->
+            <div class="params-form">
+                <p class="params-hint">Enter parameters to track order:</p>
+                {#if error}
+                    <div class="error-text">{error}</div>
+                {/if}
+                {#each props.wsParams || [] as param}
+                    <div class="param-row">
+                        <label class="param-label" for={param}>{formatFieldName(param)}</label>
+                        <input
+                            type="text"
+                            id={param}
+                            class="param-input"
+                            placeholder={param}
+                            bind:value={wsParamValues[param]}
+                            onkeydown={(e) => e.key === 'Enter' && submitWsParams()}
+                        />
+                    </div>
+                {/each}
+                <button class="connect-btn" onclick={submitWsParams}>
+                    Track Order
+                </button>
+            </div>
+        {:else if error}
             <div class="error-state">
                 <span class="error-text">{error}</span>
             </div>
@@ -401,5 +485,67 @@
 
     .status-pending {
         color: var(--yellow-text);
+    }
+
+    /* WebSocket params form styles */
+    .params-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
+    .params-hint {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0;
+        font-family: "Approach Mono", monospace;
+    }
+
+    .param-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .param-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .param-input {
+        padding: 0.5rem;
+        border: 1px solid var(--edge);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 0.875rem;
+        font-family: "Approach Mono", monospace;
+    }
+
+    .param-input:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+
+    .connect-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 4px;
+        background: var(--accent);
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 500;
+        font-family: "Approach Mono", monospace;
+        cursor: pointer;
+        transition: opacity 0.15s;
+        margin-top: 0.5rem;
+    }
+
+    .connect-btn:hover {
+        opacity: 0.9;
     }
 </style>

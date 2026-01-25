@@ -111,40 +111,45 @@ Entity ProductSummary(Product)
 end
 
 // =============================================================================
-// UI COMPONENTS - Using DataCard for single-entity snapshots
+// UI COMPONENTS - Using EntityCard for single-entity snapshots
 // =============================================================================
 
 // Public info card - no auth required
-Component<DataCard> PublicInfoCard
+Component<EntityCard> PublicInfoCard
   entity: PublicUserInfo
+  type: rest
   fields: ["display_name", "username", "has_image"]
   title: "Public User Info"
 end
 
 // Product summary card - public
-Component<DataCard> ProductCard
+Component<EntityCard> ProductCard
   entity: ProductSummary
+  type: rest
   fields: ["name", "price_usd", "category"]
   title: "Product Summary"
 end
 
 // User profile card - requires user/admin role
-Component<DataCard> UserProfileCard
+Component<EntityCard> UserProfileCard
   entity: UserProfile
+  type: rest
   fields: ["firstName", "lastName", "email", "username", "role"]
   title: "User Profile"
 end
 
 // Product details card - requires user/admin role
-Component<DataCard> ProductDetailsCard
+Component<EntityCard> ProductDetailsCard
   entity: Product
+  type: rest
   fields: ["title", "price", "brand", "category", "description"]
   title: "Product Details"
 end
 
 // Admin-only card - shows product list stats
-Component<DataCard> AdminStatsCard
+Component<EntityCard> AdminStatsCard
   entity: ProductList
+  type: rest
   fields: ["total", "skip", "limit"]
   title: "Admin Stats (Admin Only)"
 end
@@ -225,23 +230,29 @@ end
 // WEBSOCKET UI COMPONENTS
 // =============================================================================
 
-// Public live metrics - no auth required
-Component<LiveMetrics> PublicCryptoMetrics
+// Public live chart - no auth required
+Component<LiveChart> PublicCryptoChart
   entity: PublicPrices
-  metrics: ["symbol", "price"]
-  label: "Public Crypto (No Auth)"
+  seriesLabels: ["price"]
+  xLabel: "Time"
+  yLabel: "Price (USD)"
+  windowSize: 50
 end
 
-// User live metrics - requires user role
-Component<LiveMetrics> UserCryptoMetrics
+// User live chart - requires user role
+Component<LiveChart> UserCryptoChart
   entity: UserPrices
-  metrics: ["eth_price", "btc_price", "spread"]
-  label: "User Crypto (User/Admin)"
+  seriesLabels: ["eth_price", "btc_price"]
+  xLabel: "Time"
+  yLabel: "Price (USD)"
+  windowSize: 50
 end
 
-// Admin live metrics - requires admin role
-Component<LiveMetrics> AdminCryptoMetrics
+// Admin live chart - requires admin role
+Component<LiveChart> AdminCryptoChart
   entity: AdminPrices
-  metrics: ["eth_price", "btc_price", "ratio"]
-  label: "Admin Crypto (Admin Only)"
+  seriesLabels: ["eth_price", "btc_price", "ratio"]
+  xLabel: "Time"
+  yLabel: "Price (USD)"
+  windowSize: 50
 end

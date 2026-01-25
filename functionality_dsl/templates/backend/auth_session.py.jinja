@@ -365,14 +365,14 @@ def require_all_roles(required_roles: List[str]):
 # ============================================================================
 
 class LoginRequest(BaseModel):
-    """Login request body - email/password authentication"""
-    email: str
+    """Login request body - login_id/password authentication"""
+    login_id: str
     password: str
 
 
 class RegisterRequest(BaseModel):
     """Register request body"""
-    email: str
+    login_id: str
     password: str
     role: str
 
@@ -422,16 +422,16 @@ async def register_handler(request: RegisterRequest, db: DBSession) -> RegisterR
         )
 
     # Check if user already exists
-    existing_user = db.exec(select(User).where(User.email == request.email)).first()
+    existing_user = db.exec(select(User).where(User.email == request.login_id)).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists"
+            detail="A user with this login_id already exists"
         )
 
     # Create new user with hashed password
     user = User(
-        email=request.email,
+        email=request.login_id,
         password_hash=hash_password(request.password),
         role=request.role
     )
@@ -439,7 +439,7 @@ async def register_handler(request: RegisterRequest, db: DBSession) -> RegisterR
     db.commit()
 
     return RegisterResponse(
-        user_id=request.email,
+        user_id=request.login_id,
         role=request.role
     )
 
@@ -451,19 +451,19 @@ async def login_handler(request: LoginRequest, response: Response, db: DBSession
     from app.db.database import User
     from app.db.password import verify_password
 
-    # Find user by email
-    user = db.exec(select(User).where(User.email == request.email)).first()
+    # Find user by login_id
+    user = db.exec(select(User).where(User.email == request.login_id)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid login_id or password"
         )
 
     # Verify password
     if not verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid login_id or password"
         )
 
     # Validate that the role from DB is a declared role
@@ -856,26 +856,26 @@ def require_all_roles(required_roles: List[str]):
 
 {% if authdb %}
 class LoginRequest(BaseModel):
-    """Login request body - BYODB mode (email/password)"""
-    email: str
+    """Login request body - BYODB mode (login_id/password)"""
+    login_id: str
     password: str
 
 
 class RegisterRequest(BaseModel):
     """Register request body - BYODB mode"""
-    email: str
+    login_id: str
     password: str
     role: str
 {% else %}
 class LoginRequest(BaseModel):
     """Login request body - dev mode (user specifies own identity)"""
-    user_id: str
+    login_id: str
     roles: List[str]
 
 
 class RegisterRequest(BaseModel):
     """Register request body - dev mode"""
-    user_id: str
+    login_id: str
     password: str
     role: str
 {% endif %}
@@ -966,10 +966,10 @@ async def register_handler(request: RegisterRequest) -> RegisterResponse:
         )
 
     # Register user in database
-    register_user(request.email, request.password, request.role)
+    register_user(request.login_id, request.password, request.role)
 
     return RegisterResponse(
-        user_id=request.email,
+        user_id=request.login_id,
         role=request.role
     )
 
@@ -979,12 +979,12 @@ async def login_handler(request: LoginRequest, response: Response) -> LoginRespo
     Handle login - verify credentials against external BYODB and create session.
     """
     # Verify credentials against external database
-    result = verify_user_credentials(request.email, request.password)
+    result = verify_user_credentials(request.login_id, request.password)
 
     if not result:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid login_id or password"
         )
 
     user_id, role = result

@@ -63,9 +63,13 @@ TableComponent:
   'Component' '<' 'Table' '>' name=ID
   'entity:' entity_ref=[entity.Entity]
   (
-      ('colNames:' colNames=StringList)                   // legacy: explicit list of column names ['id','name',...]
-    | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
-  )?
+    ('arrayField:' arrayField=STRING)?                    // field containing array of items (auto-detected if single array<T>)
+    ('keyField:' keyField=STRING)?                        // unique key field in items (auto-detected: 'id' or first field)
+    (
+        ('colNames:' colNames=StringList)                 // legacy: explicit list of column names ['id','name',...]
+      | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
+    )?
+  )#
   'end'
 ;
 

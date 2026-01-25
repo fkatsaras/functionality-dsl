@@ -68,29 +68,29 @@ def create_app() -> FastAPI:
         app.include_router(auth_router)
         logger.info("Auth routes registered from router: /auth/register, /auth/login, /auth/me")
     except ImportError:
-        # No generated auth router - try session-based auth handlers
+        # No generated auth router - try auth handlers from unified auth module
+        # Only session auth has login/register handlers (DB-backed, user-facing)
+        # Basic and APIKey auth are env-var based (admin-configured, no registration)
         try:
+            # Check if this is session auth (has login_handler, logout_handler, SESSION_COOKIE_NAME)
             from app.core.auth import (
                 login_handler, logout_handler, register_handler, me_handler,
                 LoginRequest, LoginResponse, LogoutResponse,
                 RegisterRequest, RegisterResponse,
-                get_current_user, TokenPayload, SESSION_COOKIE_NAME
+                SESSION_COOKIE_NAME,
+                get_current_user, TokenPayload
             )
             from fastapi import Depends
-
-            # Check if login_handler takes db parameter (database-backed sessions)
             import inspect
+
+            # Session auth - needs response for cookies, has logout
             login_sig = inspect.signature(login_handler)
             needs_db = 'db' in login_sig.parameters
 
-            # Check if register_handler takes db parameter
-            register_sig = inspect.signature(register_handler)
-            register_needs_db = 'db' in register_sig.parameters
+            from app.db import get_db
+            from sqlmodel import Session as DBSession
 
             if needs_db:
-                from app.db import get_db
-                from sqlmodel import Session as DBSession
-
                 @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
                 async def login(request: LoginRequest, response: Response, db: DBSession = Depends(get_db)):
                     """Login and create a session"""
@@ -101,16 +101,10 @@ def create_app() -> FastAPI:
                     """Logout and clear session"""
                     return await logout_handler(response, db, session_id)
 
-                if register_needs_db:
-                    @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
-                    async def register(request: RegisterRequest, db: DBSession = Depends(get_db)):
-                        """Register a new user"""
-                        return await register_handler(request, db)
-                else:
-                    @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
-                    async def register(request: RegisterRequest):
-                        """Register a new user"""
-                        return await register_handler(request)
+                @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                async def register(request: RegisterRequest, db: DBSession = Depends(get_db)):
+                    """Register a new user"""
+                    return await register_handler(request, db)
             else:
                 @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
                 async def login(request: LoginRequest, response: Response):
@@ -132,9 +126,10 @@ def create_app() -> FastAPI:
                 """Get current user info"""
                 return await me_handler(user)
 
-            logger.info("Auth routes registered from session handlers: /auth/register, /auth/login, /auth/logout, /auth/me")
+            logger.info("Auth routes registered (session): /auth/register, /auth/login, /auth/logout, /auth/me")
         except ImportError as e:
-            logger.debug(f"No auth module found - skipping auth routes: {e}")
+            # No session auth handlers - basic/apikey auth don't have login/register routes
+            logger.debug(f"No session auth handlers found - auth is env-var based (basic/apikey): {e}")
 
     @app.get("/")
     def root():

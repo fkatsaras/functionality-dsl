@@ -79,6 +79,7 @@ setup: ## Install dependencies and set up development environment
 clean: ## Clean generated files and caches
 	@echo "$(YELLOW)Cleaning generated files...$(NC)"
 	rm -rf $(GENERATED_DIR)
+	rm -rf cookies.txt
 	rm -rf test_gen test_ast_gen generated_ws_test
 	rm -rf **/__pycache__ **/*.pyc **/*.pyo
 	rm -rf .pytest_cache .coverage htmlcov

@@ -6,9 +6,9 @@ networks:
 
 services:
   # Combined dummy service (all endpoints on one service for simplicity)
-  ecomm-dummy:
+  dummy-ecomm-service:
     build: .
-    container_name: ecomm-dummy
+    container_name: dummy-ecomm-service
     ports:
       - "9001:9001"
     networks:
