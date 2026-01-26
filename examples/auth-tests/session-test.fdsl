@@ -1,0 +1,52 @@
+// Minimal Cookie-based Auth Test (session-like behavior using API keys in cookies)
+// Test with:
+//   1. Set cookie: curl http://localhost:8000/api/secretpost -b "session_id=admin_session_key"
+//   Where admin_session_key is defined in SESSION_KEYS env var: admin_session_key:admin,user_session_key:user
+
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "session_id"
+end
+
+Role admin uses SessionAuth
+Role user uses SessionAuth
+
+Server SessionTest
+  host: "0.0.0.0"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/1"
+  operations: [read]
+end
+
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: public
+end
+
+Entity SecretPost
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: [admin]
+end
+
+Component<Table> PostTable
+  entity: Post
+  colNames: ["id", "title", "body"]
+end
+
+Component<Table> SecretPostTable
+  entity: SecretPost
+  colNames: ["id", "title", "body"]
+end

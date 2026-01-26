@@ -1,0 +1,253 @@
+// =============================================================================
+// Health Monitoring System - Full CRUD + Real-time Vitals
+// =============================================================================
+// Demonstrates:
+// - REST CRUD: Patient profiles, health goals, medications
+// - Per-operation access control: Medications (patients can read/create,
+//   only doctors can update/delete)
+// - WebSocket inbound: Real-time heart rate from wearables
+// - WebSocket outbound: Emergency SOS alerts from patients
+// - Complex aggregations: BMI, health scores, vital status
+//
+// Thesis Focus: Data collection from wearables + processing (BMI, status)
+//               + aggregation (health summaries)
+// =============================================================================
+
+Auth<http> HealthAuth
+  scheme: bearer
+  secret: "HEALTH_JWT_SECRET"
+end
+
+Role patient uses HealthAuth
+Role doctor uses HealthAuth
+
+Server HealthMonitor
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// =============================================================================
+// REST SOURCES - Patient Data Management
+// =============================================================================
+
+Source<REST> PatientAPI
+  url: "http://dummy-health-monitoring:9001/patient"
+  operations: [read, update]
+end
+
+Source<REST> GoalsAPI
+  url: "http://dummy-health-monitoring:9001/goals"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> MedicationAPI
+  url: "http://dummy-health-monitoring:9001/medications"
+  operations: [read, create, update, delete]
+end
+
+Source<REST> VitalsSnapshotAPI
+  url: "http://dummy-health-monitoring:9001/vitals"
+  operations: [read]
+end
+
+// =============================================================================
+// WEBSOCKET SOURCES - Real-time Monitoring
+// =============================================================================
+
+Source<WS> WearableHeartRate
+  channel: "ws://dummy-health-monitoring:9001/ws/heartrate"
+  operations: [subscribe]
+end
+
+Source<WS> EmergencyChannel
+  channel: "ws://dummy-health-monitoring:9001/ws/sos"
+  operations: [publish]
+end
+
+// =============================================================================
+// REST ENTITIES - CRUD Operations
+// =============================================================================
+
+// Patient Profile - read/update own data
+Entity PatientProfile
+  source: PatientAPI
+  attributes:
+    - patient_id: string @readonly;
+    - name: string;
+    - age: integer;
+    - weight_kg: number @optional;
+    - height_cm: number @optional;
+    - blood_type: string @optional;
+    - emergency_contact: string @optional;
+    - updated_at: string @readonly;
+  access: [patient, doctor]
+end
+
+// Health Goals - full CRUD
+Entity HealthGoal
+  source: GoalsAPI
+  attributes:
+    - goal_id: string @readonly;
+    - type: string;
+    - target_value: number;
+    - current_value: number @readonly;
+    - deadline: string @optional;
+    - created_at: string @readonly;
+  access: [patient]
+end
+
+// Medications - per-operation access control demonstration
+// Patients can view and add medications, but only doctors can modify or remove them
+Entity Medication
+  source: MedicationAPI
+  attributes:
+    - medication_id: string @readonly;
+    - name: string;
+    - dosage: string;
+    - frequency: string;
+    - time_of_day: string @optional;
+    - active: boolean @optional;
+    - notes: string @optional;
+  access:
+    read: [patient, doctor]
+    create: [patient, doctor]
+    update: [doctor]
+    delete: [doctor]
+end
+
+// Current Vitals Snapshot (read-only)
+Entity VitalsSnapshot
+  source: VitalsSnapshotAPI
+  attributes:
+    - heart_rate: integer @readonly;
+    - blood_pressure_systolic: integer @readonly;
+    - blood_pressure_diastolic: integer @readonly;
+    - temperature_c: number @readonly;
+    - oxygen_saturation: integer @readonly;
+    - recorded_at: string @readonly;
+  access: [patient, doctor]
+end
+
+// =============================================================================
+// WEBSOCKET ENTITIES - Real-time Data
+// =============================================================================
+
+// Inbound: Real-time heart rate from wearable
+Entity HeartRateTick
+  flow: inbound
+  source: WearableHeartRate
+  attributes:
+    - bpm: integer;
+    - timestamp: integer;
+    - device_id: string;
+end
+
+// Outbound: Emergency SOS from patient to emergency services
+Entity EmergencyAlert
+  flow: outbound
+  source: EmergencyChannel
+  attributes:
+    - cause: string;    // "fall", "chest_pain", "breathing", "other"
+    - severity: string;      // "low", "medium", "high", "critical"
+    - location: string @optional;
+    - message: string @optional;
+  access: [patient]
+end
+
+// =============================================================================
+// COMPOSITE ENTITIES - Aggregations & Analysis
+// =============================================================================
+
+// Real-time heart rate with analysis
+// Note: WebSocket auth requires token in query param - using public for demo simplicity
+Entity HeartRateMonitor(HeartRateTick)
+  flow: inbound
+  attributes:
+    - current_bpm: integer = HeartRateTick.bpm;
+    - timestamp: integer = HeartRateTick.timestamp;
+    - status: string = "critical" if HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50
+        else ("elevated" if HeartRateTick.bpm > 100 else "normal");
+    - needs_attention: boolean = HeartRateTick.bpm > 120 or HeartRateTick.bpm < 50;
+  access: public
+end
+
+// Health Summary - combines profile + vitals with BMI calculation
+Entity HealthSummary(PatientProfile, VitalsSnapshot)
+  attributes:
+    - patient_name: string = PatientProfile.name;
+    - bmi: number = round(PatientProfile.weight_kg / ((PatientProfile.height_cm / 100) * (PatientProfile.height_cm / 100)), 1);
+    - bmi_category: string = "underweight" if HealthSummary.bmi < 18.5
+        else ("normal" if HealthSummary.bmi < 25
+        else ("overweight" if HealthSummary.bmi < 30 else "obese"));
+    - heart_rate: integer = VitalsSnapshot.heart_rate;
+    - blood_pressure: string = toString(VitalsSnapshot.blood_pressure_systolic) + "/" + toString(VitalsSnapshot.blood_pressure_diastolic);
+    - bp_status: string = "high" if VitalsSnapshot.blood_pressure_systolic > 140 else ("low" if VitalsSnapshot.blood_pressure_systolic < 90 else "normal");
+    - oxygen_level: integer = VitalsSnapshot.oxygen_saturation;
+    - oxygen_status: string = "critical" if VitalsSnapshot.oxygen_saturation < 90 else ("low" if VitalsSnapshot.oxygen_saturation < 95 else "normal");
+    - overall_status: string = "needs_attention" if HealthSummary.bp_status != "normal" or HealthSummary.oxygen_status != "normal" else "stable";
+  access: [patient, doctor]
+end
+
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+// 1. PATIENT PROFILE - EntityCard with update capability (doctors/patients can edit)
+Component<EntityCard> PatientCard
+  entity: PatientProfile
+  type: rest
+  fields: ["patient_id", "name", "age", "weight_kg", "height_cm", "blood_type", "emergency_contact"]
+  title: "Patient Profile"
+  highlight: "name"
+end
+
+// 2. HEALTH GOAL - Full CRUD EntityCard (patients can create/update/delete their goals)
+Component<EntityCard> GoalCard
+  entity: HealthGoal
+  type: rest
+  fields: ["goal_id", "type", "target_value", "current_value", "deadline"]
+  title: "Health Goal"
+  highlight: "type"
+end
+
+// 3. MEDICATION - Per-operation access demo (patients read/create, doctors update/delete)
+Component<EntityCard> MedicationCard
+  entity: Medication
+  type: rest
+  fields: ["medication_id", "name", "dosage", "frequency", "time_of_day", "active"]
+  title: "Medication"
+  highlight: "name"
+end
+
+// 4. LIVE CHART - Real-time heart rate visualization
+Component<LiveChart> HeartRateChart
+  entity: HeartRateMonitor
+  values: current_bpm
+  seriesLabels: ["Heart Rate"]
+  xLabel: "Time"
+  yLabel: "BPM"
+  windowSize: 60
+  height: 300
+  fullWidth: true
+end
+
+// 5. HEART RATE GAUGE - Live heart rate monitoring
+Component<Gauge> HeartRateGauge
+  entity: HeartRateMonitor
+  value: "current_bpm"
+  min: 40
+  max: 160
+  label: "Heart Rate"
+  unit: "bpm"
+end
+
+// 6. HEALTH SUMMARY - Aggregated health overview
+Component<EntityCard> HealthOverview
+  entity: HealthSummary
+  type: rest
+  fields: ["patient_name", "bmi", "bmi_category", "blood_pressure", "bp_status", "oxygen_level", "overall_status"]
+  title: "Health Summary"
+  highlight: "overall_status"
+end

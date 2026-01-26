@@ -32,14 +32,18 @@ def _safe_zip(*args):
 def _get(obj, key, default=None):
     """
     Safe dictionary/object access with default value.
+    Returns default if obj is None, key doesn't exist, OR value is None.
     Usage: get(dict, "key", "default")
     """
     if obj is None:
         return default
     if isinstance(obj, dict):
-        return obj.get(key, default)
+        value = obj.get(key, default)
+        # If value is None, return default (handles nullable fields in DB responses)
+        return default if value is None else value
     # For objects with attributes
-    return getattr(obj, key, default)
+    value = getattr(obj, key, default)
+    return default if value is None else value
 
 def _between(value, min_val, max_val) -> bool:
     """

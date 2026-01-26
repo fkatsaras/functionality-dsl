@@ -1,0 +1,242 @@
+# ========================================================================
+# AUTO-GENERATED ENTITY ROUTER: {{ entity_name }}
+# Generated from entity-centric exposure configuration
+# ========================================================================
+
+import logging
+from typing import List, Optional, Dict, Any
+
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
+
+from app.domain.models import {{ entity_name }}
+{%- for op in operations %}
+{%- if op.has_request_body %}, {{ op.request_model }}{% endif %}
+{%- endfor %}
+from app.services.{{ entity_name | lower }}_service import {{ service_name }}
+{%- if has_auth %}
+{%- for auth_name in auth_modules %}
+from app.core.auth_{{ auth_name | lower }} import (
+    require_roles as require_roles_{{ auth_name | lower }},
+    get_current_user as get_current_user_{{ auth_name | lower }},
+    get_optional_user as get_optional_user_{{ auth_name | lower }},
+)
+{%- endfor %}
+{%- endif %}
+
+
+logger = logging.getLogger("fdsl.router.{{ entity_name }}")
+
+router = APIRouter(
+    prefix="{{ rest_path }}",
+    tags=["{{ entity_name }}"]
+)
+
+{% set ns = namespace(has_multi_auth=false) %}
+{%- for op in operations %}
+{%- if op.multi_auth %}
+{% set ns.has_multi_auth = true %}
+{%- endif %}
+{%- endfor %}
+
+{%- if ns.has_multi_auth %}
+# ============================================================================
+# Multi-Auth Dependencies (OR logic - accept any valid auth)
+# ============================================================================
+
+{%- for op in operations %}
+{%- if op.multi_auth %}
+
+async def _require_any_auth_{{ op.function_name }}(
+{%- for ma in op.multi_auth %}
+    user_{{ ma.auth | lower }} = Depends(get_optional_user_{{ ma.auth | lower }}),
+{%- endfor %}
+):
+    """
+    Accept any of the following auth methods (OR logic):
+    {%- for ma in op.multi_auth %}
+    - {{ ma.auth }}{% if ma.roles %} with roles {{ ma.roles }}{% endif %}
+    {%- endfor %}
+    """
+    errors = []
+    {%- for ma in op.multi_auth %}
+
+    # Try {{ ma.auth }}
+    if user_{{ ma.auth | lower }}:
+        {%- if ma.roles %}
+        if user_{{ ma.auth | lower }}.has_any_role({{ ma.roles }}):
+            return user_{{ ma.auth | lower }}
+        else:
+            errors.append("{{ ma.auth }}: requires one of {{ ma.roles }}")
+        {%- else %}
+        return user_{{ ma.auth | lower }}
+        {%- endif %}
+    {%- endfor %}
+
+    # No auth method succeeded
+    if errors:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. " + "; ".join(errors)
+        )
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Accepts: {% for ma in op.multi_auth %}{{ ma.auth }}{% if ma.roles %} (roles: {{ ma.roles | join(', ') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}"
+    )
+
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+
+
+{% for op in operations %}
+@router.{{ op.method | lower }}(
+    "{{ op.path_suffix }}",
+    {%- if op.type != "delete" %}
+    response_model={{ op.response_model }},
+    {%- endif %}
+    status_code={{ op.status_code }}
+    {%- if not op.is_public %}
+    {%- if op.multi_auth %},
+    dependencies=[Depends(_require_any_auth_{{ op.function_name }})]
+    {%- elif op.auth_name %}
+    {%- if op.required_roles %},
+    dependencies=[Depends(require_roles_{{ op.auth_name | lower }}({{ op.required_roles }}))]
+    {%- else %},
+    dependencies=[Depends(get_current_user_{{ op.auth_name | lower }})]
+    {%- endif %}
+    {%- endif %}
+    {%- endif %}
+)
+async def {{ op.function_name }}(
+    {%- if op.is_item_op %}
+    {{ op.id_field }}: str,
+    {%- endif %}
+    {%- if op.has_request_body %}
+    data: {{ op.request_model }},
+    {%- endif %}
+    {%- if op.type == "list" and op.filters %}
+    {%- for filter in op.filters %}
+    {{ filter.name }}: Optional[{{ filter.type }}] = None,
+    {%- endfor %}
+    {%- endif %}
+    {%- if has_params %}
+    {%- for param in path_params %}
+    {{ param }}: str = Query(..., description="Path parameter: {{ param }}"),
+    {%- endfor %}
+    {%- for param in query_params %}
+    {{ param }}: Optional[str] = Query(None, description="Query parameter: {{ param }}"),
+    {%- endfor %}
+    {%- endif %}
+    service: {{ service_name }} = Depends()
+){%- if op.type != "delete" %} -> {{ op.response_model }}{% endif %}:
+    """{{ op.type | capitalize }} {{ entity_name }}"""
+    {%- if op.is_item_op %}
+    logger.debug(f"{{ op.type | upper }} {{ entity_name }}: {{ op.id_field }}={{ '{{ ' }}{{ op.id_field }}{{ ' }}' }}")
+    {%- else %}
+    logger.debug(f"{{ op.type | upper }} {{ entity_name }}")
+    {%- endif %}
+
+    {%- if op.type == "list" %}
+    {%- if op.filters %}
+    # Build filters dict from query parameters
+    filters = {}
+    {%- for filter in op.filters %}
+    if {{ filter.name }} is not None:
+        filters['{{ filter.name }}'] = {{ filter.name }}
+    {%- endfor %}
+    return await service.list_{{ entity_name | lower }}(filters=filters)
+    {%- else %}
+    return await service.list_{{ entity_name | lower }}()
+    {%- endif %}
+
+    {%- elif op.type == "read" %}
+    {%- if op.is_item_op %}
+    result = await service.get_{{ entity_name | lower }}({{ op.id_field }})
+    if not result:
+        raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
+    return result
+    {%- else %}
+{% if has_params %}
+    # Parameterized read - pass query params to service
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    return await service.get_{{ entity_name | lower }}(params)
+{% else %}
+    # Singleton read - no ID parameter
+    return await service.get_{{ entity_name | lower }}()
+{% endif %}
+    {%- endif %}
+
+    {%- elif op.type == "create" %}
+{% if has_params %}
+    # Parameterized create - pass query params to service
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    return await service.create_{{ entity_name | lower }}(data, params)
+{% else %}
+    return await service.create_{{ entity_name | lower }}(data)
+{% endif %}
+
+    {%- elif op.type == "update" %}
+    {%- if op.is_item_op %}
+    result = await service.update_{{ entity_name | lower }}({{ op.id_field }}, data)
+    if not result:
+        raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
+    return result
+    {%- else %}
+{% if has_params %}
+    # Parameterized update - pass query params to service
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    result = await service.update_{{ entity_name | lower }}(data, params)
+{% else %}
+    # Singleton update - no ID parameter
+    result = await service.update_{{ entity_name | lower }}(data)
+{% endif %}
+    if not result:
+        raise HTTPException(status_code=404, detail="{{ entity_name }} not found")
+    return result
+    {%- endif %}
+
+    {%- elif op.type == "delete" %}
+    {%- if op.is_item_op %}
+    await service.delete_{{ entity_name | lower }}({{ op.id_field }})
+    {%- else %}
+{% if has_params %}
+    # Parameterized delete - pass query params to service
+    params = {}
+    {%- for param in path_params %}
+    params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    {%- for param in query_params %}
+    if {{ param }} is not None:
+        params["{{ param }}"] = {{ param }}
+    {%- endfor %}
+    await service.delete_{{ entity_name | lower }}(params)
+{% else %}
+    # Singleton delete - no ID parameter
+    await service.delete_{{ entity_name | lower }}()
+{% endif %}
+    {%- endif %}
+    {%- endif %}
+
+
+{% endfor %}

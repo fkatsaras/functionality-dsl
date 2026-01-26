@@ -1,0 +1,204 @@
+// =============================================================================
+// Finnhub Stock API - Real-time quotes with company info + Live trades
+// =============================================================================
+//
+// Auth Model:
+// - Entity auth: Users authenticate to our API via X-API-Key header (DB-backed)
+// - Source auth: Our backend authenticates to Finnhub via env var (FINNHUB_API_KEY)
+//
+// Usage:
+//   1. Set FINNHUB_API_KEY env var with your Finnhub API key
+//   2. curl -H "X-API-Key: YOUR_USER_API_KEY" http://localhost:8000/api/rawquote?symbol=AAPL
+//
+// To get a Finnhub API key: https://finnhub.io/
+// =============================================================================
+
+// Entity auth - users authenticate to OUR API (DB-backed)
+Auth<apikey> UserAuth
+  in: header
+  name: "X-API-Key"
+end
+
+Role trader uses UserAuth
+
+// Source auth - our backend authenticates to Finnhub (static key from env var)
+Auth<apikey> FinnhubSourceAuth
+  in: query
+  name: "token"
+  secret: "FINNHUB_API_KEY"
+end
+
+Server FinnhubStockAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// REST Sources - External Finnhub API endpoints
+// -----------------------------------------------------------------------------
+
+// Stock quote endpoint - returns current price data
+// Uses FINNHUB_API_KEY from env var for authentication
+Source<REST> QuoteAPI
+  url: "https://finnhub.io/api/v1/quote"
+  params: [symbol]
+  operations: [read]
+  auth: FinnhubSourceAuth
+end
+
+// Company profile endpoint - returns company fundamentals
+// Uses FINNHUB_API_KEY from env var for authentication
+Source<REST> ProfileAPI
+  url: "https://finnhub.io/api/v1/stock/profile2"
+  params: [symbol]
+  operations: [read]
+  auth: FinnhubSourceAuth
+end
+
+// -----------------------------------------------------------------------------
+// WebSocket Sources - Real-time trade streams
+// -----------------------------------------------------------------------------
+
+// Finnhub real-time trades WebSocket
+// Uses FINNHUB_API_KEY from env var as ?token=... query param
+Source<WS> FinnhubTradesWS
+  channel: "wss://ws.finnhub.io"
+  operations: [subscribe]
+  auth: FinnhubSourceAuth
+end
+
+// -----------------------------------------------------------------------------
+// Base Entities - Raw API responses
+// -----------------------------------------------------------------------------
+
+// Raw quote data from Finnhub
+// API returns: c (current), d (change), dp (percent change), h (high), l (low), o (open), pc (prev close), t (timestamp)
+Entity RawQuote
+  source: QuoteAPI
+  attributes:
+    - c: number @readonly;       // Current price
+    - d: number @readonly;       // Change
+    - dp: number @readonly;      // Percent change
+    - h: number @readonly;       // High price of the day
+    - l: number @readonly;       // Low price of the day
+    - o: number @readonly;       // Open price of the day
+    - pc: number @readonly;      // Previous close price
+    - t: integer @readonly;      // Timestamp
+  access: [trader]
+end
+
+// Raw company profile from Finnhub
+Entity RawProfile
+  source: ProfileAPI
+  attributes:
+    - ticker: string @readonly;
+    - name: string @readonly;
+    - country: string @readonly;
+    - currency: string @readonly;
+    - exchange: string @readonly;
+    - ipo: string @readonly;
+    - marketCapitalization: number @readonly;
+    - shareOutstanding: number @readonly;
+    - logo: string @readonly;
+    - phone: string @readonly;
+    - weburl: string @readonly;
+    - finnhubIndustry: string @readonly;
+  access: [trader]
+end
+
+// -----------------------------------------------------------------------------
+// Composite Entity - Transformed stock dashboard
+// -----------------------------------------------------------------------------
+
+// Combined stock info with calculated fields
+Entity StockDashboard(RawQuote, RawProfile)
+  attributes:
+    // Company info
+    - ticker: string = RawProfile.ticker;
+    - companyName: string = RawProfile.name;
+    - industry: string = RawProfile.finnhubIndustry;
+    - exchange: string = RawProfile.exchange;
+    - logoUrl: string = RawProfile.logo;
+
+    // Current price data
+    - currentPrice: number = RawQuote.c;
+    - priceChange: number = RawQuote.d;
+    - percentChange: number = round(RawQuote.dp, 2);
+
+    // Price formatted as string with currency
+    - priceFormatted: string = "$" + toString(round(RawQuote.c, 2));
+    - changeFormatted: string = toString(round(RawQuote.d, 2)) + " (" + toString(round(RawQuote.dp, 2)) + "%)";
+
+    // Day range
+    - dayHigh: number = RawQuote.h;
+    - dayLow: number = RawQuote.l;
+    - dayRange: string = "$" + toString(round(RawQuote.l, 2)) + " - $" + toString(round(RawQuote.h, 2));
+
+    // Market data
+    - openPrice: number = RawQuote.o;
+    - previousClose: number = RawQuote.pc;
+    - marketCap: number = RawProfile.marketCapitalization;
+    - marketCapFormatted: string = "$" + toString(round(RawProfile.marketCapitalization / 1000, 2)) + "B";
+
+    // Calculated metrics
+    - priceVsOpen: number = round(RawQuote.c - RawQuote.o, 2);
+    - dayVolatility: number = round((RawQuote.h - RawQuote.l) / RawQuote.l * 100, 2);
+    - isPositive: boolean = RawQuote.d >= 0;
+    - trend: string = "up" if RawQuote.d > 0 else ("down" if RawQuote.d < 0 else "flat");
+  access: [trader]
+end
+
+// -----------------------------------------------------------------------------
+// WebSocket Entities - Real-time trade data
+// -----------------------------------------------------------------------------
+
+// Raw trade data from Finnhub WebSocket
+// Message format: {"data":[{"c":["1","12"],"p":217.22,"s":"AAPL","t":1704067200000,"v":100}],"type":"trade"}
+// c = trade conditions, p = price, s = symbol, t = timestamp (ms), v = volume
+Entity RawTrade
+  flow: inbound
+  source: FinnhubTradesWS
+  attributes:
+    - s: string;         // Symbol (e.g., "AAPL")
+    - p: number;         // Last trade price
+    - v: number;         // Volume
+    - t: integer<int64>; // Timestamp in milliseconds
+  access: public
+end
+
+// Transformed trade data with human-readable fields
+Entity LiveTrade(RawTrade)
+  flow: inbound
+  attributes:
+    - symbol: string = RawTrade.s;
+    - price: number = RawTrade.p;
+    - volume: number = RawTrade.v;
+    - timestamp: integer<int64> = RawTrade.t;
+    - priceFormatted: string = "$" + toString(round(RawTrade.p, 2));
+    - volumeFormatted: string = toString(toInt(RawTrade.v)) + " shares";
+  access: public
+end
+
+// -----------------------------------------------------------------------------
+// UI Components - Entity Cards for testing
+// -----------------------------------------------------------------------------
+
+// Stock dashboard card - shows company info and current price (REST)
+Component<EntityCard> StockCard
+  entity: StockDashboard
+  type: rest
+  fields: ["ticker", "companyName", "priceFormatted", "changeFormatted", "dayRange", "marketCapFormatted"]
+  title: "Stock Dashboard"
+  highlight: "priceFormatted"
+end
+
+// Live trade card - shows real-time trades (WebSocket)
+Component<EntityCard> TradeCard
+  entity: LiveTrade
+  type: ws
+  fields: ["symbol", "priceFormatted", "volumeFormatted"]
+  title: "Live Trades"
+  highlight: "priceFormatted"
+end

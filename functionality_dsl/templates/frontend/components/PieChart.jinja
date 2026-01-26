@@ -1,0 +1,16 @@
+{% set endpoint = props.get('endpointPath') %}
+<PieChart
+  name="{{ common.name }}"
+  url="{{ endpoint }}"
+  sliceFields={{ "{" }}{{ props.get('slices') | tojson }}{{ "}" }}
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+  {%- if props.get('size') %}
+  size={{ props.get('size') }}
+  {%- endif %}
+  {%- if props.get('refreshMs') %}
+  refreshMs={{ props.get('refreshMs') }}
+  {%- endif %}
+>
+</PieChart>

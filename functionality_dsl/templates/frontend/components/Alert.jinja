@@ -1,0 +1,11 @@
+{# components/Alert.jinja #}
+<Alert
+    name="{{ common.name }}"
+    url="{{ props.get('endpointPath') }}"
+    condition="{{ props.get('condition') }}"
+    message="{{ props.get('message') }}"
+    severity="{{ props.get('severity', 'info') }}"
+    {% if props.get('refreshMs') %}
+    refreshMs={{ props.get('refreshMs') }}
+    {% endif %}
+/>

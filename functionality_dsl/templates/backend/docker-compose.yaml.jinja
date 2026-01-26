@@ -4,7 +4,55 @@ networks:
   fdsl_net:
     driver: bridge
 
+{% if uses_default_db %}
+volumes:
+  postgres_data:
+  pgadmin_data:
+{% endif %}
+
 services:
+{% if uses_default_db %}
+  # ===================== PostgreSQL Database =====================
+  db:
+    image: postgres:16-alpine
+    container_name: {{ server.name | lower | replace(' ', '-') }}-db
+    environment:
+      POSTGRES_USER: {{ db_user }}
+      POSTGRES_PASSWORD: {{ db_password }}
+      POSTGRES_DB: {{ db_name }}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "{{ db_port }}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ db_user }} -d {{ db_name }}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fdsl_net
+
+  # ===================== pgAdmin (Database UI) =====================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: {{ server.name | lower | replace(' ', '-') }}-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@fdsl.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - fdsl_net
+
+{% endif %}
   backend:
     {% if server.env == 'dev' %}
     # ===================== DEV (Hot Reload) =====================
@@ -15,6 +63,9 @@ services:
       - PYTHONUNBUFFERED=1
       - FORCE_COLOR=1
       - ENV=dev
+{% if uses_default_db %}
+      - DATABASE_URL=postgresql://{{ db_user }}:{{ db_password }}@db:5432/{{ db_name }}
+{% endif %}
     volumes:
       - ./:/app                    # mount entire generated project (with pyproject.toml)
       - /app/__pycache__/          # ignore cached bytecode
@@ -25,6 +76,11 @@ services:
       - "{{ server.port }}:{{ server.port }}"
     restart: unless-stopped
     tty: true
+{% if uses_default_db %}
+    depends_on:
+      db:
+        condition: service_healthy
+{% endif %}
     networks:
       - fdsl_net
     {% else %}
@@ -37,9 +93,15 @@ services:
       - .env
     restart: unless-stopped
     tty: true
+{% if uses_default_db %}
+    depends_on:
+      db:
+        condition: service_healthy
+{% endif %}
     networks:
       - fdsl_net
     {% endif %}
+{% if target in ['all', 'frontend'] %}
   frontend:
     {% if server.env == 'dev' %}
     # ===================== DEV (HMR) =====================
@@ -47,7 +109,8 @@ services:
     working_dir: /app
     container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
     environment:
-      - VITE_API_URL=http://{{ server.name | lower | replace(' ', '-') }}-backend:{{ server.port }}
+      # Vite proxy target uses Docker network hostname (container-to-container)
+      - VITE_API_URL=http://backend:{{ server.port }}
       - VITE_ENV=dev
       - VITE_HMR_POLLING=1
       - VITE_POLL_INTERVAL=200
@@ -70,7 +133,8 @@ services:
       context: ./frontend
     container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
     environment:
-      - VITE_API_URL=http://{{ server.name | lower | replace(' ', '-') }}-backend:{{ server.port }}
+      # Vite proxy target uses Docker network hostname (container-to-container)
+      - VITE_API_URL=http://backend:{{ server.port }}
     ports:
       - "5173:5173"
     depends_on:
@@ -79,3 +143,4 @@ services:
     networks:
       - fdsl_net
     {% endif %}
+{% endif %}

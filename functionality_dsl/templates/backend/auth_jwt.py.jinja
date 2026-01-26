@@ -1,0 +1,274 @@
+"""
+HTTP Bearer Authentication Module (JWT)
+Auto-generated from FDSL Auth<http> configuration with scheme: bearer
+
+Configuration:
+  Type: HTTP Bearer (JWT)
+  Roles: {{ roles }}
+  Header: Authorization
+  Scheme: Bearer
+  Algorithm: {{ algorithm }}
+"""
+
+import os
+import jwt
+from typing import List, Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+# JWT secret: Read from environment variable
+# The secret is auto-generated during code generation and stored in .env
+JWT_SECRET = os.getenv("{{ secret }}")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable '{{ secret }}' is not set. Check your .env file.")
+
+JWT_ALGORITHM = "{{ algorithm }}"
+USER_ID_CLAIM = "{{ user_id_claim }}"
+ROLES_CLAIM = "{{ roles_claim }}"
+
+# Declared roles from FDSL
+DECLARED_ROLES = {{ roles }}
+DECLARED_ROLES.append("public")  # Public is always allowed
+
+
+# ============================================================================
+# Security scheme
+# ============================================================================
+
+security = HTTPBearer(
+    scheme_name="{{ scheme }}",
+    description="JWT token in {{ header }} header"
+)
+
+
+# ============================================================================
+# Token verification
+# ============================================================================
+
+class TokenPayload:
+    """Decoded JWT token payload"""
+
+    def __init__(self, user_id: str, roles: List[str]):
+        self.user_id = user_id
+        self.roles = roles
+
+    def has_role(self, role: str) -> bool:
+        """Check if user has a specific role"""
+        return role in self.roles
+
+    def has_any_role(self, roles: List[str]) -> bool:
+        """Check if user has any of the specified roles"""
+        return any(self.has_role(role) for role in roles)
+
+
+def decode_token(token: str) -> TokenPayload:
+    """
+    Decode and verify JWT token.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        TokenPayload with user_id and roles
+
+    Raises:
+        HTTPException: If token is invalid or expired
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM]
+        )
+
+        user_id = payload.get(USER_ID_CLAIM)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token missing '{USER_ID_CLAIM}' claim",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        roles = payload.get(ROLES_CLAIM, [])
+        if not isinstance(roles, list):
+            roles = [roles]  # Handle single role as string
+
+        return TokenPayload(user_id=user_id, roles=roles)
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+# ============================================================================
+# FastAPI Dependencies
+# ============================================================================
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> TokenPayload:
+    """
+    Dependency to get current authenticated user from JWT token.
+
+    Usage:
+        @app.get("/protected")
+        async def protected_route(user: TokenPayload = Depends(get_current_user)):
+            return {"user_id": user.user_id, "roles": user.roles}
+    """
+    return decode_token(credentials.credentials)
+
+
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+) -> Optional[TokenPayload]:
+    """
+    Dependency to optionally get current user (doesn't fail if no token).
+
+    Usage:
+        @app.get("/public-or-protected")
+        async def route(user: Optional[TokenPayload] = Depends(get_optional_user)):
+            if user:
+                return {"message": f"Hello {user.user_id}"}
+            return {"message": "Hello anonymous"}
+    """
+    if credentials is None:
+        return None
+    return decode_token(credentials.credentials)
+
+
+def require_roles(required_roles: List[str]):
+    """
+    Dependency factory to require specific roles.
+
+    Args:
+        required_roles: List of roles, user must have at least one
+                       Special values: "public" (no auth), "authenticated" (any valid auth)
+
+    Returns:
+        FastAPI dependency function
+
+    Usage:
+        @app.post("/admin-only", dependencies=[Depends(require_roles(["admin"]))])
+        async def admin_route():
+            return {"message": "Admin access granted"}
+
+        @app.post("/staff", dependencies=[Depends(require_roles(["librarian", "admin"]))])
+        async def staff_route():
+            return {"message": "Staff access granted"}
+    """
+    # Special case: public access (no auth required)
+    # If 'public' is in the allowed roles, allow unauthenticated access
+    if "public" in required_roles:
+        async def _check_roles_or_public(
+            credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+        ):
+            """Check if user has required roles OR allow public access"""
+            if credentials is None:
+                # No token provided - allow as public
+                return None
+
+            # Token provided - verify it has one of the required roles
+            user = decode_token(credentials.credentials)
+            if not user.has_any_role(required_roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+                )
+            return user
+
+        return _check_roles_or_public
+
+    # Special case: authenticated (any valid auth, no role check)
+    if "authenticated" in required_roles:
+        async def _check_authenticated(user: TokenPayload = Depends(get_current_user)):
+            """Require valid authentication, no role check"""
+            return user
+
+        return _check_authenticated
+
+    async def _check_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has required roles"""
+        if not user.has_any_role(required_roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_roles
+
+
+def require_all_roles(required_roles: List[str]):
+    """
+    Dependency factory to require ALL specified roles (not just one).
+
+    Args:
+        required_roles: List of roles, user must have ALL of them
+
+    Returns:
+        FastAPI dependency function
+
+    Usage:
+        @app.post("/super-admin", dependencies=[Depends(require_all_roles(["admin", "superuser"]))])
+        async def super_admin_route():
+            return {"message": "Super admin access granted"}
+    """
+    async def _check_all_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has all required roles"""
+        missing_roles = [role for role in required_roles if not user.has_role(role)]
+        if missing_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required roles: {missing_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_all_roles
+
+
+# ============================================================================
+# Helper functions
+# ============================================================================
+
+def create_access_token(user_id: str, roles: List[str], expires_delta: Optional[int] = None) -> str:
+    """
+    Create a JWT access token.
+
+    Args:
+        user_id: User identifier
+        roles: List of user roles
+        expires_delta: Token expiration in seconds (default: 3600 = 1 hour)
+
+    Returns:
+        Encoded JWT token string
+
+    Note: This is a helper for testing. In production, token creation
+          should be handled by your authentication service.
+    """
+    import datetime
+
+    if expires_delta is None:
+        expires_delta = 3600  # 1 hour
+
+    payload = {
+        USER_ID_CLAIM: user_id,
+        ROLES_CLAIM: roles,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_delta),
+        "iat": datetime.datetime.utcnow(),
+    }
+
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)

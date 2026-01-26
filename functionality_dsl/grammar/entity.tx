@@ -1,5 +1,7 @@
 import utils
 import expression
+import rbac
+import auth
 
 AttrType:
   'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'binary'
@@ -8,8 +10,8 @@ AttrType:
 // Format qualifiers for types (OpenAPI-aligned)
 // Note: For datetime values, use plain 'string' type (OpenAPI date-time is just a string format hint)
 TypeFormat:
-  // String formats
-  'email' | 'uri' | 'uuid_str' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
+  // String formats (datetime must come before date for correct PEG parsing)
+  'email' | 'uri' | 'uuid' | 'datetime' | 'date' | 'time' | 'hostname' | 'ipv4' | 'ipv6' |
   'byte' | 'binary' | 'password' | 'regex' |
   // Number formats
   'float' | 'double' | 'int32' | 'int64'
@@ -17,10 +19,14 @@ TypeFormat:
 
 // Type constraint with range syntax: type(min..max) or type(exact)
 // Extended to support entity references: array<Entity>, object<Entity>
+// Field markers:
+//   @readonly - field excluded from create/update request schemas (response only)
+//   @optional - field not required in create/update request schemas (can be omitted)
+//   ? - nullable (value can be null)
 TypeSpec:
-    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?           // array<RealObject>
-  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'?        // object<ObjectData>
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?
+    'array' '<' itemEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?           // array<RealObject>
+  | 'object' '<' nestedEntity=[Entity] '>' constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?        // object<ObjectData>
+  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'? (readonlyMarker='@readonly' | optionalMarker='@optional')?
 ;
 
 TypeConstraint:
@@ -46,252 +52,118 @@ Attribute:
 
 Entity:
   'Entity' name=ID
-  ('(' parents+=[Entity] (',' parents+=[Entity])* ')')?
+  ('(' parents+=ParentRef (',' parents+=ParentRef)* ')')?
+  ('flow:' flow=FlowType)?
+  ('source:' source=[Source])?
+  ('strict:' strict=Bool)?
   (
     'attributes:' '-' attributes+=Attribute ('-' attributes+=Attribute)*
   )?
+  (access=AccessBlock)?
   'end'
+;
+
+// Parent reference: either plain (Product) or aliased (thessForecast: Forecast)
+ParentRef:
+  (alias=ID ':')? entity=[Entity]
+;
+
+// WebSocket flow direction (for WebSocket entities only)
+FlowType:
+  'inbound' | 'outbound'
+;
+
+
+// Simple operation list (permissions defined in Entity AccessBlock)
+// Note: Operation type is imported from rbac.tx
+SourceOperationsList:
+  'operations:' '[' operations+=Operation (',' operations+=Operation)* ']'
+;
+
+// Access block for entities - controls authorization
+// Supports four syntaxes:
+// 1. access: public (no auth required)
+// 2. access: AuthName (valid auth of that type, no role check)
+// 3. access: [role1, role2] (must have one of these roles - auth inferred from role)
+// 4. access: read: public create: [admin] (per-operation control)
+//
+// In lists, you can mix Auth refs and Roles: [AuthName, role1, role2]
+// - AuthName = any valid auth of that type
+// - role = must have that role (via its associated auth)
+AccessBlock:
+    'access:' public_keyword='public'                             // Public access: access: public
+  | 'access:' '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'  // List: access: [admin, APIKeyAuth]
+  | 'access:' access_rules+=AccessRule+                           // Per-operation: access: read: public ...
+  | 'access:' auth_ref=[Auth]                                     // Auth only: access: APIKeyAuth (last to avoid greedy ID match)
+;
+
+// Access item can be either a Role or an Auth reference
+AccessItem:
+    role=[Role] | auth=[Auth]
+;
+
+// Access rule for per-operation control
+// Example: read: public  or  read: AuthName  or  create: [admin, librarian]
+AccessRule:
+    operation=Operation ':' (
+        public_keyword='public'
+      | '[' access_items+=AccessItem (',' access_items+=AccessItem)* ']'
+      | auth_ref=[Auth]
+    )
 ;
 
 // Entity sources / targets -------------------
 Source:
-    EndpointREST
-  | EndpointWS
-  | SourceREST
+    SourceREST
   | SourceWS
-;
-
-// Unified Endpoint type for component references
-Endpoint:
-    EndpointREST
-  | EndpointWS
-;
-
-ApiKeyLoc: 'header' | 'query';
-
-AuthBlock:
-    'type:' kind='basic'
-    'username:' username=STRING
-    'password:' password=STRING
-  |  'type:' kind='bearer'
-    'token:' token=STRING
-  |  'type:' kind='api_key'
-    'key:' key=STRING
-    'in:' location=ApiKeyLoc
-    'value:' value=STRING
 ;
 
 // ---------- SOURCE (integration) ----------
 SourceREST:
   'Source<' kind='REST' '>' name=ID
-  (
-    'url:' url=STRING
-    'method:' method=HttpVerb
-    (parameters=ParametersBlock)?
-    (request=RequestBlock)?
-    (response=ResponseBlock)?
-    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?
-  )
+  'url:' url=STRING
+  params=SourceParamsList?
+  operations=SourceOperationsList
+  ('auth:' auth=[Auth])?
   'end'
-;
-
-// Subscribe/Publish blocks for WebSocket (similar to Request/Response)
-SubscribeBlock:
-  'subscribe:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' message=SchemaRef
-;
-
-PublishBlock:
-  'publish:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' message=SchemaRef
 ;
 
 SourceWS:
   'Source<' kind='WS' '>' name=ID
-  (
-    'channel:' url=STRING
-    (subscribe=SubscribeBlock)?
-    (publish=PublishBlock)?
-    ('headers:' '[' headers+=Header (',' headers+=Header)* ']')?
-    ('auth:' auth=AuthBlock)?
-  )
+  'channel:' url=STRING
+  params=SourceParamsList?
+  operations=SourceOperationsList?
+  ('auth:' auth=[Auth])?
   'end'
 ;
 
-// ---------- API (presentation) ----------
-
-// Parameter definition for path/query params
-// Can now include expressions for explicit mapping: - userId: string = GetUserOrders.userId
-ParamDef:
-  '-' name=ID ':' type=TypeSpec ('=' expr=Expr)? ';'?
-;
-
-PathParamsBlock:
-  'path:' params+=ParamDef*
-;
-
-QueryParamsBlock:
-  'query:' params+=ParamDef*
-;
-
-ParametersBlock:
-  'parameters:'
-    (path_params=PathParamsBlock)?
-    (query_params=QueryParamsBlock)?
-;
-
-// Content type can be specified, defaults to application/json
-ContentType:
-    'application/json'
-  | 'text/plain'
-  | 'multipart/form-data'
-  | 'application/x-www-form-urlencoded'
-  | 'application/xml'
-  | 'text/html'
-  | 'application/pdf'
-  | 'application/zip'
-  | 'image/png'
-  | 'image/jpeg'
-  | 'application/octet-stream'
-  | 'audio/wav'
-  | 'audio/mpeg'
-  | 'video/mp4'
-;
-
-// Schema reference: either inline type or Entity reference
-// Try inline types first (primitive types), then entity references
-SchemaRef:
-    inline_type=InlineTypeSpec                // Inline type (integer, string, array<Entity>, etc.)
-  | entity=[Entity]                           // Reference to Entity (must be uppercase first letter by convention)
-;
-
-// Inline type specification for request/response schemas
-// Supports: integer, string, array<Product>, array<string>, etc.
-InlineTypeSpec:
-    'array' '<' itemType=[Entity] '>' constraint=TypeConstraint? nullable='?'?     // array<Product>
-  | 'array' '<' primitive=AttrType '>' constraint=TypeConstraint? nullable='?'?     // array<string>
-  | 'array' constraint=TypeConstraint? nullable='?'?                                // array (untyped)
-  | baseType=AttrType ('<' format=TypeFormat '>')? constraint=TypeConstraint? nullable='?'?  // string, integer, string<email>, etc.
-;
-
-RequestBlock:
-  'request:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' schema=SchemaRef
-;
-
-ResponseBlock:
-  'response:'
-    (content_type=ContentType ':')?
-      'type:' type=AttrType
-      'entity:' schema=SchemaRef
-;
-
-// HTTP Status Codes (comprehensive list for REST endpoints)
-HttpStatusCode:
-    // 1xx Informational
-    '100' | '101' | '102' | '103' |
-    // 2xx Success
-    '200' | '201' | '202' | '203' | '204' | '205' | '206' | '207' | '208' | '226' |
-    // 3xx Redirection
-    '300' | '301' | '302' | '303' | '304' | '305' | '307' | '308' |
-    // 4xx Client Error
-    '400' | '401' | '402' | '403' | '404' | '405' | '406' | '407' | '408' | '409' |
-    '410' | '411' | '412' | '413' | '414' | '415' | '416' | '417' | '418' | '421' |
-    '422' | '423' | '424' | '425' | '426' | '428' | '429' | '431' | '451' |
-    // 5xx Server Error
-    '500' | '501' | '502' | '503' | '504' | '505' | '506' | '507' | '508' | '510' | '511'
-;
-
-// WebSocket Close Codes (RFC 6455 + common extensions)
-WebSocketCloseCode:
-    // Standard codes
-    '1000' |  // Normal Closure
-    '1001' |  // Going Away
-    '1002' |  // Protocol Error
-    '1003' |  // Unsupported Data
-    '1005' |  // No Status Received (reserved)
-    '1006' |  // Abnormal Closure (reserved)
-    '1007' |  // Invalid frame payload data
-    '1008' |  // Policy Violation
-    '1009' |  // Message Too Big
-    '1010' |  // Mandatory Extension
-    '1011' |  // Internal Server Error
-    '1012' |  // Service Restart
-    '1013' |  // Try Again Later
-    '1014' |  // Bad Gateway
-    '1015' |  // TLS handshake (reserved)
-    // Custom application codes (3000-3999)
-    '3000' | '3001' | '3002' | '3003' | '3004' | '3005' | '3006' | '3007' | '3008' | '3009' |
-    // Library/framework codes (4000-4999)
-    '4000' | '4001' | '4002' | '4003' | '4004' | '4005' | '4006' | '4007' | '4008' | '4009'
-;
-
-// Error/Event mapping for REST endpoints
-ErrorMapping:
-  '-' status_code=HttpStatusCode ':'
-    'condition:' condition=Expr
-    'message:' message=STRING
-  ';'?
-;
-
-// Event mapping for WebSocket endpoints
-EventMapping:
-  '-' close_code=WebSocketCloseCode ':'
-    'condition:' condition=Expr
-    'message:' message=STRING
-    ('close:' close=BOOL)?
-  ';'?
-;
-
-// Error block for REST endpoints
-ErrorsBlock:
-  'errors:'
-    mappings+=ErrorMapping+
-;
-
-// Events block for WebSocket endpoints
-EventsBlock:
-  'events:'
-    mappings+=EventMapping+
-;
-
-EndpointREST:
-  'Endpoint<' kind='REST' '>' name=ID
-  (
-    'path:' path=STRING
-    'method:' method=HttpVerb
-    (parameters=ParametersBlock)?
-    (request=RequestBlock)?
-    (response=ResponseBlock)?
-    ('summary:' summary=STRING)?
-    ('auth:' auth=AuthBlock)?
-    (errors=ErrorsBlock)?
-  )
-  'end'
-;
-
-EndpointWS:
-  'Endpoint<' kind='WS' '>' name=ID
-  (
-    'channel:' path=STRING
-    (publish=PublishBlock)?
-    (subscribe=SubscribeBlock)?
-    ('auth:' auth=AuthBlock)?
-    ('summary:' summary=STRING)?
-    (events=EventsBlock)?
-  )
-  'end'
+// Source parameters list - maps client query params to source URL
+// Params in URL path like {id} are replaced with query param values
+// Params not in URL path are forwarded as query string
+SourceParamsList:
+  'params:' '[' params+=ID (',' params+=ID)* ']'
 ;
 
 // ---------- COMMON ----------
-HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+
+// Content type can be specified for entities, defaults to application/json
+// ContentType:
+//     'application/json'
+//   | 'text/plain'
+//   | 'multipart/form-data'
+//   | 'application/x-www-form-urlencoded'
+//   | 'application/xml'
+//   | 'text/html'
+//   | 'application/pdf'
+//   | 'application/zip'
+//   | 'image/png'
+//   | 'image/jpeg'
+//   | 'application/octet-stream'
+//   | 'audio/wav'
+//   | 'audio/mpeg'
+//   | 'video/mp4'
+// ;
+
+// HttpVerb: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 
 StringList: '[' (items+=STRING (',' items+=STRING)*)? ']' ;
-Header: key=/[A-Za-z][A-Za-z0-9\-]*/ ':' value=STRING ;

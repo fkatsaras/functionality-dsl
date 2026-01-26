@@ -1,0 +1,124 @@
+asyncapi: 2.6.0
+info:
+  title: Streetlights MQTT API
+  version: 1.0.0
+  description: Smart street lighting system with authentication
+
+servers:
+  production:
+    url: mqtt.streetlights.io:1883
+    protocol: mqtt
+    description: Production MQTT broker
+    security:
+      - apiKey: []
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: user
+      description: Provide your API key as the user
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT Bearer token
+    basicAuth:
+      type: http
+      scheme: basic
+      description: HTTP Basic authentication
+    oauth2:
+      type: oauth2
+      description: OAuth 2.0 (not supported in FDSL)
+      flows:
+        implicit:
+          authorizationUrl: https://auth.example.com/authorize
+          scopes:
+            lights:read: Read light status
+            lights:control: Control lights
+
+channels:
+  /lights/{streetId}/status:
+    description: Real-time light status updates
+    parameters:
+      streetId:
+        description: Street identifier
+        schema:
+          type: string
+    publish:
+      operationId: receiveLightStatus
+      summary: Receive light status updates
+      message:
+        name: LightStatus
+        payload:
+          type: object
+          required:
+            - streetId
+            - brightness
+            - timestamp
+          properties:
+            streetId:
+              type: string
+              description: Street identifier
+            brightness:
+              type: integer
+              format: int32
+              description: Current brightness level (0-100)
+            isOn:
+              type: boolean
+              description: Whether the light is on
+            timestamp:
+              type: integer
+              format: int64
+              description: Status timestamp
+
+  /lights/{streetId}/commands:
+    description: Send control commands to lights
+    parameters:
+      streetId:
+        description: Street identifier
+        schema:
+          type: string
+    subscribe:
+      operationId: sendLightCommand
+      summary: Send a command to control the light
+      message:
+        name: LightCommand
+        payload:
+          type: object
+          required:
+            - action
+          properties:
+            action:
+              type: string
+              description: Command action (on/off/dim)
+            brightness:
+              type: integer
+              format: int32
+              description: Target brightness for dim action
+            duration:
+              type: integer
+              format: int32
+              description: Transition duration in milliseconds
+
+  /alerts:
+    description: System-wide alerts
+    publish:
+      operationId: receiveAlert
+      summary: Receive system alerts
+      message:
+        name: Alert
+        payload:
+          type: object
+          required:
+            - level
+            - message
+          properties:
+            level:
+              type: string
+              description: Alert level (info/warning/error)
+            message:
+              type: string
+              description: Alert message
+            timestamp:
+              type: integer
+              format: int64

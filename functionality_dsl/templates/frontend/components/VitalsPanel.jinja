@@ -1,0 +1,11 @@
+{# components/VitalsPanel.jinja #}
+{% set wsUrl = props.get('wsUrl') %}
+<VitalsPanel
+  wsUrl="{{ wsUrl }}"
+  {%- if props.get('restUrl') %}
+  restUrl="{{ props.get('restUrl') }}"
+  {%- endif %}
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+/>

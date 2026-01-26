@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<genmodel:GenModel xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:genmodel="http://www.eclipse.org/emf/2002/GenModel"
+    modelDirectory="/functionality_dsl_metamodel/src-gen" creationIcons="false"
+    editDirectory="/functionality_dsl_metamodel.edit/src-gen" editorDirectory="/functionality_dsl_metamodel.editor/src-gen"
+    modelPluginID="functionality_dsl_metamodel" modelName="Functionality_dsl_metamodel"
+    rootExtendsClass="org.eclipse.emf.ecore.impl.MinimalEObjectImpl$Container" codeFormatting="true"
+    importerID="org.eclipse.emf.importer.ecore" complianceLevel="21.0" copyrightFields="false"
+    operationReflection="true" importOrganizing="true">
+  <foreignModel>functionality_dsl_metamodel.ecore</foreignModel>
+  <testsDirectory xsi:nil="true"/>
+  <genPackages prefix="Functionality_dsl_metamodel" disposableProviderFactory="true"
+      ecorePackage="functionality_dsl_metamodel.ecore#/">
+    <genEnums typeSafeEnumCompatible="false" ecoreEnum="functionality_dsl_metamodel.ecore#//AttrType">
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/STRING"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/INTEGER"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/NUMBER"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/BOOLEAN"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/ARRAY"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/OBJECT"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//AttrType/BINARY"/>
+    </genEnums>
+    <genEnums typeSafeEnumCompatible="false" ecoreEnum="functionality_dsl_metamodel.ecore#//TypeFormat">
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/EMAIL"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/URI"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/UUID"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/DATETIME"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/DATE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/TIME"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/HOSTNAME"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/IPV4"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/IPV6"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/BYTE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/BINARY"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/PASSWORD"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/REGEX"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/FLOAT"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/DOUBLE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/INT32"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//TypeFormat/INT64"/>
+    </genEnums>
+    <genEnums typeSafeEnumCompatible="false" ecoreEnum="functionality_dsl_metamodel.ecore#//Operation">
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/READ"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/CREATE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/UPDATE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/DELETE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/SUBSCRIBE"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//Operation/PUBLISH"/>
+    </genEnums>
+    <genEnums typeSafeEnumCompatible="false" ecoreEnum="functionality_dsl_metamodel.ecore#//WSFlowType">
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//WSFlowType/INBOUND"/>
+      <genEnumLiterals ecoreEnumLiteral="functionality_dsl_metamodel.ecore#//WSFlowType/OUTBOUND"/>
+    </genEnums>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//FDSLModel">
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/imports"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/auth"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/authdb"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/roles"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/servers"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/sources"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//FDSLModel/entities"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Import">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Import/importURI"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Auth">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Auth/name"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Auth/db"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Auth/jwt_config"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Auth/session_config"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Auth/apikey_config"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Auth/basic_config"/>
+    </genClasses>
+    <genClasses image="false" ecoreClass="functionality_dsl_metamodel.ecore#//JWTAuthConfig">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/secret"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/header"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/scheme"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/algorithm"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/user_id_claim"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//JWTAuthConfig/roles_claim"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//SessionAuthConfig">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SessionAuthConfig/cookie"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SessionAuthConfig/expiry"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//APIKeyAuthConfig">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//APIKeyAuthConfig/header"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//APIKeyAuthConfig/query"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//APIKeyAuthConfig/secret"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//BasicAuthConfig">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//BasicAuthConfig/secret"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//AuthDB">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDB/name"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDB/connection"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDB/table"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AuthDB/columns"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//AuthDBColumns">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDBColumns/id"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDBColumns/password"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AuthDBColumns/role"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Role">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Role/name"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Role/auth"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Server">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/name"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/host"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/port"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/base"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/cors"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/env"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Server/loglevel"/>
+    </genClasses>
+    <genClasses image="false" ecoreClass="functionality_dsl_metamodel.ecore#//Source">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Source/name"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Source/kind"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Source/auth"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//SourceREST">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceREST/url"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceREST/params"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceREST/operations"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//SourceWS">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceWS/channel"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceWS/params"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//SourceWS/operations"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//TypeConstraint">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeConstraint/min"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeConstraint/max"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeConstraint/exact"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//TypeSpec">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeSpec/baseType"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeSpec/format"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeSpec/nullable"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeSpec/readonly"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//TypeSpec/optional"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//TypeSpec/constraint"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//TypeSpec/itemEntity"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//TypeSpec/nestedEntity"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Attribute">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Attribute/name"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Attribute/type"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Attribute/expr"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//ParentRef">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//ParentRef/alias"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//ParentRef/entity"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Entity">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Entity/name"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Entity/ws_flow_type"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Entity/strict"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Entity/parents"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Entity/source"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Entity/attributes"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Entity/access"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//AccessBlock">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AccessBlock/public_keyword"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessBlock/auth_ref"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessBlock/access_items"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessBlock/access_rules"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//AccessItem">
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessItem/role"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessItem/auth"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//AccessRule">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AccessRule/operation"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//AccessRule/public_keyword"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessRule/auth_ref"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//AccessRule/access_items"/>
+    </genClasses>
+    <genClasses image="false" ecoreClass="functionality_dsl_metamodel.ecore#//Expr"/>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Literal">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Literal/stringValue"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Literal/intValue"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Literal/floatValue"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Literal/boolValue"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Var">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Var/name"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//Call">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//Call/func"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//Call/args"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//BinaryExpr">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//BinaryExpr/operator"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//BinaryExpr/left"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//BinaryExpr/right"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//UnaryExpr">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//UnaryExpr/operator"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//UnaryExpr/operand"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//IfThenElse">
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//IfThenElse/condition"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//IfThenElse/thenExpr"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//IfThenElse/elseExpr"/>
+    </genClasses>
+    <genClasses ecoreClass="functionality_dsl_metamodel.ecore#//LambdaExpr">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//LambdaExpr/param"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute functionality_dsl_metamodel.ecore#//LambdaExpr/params"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference functionality_dsl_metamodel.ecore#//LambdaExpr/body"/>
+    </genClasses>
+  </genPackages>
+</genmodel:GenModel>

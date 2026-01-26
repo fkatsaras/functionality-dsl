@@ -1,0 +1,50 @@
+// Minimal HTTP Basic Auth Test
+// Test with: curl -u admin:admin123 http://localhost:8000/api/post
+
+Auth<http> BasicAuth
+  scheme: basic
+end
+
+Role admin uses BasicAuth
+Role user uses BasicAuth
+
+Server BasicTest
+  host: "0.0.0.0"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/1"
+  operations: [read]
+end
+
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access:
+    read: public
+end
+
+Entity SecretPost
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: [admin]
+end
+
+Component<Table> PostTable
+  entity: Post
+  colNames: ["id", "title", "body"]
+end
+
+Component<Table> SecretPostTable
+  entity: SecretPost
+  colNames: ["id", "title", "body"]
+end

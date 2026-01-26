@@ -1,0 +1,18 @@
+// =============================================================================
+// RBAC (Role-Based Access Control) Grammar
+// =============================================================================
+// Defines roles that belong to authentication mechanisms
+// Authorization is handled in entity access: fields
+
+import auth
+
+// Role Declaration - role belongs to an auth mechanism
+// Syntax: Role <name> uses <AuthRef>
+Role:
+  'Role' name=ID 'uses' auth=[Auth]
+;
+
+// Operation types (used in entity access blocks and source definitions)
+Operation:
+  'read' | 'create' | 'update' | 'delete' | 'subscribe' | 'publish'
+;

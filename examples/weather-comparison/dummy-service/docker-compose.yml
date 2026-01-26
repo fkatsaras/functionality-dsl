@@ -1,0 +1,13 @@
+services:
+  dummy-weather-service:
+    build: .
+    container_name: dummy-weather-service
+    image: dummy-weather-service
+    ports:
+      - "9003:9003"
+    networks:
+      - thesis_fdsl_net
+
+networks:
+  thesis_fdsl_net:
+    external: true

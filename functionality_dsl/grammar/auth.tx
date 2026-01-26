@@ -1,0 +1,152 @@
+// =============================================================================
+// Authentication Configuration Grammar
+// =============================================================================
+// Defines authentication aligned with OpenAPI security schemes.
+//
+// Supported auth types (matching OpenAPI):
+// - Auth<http>: HTTP authentication (Bearer, Basic, etc.)
+// - Auth<apikey>: API key authentication (header, query, or cookie)
+//
+// AuthDB: Optional user database configuration for credential storage
+// - If not specified: generates default Postgres + SQLModel user store
+// - If specified: connects to external database with user table mapping
+
+// =============================================================================
+// AuthDB Declaration - User Database Configuration (BYODB)
+// =============================================================================
+// Defines where user credentials and roles are stored for Bring Your Own Database
+//
+// Usage:
+// 1. Default (no AuthDB): FDSL generates Postgres container + SQLModel user table
+// 2. External DB: User provides connection string and column mapping
+//
+// Config:
+// - connection: env var for database URL
+// - table: user table name
+// - columns: maps FDSL auth fields to your column names (id, password, role)
+//
+// Example:
+//   AuthDB ShopUserStore
+//     connection: "MY_DB_URL"
+//     table: "shop_users"
+//     columns: id="email" password="password_hash" role="user_role"
+//   end
+
+AuthDB:
+    'AuthDB' name=ID
+        'connection:' connection=STRING      // Env var name for connection string
+        'table:' table=STRING                // User table name
+        'columns:' columns=AuthDBColumns     // Column mappings
+    'end'
+;
+
+// Column mappings for external user database
+// Maps FDSL auth fields to actual column names in your database
+AuthDBColumns:
+    'id' '=' id=STRING                       // Login identifier column (email, username, etc.)
+    'password' '=' password=STRING           // Password hash column (bcrypt)
+    'role' '=' role=STRING                   // Role column (stores role name)
+;
+
+// =============================================================================
+// Auth Declaration - Authentication Configuration
+// =============================================================================
+// Auth is a union type - one of the specific auth types (aligned with OpenAPI)
+Auth:
+    AuthHTTP
+  | AuthAPIKey
+;
+
+// =============================================================================
+// HTTP Authentication - Authorization header with standard schemes
+// =============================================================================
+// Maps to OpenAPI: type: http
+// Supports standard HTTP authentication schemes (RFC 7235)
+//
+// Two usage modes:
+// 1. Entity auth (DB-backed): Validates incoming tokens/credentials
+//    - No secret field, tokens/credentials stored in database
+//    - For authenticating users to YOUR API
+//
+// 2. Source auth (env var): Static token/credentials for calling external APIs
+//    - Include secret field with env var name
+//    - For authenticating YOUR API to external services
+//
+// Schemes:
+// - bearer: Token-based auth in Authorization: Bearer <token>
+// - basic: Username:password in Authorization: Basic base64(user:pass)
+//
+// Config:
+// - scheme: bearer or basic
+// - secret: (optional) env var name for static token/credentials (source auth only)
+//   For bearer: env var contains the token
+//   For basic: env var contains "username:password"
+//
+// Examples:
+//   // Entity auth - validates against DB
+//   Auth<http> BearerAuth
+//     scheme: bearer
+//   end
+//
+//   // Source auth - static bearer token from env var
+//   Auth<http> ExternalAPIAuth
+//     scheme: bearer
+//     secret: "EXTERNAL_API_TOKEN"
+//   end
+//
+//   // Source auth - basic credentials from env var
+//   Auth<http> LegacyServiceAuth
+//     scheme: basic
+//     secret: "LEGACY_SERVICE_CREDS"
+//   end
+AuthHTTP:
+  'Auth<' kind='http' '>' name=ID
+    'scheme:' scheme=HTTPScheme
+    ('secret:' secret=STRING)?
+  'end'
+;
+
+HTTPScheme: 'bearer' | 'basic';
+
+// =============================================================================
+// API Key Authentication - Key in header, query, or cookie
+// =============================================================================
+// Maps to OpenAPI: type: apiKey
+// Key can be passed in header, query param, or cookie
+//
+// Two usage modes:
+// 1. Entity auth (DB-backed): Validates incoming API keys against database
+//    - No secret field, keys stored in apikeys table
+//    - For authenticating users to YOUR API
+//
+// 2. Source auth (env var): Static API key for calling external APIs
+//    - Include secret field with env var name
+//    - For authenticating YOUR API to external services
+//
+// Config:
+// - in: where the key is passed (header, query, cookie)
+// - name: the header/query/cookie name
+// - secret: (optional) env var name for static API key (source auth only)
+//
+// Examples:
+//   // Entity auth - validates against DB
+//   Auth<apikey> APIKeyAuth
+//     in: header
+//     name: "X-API-Key"
+//   end
+//
+//   // Source auth - static key from env var
+//   Auth<apikey> FinnhubSourceAuth
+//     in: query
+//     name: "token"
+//     secret: "FINNHUB_API_KEY"
+//   end
+AuthAPIKey:
+  'Auth<' kind='apikey' '>' name=ID
+    'in:' location=APIKeyLocation
+    'name:' keyName=STRING
+    ('secret:' secret=STRING)?
+  'end'
+;
+
+APIKeyLocation: 'header' | 'query' | 'cookie';

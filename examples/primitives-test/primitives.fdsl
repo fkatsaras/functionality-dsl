@@ -1,0 +1,75 @@
+// =============================================================================
+// Primitive Responses Test
+// Demonstrates: Wrapper entities for string, number, array responses
+// =============================================================================
+
+Server PrimitivesDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+end
+
+// -----------------------------------------------------------------------------
+// REST Sources - Various response types
+// -----------------------------------------------------------------------------
+
+// Returns JSON object: {"uuid": "..."}
+Source<REST> UuidAPI
+  url: "https://httpbin.org/uuid"
+  operations: [read]
+end
+
+// Returns JSON object: {"origin": "..."}
+Source<REST> IpAPI
+  url: "https://httpbin.org/ip"
+  operations: [read]
+end
+
+// Returns JSON array: [{...}, {...}, ...]
+// JSONPlaceholder returns raw arrays
+Source<REST> TodosAPI
+  url: "https://jsonplaceholder.typicode.com/todos"
+  operations: [read]
+end
+
+// -----------------------------------------------------------------------------
+// Standard JSON Object Entities
+// -----------------------------------------------------------------------------
+
+// Standard JSON object response - normal entity
+Entity UuidResponse
+  source: UuidAPI
+  attributes:
+    - uuid: string;
+  access: public
+end
+
+// Standard JSON object response - normal entity
+Entity IpResponse
+  source: IpAPI
+  attributes:
+    - origin: string;
+  access: public
+end
+
+// -----------------------------------------------------------------------------
+// Wrapper Entities - Source returns array, entity wraps it
+// -----------------------------------------------------------------------------
+
+// Todo item schema (nested inside array)
+Entity Todo
+  attributes:
+    - userId: integer;
+    - id: integer;
+    - title: string;
+    - completed: boolean;
+end
+
+// Wrapper entity: source returns raw array, entity wraps in 'items'
+// This tests the wrapper pattern for array<Entity>
+Entity Todos
+  source: TodosAPI
+  attributes:
+    - items: array<Todo>;
+  access: public
+end

@@ -1,0 +1,32 @@
+# Docker Compose for BYODB PostgreSQL Database
+# This is a standalone database for testing the BYODB e-commerce example.
+# It runs separately from the generated application.
+
+version: "3.9"
+
+networks:
+  thesis_fdsl_net:
+    external: true
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecommerce-byodb-db
+    environment:
+      POSTGRES_DB: ecommerce_shop
+      POSTGRES_USER: shop_admin
+      POSTGRES_PASSWORD: shop_secret
+    ports:
+      - "5433:5432"  # Use 5433 to avoid conflicts with other Postgres instances
+    volumes:
+      - byodb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_admin -d ecommerce_shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - thesis_fdsl_net
+
+volumes:
+  byodb_data:

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  dummy-smart-home-devices:
+    build:
+      context: .
+      dockerfile: Dockerfile.dummy
+    container_name: dummy-smart-home-devices
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./camera-frames:/app/camera_frames:ro
+    environment:
+      - CAMERA_IMAGE_DIR=/app/camera_frames
+    networks:
+      - thesis_fdsl_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  thesis_fdsl_net:
+    external: true

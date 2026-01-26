@@ -22,12 +22,28 @@
       "patterns": [
         {
           "name": "meta.block.server.fdsl",
-          "match": "^\\s*(Server|Entity|Source|Endpoint|Component)\\s*(<(REST|WS|Table|LiveTable|Chart|LiveChart|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView|Camera|DownloadForm)>)?\\s*([A-Z][A-Za-z0-9_]*)",
+          "match": "^\\s*(Server|Entity|Source|Endpoint|Component)\\s*(<(REST|WS|Table|LiveTable|Chart|LiveChart|LiveMetrics|Gauge|ActionForm|Input|LiveView|Toggle|ObjectView|PageView|Camera|DownloadForm)>)?\\s*([A-Z][A-Za-z0-9_]*)",
           "captures": {
             "1": {"name": "storage.type.class.fdsl"},
             "2": {"name": "meta.generic.fdsl"},
             "3": {"name": "entity.name.type.kind.fdsl"},
             "4": {"name": "entity.name.class.fdsl"}
+          }
+        },
+        {
+          "name": "meta.block.role.fdsl",
+          "match": "^\\s*(Role)\\s+([A-Za-z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {"name": "storage.type.class.fdsl"},
+            "2": {"name": "entity.name.class.fdsl"}
+          }
+        },
+        {
+          "name": "meta.block.auth.fdsl",
+          "match": "^\\s*(Auth)\\s+([A-Za-z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {"name": "storage.type.class.fdsl"},
+            "2": {"name": "entity.name.class.fdsl"}
           }
         },
         {
@@ -39,8 +55,20 @@
     "property-definitions": {
       "patterns": [
         {
+          "name": "meta.property.access.fdsl",
+          "begin": "^\\s*(access|source)\\s*(:)",
+          "beginCaptures": {
+            "1": {"name": "variable.other.property.attribute.fdsl"},
+            "2": {"name": "punctuation.separator.key-value.fdsl"}
+          },
+          "end": "$",
+          "patterns": [
+            {"include": "#property-values"}
+          ]
+        },
+        {
           "name": "meta.property.fdsl",
-          "begin": "^\\s*(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|path|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media|filename|buttonText|showPreview|application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|image/png|image/jpeg)\\s*(:)",
+          "begin": "^\\s*(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|path|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media|filename|buttonText|showPreview|metrics|operations|secret|application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|image/png|image/jpeg)\\s*(:)",
           "beginCaptures": {
             "1": {"name": "entity.name.tag.property.fdsl"},
             "2": {"name": "punctuation.separator.key-value.fdsl"}
@@ -61,6 +89,22 @@
         {
           "name": "constant.language.log-level.fdsl",
           "match": "\\b(debug|info|warn|error)\\b"
+        },
+        {
+          "name": "constant.language.access.fdsl",
+          "match": "\\b(public)\\b"
+        },
+        {
+          "name": "constant.language.entity-type.fdsl",
+          "match": "\\b(inbound|outbound)\\b"
+        },
+        {
+          "name": "constant.language.operation.fdsl",
+          "match": "\\b(read|create|update|delete)\\b"
+        },
+        {
+          "name": "constant.language.auth-type.fdsl",
+          "match": "\\b(jwt|basic|api_key)\\b"
         },
         {
           "name": "constant.language.mime-type.fdsl",
@@ -191,7 +235,7 @@
           "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(=>)",
           "captures": {
             "1": {"name": "variable.parameter.function.fdsl"},
-            "2": {"name": "storage.type.function.arrow.fdsl"}
+            "2": {"name": "keyword.operator.arrow.fdsl"}
           }
         },
         {
@@ -201,7 +245,7 @@
             "1": {"name": "punctuation.definition.parameters.begin.fdsl"},
             "2": {"patterns": [{"name": "variable.parameter.function.fdsl", "match": "[a-z_][A-Za-z0-9_]*"}]},
             "3": {"name": "punctuation.definition.parameters.end.fdsl"},
-            "4": {"name": "storage.type.function.arrow.fdsl"}
+            "4": {"name": "keyword.operator.arrow.fdsl"}
           },
           "end": "(?=[,;\\)\\]])",
           "patterns": [

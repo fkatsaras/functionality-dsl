@@ -1,0 +1,79 @@
+// =============================================================================
+// COMPUTED FIELDS & EXPRESSIONS
+// Demonstrates: All expression capabilities in FDSL
+// =============================================================================
+
+Server ComputedDemo
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Source: Order API with line items
+// -----------------------------------------------------------------------------
+Source<REST> OrderAPI
+  url: "http://dummy:9001/order"
+  operations: [read, update]
+end
+
+// -----------------------------------------------------------------------------
+// Base Entity: Raw order with nested items array
+// -----------------------------------------------------------------------------
+Entity Order
+  source: OrderAPI
+  attributes:
+    - order_id: string @readonly;
+    - customer_name: string;
+    - status: string;
+    - items: array;
+    - created_at: string @readonly;
+  access: public
+end
+
+// -----------------------------------------------------------------------------
+// Computed Entity: Showcasing all expression types
+// -----------------------------------------------------------------------------
+Entity OrderSummary(Order)
+  attributes:
+    // --- Basic field access ---
+    - id: string = Order.order_id;
+    - customer: string = Order.customer_name;
+
+    // --- Array functions ---
+    - item_count: integer = len(Order.items);
+    - total_price: number = sum(map(Order.items, i => i["price"] * i["quantity"]));
+    - total_quantity: integer = sum(map(Order.items, i => i["quantity"]));
+
+    // --- Filtering ---
+    - expensive_items: array = filter(Order.items, i => i["price"] > 50);
+    - cheap_items: array = filter(Order.items, i => i["price"] <= 50);
+
+    // --- Aggregations ---
+    - avg_price: number = round(sum(map(Order.items, i => i["price"])) / len(Order.items), 2);
+    - max_price: number = max(map(Order.items, i => i["price"]));
+    - min_price: number = min(map(Order.items, i => i["price"]));
+
+    // --- Boolean expressions ---
+    - has_expensive: boolean = any(map(Order.items, i => i["price"] > 100));
+    - all_in_stock: boolean = all(map(Order.items, i => i["in_stock"]));
+
+    // --- Conditionals ---
+    - price_tier: string = "premium" if sum(map(Order.items, i => i["price"] * i["quantity"])) > 500 else ("standard" if sum(map(Order.items, i => i["price"] * i["quantity"])) > 100 else "budget");
+    - fulfillment_priority: string = "high" if Order.status == "rush" else "normal";
+
+    // --- String functions ---
+    - customer_lower: string = lower(Order.customer_name);
+    - customer_upper: string = upper(Order.customer_name);
+
+    // --- Math functions ---
+    - tax_amount: number = round(sum(map(Order.items, i => i["price"] * i["quantity"])) * 0.08, 2);
+    - grand_total: number = round(sum(map(Order.items, i => i["price"] * i["quantity"])) * 1.08, 2);
+  access: public
+end
+
+// Generated endpoints:
+// GET /api/order         - Raw order data
+// PUT /api/order         - Update order
+// GET /api/ordersummary  - Computed summary (read-only)

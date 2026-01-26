@@ -1,0 +1,352 @@
+# ========================================================================
+# AUTO-GENERATED WEBSOCKET SOURCE CLIENT: {{ source_name }}
+# External WebSocket connection
+# ========================================================================
+
+import logging
+import os
+import websockets
+import json
+from typing import AsyncIterator, Optional, Dict, Any
+from urllib.parse import urlencode{% if has_params %}, urlparse, urlunparse{% endif %}
+
+{% if auth_config and (auth_config.kind == 'basic' or (auth_config.kind == 'http' and auth_config.scheme == 'basic')) %}
+import base64
+{% endif %}
+
+logger = logging.getLogger("fdsl.source.{{ source_name }}")
+
+
+class {{ source_name }}Source:
+    """WebSocket source client for {{ source_name }}"""
+
+    def __init__(self):
+        self.base_url = "{{ channel }}"
+        self.connection = None
+        self._connection_lock = None
+{% if has_params %}
+        # Source params configuration
+        self.path_params = {{ path_params }}  # Params that go into URL path
+        self.query_params = {{ query_params }}  # Params forwarded as query string
+{% endif %}
+{% if auth_config %}
+        # Auth configuration for outbound requests
+        self._auth_kind = "{{ auth_config.kind }}"
+{% if auth_config.kind == 'apikey' %}
+{% if auth_config.header_name %}
+        self._auth_header_name = "{{ auth_config.header_name }}"
+        self._auth_location = "header"
+{% elif auth_config.query_name %}
+        self._auth_query_name = "{{ auth_config.query_name }}"
+        self._auth_location = "query"
+{% endif %}
+        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% elif auth_config.kind == 'http' %}
+        self._auth_scheme = "{{ auth_config.scheme }}"
+{% if auth_config.secret_env %}
+        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% endif %}
+{% endif %}
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Get authentication headers for outbound WebSocket requests."""
+        headers = {}
+{% if auth_config.kind == 'apikey' %}
+{% if auth_config.header_name %}
+        # API Key in header
+        api_key = os.getenv(self._auth_secret_env, "")
+        if api_key:
+            # If env var contains multiple keys (key1,key2), use the first one
+            api_key = api_key.split(",")[0].split(":")[0].strip()
+            headers[self._auth_header_name] = api_key
+{% endif %}
+{% elif auth_config.kind == 'http' and auth_config.scheme == 'bearer' and auth_config.secret_env %}
+        # HTTP Bearer token from env var
+        token = os.getenv(self._auth_secret_env, "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+{% elif auth_config.kind == 'http' and auth_config.scheme == 'basic' and auth_config.secret_env %}
+        # HTTP Basic auth from env var
+        creds = os.getenv(self._auth_secret_env, "")
+        if creds:
+            # Format: username:password (single credential for outbound)
+            if ":" in creds:
+                encoded = base64.b64encode(creds.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+{% endif %}
+        return headers
+
+{% if auth_config.kind == 'apikey' and auth_config.query_name %}
+    def _get_auth_query_params(self) -> Dict[str, str]:
+        """Get authentication query params for outbound WebSocket requests."""
+        params = {}
+        api_key = os.getenv(self._auth_secret_env, "")
+        if api_key:
+            # If env var contains multiple keys (key1,key2), use the first one
+            api_key = api_key.split(",")[0].split(":")[0].strip()
+            params[self._auth_query_name] = api_key
+        return params
+{% endif %}
+{% endif %}
+
+{% if has_params %}
+    def _build_url(self, params: Dict[str, Any]) -> str:
+        """
+        Build final WebSocket URL by replacing path placeholders and appending query params.
+
+        Args:
+            params: Dict of param_name -> value from client query string
+
+        Returns:
+            str: Final WebSocket URL with path params replaced and query params appended
+        """
+        url = self.base_url
+
+        # Replace {placeholder} with actual values
+        for param in self.path_params:
+            if param in params:
+                url = url.replace("{" + param + "}", str(params[param]))
+
+        # Collect query params to forward
+        query = {}
+        for param in self.query_params:
+            if param in params:
+                query[param] = params[param]
+
+        if not query:
+            return url
+
+        # Parse the URL and append query params
+        parsed = urlparse(url)
+        # Combine existing query string with new params
+        existing_query = parsed.query
+        if existing_query:
+            new_query = f"{existing_query}&{urlencode(query)}"
+        else:
+            new_query = urlencode(query)
+
+        # Rebuild URL with new query string
+        return urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment
+        ))
+{% endif %}
+
+{% if has_params %}
+    async def _ensure_connection(self, params: Dict[str, Any] = None):
+        """Ensure WebSocket connection is established with params."""
+        if self.connection is None:
+            url = self._build_url(params or {})
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+            # Merge auth query params into URL
+            auth_query = self._get_auth_query_params()
+            if auth_query:
+                separator = "&" if "?" in url else "?"
+                url = url + separator + urlencode(auth_query)
+{% endif %}
+            logger.info(f"Establishing connection to {url}")
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+            self.connection = await websockets.connect(url, extra_headers=self._get_auth_headers())
+{% else %}
+            self.connection = await websockets.connect(url)
+{% endif %}
+            logger.info(f"Connected to {url}")
+        return self.connection
+
+    async def subscribe(self, params: Dict[str, Any] = None) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Subscribe to WebSocket feed and yield messages as dicts.
+        Handles both JSON text messages and binary data.
+        {% if binary_attr %}
+        Binary messages are automatically wrapped as {"{{ binary_attr }}": <bytes>}.
+        {% endif %}
+
+        Args:
+            params: Query parameters to append to WebSocket URL
+        """
+        url = self._build_url(params or {})
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+        # Add auth query params from env
+        auth_query = self._get_auth_query_params()
+        if auth_query:
+            separator = "&" if "?" in url else "?"
+            url = url + separator + urlencode(auth_query)
+{% endif %}
+        logger.info(f"Connecting to {url}")
+{% else %}
+    async def _ensure_connection(self):
+        """Ensure WebSocket connection is established."""
+        if self.connection is None:
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+            url = self.base_url
+            # Merge auth query params into URL
+            auth_query = self._get_auth_query_params()
+            if auth_query:
+                separator = "&" if "?" in url else "?"
+                url = url + separator + urlencode(auth_query)
+            logger.info(f"Establishing connection to {url}")
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+            self.connection = await websockets.connect(url, extra_headers=self._get_auth_headers())
+{% else %}
+            self.connection = await websockets.connect(url)
+{% endif %}
+{% else %}
+            logger.info(f"Establishing connection to {self.base_url}")
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+            self.connection = await websockets.connect(self.base_url, extra_headers=self._get_auth_headers())
+{% else %}
+            self.connection = await websockets.connect(self.base_url)
+{% endif %}
+{% endif %}
+            logger.info(f"Connected to {self.base_url}")
+        return self.connection
+
+    async def subscribe(self) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Subscribe to WebSocket feed and yield messages as dicts.
+        Handles both JSON text messages and binary data.
+        {% if binary_attr %}
+        Binary messages are automatically wrapped as {"{{ binary_attr }}": <bytes>}.
+        {% endif %}
+        """
+        url = self.base_url
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+        # Add auth query params from env
+        auth_query = self._get_auth_query_params()
+        if auth_query:
+            separator = "&" if "?" in url else "?"
+            url = url + separator + urlencode(auth_query)
+{% endif %}
+        logger.info(f"Connecting to {url}")
+{% endif %}
+
+        try:
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+            async with websockets.connect(url, extra_headers=self._get_auth_headers()) as websocket:
+{% else %}
+            async with websockets.connect(url) as websocket:
+{% endif %}
+                self.connection = websocket
+                logger.info(f"Connected to {url}")
+
+                async for message in websocket:
+                    try:
+                        # Check if message is binary (bytes)
+                        if isinstance(message, bytes):
+                            {% if binary_attr %}
+                            # Binary message - wrap in dict with entity attribute name
+                            logger.debug(f"Received binary message: {len(message)} bytes")
+                            yield {"{{ binary_attr }}": message}
+                            {% else %}
+                            # Binary message - yield raw bytes (no schema info available)
+                            logger.debug(f"Received binary message: {len(message)} bytes")
+                            yield message
+                            {% endif %}
+                        else:
+                            # Text message - parse as JSON
+                            data = json.loads(message)
+                            logger.debug(f"Received message: {type(data)}")
+                            yield data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse message: {e}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error processing message: {e}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            raise
+
+{% if has_params %}
+    async def publish(self, message: Dict[str, Any], params: Dict[str, Any] = None) -> None:
+        """
+        Publish message to WebSocket.
+        Creates a one-shot connection if not already connected.
+
+        Args:
+            message: Message to publish
+            params: Query parameters to append to WebSocket URL
+        """
+        url = self._build_url(params or {})
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+        # Merge auth query params into URL
+        auth_query = self._get_auth_query_params()
+        if auth_query:
+            separator = "&" if "?" in url else "?"
+            url = url + separator + urlencode(auth_query)
+{% endif %}
+        try:
+            # For publish-only operations, use a one-shot connection
+            if self.connection is None:
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+                async with websockets.connect(url, extra_headers=self._get_auth_headers()) as websocket:
+{% else %}
+                async with websockets.connect(url) as websocket:
+{% endif %}
+                    await websocket.send(json.dumps(message))
+                    logger.debug(f"Published message to {url} (one-shot)")
+            else:
+                # Use existing connection (for duplex operations)
+                await self.connection.send(json.dumps(message))
+                logger.debug(f"Published message to {url}")
+        except Exception as e:
+            logger.error(f"Failed to publish message: {e}")
+            raise
+{% else %}
+    async def publish(self, message: Dict[str, Any]) -> None:
+        """
+        Publish message to WebSocket.
+        Creates a one-shot connection if not already connected.
+        """
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+        url = self.base_url
+        # Merge auth query params into URL
+        auth_query = self._get_auth_query_params()
+        if auth_query:
+            separator = "&" if "?" in url else "?"
+            url = url + separator + urlencode(auth_query)
+{% endif %}
+        try:
+            # For publish-only operations, use a one-shot connection
+            if self.connection is None:
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+                async with websockets.connect(url, extra_headers=self._get_auth_headers()) as websocket:
+{% else %}
+                async with websockets.connect(url) as websocket:
+{% endif %}
+                    await websocket.send(json.dumps(message))
+                    logger.debug(f"Published message to {url} (one-shot)")
+{% else %}
+{% if auth_config and (auth_config.kind != 'apikey' or auth_config.header_name) %}
+                async with websockets.connect(self.base_url, extra_headers=self._get_auth_headers()) as websocket:
+{% else %}
+                async with websockets.connect(self.base_url) as websocket:
+{% endif %}
+                    await websocket.send(json.dumps(message))
+                    logger.debug(f"Published message to {self.base_url} (one-shot)")
+{% endif %}
+            else:
+                # Use existing connection (for duplex operations)
+                await self.connection.send(json.dumps(message))
+{% if auth_config and auth_config.kind == 'apikey' and auth_config.query_name %}
+                logger.debug(f"Published message to {url}")
+{% else %}
+                logger.debug(f"Published message to {self.base_url}")
+{% endif %}
+        except Exception as e:
+            logger.error(f"Failed to publish message: {e}")
+            raise
+{% endif %}
+
+    async def close(self):
+        """Close the WebSocket connection."""
+        if self.connection:
+            await self.connection.close()
+            self.connection = None
+            logger.info(f"Connection to {self.base_url} closed")

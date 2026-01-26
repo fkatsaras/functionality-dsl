@@ -1,0 +1,175 @@
+// ============================================
+// DummyJSON API Integration
+// Demonstrates: Expression-based transformation + Multi-source composition
+//
+// External API: https://dummyjson.com
+// ============================================
+
+Server DummyAPI
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// ============================================
+// EXTERNAL SOURCES
+// ============================================
+
+Source<REST> ProductsAPI
+  url: "https://dummyjson.com/products/1"
+  operations: [read]
+end
+
+Source<REST> CartsAPI
+  url: "https://dummyjson.com/carts/1"
+  operations: [read]
+end
+
+Source<REST> UsersAPI
+  url: "https://dummyjson.com/users/1"
+  operations: [read]
+end
+
+// ============================================
+// BASE ENTITIES - Raw API Responses
+// ============================================
+
+Entity RawProduct
+  source: ProductsAPI
+  attributes:
+    - title: string @readonly;
+    - price: number @readonly;
+    - discountPercentage: number @readonly;
+    - rating: number @readonly;
+    - stock: integer @readonly;
+    - dimensions: object @readonly;
+    - reviews: array @readonly;
+  access: public
+end
+
+Entity RawCart
+  source: CartsAPI
+  attributes:
+    - products: array @readonly;
+    - total: number @readonly;
+    - discountedTotal: number @readonly;
+    - totalQuantity: integer @readonly;
+  access: public
+end
+
+Entity RawUser
+  source: UsersAPI
+  attributes:
+    - firstName: string @readonly;
+    - lastName: string @readonly;
+    - age: integer @readonly;
+    - company: object @readonly;
+  access: public
+end
+
+// ============================================
+// COMPUTED ENTITIES - Single Source
+// ============================================
+
+Entity Product(RawProduct)
+  attributes:
+    - title: string = RawProduct.title;
+    - price: number = RawProduct.price;
+    - salePrice: number = round(RawProduct.price * (1 - RawProduct.discountPercentage / 100), 2);
+    - savings: number = round(Product.price - Product.salePrice, 2);
+    - rating: number = RawProduct.rating;
+    - stock: integer = RawProduct.stock;
+    - volume: number = round(RawProduct.dimensions["width"] * RawProduct.dimensions["height"] * RawProduct.dimensions["depth"], 1);
+    - avgReview: number = round(avg(map(RawProduct.reviews, r => r["rating"])), 1) if len(RawProduct.reviews) > 0 else 0;
+  access: public
+end
+
+Entity Cart(RawCart)
+  attributes:
+    - itemCount: integer = len(RawCart.products);
+    - units: integer = RawCart.totalQuantity;
+    - subtotal: number = RawCart.total;
+    - total: number = RawCart.discountedTotal;
+    - savings: number = round(RawCart.total - RawCart.discountedTotal, 2);
+    - avgPrice: number = round(RawCart.discountedTotal / RawCart.totalQuantity, 2) if RawCart.totalQuantity > 0 else 0;
+    - maxPrice: number = max(map(RawCart.products, p => p["price"]));
+    - minPrice: number = min(map(RawCart.products, p => p["price"]));
+  access: public
+end
+
+Entity User(RawUser)
+  attributes:
+    - name: string = RawUser.firstName + " " + RawUser.lastName;
+    - age: integer = RawUser.age;
+    - ageGroup: string = "Young" if RawUser.age < 30 else ("Adult" if RawUser.age < 50 else "Senior");
+    - company: string = RawUser.company["name"];
+    - title: string = RawUser.company["title"];
+  access: public
+end
+
+// ============================================
+// MULTI-SOURCE COMPOSITES
+// ============================================
+
+Entity Dashboard(Product, Cart, User)
+  attributes:
+    - userName: string = User.name;
+    - productName: string = Product.title;
+    - productPrice: number = Product.salePrice;
+    - cartTotal: number = Cart.total;
+    - cartSavings: number = Cart.savings;
+    - totalWithProduct: number = round(Cart.total + Product.salePrice, 2);
+    - combinedSavings: number = round(Cart.savings + Product.savings, 2);
+  access: public
+end
+
+Entity Analytics(Product, Cart)
+  attributes:
+    - productPrice: number = Product.salePrice;
+    - cartAvgPrice: number = Cart.avgPrice;
+    - productSavings: number = Product.savings;
+    - cartSavings: number = Cart.savings;
+    - totalSavings: number = round(Product.savings + Cart.savings, 2);
+    - stockLevel: integer = Product.stock;
+    - cartValue: number = Cart.total;
+    - priceRange: number = round(Cart.maxPrice - Cart.minPrice, 2);
+  access: public
+end
+
+// ============================================
+// UI COMPONENTS - Charts & Gauges
+// ============================================
+
+Component<BarChart> PriceComparison
+  entity: Analytics
+  bars:
+    - field: "productPrice" label: "This Product" color: "#3b82f6"
+    - field: "cartAvgPrice" label: "Cart Average" color: "#8b5cf6"
+  title: "Price vs Cart Average"
+  xLabel: "Category"
+  yLabel: "Price ($)"
+  height: 300
+  width: 500
+end
+
+Component<BarChart> SavingsBreakdown
+  entity: Analytics
+  bars:
+    - field: "productSavings" label: "Product Discount" color: "#22c55e"
+    - field: "cartSavings" label: "Cart Discounts" color: "#10b981"
+  title: "Savings Breakdown"
+  xLabel: "Source"
+  yLabel: "Savings ($)"
+  height: 300
+  width: 500
+end
+
+Component<PieChart> CartComposition
+  entity: Cart
+  slices:
+    - field: "total" label: "Final Price" color: "#3b82f6"
+    - field: "savings" label: "Discounts" color: "#22c55e"
+  title: "Cart: Paid vs Saved"
+  size: 280
+end

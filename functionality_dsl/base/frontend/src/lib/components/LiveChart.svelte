@@ -21,6 +21,10 @@
         yMeta?: { type?: string; format?: string; text?: string } | null;
         seriesLabels?: string[] | null;
         seriesColors?: string[] | null;
+        yScale?: number;  // Y-axis scale factor (e.g., 0.01 to divide by 100)
+        // Bind to attribute name (like Chart component's 'values: data')
+        values?: string;  // Attribute name containing the value to plot
+        fullWidth?: boolean;  // Span full width of grid
     }>();
 
     // CHART DATA
@@ -30,6 +34,7 @@
 
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let connected = $state(false);
 
     let hoverLegend: { x: number; values: LegendEntry[] } | null = null;
     let unsub: null | (() => void) = null;
@@ -38,20 +43,53 @@
     // WS HANDLER
     // ----------------------------------
     function pushPayload(row: any) {
+        // Handle meta events
+        if (row?.__meta === "open") {
+            connected = true;
+            loading = false;
+            return;
+        }
+        if (row?.__meta === "close") {
+            connected = false;
+            return;
+        }
+
         loading = false;
+        connected = true;
 
         if (!row || typeof row !== "object") return;
 
-        // detect keys on first packet
+        // Initialize on first data packet
         if (!xKey) {
-            const init = detectKeys(row);
-            xKey = init.xKey;
-            yKeys = init.yKeys;
-            series = init.series;
+            if (props.values) {
+                // Use explicit field name - create single series from that field
+                xKey = "__timestamp";  // Auto-generate timestamps for X-axis
+                yKeys = [props.values];
+                series = { [props.values]: [] };
+            } else {
+                // Auto-detect all numeric fields
+                const init = detectKeys(row);
+                xKey = init.xKey;
+                yKeys = init.yKeys;
+                series = init.series;
+            }
         }
 
-        // push streaming row
-        series = pushRow(row, xKey, yKeys, series, props.windowSize, props.xMeta);
+        // Add timestamp and apply yScale to numeric fields
+        const timestamp = Date.now();
+        const scaleFactor = props.yScale ?? 1.0;
+
+        // Apply scale factor to all Y-axis values
+        const scaledRow: any = { ...row, __timestamp: timestamp };
+        if (scaleFactor !== 1.0) {
+            for (const key of yKeys) {
+                if (typeof scaledRow[key] === 'number') {
+                    scaledRow[key] = scaledRow[key] * scaleFactor;
+                }
+            }
+        }
+
+        series = pushRow(scaledRow, xKey, yKeys, series, props.windowSize, props.xMeta);
     }
 
     onMount(() => {
@@ -94,7 +132,7 @@
         hoverLegend = e.detail;
 </script>
 
-<Card>
+<Card fullWidth={props.fullWidth}>
     <svelte:fragment slot="header">
         <div class="w-full flex justify-between items-center">
             <span class="font-approachmono text-xl">
@@ -113,7 +151,7 @@
             yKeys={yKeys}
         />
 
-        {#if allPoints().length} 
+        {#if allPoints().length}
             <ChartArea
                 {series}
                 {yKeys}
@@ -123,6 +161,7 @@
                 yLabel={props.yLabel}
                 xMeta={props.xMeta}
                 yMeta={props.yMeta}
+                yScale={props.yScale}
                 on:legend={handleLegend}
             />
         {:else}

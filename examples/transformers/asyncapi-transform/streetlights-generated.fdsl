@@ -1,0 +1,77 @@
+// =============================================================================
+// AUTO-GENERATED FROM ASYNCAPI SPECIFICATION
+// =============================================================================
+// WARNING: Unsupported security schemes (oauth2/openIdConnect/X509):
+//   - oauth2 (oauth2)
+
+Auth<apikey> Apikey
+  in: header
+  name: "X-API-Key"
+end
+
+Auth<http> Bearerauth
+  scheme: bearer
+end
+
+Auth<http> Basicauth
+  scheme: basic
+end
+
+Server StreetlightsMQTTAPI
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+
+Source<WS> StatusWS
+  channel: "ws://mqtt.streetlights.io:1883/lights/{streetId}/status"
+  params: [streetId]
+  operations: [subscribe]
+  auth: Apikey
+end
+
+Source<WS> CommandsWS
+  channel: "ws://mqtt.streetlights.io:1883/lights/{streetId}/commands"
+  params: [streetId]
+  operations: [publish]
+  auth: Apikey
+end
+
+Source<WS> AlertsWS
+  channel: "ws://mqtt.streetlights.io:1883/alerts"
+  operations: [subscribe]
+  auth: Apikey
+end
+
+Entity Status
+  flow: inbound
+  source: StatusWS
+  attributes:
+    - streetId: string;
+    - brightness: integer<int32>;
+    - isOn: boolean;
+    - timestamp: integer<int64>;
+  access: public
+end
+
+Entity Commands
+  flow: outbound
+  source: CommandsWS
+  attributes:
+    - action: string;
+    - brightness: integer<int32> @optional;
+    - duration: integer<int32> @optional;
+  access: public
+end
+
+Entity Alerts
+  flow: inbound
+  source: AlertsWS
+  attributes:
+    - level: string;
+    - message: string;
+    - timestamp: integer<int64>;
+  access: public
+end

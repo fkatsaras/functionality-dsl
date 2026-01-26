@@ -13,6 +13,10 @@ def _time() -> str:
     """Current time in HH:MM:SS format."""
     return datetime.now().strftime("%H:%M:%S")
 
+def _hour() -> int:
+    """Current hour (0-23)."""
+    return datetime.now().hour
+
 def _daysBetween(start_date, end_date) -> int:
     """
     Calculate days between two dates.
@@ -133,9 +137,10 @@ def _addSeconds(timestamp, seconds) -> int:
 
 DSL_FUNCTIONS = {
     # Current time/date
-    "now":   (_now,   (0, 0)),
-    "today": (_today, (0, 0)),
-    "time":  (_time,  (0, 0)),
+    "now":       (_now,        (0, 0)),
+    "today":     (_today,      (0, 0)),
+    "time":      (_time,       (0, 0)),
+    "hour":      (_hour,       (0, 0)),
     
     # Time manipulation
     "daysBetween":   (_daysBetween,   (2, 2)),

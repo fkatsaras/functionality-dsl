@@ -1,9 +1,10 @@
 # app/main.py
 import uuid
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import AsyncExitStack
+from typing import Optional
 
 from app.core.config import settings
 from app.api.routers import include_generated_routers
@@ -47,15 +48,152 @@ def create_app() -> FastAPI:
         app.state._stack = AsyncExitStack()
         await app.state._stack.enter_async_context(lifespan_http_client())
 
+        # Initialize database if db module exists
+        try:
+            from app.db import init_db
+            init_db()
+        except ImportError:
+            logger.debug("No db module found - skipping database initialization")
+
     @app.on_event("shutdown")
     async def _shutdown():
         await app.state._stack.aclose()
 
     include_generated_routers(app)
 
+    # Register auth routes if auth module exists
+    # Try to include the generated auth router (for JWT auth with database)
+    try:
+        from app.api.routers.auth import router as auth_router
+        app.include_router(auth_router)
+        logger.info("Auth routes registered from router: /auth/register, /auth/login, /auth/me")
+    except ImportError:
+        # No generated auth router - try auth handlers from unified auth module
+        # Only session auth has login/register handlers (DB-backed, user-facing)
+        # Basic and APIKey auth are env-var based (admin-configured, no registration)
+        try:
+            # Check if this is session auth (has login_handler, logout_handler, SESSION_COOKIE_NAME)
+            from app.core.auth import (
+                login_handler, logout_handler, register_handler, me_handler,
+                LoginRequest, LoginResponse, LogoutResponse,
+                RegisterRequest, RegisterResponse,
+                SESSION_COOKIE_NAME,
+                get_current_user, TokenPayload
+            )
+            from fastapi import Depends
+            import inspect
+
+            # Session auth - needs response for cookies, has logout
+            login_sig = inspect.signature(login_handler)
+            needs_db = 'db' in login_sig.parameters
+
+            from app.db import get_db
+            from sqlmodel import Session as DBSession
+
+            if needs_db:
+                @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+                async def login(request: LoginRequest, response: Response, db: DBSession = Depends(get_db)):
+                    """Login and create a session"""
+                    return await login_handler(request, response, db)
+
+                @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
+                async def logout(response: Response, db: DBSession = Depends(get_db), session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
+                    """Logout and clear session"""
+                    return await logout_handler(response, db, session_id)
+
+                @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                async def register(request: RegisterRequest, db: DBSession = Depends(get_db)):
+                    """Register a new user"""
+                    return await register_handler(request, db)
+            else:
+                @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+                async def login(request: LoginRequest, response: Response):
+                    """Login and create a session"""
+                    return await login_handler(request, response)
+
+                @app.post("/auth/logout", response_model=LogoutResponse, tags=["Auth"])
+                async def logout(response: Response, session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
+                    """Logout and clear session"""
+                    return await logout_handler(response, session_id)
+
+                @app.post("/auth/register", response_model=RegisterResponse, tags=["Auth"])
+                async def register(request: RegisterRequest):
+                    """Register a new user"""
+                    return await register_handler(request)
+
+            @app.get("/auth/me", tags=["Auth"])
+            async def me(user: TokenPayload = Depends(get_current_user)):
+                """Get current user info"""
+                return await me_handler(user)
+
+            logger.info("Auth routes registered (session): /auth/register, /auth/login, /auth/logout, /auth/me")
+        except ImportError as e:
+            # No session auth handlers - basic/apikey auth don't have login/register routes
+            logger.debug(f"No session auth handlers found - auth is env-var based (basic/apikey): {e}")
+
+    @app.get("/")
+    def root():
+        """API root with links to documentation"""
+        return {
+            "status": "OK",
+            "message": "FDSL-generated API",
+            "docs": {
+                "openapi": {
+                    "interactive": settings.DOCS_URL or "/docs",
+                    "spec": "/openapi.yaml"
+                },
+                "asyncapi": {
+                    "interactive": "/asyncapi",
+                    "spec": "/asyncapi.yaml"
+                }
+            }
+        }
+
     @app.get("/healthz")
     def health():
         return {"status": "OK"}
+
+    @app.get("/openapi.yaml")
+    def get_openapi_yaml():
+        """Serve the static OpenAPI YAML specification"""
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+
+        openapi_file = Path(__file__).parent / "api" / "openapi.yaml"
+        if openapi_file.exists():
+            return FileResponse(
+                openapi_file,
+                media_type="application/x-yaml",
+                filename="openapi.yaml"
+            )
+        return {"error": "OpenAPI spec not found"}
+
+    @app.get("/asyncapi.yaml", include_in_schema=False)
+    def get_asyncapi_yaml():
+        """Serve the static AsyncAPI YAML specification"""
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+
+        asyncapi_file = Path(__file__).parent / "api" / "asyncapi.yaml"
+        if asyncapi_file.exists():
+            return FileResponse(
+                asyncapi_file,
+                media_type="application/x-yaml",
+                filename="asyncapi.yaml"
+            )
+        return {"error": "AsyncAPI spec not found"}
+
+    @app.get("/asyncapi", include_in_schema=False)
+    def get_asyncapi_docs():
+        """Serve interactive AsyncAPI documentation (similar to /docs for OpenAPI)"""
+        from pathlib import Path
+
+        from fastapi.responses import FileResponse
+
+        template_file = Path(__file__).parent / "templates" / "asyncapi.html"
+        if template_file.exists():
+            return FileResponse(template_file, media_type="text/html")
+        return {"error": "AsyncAPI documentation template not found"}
 
     return app
 

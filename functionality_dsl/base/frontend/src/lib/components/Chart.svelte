@@ -42,7 +42,25 @@
         loading = true;
         try {
             const res = await fetch(props.url);
-            const payload = await res.json();
+            let payload = await res.json();
+
+            // Handle response that's an object with an array field (like singleton entity responses)
+            if (!Array.isArray(payload) && typeof payload === 'object' && payload !== null) {
+                const keys = Object.keys(payload);
+                // Find the first array field in the response
+                const arrayKey = keys.find(k => Array.isArray(payload[k]));
+                if (arrayKey) {
+                    payload = payload[arrayKey];
+                    console.log("Chart: Found array field in response:", arrayKey);
+                } else {
+                    console.warn("Chart: No array field found in response, expected array data");
+                    xKey = null;
+                    yKeys = [];
+                    series = {};
+                    loading = false;
+                    return;
+                }
+            }
 
             if (!Array.isArray(payload) || payload.length === 0) {
                 xKey = null;

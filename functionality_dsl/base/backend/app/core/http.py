@@ -1,11 +1,22 @@
 import httpx
 import asyncio
+import os
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 
-DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=10.0)
+def _get_timeout() -> httpx.Timeout:
+    """Get timeout configuration from environment or use defaults."""
+    timeout_seconds = float(os.getenv("HTTP_TIMEOUT", "10"))
+    return httpx.Timeout(
+        connect=timeout_seconds,
+        read=timeout_seconds,
+        write=timeout_seconds,
+        pool=timeout_seconds
+    )
+
+
 _IDEMPOTENT = {"GET", "HEAD", "OPTIONS"}
 
 class RetryTransport(httpx.AsyncHTTPTransport):
@@ -30,8 +41,9 @@ _client: httpx.AsyncClient | None = None
 async def lifespan_http_client() -> AsyncIterator[httpx.AsyncClient]:
     global _client
     async with httpx.AsyncClient(
-        timeout=DEFAULT_TIMEOUT,
+        timeout=_get_timeout(),
         transport=RetryTransport(),
+        follow_redirects=True,
     ) as client:
         _client = client
         yield client  # closed automatically on exit

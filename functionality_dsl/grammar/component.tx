@@ -18,10 +18,25 @@ Component:
   | GaugeComponent
   | InputComponent
   | LiveViewComponent
+  | MapComponent
   | ToggleComponent
+  | TogglePanelComponent
   | ObjectViewComponent
   | CameraComponent
   | DownloadFormComponent
+  | EntityCardComponent
+  | PieChartComponent
+  | LivePieChartComponent
+  | BarChartComponent
+  | ProgressComponent
+  | LiveProgressComponent
+  | AlertComponent
+  | LiveAlertComponent
+  | PublishFormComponent
+  | ThermostatComponent
+  | OrderTimelineComponent
+  | VitalsPanelComponent
+  | DeviceGridComponent
 ;
 
 // Column definition with type specification
@@ -46,17 +61,21 @@ NumberCol: FLOAT | INT;
 
 TableComponent:
   'Component' '<' 'Table' '>' name=ID
-  ('endpoint:' endpoint=[entity.Endpoint])?
+  'entity:' entity_ref=[entity.Entity]
   (
-      ('colNames:' colNames=StringList)                   // legacy: explicit list of column names ['id','name',...]
-    | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
-  )?
+    ('arrayField:' arrayField=STRING)?                    // field containing array of items (auto-detected if single array<T>)
+    ('keyField:' keyField=STRING)?                        // unique key field in items (auto-detected: 'id' or first field)
+    (
+        ('colNames:' colNames=StringList)                 // legacy: explicit list of column names ['id','name',...]
+      | ('columns:' '-' columns+=ColumnDef ('-' columns+=ColumnDef)*)  // new: typed columns
+    )?
+  )#
   'end'
 ;
 
 LiveTableComponent:
   'Component' '<' 'LiveTable' '>' name=ID
-  'endpoint:' endpoint=[EndpointWS]
+  'entity:' entity_ref=[entity.Entity]
   ('arrayField:' arrayField=STRING)?
   'keyField:' keyField=STRING
   (
@@ -70,7 +89,7 @@ LiveTableComponent:
 
 ObjectViewComponent:
   'Component' '<' 'ObjectView' '>' name=ID
-  'endpoint:' endpoint=[entity.Endpoint]
+  'entity:' entity_ref=[entity.Entity]
   'fields:' fields=StringList                // explicit list of attributes to display
   ('label:' label=STRING)?
   'end'
@@ -83,12 +102,14 @@ TypedLabel:
 
 ChartComponent:
   'Component' '<' 'Chart' '>' name=ID
-  'endpoint:' endpoint=[EndpointREST]
+  'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
+    ('xField:' xField=ID)?
+    ('yField:' yField=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
-    ('xLabel:' xLabel=TypedLabel)?
-    ('yLabel:' yLabel=TypedLabel)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
     ('refreshMs:' refreshMs=INT)?
     ('windowSize:' windowSize=INT)?
     ('height:' height=INT)?
@@ -98,22 +119,26 @@ ChartComponent:
 
 LiveChartComponent:
   'Component' '<' 'LiveChart' '>' name=ID
-  'endpoint:' endpoint=[EndpointWS]
+  'entity:' entity_ref=[entity.Entity]
   (
     ('values:' values=ID)?
+    ('xField:' xField=ID)?
+    ('yField:' yField=ID)?
     ('seriesLabels:' '[' seriesLabels+=STRING (',' seriesLabels+=STRING)* ']')?
-    ('xLabel:' xLabel=TypedLabel)?
-    ('yLabel:' yLabel=TypedLabel)?
+    ('yScale:' yScale=FLOAT)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
     ('windowSize:' windowSize=INT)?
     ('height:' height=INT)?
+    ('fullWidth:' fullWidth=BOOL)?
   )#
   'end'
 ;
 
 GaugeComponent:
   'Component' '<' 'Gauge' '>' name=ID
-  ('endpoint:' endpoint=[entity.Endpoint])?
-  ( ('value:' value=AttrRef)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
+  'entity:' entity_ref=[entity.Entity]
+  ( ('value:' value=STRING)? ('min:' min=FLOAT)? ('max:' max=FLOAT)? ('label:' label=STRING)? ('unit:'  unit=STRING)? )#
   'end'
 ;
 
@@ -121,7 +146,8 @@ GaugeComponent:
 ActionFormComponent:
   'Component' '<' 'ActionForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity=[Entity]
+    ('operation:' operation=ActionOperation)?
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('pathKey:' pathKey=ID)?
     ('submitLabel:' submitLabel=STRING)?
@@ -129,11 +155,15 @@ ActionFormComponent:
   'end'
 ;
 
+ActionOperation:
+  'create' | 'update' | 'delete'
+;
+
 // QueryForm for GET requests with query parameters
 QueryFormComponent:
   'Component' '<' 'QueryForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
     ('submitLabel:' submitLabel=STRING)?
   )#
@@ -143,7 +173,7 @@ QueryFormComponent:
 TextFormComponent:
   'Component' '<' 'TextForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('label:' label=STRING)?
     ('placeholder:' placeholder=STRING)?
     ('submitLabel:' submitLabel=STRING)?
@@ -154,7 +184,7 @@ TextFormComponent:
 FileUploadFormComponent:
   'Component' '<' 'FileUploadForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('label:' label=STRING)?
     ('accept:' accept=STRING)?
     ('maxSize:' maxSize=INT)?
@@ -165,7 +195,7 @@ FileUploadFormComponent:
 
 InputComponent:
   'Component' '<' 'Input' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity:' entity_ref=[entity.Entity]
   ( ('label:' label=STRING)
   | ('placeholder:' placeholder=STRING)
   | ('initial:' initial=STRING)
@@ -176,7 +206,7 @@ InputComponent:
 
 LiveViewComponent:
   'Component' '<' 'LiveView' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity:' entity_ref=[entity.Entity]
   'fields:' fields=StringList
   ( ('label:' label=STRING)
   )*
@@ -185,18 +215,37 @@ LiveViewComponent:
 
 ToggleComponent:
   'Component' '<' 'Toggle' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointREST]
-  ( ('label:' label=STRING)
-  | ('onLabel:' onLabel=STRING)
-  | ('offLabel:' offLabel=STRING)
-  | ('field:' field=STRING)
-  )*
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('label:' label=STRING)?
+    ('onLabel:' onLabel=STRING)?
+    ('offLabel:' offLabel=STRING)?
+    ('field:' field=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+// ToggleField defines a single toggle in a TogglePanel
+ToggleField:
+  'field:' field=STRING 'label:' label=STRING
+;
+
+// TogglePanel groups multiple toggles for the same entity in one card
+TogglePanelComponent:
+  'Component' '<' 'TogglePanel' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('toggles:' '-' toggles+=ToggleField ('-' toggles+=ToggleField)*)?
+    ('title:' title=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
   'end'
 ;
 
 CameraComponent:
   'Component' '<' 'Camera' '>' name=ID
-  'endpoint' ':' endpoint=[EndpointWS]
+  'entity' ':' entity_ref=[entity.Entity]
   ( ('label:' label=STRING)
   )*
   'end'
@@ -205,12 +254,209 @@ CameraComponent:
 DownloadFormComponent:
   'Component' '<' 'DownloadForm' '>' name=ID
   (
-    'endpoint:' endpoint=[EndpointREST]
+    'entity:' entity_ref=[entity.Entity]
     ('filename:' filename=STRING)?
     ('buttonText:' buttonText=STRING)?
     ('params:' '[' params+=ID (',' params+=ID)* ']')?
     ('autoDownload:' autoDownload=BOOL)?
     ('showPreview:' showPreview=BOOL)?
+  )#
+  'end'
+;
+
+MapComponent:
+  'Component' '<' 'Map' '>' name=ID
+  'entity' ':' entity_ref=[entity.Entity]
+  'warehouseLat:' warehouseLat=FLOAT
+  'warehouseLon:' warehouseLon=FLOAT
+  (
+    ('deliveriesKey:' deliveriesKey=STRING)?
+    ('driversKey:' driversKey=STRING)?
+    ('label:' label=STRING)?
+    ('width:' width=INT)?
+    ('height:' height=INT)?
+  )#
+  'end'
+;
+
+// EntityCard - displays entity scalar fields (non-binary, non-array, non-object)
+// type: "rest" for REST polling, "ws" for WebSocket streaming
+EntityCardComponent:
+  'Component' '<' 'EntityCard' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  'type:' cardType=EntityCardType
+  (
+    ('fields:' '[' fields+=STRING (',' fields+=STRING)* ']')?
+    ('title:' title=STRING)?
+    ('highlight:' highlight=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+EntityCardType:
+  'rest' | 'ws'
+;
+
+// SliceField defines a mapping from entity field to pie chart slice
+SliceField:
+  'field:' field=STRING 'label:' label=STRING 'color:' color=STRING
+;
+
+PieChartComponent:
+  'Component' '<' 'PieChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('slices:' '-' slices+=SliceField ('-' slices+=SliceField)*)?
+    ('title:' title=STRING)?
+    ('size:' size=INT)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LivePieChartComponent:
+  'Component' '<' 'LivePieChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('slices:' '-' slices+=SliceField ('-' slices+=SliceField)*)?
+    ('title:' title=STRING)?
+    ('size:' size=INT)?
+  )#
+  'end'
+;
+
+// BarField defines a mapping from entity field to bar chart bar
+BarField:
+  'field:' field=STRING 'label:' label=STRING ('color:' color=STRING)?
+;
+
+BarChartComponent:
+  'Component' '<' 'BarChart' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('bars:' '-' bars+=BarField ('-' bars+=BarField)*)?
+    ('title:' title=STRING)?
+    ('xLabel:' xLabel=STRING)?
+    ('yLabel:' yLabel=STRING)?
+    ('height:' height=INT)?
+    ('width:' width=INT)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+ProgressComponent:
+  'Component' '<' 'Progress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveProgressComponent:
+  'Component' '<' 'LiveProgress' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('field:' field=STRING)?
+    ('min:' min=FLOAT)?
+    ('max:' max=FLOAT)?
+    ('threshold:' threshold=FLOAT)?
+    ('label:' label=STRING)?
+  )#
+  'end'
+;
+
+AlertComponent:
+  'Component' '<' 'Alert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
+    ('refreshMs:' refreshMs=INT)?
+  )#
+  'end'
+;
+
+LiveAlertComponent:
+  'Component' '<' 'LiveAlert' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('condition:' condition=STRING)?
+    ('message:' message=STRING)?
+    ('severity:' severity=STRING)?
+  )#
+  'end'
+;
+
+// PublishForm for outbound WebSocket entities - sends JSON payloads
+PublishFormComponent:
+  'Component' '<' 'PublishForm' '>' name=ID
+  (
+    'entity:' entity_ref=[entity.Entity]
+    ('fields:' '[' fields+=ID (',' fields+=ID)* ']')?
+    ('submitLabel:' submitLabel=STRING)?
+    ('label:' label=STRING)?
+  )#
+  'end'
+;
+
+// Thermostat component - visual thermostat control with dial
+// Requires entity with: current_temp_f, target_temp_f, mode, humidity_percent
+ThermostatComponent:
+  'Component' '<' 'Thermostat' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('title:' title=STRING)?
+    ('minTemp:' minTemp=INT)?
+    ('maxTemp:' maxTemp=INT)?
+  )#
+  'end'
+;
+
+// =============================================================================
+// SHOWCASE COMPONENTS - Domain-specific, visually rich components for demos
+// =============================================================================
+
+// OrderTimeline - E-commerce order status timeline visualization
+// Shows progression: Placed -> Processing -> Shipped -> Delivered
+OrderTimelineComponent:
+  'Component' '<' 'OrderTimeline' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('title:' title=STRING)?
+  )#
+  'end'
+;
+
+// VitalsPanel - Health monitoring vitals display
+// Shows heart rate (live), blood pressure, O2, temperature with alerts
+VitalsPanelComponent:
+  'Component' '<' 'VitalsPanel' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('restEntity:' restEntity=[entity.Entity])?
+    ('title:' title=STRING)?
+  )#
+  'end'
+;
+
+// DeviceGrid - IoT device grid with status and controls
+// Shows device on/off status, brightness, and optional command buttons
+DeviceGridComponent:
+  'Component' '<' 'DeviceGrid' '>' name=ID
+  'entity:' entity_ref=[entity.Entity]
+  (
+    ('commandEntity:' commandEntity=[entity.Entity])?
+    ('title:' title=STRING)?
+    ('deviceType:' deviceType=STRING)?
   )#
   'end'
 ;

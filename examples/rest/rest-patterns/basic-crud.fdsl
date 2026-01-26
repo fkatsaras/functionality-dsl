@@ -1,0 +1,41 @@
+// =============================================================================
+// BASIC CRUD OPERATIONS
+// Demonstrates: read, create, update, delete operations on a REST source
+// =============================================================================
+
+Server BasicCRUD
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Source: Product API with full CRUD
+// -----------------------------------------------------------------------------
+Source<REST> ProductAPI
+  url: "http://dummy:9001/product"
+  operations: [read, create, update, delete]
+end
+
+// -----------------------------------------------------------------------------
+// Entity: Product snapshot
+// All operations work on the same endpoint (no IDs in URL)
+// Identity is determined by the backing service based on request context
+// -----------------------------------------------------------------------------
+Entity Product
+  source: ProductAPI
+  attributes:
+    - name: string;
+    - price: number;
+    - category: string;
+    - in_stock: boolean;
+    - created_at: string @readonly;
+  access: public
+end
+
+// Generated endpoints:
+// GET    /api/product     - Read current product snapshot
+// POST   /api/product     - Create product (backing service determines how)
+// PUT    /api/product     - Update product (backing service determines which)
+// DELETE /api/product     - Delete product (backing service determines which)

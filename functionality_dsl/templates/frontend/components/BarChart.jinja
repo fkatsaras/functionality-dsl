@@ -1,0 +1,25 @@
+{% set endpoint = props.get('endpointPath') %}
+<BarChart
+  name="{{ common.name }}"
+  url="{{ endpoint }}"
+  barFields={{ "{" }}{{ props.get('bars') | tojson }}{{ "}" }}
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+  {%- if props.get('xLabel') %}
+  xLabel={{ props.get('xLabel') | tojson }}
+  {%- endif %}
+  {%- if props.get('yLabel') %}
+  yLabel={{ props.get('yLabel') | tojson }}
+  {%- endif %}
+  {%- if props.get('height') %}
+  height={{ props.get('height') }}
+  {%- endif %}
+  {%- if props.get('width') %}
+  width={{ props.get('width') }}
+  {%- endif %}
+  {%- if props.get('refreshMs') %}
+  refreshMs={{ props.get('refreshMs') }}
+  {%- endif %}
+>
+</BarChart>

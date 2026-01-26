@@ -8,16 +8,6 @@ def get_entities(model):
     return list(get_children_of_type("Entity", model))
 
 
-def get_rest_endpoints(model):
-    """Extract all Endpoint<REST> nodes from the model."""
-    return list(get_children_of_type("EndpointREST", model))
-
-
-def get_ws_endpoints(model):
-    """Extract all Endpoint<WS> nodes from the model."""
-    return list(get_children_of_type("EndpointWS", model))
-
-
 def get_all_source_names(model):
     """Extract all Source<REST> and Source<WS> names for expression compilation."""
     sources = []
@@ -36,8 +26,24 @@ def find_source_for_entity(entity, model):
     In the new design, entities don't have source: fields.
     Instead, Sources have response: blocks that reference entities.
     Also checks inline types like array<Entity> in response schemas.
+
+    LEGACY: Also checks for direct source: attribute on entities (old syntax).
     """
     from .schema_extractor import get_response_schema
+
+    # LEGACY: Check if entity has direct source: attribute (old syntax)
+    entity_source = getattr(entity, "source", None)
+    if entity_source:
+        # Determine source type
+        source_type = None
+        if hasattr(entity_source, "__class__"):
+            class_name = entity_source.__class__.__name__
+            if "REST" in class_name:
+                source_type = "REST"
+            elif "WS" in class_name:
+                source_type = "WS"
+        if source_type:
+            return (entity_source, source_type)
 
     # Check REST sources
     for source in get_children_of_type("SourceREST", model):
@@ -107,7 +113,7 @@ def find_target_for_entity(entity, model):
 def extract_server_config(model):
     """
     Extract server configuration from the model.
-    Returns dict with server name, host, port, CORS, loglevel and environment.
+    Returns dict with server name, host, port, CORS, loglevel, timeout, environment, and auth.
     """
     servers = list(get_children_of_type("Server", model))
     if not servers:
@@ -132,6 +138,13 @@ def extract_server_config(model):
     if loglvl_value not in {"debug", "info", "error"}:
         loglvl_value = "info"
 
+    # Extract timeout value (default: 10 seconds)
+    timeout_value = getattr(server, "timeout", None)
+    timeout_value = int(timeout_value) if timeout_value else 10
+
+    # Extract auth configuration (if referenced by server)
+    auth_config = extract_auth_config(server)
+
     return {
         "server": {
             "name": server.name,
@@ -140,5 +153,52 @@ def extract_server_config(model):
             "cors": cors_value or "http://localhost:3000",
             "env": env_value,
             "loglevel": loglvl_value,
-        }
+            "timeout": timeout_value,
+        },
+        "auth": auth_config,
     }
+
+
+def extract_auth_config(server):
+    """
+    Extract authentication configuration from the server's auth reference.
+    Returns dict with auth type and configuration details.
+
+    Supported auth types:
+    - jwt: Stateless token-based authentication
+    - session: Stateful cookie-based authentication
+    """
+    auth = getattr(server, "auth", None)
+    if not auth:
+        return None
+
+    auth_type = getattr(auth, "type", None)
+    if not auth_type:
+        return None
+
+    config = {
+        "name": auth.name,
+        "type": auth_type,
+    }
+
+    # Extract type-specific configuration
+    # Note: Use `or` to convert empty strings to defaults (textX returns "" for unset strings)
+    if auth_type == "jwt":
+        jwt_config = getattr(auth, "jwt_config", None)
+        if jwt_config:
+            config["jwt"] = {
+                "secret": getattr(jwt_config, "secret", None) or "JWT_SECRET",
+                "header": getattr(jwt_config, "header", None) or "Authorization",
+                "scheme": getattr(jwt_config, "scheme", None) or "Bearer",
+                "algorithm": getattr(jwt_config, "algorithm", None) or "HS256",
+                "user_id_claim": getattr(jwt_config, "user_id_claim", None) or "sub",
+                "roles_claim": getattr(jwt_config, "roles_claim", None) or "roles",
+            }
+    elif auth_type == "session":
+        session_config = getattr(auth, "session_config", None)
+        config["session"] = {
+            "cookie": getattr(session_config, "cookie", None) or "session_id" if session_config else "session_id",
+            "expiry": getattr(session_config, "expiry", None) or 3600 if session_config else 3600,
+        }
+
+    return config

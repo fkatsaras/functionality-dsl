@@ -1,0 +1,45 @@
+// =============================================================================
+// INBOUND WEBSOCKET - BASIC
+// Demonstrates: Subscribing to an external WebSocket source
+// Client connects to FDSL server, receives data pushed from external WS
+// =============================================================================
+
+Server InboundBasic
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Source: External WebSocket that pushes data
+// -----------------------------------------------------------------------------
+Source<WS> SensorWS
+  channel: "ws://dummy:9001/ws/sensor"
+  operations: [subscribe]
+end
+
+// -----------------------------------------------------------------------------
+// Entity: Inbound = receives FROM external WS, pushes TO client
+// The entity defines the shape of messages from the external source
+// -----------------------------------------------------------------------------
+Entity SensorReading
+  flow: inbound
+  source: SensorWS
+  attributes:
+    - sensor_id: string;
+    - value: number;
+    - unit: string;
+    - timestamp: integer;
+  access: public
+end
+
+// Generated WebSocket endpoint:
+// ws://localhost:8080/ws/sensorreading
+//
+// Data flow:
+// External WS (ws://dummy:9001/ws/sensor)
+//   → FDSL Server
+//   → Client (subscribes to /ws/sensorreading)
+//
+// Client receives messages in the shape defined by SensorReading

@@ -1,0 +1,741 @@
+# ========================================================================
+# AUTO-GENERATED COMBINED WEBSOCKET ROUTER: {{ ws_channel }}
+# Handles bidirectional WebSocket communication
+# ========================================================================
+
+import logging
+import json
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Set, Optional, Union, Tuple
+from pydantic import ValidationError
+import asyncio
+
+{% if has_subscribe %}
+from app.services.{{ subscribe_entity_name | lower }}_service import {{ subscribe_entity_name }}Service
+{% endif %}
+{% if has_publish %}
+from app.services.{{ publish_entity_name | lower }}_service import {{ publish_entity_name }}Service
+{% endif %}
+
+from app.core.error_handlers import (
+    WebSocketErrorHandler,
+    ErrorCategory,
+    classify_error
+)
+{% if has_auth %}
+# Import auth utilities based on configured auth module
+{% set auth_name = subscribe_auth_name or publish_auth_name %}
+{% if auth_name %}
+from app.core.auth_{{ auth_name | lower }} import TokenPayload
+
+# Detect auth type and import specific utilities
+try:
+    from app.core.auth_{{ auth_name | lower }} import decode_token
+    AUTH_TYPE = "jwt"
+except ImportError:
+    try:
+        from app.core.auth_{{ auth_name | lower }} import validate_api_key, API_KEY_LOCATION, API_KEY_NAME
+        AUTH_TYPE = "apikey"
+    except ImportError:
+        try:
+            from app.core.auth_{{ auth_name | lower }} import validate_basic_credentials
+            AUTH_TYPE = "basic"
+        except ImportError:
+            AUTH_TYPE = None
+
+# For API key and Basic auth, we need synchronous database access
+if AUTH_TYPE in ("apikey", "basic"):
+    from app.db.database import get_db_sync
+{% endif %}
+{% endif %}
+
+logger = logging.getLogger("fdsl.ws.{{ ws_channel }}")
+
+router = APIRouter()
+
+# Track active WebSocket connections
+active_connections: Set[WebSocket] = set()
+
+
+def extract_binary_payload(message: Union[dict, bytes]) -> Tuple[bool, Union[bytes, dict]]:
+    """
+    Extract binary payload from message if present.
+    Returns (is_binary, payload) where payload is either raw bytes or the original dict.
+
+    Handles:
+    - Raw bytes: returns (True, bytes)
+    - Dict with single binary value: returns (True, bytes)
+    - Dict with all non-binary values: returns (False, dict)
+    """
+    if isinstance(message, bytes):
+        return True, message
+
+    if isinstance(message, dict):
+        # Check if dict contains a single binary value
+        binary_values = [(k, v) for k, v in message.items() if isinstance(v, bytes)]
+        if len(binary_values) == 1 and len(message) == 1:
+            # Single binary attribute - extract the bytes
+            return True, binary_values[0][1]
+
+    return False, message
+
+
+@router.websocket("{{ ws_channel }}")
+async def websocket_combined_endpoint(websocket: WebSocket):
+    """
+    Combined WebSocket endpoint for {{ ws_channel }}.
+    Supports: {% if has_subscribe %}subscribe{% endif %}{% if has_subscribe and has_publish %}, {% endif %}{% if has_publish %}publish{% endif %}
+    {% if has_subscribe and subscribe_filters %}
+    Filters: {{ subscribe_filters | join(', ') }}
+    {% endif %}
+    """
+    {% if has_auth %}
+    # Authenticate before accepting connection
+    {% set auth_name = subscribe_auth_name or publish_auth_name %}
+    user = None
+    credential = None  # Generic credential holder (token, api_key, etc.)
+
+    # Extract credentials based on auth type
+    if AUTH_TYPE == "jwt":
+        # JWT auth: Extract token from Authorization header or query parameter
+        # Note: Browsers don't support custom headers for WebSocket, so we also check query params
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            credential = auth_header[7:]  # Remove "Bearer " prefix
+
+        # Fallback to query parameter for browser WebSocket connections
+        if not credential:
+            credential = websocket.query_params.get("token")
+
+    elif AUTH_TYPE == "apikey":
+        # API Key auth: Extract based on configured location (header, query, or cookie)
+        if API_KEY_LOCATION == "header":
+            # Check both original case and lowercase
+            credential = websocket.headers.get(API_KEY_NAME) or websocket.headers.get(API_KEY_NAME.lower())
+            # Fallback to query param for browser WebSocket (browsers can't set custom headers)
+            if not credential:
+                credential = websocket.query_params.get("token") or websocket.query_params.get(API_KEY_NAME)
+        elif API_KEY_LOCATION == "query":
+            credential = websocket.query_params.get(API_KEY_NAME)
+        elif API_KEY_LOCATION == "cookie":
+            # Extract from Cookie header
+            cookie_header = websocket.headers.get("cookie", "")
+            if cookie_header:
+                for cookie in cookie_header.split(";"):
+                    cookie = cookie.strip()
+                    if cookie.startswith(f"{API_KEY_NAME}="):
+                        credential = cookie[len(API_KEY_NAME) + 1:]
+                        break
+
+    elif AUTH_TYPE == "basic":
+        # Basic auth: Extract from Authorization header
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Basic "):
+            credential = auth_header[6:]  # Base64 encoded credentials
+
+    # Check if authentication is required for each operation
+    {% if not subscribe_is_public %}
+    subscribe_requires_auth = True
+    {% if subscribe_required_roles %}
+    subscribe_roles = {{ subscribe_required_roles }}  # Role-based access
+    {% else %}
+    subscribe_roles = None  # Auth-only (no role check)
+    {% endif %}
+    {% else %}
+    subscribe_requires_auth = False
+    subscribe_roles = None
+    {% endif %}
+    {% if not publish_is_public %}
+    publish_requires_auth = True
+    {% if publish_required_roles %}
+    publish_roles = {{ publish_required_roles }}  # Role-based access
+    {% else %}
+    publish_roles = None  # Auth-only (no role check)
+    {% endif %}
+    {% else %}
+    publish_requires_auth = False
+    publish_roles = None
+    {% endif %}
+
+    # Verify credentials if required
+    if subscribe_requires_auth or publish_requires_auth:
+        has_credentials = credential is not None
+
+        # Case 1: Both operations require auth - reject if no credentials
+        if subscribe_requires_auth and publish_requires_auth:
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (both subscribe and publish require auth)")
+                await websocket.close(code=1008, reason="Authentication required")
+                return
+
+        # Case 2: Only subscribe requires auth - reject if no credentials
+        elif subscribe_requires_auth:
+            if not has_credentials:
+                logger.warning("WebSocket connection rejected: No credentials provided (subscribe requires auth)")
+                await websocket.close(code=1008, reason="Authentication required for subscribe")
+                return
+
+        # Case 3: Only publish requires auth - accept connection, but validate credentials if provided
+        # (user can subscribe without auth, but needs auth to publish)
+
+        # Validate credentials if present
+        if has_credentials:
+            try:
+                if AUTH_TYPE == "jwt":
+                    user = decode_token(credential)
+
+                elif AUTH_TYPE == "apikey":
+                    # Validate API key against database
+                    db = get_db_sync()
+                    try:
+                        result = validate_api_key(db, credential)
+                        if result is None:
+                            raise Exception("Invalid API key")
+                        user_id, role = result
+                        user = TokenPayload(user_id=str(user_id), roles=[role])
+                    finally:
+                        db.close()
+
+                elif AUTH_TYPE == "basic":
+                    # Basic auth validation
+                    import base64
+                    db = get_db_sync()
+                    try:
+                        decoded = base64.b64decode(credential).decode('utf-8')
+                        username, password = decoded.split(':', 1)
+                        result = validate_basic_credentials(db, username, password)
+                        if result is None:
+                            raise Exception("Invalid credentials")
+                        user_id, role = result
+                        user = TokenPayload(user_id=str(user_id), roles=[role])
+                    except Exception as e:
+                        raise Exception(f"Invalid Basic auth credentials: {str(e)}")
+                    finally:
+                        db.close()
+
+                logger.info(f"WebSocket authenticated: user={user.user_id}, roles={user.roles}")
+
+                # Check subscribe permissions (only if roles are specified)
+                {% if not subscribe_is_public and subscribe_required_roles %}
+                if subscribe_requires_auth and subscribe_roles and not user.has_any_role(subscribe_roles):
+                    logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for subscribe: {subscribe_roles}")
+                    await websocket.close(code=1008, reason="Insufficient permissions for subscribe")
+                    return
+                {% endif %}
+
+                # Check publish permissions (only if roles are specified)
+                {% if not publish_is_public and publish_required_roles %}
+                if publish_requires_auth and publish_roles and not user.has_any_role(publish_roles):
+                    logger.warning(f"WebSocket connection rejected: User {user.user_id} lacks required roles for publish: {publish_roles}")
+                    await websocket.close(code=1008, reason="Insufficient permissions for publish")
+                    return
+                {% endif %}
+
+            except Exception as e:
+                logger.warning(f"WebSocket authentication failed: {str(e)}")
+                await websocket.close(code=1008, reason=f"Authentication failed: {str(e)}")
+                return
+    {% endif %}
+
+    await websocket.accept()
+    active_connections.add(websocket)
+    logger.info(f"Client connected to {{ ws_channel }}. Total connections: {len(active_connections)}")
+
+    {% if has_subscribe %}
+    subscribe_service = {{ subscribe_entity_name }}Service()
+{% if has_subscribe_params %}
+
+    # Extract source params from query parameters
+    subscribe_params = {}
+    {% for param in subscribe_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        subscribe_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Subscribe source params: {subscribe_params}")
+{% endif %}
+
+    # Extract filter values from query parameters
+    {% if subscribe_filters %}
+    filter_values = {}
+    {% for filter_field in subscribe_filters %}
+    filter_values["{{ filter_field }}"] = websocket.query_params.get("{{ filter_field }}")
+    {% endfor %}
+    logger.info(f"Applied filters: {filter_values}")
+
+    def message_matches_filters(message: dict) -> bool:
+        """Check if message matches all specified filters."""
+        for field, expected_value in filter_values.items():
+            if expected_value is None:
+                continue  # No filter for this field
+            # Get actual value from message (handle nested dicts)
+            actual_value = message.get(field)
+            if actual_value is None:
+                return False  # Field not in message
+            # Convert to string for comparison
+            if str(actual_value) != str(expected_value):
+                return False
+        return True
+    {% endif %}
+    {% endif %}
+    {% if has_publish %}
+    publish_service = {{ publish_entity_name }}Service()
+{% if has_publish_params %}
+
+    # Extract source params from query parameters for publish
+    publish_params = {}
+    {% for param in publish_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        publish_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Publish source params: {publish_params}")
+{% endif %}
+    {% endif %}
+
+    try:
+        {% if has_subscribe and has_publish %}
+        # Bidirectional mode: Run subscribe and publish concurrently
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        subscribe_source = {{ subscribe_ws_source.name }}Source()
+        # Publish uses the service's source directly
+
+        async def handle_subscribe():
+            """Subscribe task: Stream data from external source to client."""
+{% if has_subscribe_params %}
+            async for raw_message in subscribe_source.subscribe(subscribe_params):
+{% else %}
+            async for raw_message in subscribe_source.subscribe():
+{% endif %}
+                if raw_message is None:
+                    continue
+
+                # Transform raw message through entity service
+                # Note: Binary messages are pre-wrapped by the source client
+                transformed_message = subscribe_service._transform_entity(raw_message)
+
+                # Apply filters if specified
+                {% if subscribe_filters %}
+                if not message_matches_filters(transformed_message):
+                    continue  # Skip this message, doesn't match filters
+                {% endif %}
+
+                # Send to client - extract binary payload if present
+                is_binary, payload = extract_binary_payload(transformed_message)
+                if is_binary:
+                    await websocket.send_bytes(payload)
+                    logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                else:
+                    await websocket.send_json(payload)
+                    logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+
+        async def handle_publish():
+            """Publish task: Receive data from client and send to external target."""
+            while True:
+                try:
+                    {% if has_auth and not publish_is_public %}
+                    # Runtime check: Verify user has publish permissions
+                    {% if publish_required_roles %}
+                    # Role-based access: check roles
+                    if not user or not user.has_any_role(publish_roles):
+                        error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
+                        logger.warning(f"Publish rejected: {error_msg}")
+                        await WebSocketErrorHandler.send_error(
+                            websocket,
+                            Exception(error_msg),
+                            ErrorCategory.FORBIDDEN,
+                            logger,
+                            close_connection=True
+                        )
+                        return
+                    {% else %}
+                    # Auth-only: just check user is authenticated
+                    if not user:
+                        error_msg = "Publish operation requires authentication"
+                        logger.warning(f"Publish rejected: {error_msg}")
+                        await WebSocketErrorHandler.send_error(
+                            websocket,
+                            Exception(error_msg),
+                            ErrorCategory.FORBIDDEN,
+                            logger,
+                            close_connection=True
+                        )
+                        return
+                    {% endif %}
+                    {% endif %}
+
+                    # Receive message based on content type
+                    {% if publish_is_text %}
+                    # Content type is text/plain - receive as text
+                    raw_data = await websocket.receive_text()
+                    logger.debug(f"Received text message from client: {raw_data}")
+                    {% else %}
+                    # Content type is application/json - receive as JSON
+                    raw_data = await websocket.receive_json()
+                    logger.debug(f"Received JSON message from client: {raw_data}")
+                    {% endif %}
+                except json.JSONDecodeError as e:
+                    await WebSocketErrorHandler.handle_json_decode_error(websocket, e, logger)
+                    continue
+                except ValueError as e:
+                    await WebSocketErrorHandler.send_error(
+                        websocket, e, ErrorCategory.BAD_REQUEST, logger
+                    )
+                    continue
+
+                try:
+                    # Wrap primitive values for wrapper entities
+                    {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
+                    # Parent entity is a primitive type - wrap in object with attribute name
+                    data = {"{{ publish_wrapper_key }}": raw_data}
+                    logger.debug(f"Wrapped primitive value: {data}")
+                    {% else %}
+                    # Parent entity is a full object, use as-is
+                    data = raw_data
+                    {% endif %}
+
+                    # Transform through entity service
+                    transformed_data = publish_service._transform_entity(data)
+                    logger.debug(f"Transformed message: {transformed_data}")
+
+                    # Publish to external WebSocket via service source
+{% if has_publish_params %}
+                    await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
+                    await publish_service.source.publish(transformed_data)
+{% endif %}
+                    logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
+
+                except ValidationError as e:
+                    await WebSocketErrorHandler.handle_validation_error(websocket, e, logger)
+                except Exception as e:
+                    await WebSocketErrorHandler.handle_processing_error(websocket, e, logger, fatal=False)
+
+        # Run both tasks concurrently
+        await asyncio.gather(
+            handle_subscribe(),
+            handle_publish(),
+            return_exceptions=True
+        )
+
+        {% elif has_subscribe %}
+        # Subscribe-only mode: Stream data from external source(s) to client
+        {% if is_chained_composite %}
+        # Chained composite: This entity inherits from composite parent(s)
+        # Chain: {{ subscribe_entity_name }} {% for svc in intermediate_services %}-> {{ svc }} {% endfor %}-> Base entities
+
+        # Import all intermediate services in the transformation chain
+        {% for service_name in intermediate_services %}
+        from app.services.{{ service_name | lower }}_service import {{ service_name }}Service
+        {% endfor %}
+
+        # Create service instances for transformation chain
+        {% for service_name in intermediate_services %}
+        {{ service_name | lower }}_service = {{ service_name }}Service()
+        {% endfor %}
+
+        # Subscribe to the base WebSocket sources (discovered recursively)
+        {% if subscribe_ws_sources | length > 1 %}
+        # Multiple WebSocket sources - merge streams (with chained transformation)
+        import asyncio
+        from typing import Dict
+        {% for source, parent_entity in subscribe_ws_sources %}
+        from app.sources.{{ source.name | lower }}_source import {{ source.name }}Source
+        {% endfor %}
+
+        # Create source instances
+        {% for source, parent_entity in subscribe_ws_sources %}
+        {{ parent_entity.name | lower }}_source = {{ source.name }}Source()
+        {% endfor %}
+
+        # Shared state for latest messages from each source
+        latest_messages: Dict[str, dict] = {}
+        message_lock = asyncio.Lock()
+
+        async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
+            """Subscribe to a single WebSocket source and update shared state."""
+            try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
+                async for raw_message in source.subscribe():
+{% endif %}
+                    if raw_message is None:
+                        continue
+
+                    # Note: Binary messages are pre-wrapped by the source client
+                    async with message_lock:
+                        latest_messages[parent_entity_name] = raw_message
+
+                        # Only transform and send if we have messages from all sources
+                        if len(latest_messages) == {{ subscribe_ws_sources | length }}:
+                            # Chain transformations through all intermediate services
+                            transformed = latest_messages.copy()
+
+                            # Apply transformations in reverse order (from deepest parent to current entity)
+                            {% for service_name in intermediate_services | reverse %}
+                            transformed = {{ service_name | lower }}_service._transform_entity(transformed)
+                            transformed = {"{{ service_name }}": transformed}  # Wrap for next level
+                            {% endfor %}
+
+                            # Final transformation through this entity's service
+                            final_message = subscribe_service._transform_entity(transformed)
+
+                            # Apply filters if specified
+                            {% if subscribe_filters %}
+                            if not message_matches_filters(final_message):
+                                continue  # Skip this message, doesn't match filters
+                            {% endif %}
+
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(final_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+            except Exception as e:
+                error_category = classify_error(e)
+                logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
+                await WebSocketErrorHandler.send_error(
+                    websocket, e, error_category, logger, close_connection=False
+                )
+
+        # Run all subscriptions concurrently
+        await asyncio.gather(
+            {% for source, parent_entity in subscribe_ws_sources %}
+            subscribe_to_source("{{ source.name }}", {{ parent_entity.name | lower }}_source, "{{ parent_entity.name }}"){{ "," if not loop.last else "" }}
+            {% endfor %}
+        )
+        {% else %}
+        # Single WebSocket source with chained transformations
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        source = {{ subscribe_ws_source.name }}Source()
+
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
+        async for raw_message in source.subscribe():
+{% endif %}
+            if raw_message is None:
+                continue
+
+            # Chain transformations through all intermediate services
+            # Note: Binary messages are pre-wrapped by the source client
+            transformed = raw_message
+            {% for service_name in intermediate_services | reverse %}
+            transformed = {{ service_name | lower }}_service._transform_entity(transformed)
+            transformed = {"{{ service_name }}": transformed}  # Wrap for next level
+            {% endfor %}
+
+            # Final transformation through this entity's service
+            final_message = subscribe_service._transform_entity(transformed)
+
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(final_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent chained composite message to client: {{ subscribe_entity_name }}")
+        {% endif %}
+        {% elif subscribe_ws_sources | length > 1 %}
+        # Multiple WebSocket sources - merge streams
+        import asyncio
+        from typing import Dict
+        {% for source, parent_entity in subscribe_ws_sources %}
+        from app.sources.{{ source.name | lower }}_source import {{ source.name }}Source
+        {% endfor %}
+
+        # Create sources
+        {% for source, parent_entity in subscribe_ws_sources %}
+        {{ parent_entity.name | lower }}_source = {{ source.name }}Source()
+        {% endfor %}
+
+        # Shared state for latest messages from each source
+        latest_messages: Dict[str, dict] = {}
+        message_lock = asyncio.Lock()
+
+        async def subscribe_to_source(source_name: str, source, parent_entity_name: str):
+            """Subscribe to a single WebSocket source and update shared state."""
+            try:
+{% if has_subscribe_params %}
+                async for raw_message in source.subscribe(subscribe_params):
+{% else %}
+                async for raw_message in source.subscribe():
+{% endif %}
+                    if raw_message is None:
+                        continue
+
+                    # Note: Binary messages are pre-wrapped by the source client
+                    async with message_lock:
+                        latest_messages[parent_entity_name] = raw_message
+
+                        # Only transform and send if we have messages from all sources
+                        if len(latest_messages) == {{ subscribe_ws_sources | length }}:
+                            # Transform combined messages through entity service
+                            # Pass dict mapping parent names to their raw messages
+                            transformed_message = subscribe_service._transform_entity(latest_messages)
+
+                            # Apply filters if specified
+                            {% if subscribe_filters %}
+                            if not message_matches_filters(transformed_message):
+                                continue  # Skip this message, doesn't match filters
+                            {% endif %}
+
+                            # Send to client - extract binary payload if present
+                            is_binary, payload = extract_binary_payload(transformed_message)
+                            if is_binary:
+                                await websocket.send_bytes(payload)
+                                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+                            else:
+                                await websocket.send_json(payload)
+                                logger.debug(f"Sent combined message to client: {{ subscribe_entity_name }}")
+            except Exception as e:
+                error_category = classify_error(e)
+                logger.error(f"Error in {source_name} subscription: {e} (category: {error_category.value})")
+                # Don't raise - let other sources continue working
+                # Send error to client but keep connection open
+                await WebSocketErrorHandler.send_error(
+                    websocket, e, error_category, logger, close_connection=False
+                )
+
+        # Run all subscriptions concurrently
+        await asyncio.gather(
+            {% for source, parent_entity in subscribe_ws_sources %}
+            subscribe_to_source("{{ source.name }}", {{ parent_entity.name | lower }}_source, "{{ parent_entity.name }}"){{ "," if not loop.last else "" }}
+            {% endfor %}
+        )
+        {% else %}
+        # Single WebSocket source
+        from app.sources.{{ subscribe_ws_source.name | lower }}_source import {{ subscribe_ws_source.name }}Source
+
+        source = {{ subscribe_ws_source.name }}Source()
+
+{% if has_subscribe_params %}
+        async for raw_message in source.subscribe(subscribe_params):
+{% else %}
+        async for raw_message in source.subscribe():
+{% endif %}
+            if raw_message is None:
+                continue
+
+            # Transform raw message through entity service
+            # Note: Binary messages are pre-wrapped by the source client
+            transformed_message = subscribe_service._transform_entity(raw_message)
+
+            # Apply filters if specified
+            {% if subscribe_filters %}
+            if not message_matches_filters(transformed_message):
+                continue  # Skip this message, doesn't match filters
+            {% endif %}
+
+            # Send to client - extract binary payload if present
+            is_binary, payload = extract_binary_payload(transformed_message)
+            if is_binary:
+                await websocket.send_bytes(payload)
+                logger.debug(f"Sent binary to client: {{ subscribe_entity_name }} ({len(payload)} bytes)")
+            else:
+                await websocket.send_json(payload)
+                logger.debug(f"Sent message to client: {{ subscribe_entity_name }}")
+        {% endif %}
+
+        {% elif has_publish %}
+        # Publish-only mode: Receive data from client and send to external target
+        # The service has the source to publish to
+
+        while True:
+            {% if has_auth and not publish_is_public %}
+            # Runtime check: Verify user has publish permissions
+            {% if publish_required_roles %}
+            # Role-based access: check roles
+            if not user or not user.has_any_role(publish_roles):
+                error_msg = "Publish operation requires authentication" if not user else f"User lacks required roles for publish: {publish_roles}"
+                logger.warning(f"Publish rejected: {error_msg}")
+                await WebSocketErrorHandler.send_error(
+                    websocket,
+                    Exception(error_msg),
+                    ErrorCategory.FORBIDDEN,
+                    logger,
+                    close_connection=True
+                )
+                break
+            {% else %}
+            # Auth-only: just check user is authenticated
+            if not user:
+                error_msg = "Publish operation requires authentication"
+                logger.warning(f"Publish rejected: {error_msg}")
+                await WebSocketErrorHandler.send_error(
+                    websocket,
+                    Exception(error_msg),
+                    ErrorCategory.FORBIDDEN,
+                    logger,
+                    close_connection=True
+                )
+                break
+            {% endif %}
+            {% endif %}
+
+            # Receive message based on content type
+            {% if publish_is_text %}
+            # Content type is text/plain - receive as text
+            raw_data = await websocket.receive_text()
+            logger.debug(f"Received text message from client: {raw_data}")
+            {% else %}
+            # Content type is application/json - receive as JSON
+            raw_data = await websocket.receive_json()
+            logger.debug(f"Received JSON message from client: {raw_data}")
+            {% endif %}
+
+            # Wrap primitive values for wrapper entities
+            {% if publish_entity_type in ["string", "number", "integer", "boolean", "array", "binary"] and publish_wrapper_key %}
+            # Parent entity is a primitive type - wrap in object with attribute name
+            data = {"{{ publish_wrapper_key }}": raw_data}
+            logger.debug(f"Wrapped primitive value: {data}")
+            {% else %}
+            # Parent entity is a full object, use as-is
+            data = raw_data
+            {% endif %}
+
+            # Transform through entity service
+            transformed_data = publish_service._transform_entity(data)
+            logger.debug(f"Transformed message: {transformed_data}")
+
+            # Publish to external WebSocket via service source
+{% if has_publish_params %}
+            await publish_service.source.publish(transformed_data, publish_params)
+{% else %}
+            await publish_service.source.publish(transformed_data)
+{% endif %}
+            logger.debug(f"Published to external WebSocket: {{ publish_entity_name }}")
+
+        {% endif %}
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from {{ ws_channel }}")
+    except ConnectionRefusedError as e:
+        await WebSocketErrorHandler.handle_connection_error(
+            websocket, e, logger, "{{ ws_channel }}"
+        )
+    except OSError as e:
+        # Handle network errors (DNS resolution, connection issues, etc.)
+        if "Name or service not known" in str(e) or "gaierror" in str(type(e).__name__):
+            await WebSocketErrorHandler.handle_connection_error(
+                websocket, e, logger, "external WebSocket source"
+            )
+        else:
+            await WebSocketErrorHandler.handle_processing_error(
+                websocket, e, logger, fatal=True
+            )
+    except Exception as e:
+        # Classify error and handle appropriately
+        error_category = classify_error(e)
+        await WebSocketErrorHandler.send_error(
+            websocket, e, error_category, logger, close_connection=True
+        )
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+        logger.info(f"Connection closed. Remaining connections: {len(active_connections)}")

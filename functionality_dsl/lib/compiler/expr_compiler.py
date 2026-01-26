@@ -279,14 +279,6 @@ def compile_expr_to_python(expr, validate_context=None) -> str:
                         args=[ast.Constant(value=member)],
                         keywords=[]
                     )
-                elif getattr(t, "param", None) is not None:
-                    # foo$paramName -> path parameter access: foo.get('paramName')
-                    param = t.param.name
-                    base = ast.Call(
-                        func=ast.Attribute(value=base, attr='get', ctx=ast.Load()),
-                        args=[ast.Constant(value=param)],
-                        keywords=[]
-                    )
                 elif getattr(t, "index", None) is not None:
                     # Handle IndexAccess: can be either index or slice
                     index_node = t.index

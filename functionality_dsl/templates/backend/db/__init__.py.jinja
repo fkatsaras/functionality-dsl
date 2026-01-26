@@ -1,0 +1,48 @@
+"""
+Database Package
+Auto-generated from FDSL Auth configuration
+
+{% if uses_default_db %}
+Uses default FDSL database with SQLModel + PostgreSQL.
+{% else %}
+Connects to external database (BYODB): {{ authdb.table }}
+{% endif %}
+"""
+
+from app.db.database import (
+    get_db,
+    init_db,
+    engine,
+    SessionLocal,
+    User,
+    USER_ID_COLUMN,
+    USER_PASSWORD_COLUMN,
+    USER_ROLE_COLUMN,
+)
+from app.db.password import hash_password, verify_password
+
+{% if needs_apikeys_table %}
+from app.db.database import (
+    APIKey,
+    APIKEY_KEY_COLUMN,
+    APIKEY_USER_ID_COLUMN,
+)
+{% endif %}
+
+__all__ = [
+    "get_db",
+    "init_db",
+    "engine",
+    "SessionLocal",
+    "User",
+    "USER_ID_COLUMN",
+    "USER_PASSWORD_COLUMN",
+    "USER_ROLE_COLUMN",
+    "hash_password",
+    "verify_password",
+{% if needs_apikeys_table %}
+    "APIKey",
+    "APIKEY_KEY_COLUMN",
+    "APIKEY_USER_ID_COLUMN",
+{% endif %}
+]

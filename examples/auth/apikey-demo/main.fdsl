@@ -1,0 +1,84 @@
+// =============================================================================
+// API Key Authentication Demo
+// =============================================================================
+// Demonstrates API key authentication with JSONPlaceholder as backend.
+//
+// API Keys are configured via environment variable:
+//   API_KEYS=admin_key_123:admin,user_key_456:user,readonly_key_789:viewer
+//
+// Test with:
+//   curl -H "X-API-Key: admin_key_123" http://localhost:8000/api/post
+//   curl -H "X-API-Key: user_key_456" http://localhost:8000/api/post
+//   curl -H "X-API-Key: invalid_key" http://localhost:8000/api/post  # Should fail
+
+// Auth mechanism
+Auth<apikey> APIKeyAuth
+  in: header
+  name: "X-API-Key"
+end
+
+// Roles belong to the auth mechanism
+Role admin uses APIKeyAuth
+Role user uses APIKeyAuth
+Role viewer uses APIKeyAuth
+
+// Server config (no auth reference needed)
+Server APIKeyDemo
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// JSONPlaceholder Sources
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{id}"
+  params: [id]
+  operations: [read, create, update, delete]
+end
+
+Source<REST> UsersAPI
+  url: "https://jsonplaceholder.typicode.com/users/{id}"
+  params: [id]
+  operations: [read]
+end
+
+Source<REST> CommentsAPI
+  url: "https://jsonplaceholder.typicode.com/comments"
+  params: [postId]
+  operations: [read]
+end
+
+// Entities with different access levels
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64>;
+    - title: string;
+    - body: string;
+  access:
+    read: public              // Anyone can read posts
+    create: [admin, user]     // Admin and user can create
+    update: [admin, user]     // Admin and user can update
+    delete: [admin]           // Only admin can delete
+end
+
+Entity User
+  source: UsersAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - name: string @readonly;
+    - username: string @readonly;
+    - email: string @readonly;
+    - phone: string @readonly;
+    - website: string @readonly;
+  access: public              // User info is public (read-only)
+end
+
+Entity Comments
+  source: CommentsAPI
+  attributes:
+    - comments: array;
+  access: APIKeyAuth          // Must have valid API key, any role
+end

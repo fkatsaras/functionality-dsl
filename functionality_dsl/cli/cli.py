@@ -14,9 +14,11 @@ from plantuml import PlantUML
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
 from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
+from functionality_dsl.api.generators.core.database_generator import get_database_context
 from functionality_dsl.language import build_model
-from functionality_dsl.utils import print_model_debug
 from functionality_dsl.language import THIS_DIR as PKG_DIR
+from functionality_dsl.transformers import transform_openapi_to_fdsl
+from textx import get_children_of_type
 
 pretty.install()
 console = Console()
@@ -25,6 +27,29 @@ def make_executable(path: str):
     mode = os.stat(path).st_mode
     mode |= (mode & 0o444) >> 2
     os.chmod(path, mode)
+
+
+def extract_source_auth_secrets(model):
+    """
+    Extract auth secrets from sources that reference Auth with secret field.
+
+    Returns list of env var names for source auth (e.g., ["FINNHUB_API_KEY"])
+    """
+    secrets = set()
+
+    # Get all REST and WS sources
+    rest_sources = get_children_of_type("SourceREST", model)
+    ws_sources = get_children_of_type("SourceWS", model)
+
+    for source in list(rest_sources) + list(ws_sources):
+        auth = getattr(source, "auth", None)
+        if auth:
+            # Check if auth has a secret field (source-level auth)
+            secret = getattr(auth, "secret", None)
+            if secret:
+                secrets.add(secret)
+
+    return list(secrets)
 
 def typespec_to_string(type_spec) -> str:
     """
@@ -140,7 +165,66 @@ def safe_label(text: str, max_len=50, escape_angles=True):
 
     return text
 
-    
+
+def _visualize_metamodel(context, grammar_path, output_dir, engine):
+    """
+    Visualize a TextX grammar metamodel (advanced use case).
+    """
+    try:
+        gpath = Path(grammar_path).resolve()
+        out_dir = Path(output_dir).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build the meta-model
+        mm = metamodel_from_file(str(gpath))
+
+        stem = gpath.stem
+        base_name = f"{stem}_metamodel"
+
+        if engine == "dot":
+            dot_file = out_dir / f"{base_name}.dot"
+            png_file = out_dir / f"{base_name}.png"
+
+            metamodel_export(mm, str(dot_file))
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering metamodel with GraphViz...", style="blue")
+
+            exit_status = os.system(f"dot -Tpng {dot_file} -o {png_file}")
+            if exit_status != 0:
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] GraphViz rendering failed.", style="red")
+                context.exit(1)
+
+            dot_file.unlink(missing_ok=True)
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel diagram: {png_file}", style="green")
+
+        elif engine == "plantuml":
+            pu_file = out_dir / f"{base_name}.puml"
+            svg_file = out_dir / f"{base_name}.svg"
+            png_file = out_dir / f"{base_name}_plant.png"
+
+            metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering metamodel with PlantUML...", style="blue")
+
+            exit_status = os.system(f"plantuml -Tsvg -o . {pu_file}")
+            if exit_status != 0:
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML failed to render.", style="red")
+                context.exit(1)
+
+            if not svg_file.exists():
+                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML produced no SVG output.", style="red")
+                context.exit(1)
+
+            os.system(f"convert -background white -flatten {svg_file} {png_file}")
+            pu_file.unlink(missing_ok=True)
+            svg_file.unlink(missing_ok=True)
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel diagram: {png_file}", style="green")
+
+        context.exit(0)
+
+    except Exception as e:
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Metamodel visualization failed: {e}", style="red")
+        context.exit(1)
+
+
 @click.group()
 @click.pass_context
 def cli(context):
@@ -159,20 +243,6 @@ def validate(context, model_path):
     else:
         context.exit(0)
         
-@cli.command("inspect", help="Parse and print a summary of the model (routes, actions, shapes).")
-@click.pass_context
-@click.argument("model_path")
-def inspect_cmd(context, model_path):
-    try:
-        model = build_model(model_path)
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Model validation success!", style='green')
-        print_model_debug(model)
-    except Exception as e:
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Inspect failed with error(s): {e}", style='red')
-        context.exit(1)
-    else:
-        context.exit(0)
-
 @cli.command("generate", help="Emit a runnable project (backend, frontend, or both).")
 @click.pass_context
 @click.argument("model_path")
@@ -188,14 +258,44 @@ def generate(context, model_path, target, out_dir):
         model = build_model(model_path)
         out_path = Path(out_dir).resolve()
 
+        # Generate JWT secret once for both backend and frontend
+        from functionality_dsl.api.generators.core.infrastructure import generate_random_secret
+        from functionality_dsl.api.extractors import extract_server_config
+
+        server_config = extract_server_config(model)
+        jwt_secret_value = None
+        jwt_secret_var = None
+
+        auth_config = server_config.get("auth")
+        if auth_config and auth_config.get("type") == "jwt":
+            jwt_config = auth_config.get("jwt", {})
+            if jwt_config.get("secret"):
+                jwt_secret_var = jwt_config["secret"]
+                jwt_secret_value = generate_random_secret(32)
+                # Store in server_config so backend can use it
+                server_config["jwt_secret_var"] = jwt_secret_var
+                server_config["jwt_secret_value"] = jwt_secret_value
+
         if target in ("all", "backend"):
             base_backend_dir = Path(PKG_DIR) / "base" / "backend"
             templates_backend_dir = Path(PKG_DIR) / "templates" / "backend"
+
+            # Get database context for infrastructure templates
+            db_context = get_database_context(model)
+
+            # Extract source auth secrets (env vars for external API auth)
+            source_auth_secrets = extract_source_auth_secrets(model)
+            if source_auth_secrets:
+                db_context["source_auth_env_vars"] = source_auth_secrets
+
             scaffold_backend_from_model(
                 model,
                 base_backend_dir=base_backend_dir,
                 templates_backend_dir=templates_backend_dir,
                 out_dir=out_path,
+                jwt_secret_value=jwt_secret_value,
+                db_context=db_context,
+                target=target,
             )
             render_domain_files(model, templates_backend_dir, out_path)
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Backend emitted to: {out_path}", style="green")
@@ -209,391 +309,399 @@ def generate(context, model_path, target, out_dir):
                 base_frontend_dir=base_frontend_dir,
                 templates_frontend_dir=templates_frontend_dir,
                 out_dir=out_path / "frontend",
+                jwt_secret_value=jwt_secret_value,
             )
             # then write generated components
             render_frontend_files(model, templates_frontend_dir, out_path / "frontend")
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Frontend emitted to: {out_path / 'frontend'}", style="green")
 
     except Exception as e:
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Generate failed with error(s): {e}", style="red")
+        import traceback
+    
+        console.print(
+            f"[{date.today().strftime('%Y-%m-%d')}] Generate failed with error(s): {e}",
+            style="red",
+        )
+
+        tb_lines = traceback.format_exc().splitlines()
+        last_lines = tb_lines[-50:]
+
+        console.print("\n".join(last_lines), style="red")
+
         context.exit(1)
     else:
         context.exit(0)
         
-@cli.command("visualize", help="Generate a metamodel diagram using GraphViz or PlantUML")
-@click.pass_context
-@click.argument("grammar_path")
-@click.option(
-    "--engine",
-    type=click.Choice(["dot", "plantuml"], case_sensitive=False),
-    default="dot",
-    help="Select visualization engine: dot (GraphViz) or plantuml"
-)
-def visualize_cmd(context, grammar_path, engine):
-    """
-    Docstring for visualize_cmd
-    
-    :param context: click execution context
-    :param grammar_path: The path to the TextX grammar file
-    :param engine: Description
-    """
-    try:
-        gpath = Path(grammar_path).resolve()
-
-        # Output directory
-        out_dir = Path("docs").resolve()
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build the meta-model
-        mm = metamodel_from_file(str(gpath))
-
-        # plantuml + dot require different intermediate formats
-        stem = gpath.stem
-        base_name = f"{stem}_metamodel"
-
-        # ------------------------------------------------------------------
-        # ENGINE: GraphViz (dot)
-        # ------------------------------------------------------------------
-        if engine == "dot":
-            dot_file = out_dir / f"{base_name}.dot"
-            png_file = out_dir / f"{base_name}.png"
-
-            metamodel_export(mm, str(dot_file))
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering with GraphViz...", style="blue")
-
-            exit_status = os.system(f"dot -Tpng {dot_file} -o {png_file}")
-
-            if exit_status != 0:
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] GraphViz rendering failed.", style="red")
-                context.exit(1)
-
-            dot_file.unlink(missing_ok=True)
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Diagram written to: {png_file}", style="green")
-            context.exit(0)
-
-        # ------------------------------------------------------------------
-        # ENGINE: PlantUML (local)
-        # ------------------------------------------------------------------
-        elif engine == "plantuml":
-            pu_file = out_dir / f"{base_name}.puml"
-            svg_file = out_dir / f"{base_name}.svg"
-            png_file = out_dir / f"{base_name}_plant.png"
-
-            metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering with PlantUML...", style="blue")
-
-            # Ensure PlantUML writes SVG into docs/ by using -o relative path
-            # PlantUML expects *folder name*, not full path
-            exit_status = os.system(f"plantuml -Tsvg -o . {pu_file}")
-
-            if exit_status != 0:
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML failed to render.", style="red")
-                context.exit(1)
-
-            # Check if SVG now exists
-            if not svg_file.exists():
-                console.print(f"[{date.today().strftime('%Y-%m-%d')}] PlantUML produced no SVG output.", style="red")
-                context.exit(1)
-
-            # Convert SVG → PNG
-            os.system(f"convert -background white -flatten {svg_file} {png_file}")
-
-            # Cleanup
-            pu_file.unlink(missing_ok=True)
-            svg_file.unlink(missing_ok=True)
-
-            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Diagram written to: {png_file}", style="green")
-            context.exit(0)
-
-    except Exception as e:
-        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Visualization failed with: {e}", style="red")
-        context.exit(1)
-
-@cli.command("visualize-model", help="Visualize an FDSL model (not the metamodel).")
+@cli.command("visualize", help="Visualize an FDSL model as a diagram.")
 @click.pass_context
 @click.argument("model_path")
 @click.option("--output", "-o", "output_dir", default="docs", help="Output directory for PNG/DOT files (default: docs)")
-def visualize_model_cmd(context, model_path, output_dir):
+@click.option("--no-components", "-nc", is_flag=True, help="Hide UI components from the diagram")
+@click.option("--metamodel", is_flag=True, help="Visualize the grammar metamodel instead of an FDSL model (advanced)")
+@click.option("--engine", type=click.Choice(["dot", "plantuml"], case_sensitive=False), default="dot", help="Rendering engine for metamodel visualization")
+def visualize_cmd(context, model_path, output_dir, no_components, metamodel, engine):
     """
-    Build a GraphViz diagram of the *model instance*:
-    - Servers
-    - Entities
-    - Endpoints (REST + WS)
-    - Components
-    - Sources
+    Build a GraphViz diagram of an FDSL model:
+    - Server configuration
+    - REST Sources (Source<REST>)
+    - WS Sources (Source<WS>)
+    - Entities (base and composite)
+    - Generated API endpoints
+    - Components (use --no-components to hide)
+
+    Use --metamodel to visualize the TextX grammar metamodel instead (advanced).
     """
+    # Handle metamodel visualization (special case)
+    if metamodel:
+        _visualize_metamodel(context, model_path, output_dir, engine)
+        return
     from graphviz import Digraph
+
+    def get_source_operations(source):
+        """Extract operations list from a source."""
+        ops_obj = getattr(source, 'operations', None)
+        if ops_obj:
+            return getattr(ops_obj, 'operations', [])
+        return []
+
     try:
         model = build_model(model_path)
 
+        show_components = not no_components
+
         dot = Digraph(comment="FDSL Model")
         dot.attr(rankdir="LR", fontsize="10", fontname="Arial")
-        # Improve graph layout to show all connections clearly
-        dot.attr(nodesep="0.5", ranksep="1.0")
-        # Make edge labels more visible
+        dot.attr(nodesep="0.6", ranksep="1.2")
         dot.attr('edge', fontsize="9")
 
         # -------------------------------
-        # Servers
+        # Auth<type> mechanisms
+        # -------------------------------
+        for a in model.auth:
+            # Get auth type from class name (AuthJWT -> jwt, AuthSession -> session, etc.)
+            class_name = a.__class__.__name__
+            if class_name.startswith("Auth"):
+                auth_type = class_name[4:].lower()  # AuthJWT -> jwt
+            else:
+                auth_type = "unknown"
+            label = f"AUTH<{auth_type}>\\n{a.name}"
+            dot.node(f"auth_{a.name}", label=label,
+                     shape="box", style="filled,rounded", fillcolor="#ffcc80")
+
+        # -------------------------------
+        # Roles (with 'uses' relationship to Auth)
+        # -------------------------------
+        for role in model.roles:
+            auth_ref = getattr(role, "auth", None)
+            label = f"ROLE\\n{role.name}"
+            dot.node(f"role_{role.name}", label=label,
+                     shape="box", style="filled,rounded", fillcolor="#fff9c4")
+
+            # Edge: Role -> Auth (uses relationship)
+            if auth_ref:
+                dot.edge(f"role_{role.name}", f"auth_{auth_ref.name}",
+                         label="uses", style="dashed", color="#ff9800")
+
+        # -------------------------------
+        # Server (record shape with sections)
         # -------------------------------
         for s in model.servers:
-            label_text = (
-                f"[SERVER]\\n"
-                f"{safe_label(s.name)}\\n"
-                f"host={safe_label(s.host)}\\n"
-                f"port={safe_label(s.port)}"
-            )
-            dot.node(
-                f"server_{s.name}",
-                label=label_text,
-                shape="box", style="filled", fillcolor="#bbdefb"
-            )
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"host: {s.host}\\lport: {s.port}\\l"
+            label = f"«server»\\n{s.name}|{attrs}"
+            dot.node(f"server_{s.name}", label=label,
+                     shape="record", style="filled", fillcolor="#bbdefb")
 
         # -------------------------------
-        # Entities
-        # -------------------------------
-        for e in model.entities:
-            # Collect attributes safely - convert TypeSpec and Expr AST to strings
-            attrs_lines = []
-            for a in e.attributes:
-                # Convert TypeSpec AST to readable string (don't escape < > in types)
-                type_text = safe_label(typespec_to_string(a.type), escape_angles=False)
-
-                if hasattr(a, "expr") and a.expr:
-                    # Convert Expression AST to readable string (ESCAPE angles in expressions!)
-                    expr_text = safe_label(expr_to_string(a.expr, max_len=40), escape_angles=True)
-                    attrs_lines.append(f"{safe_label(a.name, escape_angles=False)}: {type_text} = {expr_text}")
-                else:
-                    attrs_lines.append(f"{safe_label(a.name, escape_angles=False)}: {type_text}")
-
-            attrs = "\\n".join(attrs_lines)  # Newline inside a DOT record
-
-            # Build label content - use plain text, not HTML-like labels
-            # The format is:  [ENTITY] Name\nattributes...
-            node_label = f"[ENTITY]\\n{safe_label(e.name, escape_angles=False)}\\n{attrs}"
-
-            dot.node(
-                f"entity_{e.name}",
-                label=node_label,  # Use label parameter explicitly
-                shape="box", fillcolor="#c8e6c9", style="filled,rounded",
-                fontcolor="black",  # Ensure text is visible on green background
-                fontsize="10"  # Explicit font size for readability
-            )
-
-            # Inheritance - use 'parents' not 'super' (entities can have multiple parents)
-            parents = getattr(e, "parents", []) or []
-            for parent in parents:
-                dot.edge(
-                    f"entity_{parent.name}",
-                    f"entity_{e.name}",
-                    label="extends"
-                )
-
-        # -------------------------------
-        # REST Endpoints
-        # -------------------------------
-        for ep in model.apirest:
-            node_label = (
-                f"[REST]\\n"
-                f"{safe_label(ep.name)}\\n"
-                f"{safe_label(ep.method)} {safe_label(ep.path)}"
-            )
-            dot.node(
-                f"rest_{ep.name}",
-                label=node_label,
-                shape="box", fillcolor="#ffe0b2", style="filled"
-            )
-
-            # Add edge from endpoint to response entity
-            response = getattr(ep, "response", None)
-            if response:
-                schema = getattr(response, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"rest_{ep.name}",
-                            f"entity_{entity.name}",
-                            label="response",
-                            color="#ff6f00"
-                        )
-
-            # Add edge from request entity to endpoint
-            request = getattr(ep, "request", None)
-            if request:
-                schema = getattr(request, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"entity_{entity.name}",
-                            f"rest_{ep.name}",
-                            label="request",
-                            color="#1976d2"
-                        )
-
-        # -------------------------------
-        # WS Endpoints
-        # -------------------------------
-        for ep in model.apiws:
-            # EndpointWS uses 'path' attribute (not 'channel')
-            ws_path = getattr(ep, "path", getattr(ep, "channel", ""))
-            node_label = (
-                f"[WS]\\n"
-                f"{safe_label(ep.name)}\\n"
-                f"path={safe_label(ws_path)}"
-            )
-            dot.node(
-                f"ws_{ep.name}",
-                label=node_label,
-                shape="box", fillcolor="#ffccbc", style="filled"
-            )
-
-            # Subscribe block (server -> client, so endpoint -> entity)
-            subscribe = getattr(ep, "subscribe", None)
-            if subscribe:
-                message = getattr(subscribe, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"ws_{ep.name}",
-                            f"entity_{entity.name}",
-                            label="subscribe",
-                            color="#ff6f00"
-                        )
-
-            # Publish block (client -> server, so entity -> endpoint)
-            publish = getattr(ep, "publish", None)
-            if publish:
-                message = getattr(publish, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"entity_{entity.name}",
-                            f"ws_{ep.name}",
-                            label="publish",
-                            color="#1976d2"
-                        )
-
-        # -------------------------------
-        # Components
-        # -------------------------------
-        for c in model.components:
-            node_label = (
-                f"[COMPONENT]\\n"
-                f"{safe_label(c.name)}"
-            )
-            dot.node(
-                f"comp_{c.name}",
-                label=node_label,
-                shape="ellipse", fillcolor="#f8bbd0", style="filled"
-            )
-
-            if getattr(c, "endpoint", None):
-                ep = c.endpoint
-                if ep.__class__.__name__ == "EndpointWS":
-                    target = f"ws_{ep.name}"
-                else:
-                    target = f"rest_{ep.name}"
-                dot.edge(
-                    f"comp_{c.name}",
-                    target,
-                    label="endpoint"
-                )
-
-        # -------------------------------
-        # External Sources (REST)
+        # REST Sources (Source<REST>)
         # -------------------------------
         for s in model.externalrest:
-            node_label = (
-                f"[SOURCE REST]\\n"
-                f"{safe_label(s.name)}\\n"
-                f"{safe_label(s.url)}"
-            )
-            dot.node(
-                f"extrest_{s.name}",
-                label=node_label,
-                shape="note", fillcolor="#d1c4e9", style="filled"
-            )
+            url = getattr(s, "url", "")
+            ops = get_source_operations(s)
+            ops_str = ", ".join(ops) if ops else "none"
+            source_auth = getattr(s, "auth", None)
+            # Get params if defined
+            params_obj = getattr(s, "params", None)
+            params_list = getattr(params_obj, "params", []) if params_obj else []
+            params_str = ", ".join(params_list) if params_list else None
 
-            # Add edge from source to response entity
-            response = getattr(s, "response", None)
-            if response:
-                schema = getattr(response, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"extrest_{s.name}",
-                            f"entity_{entity.name}",
-                            label="provides",
-                            color="#7b1fa2",
-                            style="dashed"
-                        )
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"url: {safe_label(url, 40)}\\loperations: {ops_str}\\l"
+            if params_str:
+                attrs += f"params: {params_str}\\l"
+            label = f"«source» REST\\n{s.name}|{attrs}"
+            dot.node(f"source_{s.name}", label=label,
+                     shape="record", style="filled", fillcolor="#d1c4e9")
 
-            # Add edge from request entity to source (for mutations)
-            request = getattr(s, "request", None)
-            if request:
-                schema = getattr(request, "schema", None)
-                if schema:
-                    entity = getattr(schema, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"entity_{entity.name}",
-                            f"extrest_{s.name}",
-                            label="sends",
-                            color="#7b1fa2",
-                            style="dashed"
-                        )
+            # Edge: Source -> Auth (if source has auth configured)
+            if source_auth:
+                dot.edge(f"source_{s.name}", f"auth_{source_auth.name}",
+                         label="auth", style="dotted", color="#ff9800")
 
         # -------------------------------
-        # External Sources (WS)
+        # WS Sources (Source<WS>)
         # -------------------------------
         for s in model.externalws:
-            node_label = (
-                f"[SOURCE WS]\\n"
-                f"{safe_label(s.name)}\\n"
-                f"{safe_label(s.url)}"
-            )
-            dot.node(
-                f"extws_{s.name}",
-                label=node_label,
-                shape="note", fillcolor="#b39ddb", style="filled"
-            )
+            # Grammar stores 'channel' value in 'url' attribute
+            channel = getattr(s, "url", "")
+            ops = get_source_operations(s)
+            ops_str = ", ".join(ops) if ops else "stream"
+            source_auth = getattr(s, "auth", None)
+            # Get params if defined
+            params_obj = getattr(s, "params", None)
+            params_list = getattr(params_obj, "params", []) if params_obj else []
+            params_str = ", ".join(params_list) if params_list else None
 
-            # Subscribe block (external source -> entity)
-            subscribe = getattr(s, "subscribe", None)
-            if subscribe:
-                message = getattr(subscribe, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"extws_{s.name}",
-                            f"entity_{entity.name}",
-                            label="streams",
-                            color="#7b1fa2",
-                            style="dashed"
-                        )
+            # Section 1: stereotype + name, Section 2: attributes
+            attrs = f"channel: {safe_label(channel, 40)}\\loperations: {ops_str}\\l"
+            if params_str:
+                attrs += f"params: {params_str}\\l"
+            label = f"«source» WS\\n{s.name}|{attrs}"
+            dot.node(f"source_{s.name}", label=label,
+                     shape="record", style="filled", fillcolor="#b39ddb")
 
-            # Publish block (entity -> external source)
-            publish = getattr(s, "publish", None)
-            if publish:
-                message = getattr(publish, "message", None)
-                if message:
-                    entity = getattr(message, "entity", None)
-                    if entity:
-                        dot.edge(
-                            f"entity_{entity.name}",
-                            f"extws_{s.name}",
-                            label="sends",
-                            color="#7b1fa2",
-                            style="dashed"
-                        )
+            # Edge: Source -> Auth (if source has auth configured)
+            if source_auth:
+                dot.edge(f"source_{s.name}", f"auth_{source_auth.name}",
+                         label="auth", style="dotted", color="#ff9800")
+
+        # -------------------------------
+        # Entities (UML Class Diagram Style)
+        # -------------------------------
+        # First pass: identify schema-only entities (used in nested types)
+        schema_only_entities = set()
+        for e in model.entities:
+            for a in e.attributes:
+                type_spec = getattr(a, "type", None)
+                if type_spec:
+                    item_entity = getattr(type_spec, "itemEntity", None)
+                    nested_entity = getattr(type_spec, "nestedEntity", None)
+                    if item_entity:
+                        schema_only_entities.add(item_entity.name)
+                    if nested_entity:
+                        schema_only_entities.add(nested_entity.name)
+
+        for e in model.entities:
+            parents = getattr(e, "parents", []) or []
+            is_composite = len(parents) > 0
+            entity_type = getattr(e, "flow", None)  # inbound/outbound for WS
+            is_schema_only = e.name in schema_only_entities and not getattr(e, "source", None) and not getattr(e, "access", None)
+
+            # Collect attributes and nested entity references
+            attrs_lines = []
+            nested_entity_refs = []  # Track for drawing edges
+            for a in e.attributes:
+                type_text = typespec_to_string(a.type)
+                # Escape angle brackets in type text for record shapes (e.g., integer<int64> -> integer\<int64\>)
+                type_text_escaped = safe_label(type_text, max_len=100, escape_angles=True)
+                if hasattr(a, "expr") and a.expr:
+                    expr_text = expr_to_string(a.expr, max_len=30)
+                    attrs_lines.append(f"+ {a.name}: {type_text_escaped} = {safe_label(expr_text, 30)}\\l")
+                else:
+                    attrs_lines.append(f"+ {a.name}: {type_text_escaped}\\l")
+
+                # Track nested entity refs for edges
+                type_spec = getattr(a, "type", None)
+                if type_spec:
+                    item_entity = getattr(type_spec, "itemEntity", None)
+                    nested_entity = getattr(type_spec, "nestedEntity", None)
+                    if item_entity:
+                        nested_entity_refs.append((a.name, item_entity.name, "array"))
+                    if nested_entity:
+                        nested_entity_refs.append((a.name, nested_entity.name, "object"))
+
+            attrs = "".join(attrs_lines)
+
+            # Get access control (handles new multi-auth syntax)
+            access = getattr(e, "access", None)
+            access_roles_list = []
+            access_auth_list = []
+            if access:
+                access_public = getattr(access, "public_keyword", None)
+                access_items = getattr(access, "access_items", None)
+                access_rules = getattr(access, "access_rules", None)
+                auth_ref = getattr(access, "auth_ref", None)
+
+                if access_public:
+                    access_str = "public"
+                elif auth_ref:
+                    # Auth-only access: access: AuthName
+                    access_str = auth_ref.name
+                    access_auth_list.append(auth_ref.name)
+                elif access_items:
+                    # List access: access: [admin, APIKeyAuth, user]
+                    items = []
+                    for item in access_items:
+                        role = getattr(item, "role", None)
+                        auth = getattr(item, "auth", None)
+                        if role:
+                            items.append(role.name)
+                            access_roles_list.append(role.name)
+                        elif auth:
+                            items.append(auth.name)
+                            access_auth_list.append(auth.name)
+                    access_str = ", ".join(items)
+                elif access_rules:
+                    # Per-operation access: read: public create: [admin]
+                    rule_strs = []
+                    for rule in access_rules:
+                        op = getattr(rule, "operation", "?")
+                        rule_public = getattr(rule, "public_keyword", None)
+                        rule_items = getattr(rule, "access_items", None)
+                        rule_auth = getattr(rule, "auth_ref", None)
+                        if rule_public:
+                            rule_strs.append(f"{op}: public")
+                        elif rule_auth:
+                            rule_strs.append(f"{op}: {rule_auth.name}")
+                            access_auth_list.append(rule_auth.name)
+                        elif rule_items:
+                            names = []
+                            for item in rule_items:
+                                role = getattr(item, "role", None)
+                                auth = getattr(item, "auth", None)
+                                if role:
+                                    names.append(role.name)
+                                    access_roles_list.append(role.name)
+                                elif auth:
+                                    names.append(auth.name)
+                                    access_auth_list.append(auth.name)
+                            rule_strs.append(f"{op}: [{', '.join(names)}]")
+                    access_str = " / ".join(rule_strs)
+                else:
+                    access_str = "public"
+            else:
+                access_str = "public"
+
+            # Determine stereotype and fill color based on entity type
+            if entity_type == "inbound":
+                stereotype = "«inbound»"
+                fillcolor = "#fff3e0"
+            elif entity_type == "outbound":
+                stereotype = "«outbound»"
+                fillcolor = "#fce4ec"
+            elif is_composite:
+                stereotype = "«composite»"
+                fillcolor = "#c8e6c9"
+            else:
+                stereotype = None
+                fillcolor = "#c8e6c9"
+
+            # Build UML record-style label with vertical compartments
+            # With rankdir=LR, removing outer braces makes compartments stack vertically
+            if stereotype:
+                header = f"{stereotype}\\n{e.name}"
+            else:
+                header = e.name
+
+            # UML record label format: header|attributes|metadata (no outer braces for vertical)
+            label = f"{header}|{attrs}|access: {access_str}\\l"
+
+            dot.node(f"entity_{e.name}", label=label,
+                     shape="record", style="filled", fillcolor=fillcolor)
+
+            # Edge: Source -> Entity (UML dependency - dashed with open arrow)
+            entity_source = getattr(e, "source", None)
+            if entity_source:
+                dot.edge(f"source_{entity_source.name}", f"entity_{e.name}",
+                         label="«provides»", style="dashed", arrowhead="vee", color="#7b1fa2")
+
+            # Edge: Parent -> Composite Entity (UML composition - filled diamond)
+            for parent in parents:
+                parent_entity = getattr(parent, "entity", parent)
+                parent_name = parent_entity.name if hasattr(parent_entity, "name") else str(parent_entity)
+                dot.edge(f"entity_{parent_name}", f"entity_{e.name}",
+                         label="1", arrowtail="diamond", arrowhead="none", dir="back", color="#1976d2")
+
+            # Edge: Entity -> Nested Entity (UML aggregation/composition)
+            for attr_name, nested_name, ref_type in nested_entity_refs:
+                if ref_type == "array":
+                    # Aggregation with multiplicity 1..*
+                    dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
+                             label="1..*", arrowtail="odiamond", arrowhead="none", dir="back", color="#4caf50")
+                else:
+                    # Composition with multiplicity 1
+                    dot.edge(f"entity_{e.name}", f"entity_{nested_name}",
+                             label="1", arrowtail="diamond", arrowhead="none", dir="back", color="#4caf50")
+
+            # Edge: Role -> Entity (for role-based access)
+            for role_name in access_roles_list:
+                dot.edge(f"role_{role_name}", f"entity_{e.name}",
+                         arrowhead="vee", style="dashed", color="#f9a825")
+
+            # Edge: Auth -> Entity (for auth-ref access)
+            for auth_name in access_auth_list:
+                dot.edge(f"auth_{auth_name}", f"entity_{e.name}",
+                         arrowhead="vee", style="dashed", color="#ff9800")
+
+        # -------------------------------
+        # Generated REST API Endpoints (UML Interface)
+        # -------------------------------
+        for e in model.entities:
+            entity_source = getattr(e, "source", None)
+            if not entity_source:
+                continue
+
+            # Check if source is REST
+            is_rest_source = any(s.name == entity_source.name for s in model.externalrest)
+            if not is_rest_source:
+                continue
+
+            # Get operations from the source
+            ops = get_source_operations(entity_source)
+            if not ops:
+                continue
+
+            # Create REST API endpoint node (UML interface style with record shape)
+            api_path = f"/api/{e.name.lower()}"
+            ops_str = ", ".join(ops)
+            # UML interface: «interface» stereotype with operations (vertical layout)
+            label = f"«interface»\\nREST API|{api_path}\\l|{ops_str}\\l"
+            dot.node(f"api_{e.name}", label=label,
+                     shape="record", style="filled", fillcolor="#ffe0b2")
+
+            # Edge: Entity -> REST API (UML realization - dashed with empty triangle)
+            dot.edge(f"entity_{e.name}", f"api_{e.name}",
+                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
+
+        # -------------------------------
+        # Generated WS Endpoints (UML Interface)
+        # -------------------------------
+        for e in model.entities:
+            entity_type = getattr(e, "flow", None)
+
+            # WS entities need type: inbound or outbound
+            if entity_type not in ("inbound", "outbound"):
+                continue
+
+            # Create WS endpoint node (UML interface style)
+            ws_path = f"/ws/{e.name.lower()}"
+            direction = "subscribe" if entity_type == "inbound" else "publish"
+            # UML interface: «interface» stereotype with direction (vertical layout)
+            label = f"«interface»\\nWS API|{ws_path}\\l|{direction}\\l"
+            dot.node(f"ws_{e.name}", label=label,
+                     shape="record", style="filled", fillcolor="#ffccbc")
+
+            # Edge: Entity -> WS API (UML realization - dashed with empty triangle)
+            dot.edge(f"entity_{e.name}", f"ws_{e.name}",
+                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
+
+        # -------------------------------
+        # Components (UML Component notation)
+        # -------------------------------
+        if show_components:
+            for c in model.components:
+                comp_type = c.__class__.__name__.replace("Component", "")
+                # UML component: «component» stereotype (vertical layout)
+                label = f"«component»\\n{c.name}|type: {comp_type}\\l"
+                dot.node(f"comp_{c.name}", label=label,
+                         shape="record", style="filled", fillcolor="#f8bbd0")
+
+                # Edge: Component -> Entity (UML dependency)
+                entity_ref = getattr(c, "entity_ref", None) or getattr(c, "entity", None)
+                if entity_ref:
+                    entity_name = entity_ref.name if hasattr(entity_ref, "name") else str(entity_ref)
+                    dot.edge(f"comp_{c.name}", f"entity_{entity_name}",
+                             arrowhead="vee", style="dashed", color="#e91e63")
 
         # -------------------------------
         # Output
@@ -601,44 +709,148 @@ def visualize_model_cmd(context, model_path, output_dir):
         out_path = Path(output_dir).resolve()
         out_path.mkdir(exist_ok=True, parents=True)
 
-        # Create filename based on the input model file
-        model_name = Path(model_path).stem  # Get filename without extension
+        model_name = Path(model_path).stem
         file_base = out_path / f"{model_name}_diagram"
-
         png_file = Path(f"{file_base}.png")
         dot_file = Path(f"{file_base}.dot")
-        base_file = Path(f"{file_base}")  # graphviz creates a file without extension too
+        base_file = Path(f"{file_base}")
 
-        # Try to render PNG, but fallback to just saving .dot file if graphviz not installed
         try:
-            # Render with cleanup=False to keep the .dot file temporarily
             dot.render(str(file_base), format="png", cleanup=False)
-
-            # Delete temporary files after successful render (cleanup)
             if dot_file.exists():
                 dot_file.unlink()
             if base_file.exists():
                 base_file.unlink()
-
-            console.print(
-                f"[{date.today().strftime('%Y-%m-%d')}] Model visualization written to: {png_file}",
-                style="green"
-            )
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] Model diagram: {png_file}", style="green")
         except Exception:
-            # Fallback: save .dot file only if PNG generation fails
             dot.save(str(dot_file))
-            console.print(
-                f"[{date.today().strftime('%Y-%m-%d')}] GraphViz 'dot' executable not found. Saved DOT file to: {dot_file}",
-                style="yellow"
-            )
-            console.print(
-                f"To generate PNG: Install GraphViz (https://graphviz.org/download/) and run: dot -Tpng {dot_file} -o {png_file}",
-                style="yellow"
-            )
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] GraphViz not found. DOT file: {dot_file}", style="yellow")
+            console.print(f"Run: dot -Tpng {dot_file} -o {png_file}", style="yellow")
 
     except Exception as e:
+        import traceback
         console.print(f"visualize-model failed: {e}", style="red")
+        console.print(traceback.format_exc(), style="red")
         context.exit(1)
         
+def _detect_spec_type(file_path: Path) -> str:
+    """
+    Auto-detect whether a spec file is OpenAPI or AsyncAPI.
+
+    Returns:
+        "openapi" or "asyncapi"
+
+    Raises:
+        ValueError if spec type cannot be determined
+    """
+    import yaml
+    import json
+
+    content = file_path.read_text(encoding="utf-8")
+
+    # Parse the file
+    if file_path.suffix in (".yaml", ".yml"):
+        spec = yaml.safe_load(content)
+    elif file_path.suffix == ".json":
+        spec = json.loads(content)
+    else:
+        # Try YAML first, then JSON
+        try:
+            spec = yaml.safe_load(content)
+        except:
+            spec = json.loads(content)
+
+    if not isinstance(spec, dict):
+        raise ValueError("Invalid spec file: expected a dictionary/object at root")
+
+    # Check for AsyncAPI marker
+    if "asyncapi" in spec:
+        return "asyncapi"
+
+    # Check for OpenAPI marker
+    if "openapi" in spec or "swagger" in spec:
+        return "openapi"
+
+    # Heuristic: check for channels (AsyncAPI) vs paths (OpenAPI)
+    if "channels" in spec:
+        return "asyncapi"
+    if "paths" in spec:
+        return "openapi"
+
+    raise ValueError(
+        "Cannot determine spec type. Expected 'openapi', 'swagger', or 'asyncapi' "
+        "field in the spec, or 'paths' (OpenAPI) / 'channels' (AsyncAPI) sections."
+    )
+
+
+@cli.command("transform", help="Transform an OpenAPI/AsyncAPI spec to FDSL (auto-detects spec type)")
+@click.pass_context
+@click.argument("spec_path")
+@click.option("--out", "-o", "output_path", default=None, help="Output FDSL file path (default: print to stdout)")
+@click.option("--server-name", "-n", default=None, help="Override server name (default: from API title)")
+@click.option("--host", "-h", default="localhost", help="Server host (default: localhost)")
+@click.option("--port", "-p", default=8000, type=int, help="Server port (default: 8000)")
+def transform_cmd(context, spec_path, output_path, server_name, host, port):
+    """
+    Transform an OpenAPI or AsyncAPI specification to FDSL.
+
+    Automatically detects the spec type:
+    - OpenAPI 3.x / Swagger 2.x -> FDSL with REST sources
+    - AsyncAPI 2.x/3.x -> FDSL with WebSocket sources
+
+    Supports YAML (.yaml, .yml) and JSON (.json) spec files.
+
+    Examples:
+        fdsl transform api.yaml
+        fdsl transform api.yaml --out generated.fdsl
+        fdsl transform websocket-api.yaml --server-name MyWSAPI
+        fdsl transform petstore.json --port 3000
+    """
+    from ..transformers.asyncapi_to_fdsl import transform_asyncapi_to_fdsl
+
+    try:
+        spec_file = Path(spec_path).resolve()
+
+        if not spec_file.exists():
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] File not found: {spec_file}", style="red")
+            context.exit(1)
+
+        # Auto-detect spec type
+        spec_type = _detect_spec_type(spec_file)
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Detected spec type: {spec_type.upper()}", style="blue")
+
+        output_file = Path(output_path).resolve() if output_path else None
+
+        # Call appropriate transformer
+        if spec_type == "openapi":
+            fdsl_content = transform_openapi_to_fdsl(
+                openapi_path=spec_file,
+                output_path=output_file,
+                server_name=server_name,
+                host=host,
+                port=port,
+            )
+        else:  # asyncapi
+            fdsl_content = transform_asyncapi_to_fdsl(
+                asyncapi_path=spec_file,
+                output_path=output_file,
+                server_name=server_name,
+                host=host,
+                port=port,
+            )
+
+        if output_file:
+            console.print(f"[{date.today().strftime('%Y-%m-%d')}] FDSL written to: {output_file}", style="green")
+        else:
+            # Print to stdout
+            console.print(fdsl_content)
+
+    except Exception as e:
+        import traceback
+        console.print(f"[{date.today().strftime('%Y-%m-%d')}] Transform failed: {e}", style="red")
+        console.print(traceback.format_exc(), style="red")
+        context.exit(1)
+
+
 def main():
     cli(prog_name="fdsl")

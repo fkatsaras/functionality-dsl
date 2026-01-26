@@ -1,0 +1,130 @@
+// =============================================================================
+// HTTP Basic Authentication Demo
+// =============================================================================
+// Demonstrates HTTP Basic authentication with JSONPlaceholder as backend.
+//
+// Users are configured via environment variable:
+//   BASIC_AUTH_USERS=admin:admin123:admin,john:secret456:user,guest:guest789:viewer
+//
+// Test with:
+//   curl -u admin:admin123 http://localhost:8000/api/post
+//   curl -u john:secret456 http://localhost:8000/api/post
+//   curl -u invalid:wrong http://localhost:8000/api/post  # Should fail
+//
+// Or in browser - it will prompt for username/password
+
+// Auth mechanism
+Auth<http> BasicAuth
+  scheme: basic
+end
+
+// Roles belong to the auth mechanism
+Role admin uses BasicAuth
+Role user uses BasicAuth
+Role viewer uses BasicAuth
+
+// Server config (no auth reference needed)
+Server BasicAuthDemo
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// JSONPlaceholder Sources
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{id}"
+  params: [id]
+  operations: [read, create, update, delete]
+end
+
+Source<REST> TodosAPI
+  url: "https://jsonplaceholder.typicode.com/todos/{id}"
+  params: [id, userId]
+  operations: [read, create, update, delete]
+end
+
+Source<REST> AlbumsAPI
+  url: "https://jsonplaceholder.typicode.com/albums/{id}"
+  params: [id, userId]
+  operations: [read]
+end
+
+// Entities with different access levels
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64>;
+    - title: string;
+    - body: string;
+  access:
+    read: public              // Anyone can read posts
+    create: [admin, user]     // Admin and user can create
+    update: [admin, user]     // Admin and user can update
+    delete: [admin]           // Only admin can delete
+end
+
+Entity Todo
+  source: TodosAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64>;
+    - title: string;
+    - completed: boolean;
+  access:
+    read: BasicAuth           // Must be logged in to see todos
+    create: [admin, user]     // Admin and user can create
+    update: [admin, user]     // Admin and user can update
+    delete: [admin]           // Only admin can delete
+end
+
+Entity Album
+  source: AlbumsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64> @readonly;
+    - title: string @readonly;
+  access: [viewer, user, admin]  // Any authenticated user with a role can view
+end
+
+// Composite entity - combines Post and Todo data (read-only)
+Entity UserDashboard(Post, Todo)
+  attributes:
+    - postId: integer<int64> = Post.id;
+    - postTitle: string = Post.title;
+    - todoId: integer<int64> = Todo.id;
+    - todoTitle: string = Todo.title;
+    - todoCompleted: boolean = Todo.completed;
+    - summary: string = "Post: " + Post.title + " | Todo: " + Todo.title;
+  access: [admin, user]  // Only admin and user can see dashboard
+end
+
+// =============================================================================
+// UI Components - Table with CRUD Row Actions
+// =============================================================================
+
+// Post table with full CRUD operations (create/update/delete via row actions)
+// - Admin and user can create/update
+// - Only admin can delete
+// - Anyone can read (public)
+Component<Table> PostTable
+  entity: Post
+  colNames: ["id", "userId", "title", "body"]
+end
+
+// Todo table with CRUD operations
+// - Must be logged in to read
+// - Admin and user can create/update
+// - Only admin can delete
+Component<Table> TodoTable
+  entity: Todo
+  colNames: ["id", "userId", "title", "completed"]
+end
+
+// Album table (read-only - source only has read operation)
+// - Any authenticated user with a role can view
+Component<Table> AlbumTable
+  entity: Album
+  colNames: ["id", "userId", "title"]
+end

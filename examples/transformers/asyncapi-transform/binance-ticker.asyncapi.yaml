@@ -1,0 +1,90 @@
+asyncapi: 2.6.0
+info:
+  title: Binance Ticker WebSocket API
+  version: 1.0.0
+  description: Real-time cryptocurrency ticker from Binance public streams
+
+servers:
+  production:
+    url: stream.binance.com:9443
+    protocol: wss
+    description: Binance WebSocket stream server
+
+channels:
+  /ws/ethusdt@ticker:
+    description: ETH/USDT ticker stream
+    publish:
+      operationId: receiveEthTicker
+      summary: Receive ETH/USDT ticker updates
+      message:
+        name: TickerMessage
+        payload:
+          type: object
+          properties:
+            e:
+              type: string
+              description: Event type
+            E:
+              type: integer
+              format: int64
+              description: Event time
+            s:
+              type: string
+              description: Symbol
+            c:
+              type: string
+              description: Close price
+            o:
+              type: string
+              description: Open price
+            h:
+              type: string
+              description: High price
+            l:
+              type: string
+              description: Low price
+            v:
+              type: string
+              description: Volume
+            q:
+              type: string
+              description: Quote volume
+
+  /ws/btcusdt@ticker:
+    description: BTC/USDT ticker stream
+    publish:
+      operationId: receiveBtcTicker
+      summary: Receive BTC/USDT ticker updates
+      message:
+        name: TickerMessage
+        payload:
+          type: object
+          properties:
+            e:
+              type: string
+              description: Event type
+            E:
+              type: integer
+              format: int64
+              description: Event time
+            s:
+              type: string
+              description: Symbol
+            c:
+              type: string
+              description: Close price
+            o:
+              type: string
+              description: Open price
+            h:
+              type: string
+              description: High price
+            l:
+              type: string
+              description: Low price
+            v:
+              type: string
+              description: Volume
+            q:
+              type: string
+              description: Quote volume

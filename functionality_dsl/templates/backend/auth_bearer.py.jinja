@@ -1,0 +1,237 @@
+"""
+HTTP Bearer Authentication Module (DB-backed)
+Auto-generated from FDSL Auth<http> configuration with scheme: bearer
+
+Configuration:
+  Type: HTTP Bearer (token lookup)
+  Roles: {{ roles }}
+  Header: Authorization
+  Scheme: Bearer
+
+All tokens are stored in the database and looked up on each request.
+"""
+
+import logging
+from typing import List, Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.database import get_db
+{% if uses_default_db %}
+from app.db.models import Token
+{% else %}
+# BYODB mode - import from external database
+from app.db.models import Token
+{% endif %}
+
+
+logger = logging.getLogger("fdsl.auth.{{ auth_name }}")
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+# Declared roles from FDSL
+DECLARED_ROLES = {{ roles }}
+DECLARED_ROLES.append("public")  # Public is always allowed
+
+
+# ============================================================================
+# Security scheme
+# ============================================================================
+
+security = HTTPBearer(
+    scheme_name="bearer",
+    description="Bearer token in Authorization header"
+)
+
+
+# ============================================================================
+# Token Payload
+# ============================================================================
+
+class TokenPayload:
+    """Token payload with user info and roles"""
+
+    def __init__(self, user_id: str, roles: List[str], token: str):
+        self.user_id = user_id
+        self.roles = roles
+        self.token = token  # Original token for forwarding
+
+    def has_role(self, role: str) -> bool:
+        """Check if user has a specific role"""
+        return role in self.roles
+
+    def has_any_role(self, roles: List[str]) -> bool:
+        """Check if user has any of the specified roles"""
+        return any(self.has_role(role) for role in roles)
+
+
+# ============================================================================
+# Token verification (DB lookup)
+# ============================================================================
+
+async def verify_token(token: str, db: AsyncSession) -> TokenPayload:
+    """
+    Verify bearer token by looking it up in the database.
+
+    Args:
+        token: Bearer token string
+        db: Database session
+
+    Returns:
+        TokenPayload with user_id and roles
+
+    Raises:
+        HTTPException: If token is invalid or not found
+    """
+    # Look up token in database
+    result = await db.execute(
+        select(Token).where(Token.token == token, Token.is_active == True)
+    )
+    token_record = result.scalar_one_or_none()
+
+    if not token_record:
+        logger.warning(f"Invalid or inactive token attempted")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Parse roles (stored as comma-separated string or JSON)
+    roles = []
+    if token_record.roles:
+        if isinstance(token_record.roles, list):
+            roles = token_record.roles
+        elif isinstance(token_record.roles, str):
+            roles = [r.strip() for r in token_record.roles.split(",") if r.strip()]
+
+    logger.debug(f"Token verified for user: {token_record.user_id}, roles: {roles}")
+
+    return TokenPayload(
+        user_id=token_record.user_id,
+        roles=roles,
+        token=token
+    )
+
+
+# ============================================================================
+# FastAPI Dependencies
+# ============================================================================
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> TokenPayload:
+    """
+    Dependency to get current authenticated user from bearer token.
+
+    Usage:
+        @app.get("/protected")
+        async def protected_route(user: TokenPayload = Depends(get_current_user)):
+            return {"user_id": user.user_id, "roles": user.roles}
+    """
+    return await verify_token(credentials.credentials, db)
+
+
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[TokenPayload]:
+    """
+    Dependency to optionally get current user (doesn't fail if no token).
+
+    Usage:
+        @app.get("/public-or-protected")
+        async def route(user: Optional[TokenPayload] = Depends(get_optional_user)):
+            if user:
+                return {"message": f"Hello {user.user_id}"}
+            return {"message": "Hello anonymous"}
+    """
+    if credentials is None:
+        return None
+    return await verify_token(credentials.credentials, db)
+
+
+def require_roles(required_roles: List[str]):
+    """
+    Dependency factory to require specific roles.
+
+    Args:
+        required_roles: List of roles, user must have at least one
+                       Special values: "public" (no auth), "authenticated" (any valid auth)
+
+    Returns:
+        FastAPI dependency function
+
+    Usage:
+        @app.post("/admin-only", dependencies=[Depends(require_roles(["admin"]))])
+        async def admin_route():
+            return {"message": "Admin access granted"}
+    """
+    # Special case: public access (no auth required)
+    if "public" in required_roles:
+        async def _check_roles_or_public(
+            credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+            db: AsyncSession = Depends(get_db)
+        ):
+            """Check if user has required roles OR allow public access"""
+            if credentials is None:
+                return None
+
+            user = await verify_token(credentials.credentials, db)
+            if not user.has_any_role(required_roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+                )
+            return user
+
+        return _check_roles_or_public
+
+    # Special case: authenticated (any valid auth, no role check)
+    if "authenticated" in required_roles:
+        async def _check_authenticated(user: TokenPayload = Depends(get_current_user)):
+            """Require valid authentication, no role check"""
+            return user
+
+        return _check_authenticated
+
+    async def _check_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has required roles"""
+        if not user.has_any_role(required_roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of: {required_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_roles
+
+
+def require_all_roles(required_roles: List[str]):
+    """
+    Dependency factory to require ALL specified roles (not just one).
+
+    Args:
+        required_roles: List of roles, user must have ALL of them
+
+    Returns:
+        FastAPI dependency function
+    """
+    async def _check_all_roles(user: TokenPayload = Depends(get_current_user)):
+        """Check if user has all required roles"""
+        missing_roles = [role for role in required_roles if not user.has_role(role)]
+        if missing_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required roles: {missing_roles}. Your roles: {user.roles}"
+            )
+        return user
+
+    return _check_all_roles

@@ -23,10 +23,20 @@ export default defineConfig({
       clientPort: 5173, // browser connects to this port from host
     },
     proxy: {
-      // Proxy API endpoints to backend (excludes frontend routes)
-      // Matches: /products, /cart/*, /ws/*, /api/*, etc.
-      // Excludes: /, /_app/*, /src/*, /node_modules/*, etc.
-      '^/(products|cart|ws|api)': {
+      // Proxy /api/* to backend
+      '/api': {
+        target,
+        changeOrigin: true,
+        secure: false,
+      },
+      // Proxy /auth/* to backend (login, logout, me)
+      '/auth': {
+        target,
+        changeOrigin: true,
+        secure: false,
+      },
+      // Proxy /ws/* to backend (WebSocket endpoints)
+      '/ws': {
         target,
         changeOrigin: true,
         secure: false,

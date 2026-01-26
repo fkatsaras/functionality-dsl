@@ -1,0 +1,18 @@
+<Map
+  name="{{ common.name }}"
+  streamPath="{{ props.get('streamPath') }}"
+  warehouseLat={{ props.get('warehouseLat') }}
+  warehouseLon={{ props.get('warehouseLon') }}
+  {% if props.get('deliveriesKey') %}
+  deliveriesKey="{{ props.get('deliveriesKey') }}"
+  {% endif %}
+  {% if props.get('driversKey') %}
+  driversKey="{{ props.get('driversKey') }}"
+  {% endif %}
+  {% if props.get('width') %}
+  width={{ props.get('width') }}
+  {% endif %}
+  {% if props.get('height') %}
+  height={{ props.get('height') }}
+  {% endif %}
+/>

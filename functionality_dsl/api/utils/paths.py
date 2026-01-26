@@ -69,6 +69,38 @@ def get_query_params_from_block(endpoint) -> list[dict]:
     return result
 
 
+def get_header_params_from_block(endpoint) -> list[dict]:
+    """
+    Extract header parameters from endpoint's parameters block.
+    Returns list of dicts with: name, type, required, constraints, default_expr
+
+    Header names can contain dashes (e.g., X-API-Key, X-Session-ID)
+    """
+    parameters = getattr(endpoint, "parameters", None)
+    if not parameters:
+        return []
+
+    header_params_block = getattr(parameters, "header_params", None)
+    if not header_params_block:
+        return []
+
+    params = getattr(header_params_block, "params", None)
+    if not params:
+        return []
+
+    result = []
+    for param in params:
+        param_info = {
+            "name": getattr(param, "name", ""),
+            "type": getattr(param, "type", None),
+            "required": not getattr(getattr(param, "type", None), "nullable", False),
+            "expr": getattr(param, "expr", None)  # Default value expression
+        }
+        result.append(param_info)
+
+    return result
+
+
 def get_route_path(endpoint, default_prefix="/api"):
     """
     Determine the route path for an endpoint.

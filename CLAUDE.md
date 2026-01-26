@@ -2,479 +2,828 @@
 
 ## Overview
 
-FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications. The main focus is the backend API. UI is just for visualization purposes.
+FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket APIs. It generates FastAPI backend code and Svelte UI components from high-level specifications.
 
-## Quick Architecture Summary
+## Core Concept
 
-**Core Concept:** FDSL is a declarative data transformation pipeline. You define entities that transform data as it flows from external sources to your API clients (or vice versa for mutations).
+**Command-based API composition** - not an ORM, not a database modeler. FDSL is an API orchestration layer where:
+
+- **Entities describe data shapes** (snapshots), not resources with identity
+- **Sources describe interaction capabilities**, not data stores
+- **Mutations are commands** sent to external systems, not local state changes
+- **Identity resolution** is delegated to backing services (via auth, headers, query params)
 
 **Key Components:**
-- **Sources** - External REST/WebSocket APIs you integrate with
-- **Endpoints** - Your internal API that clients call
-- **Entities** - Data transformation layers (schema → computed attributes)
-- **Parameters** - Explicit mapping from Endpoints to Sources using expressions
+- **Entities** - Data snapshots with optional transformation logic (schema → computed attributes)
+- **Sources** - Capability providers that define interaction contracts (read/create/update/delete)
+- **Components** - UI elements (Table, Chart) that bind to entities
+- **Access Control** - Entity-level authorization
 
-**Data Flow Patterns:**
-- **REST Query**: `External API → Source Entity → Transform Entities → Endpoint Entity → Client`
-- **REST Mutation**: `Client → Request Entity → Validation → Transform Entities → Source → External API`
-- **WebSocket**: Separate publish/subscribe chains with transformation layers
+**Data Flow:**
+- **REST**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
+- **WS Subscribe**: `External WS → Entity → Client`
+- **WS Publish**: `Client → Entity → External WS`
 
-**Execution Model:** The generator uses topological sort to compute entities in dependency order, evaluating expressions with restricted `eval()` in a controlled context.
+### Philosophy: Snapshot-Based Mutations
+
+**Traditional REST (resource-oriented):**
+```
+PUT /users/{id}    # Update user with specific ID
+```
+
+**FDSL (command-oriented):**
+```
+PUT /users         # Send snapshot to update users based on context
+```
+
+The backing service decides which user(s) to update based on:
+- Auth claims (JWT user_id)
+- Request headers
+- Query parameters
+- Business rules
+
+This enables:
+- ✅ Singleton systems (config, device state)
+- ✅ Context-based mutations
+- ✅ WebSocket command channels
+- ✅ No database coupling
 
 ---
 
-## Core Concepts
+## 1. Authentication & Roles
 
-### 1. **Server**
-Define your API server configuration:
+FDSL uses a **multi-auth architecture** where:
+- **Auth** declarations define authentication mechanisms
+- **Roles** belong to specific Auth mechanisms
+- **Entity access** references `public`, `AuthName`, or `[roles]`
+- Multiple Auth mechanisms can coexist in one API
+
+### Auth Types
+
+FDSL supports two authentication types aligned with OpenAPI security schemes:
+- `Auth<http>` - HTTP authentication (Bearer token or Basic auth)
+- `Auth<apikey>` - API key authentication (header, query, or cookie)
+
+All auth is **database-backed** - credentials and roles are stored in the database.
+
+**HTTP Bearer Authentication** (token in Authorization header):
 ```fdsl
-Server MyAPI
+Auth<http> BearerAuth
+  scheme: bearer
+end
+```
+
+Bearer tokens are stored in the database. When a request comes in, the token is looked up to get user_id and roles.
+
+**HTTP Basic Authentication** (username:password):
+```fdsl
+Auth<http> BasicAuth
+  scheme: basic
+end
+```
+
+Credentials are verified against the users table in the database.
+
+**API Key Authentication** (key in header, query, or cookie):
+```fdsl
+// API key in custom header
+Auth<apikey> APIKeyAuth
+  in: header
+  name: "X-API-Key"
+end
+
+// API key in query parameter
+Auth<apikey> QueryAuth
+  in: query
+  name: "token"
+end
+
+// API key in cookie (session-like)
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "session_id"
+end
+```
+
+API keys are stored in the database with associated user_id and roles.
+
+### Roles
+
+Roles **belong to** Auth mechanisms using the `uses` keyword:
+
+```fdsl
+Auth<http> BearerAuth
+  scheme: bearer
+end
+
+Auth<apikey> APIKeyAuth
+  in: header
+  name: "X-API-Key"
+end
+
+// Roles reference their auth mechanism
+Role admin uses BearerAuth
+Role user uses BearerAuth
+Role service uses APIKeyAuth  // Different auth for service accounts
+```
+
+### Server (configuration)
+
+Server configuration does **not** reference auth - auth is determined per-entity/per-operation:
+
+```fdsl
+Server SmartHome
   host: "localhost"
   port: 8080
-  cors: "http://localhost:3000"
+  cors: "*"
   loglevel: debug
 end
 ```
 
-### 2. **Sources** (External Integrations)
+**Auth Type Comparison:**
+| Aspect | HTTP Bearer | HTTP Basic | API Key |
+|--------|-------------|------------|---------|
+| Header | `Authorization: Bearer <token>` | `Authorization: Basic <base64>` | Custom header/query/cookie |
+| Storage | DB (tokens table) | DB (users table) | DB (apikeys table) |
+| Use case | APIs, mobile apps | Simple tools, testing | Third-party integrations, sessions |
 
-**REST Sources:**
+### Source Authentication (Calling External APIs)
+
+Auth can be used in two modes:
+1. **Entity auth** (no `secret`): Validates incoming requests against database
+2. **Source auth** (with `secret`): Provides credentials for calling external APIs
+
+Add the `secret:` field to use auth for outbound requests to external services:
+
+**Bearer token for external API:**
 ```fdsl
-// Source with direct entity schema
-Source<REST> ProductDB
-  url: "http://external-api:9000/db/products"
-  method: GET
-  response:
-    type: array
-    entity: ProductList
+Auth<http> ExternalAPIAuth
+  scheme: bearer
+  secret: "EXTERNAL_API_TOKEN"  // Env var containing the token
 end
 
-// Source with path parameters
-Source<REST> ProductDetails
-  url: "http://external-api:9000/db/products/{productId}"
-  method: GET
-  response:
-    type: object
-    entity: Product
-end
-
-// Source accepting request body
-Source<REST> CreateProduct
-  url: "http://external-api:9000/db/products/create"
-  method: POST
-  request:
-    type: object
-    entity: NewProduct
+Source<REST> ExternalAPI
+  url: "https://api.example.com/data"
+  operations: [read]
+  auth: ExternalAPIAuth
 end
 ```
 
-**WebSocket Sources:**
+**API key for external API:**
 ```fdsl
-Source<WS> StockFeed
-  channel: "ws://inventory:9002/ws/stock"
-  publish:
-    type: object
-    entity: StockUpdate
+Auth<apikey> FinnhubAuth
+  in: query
+  name: "token"
+  secret: "FINNHUB_API_KEY"  // Env var containing the API key
+end
+
+Source<REST> FinnhubAPI
+  url: "https://finnhub.io/api/v1/quote"
+  params: [symbol]
+  operations: [read]
+  auth: FinnhubAuth
 end
 ```
 
-### 3. **Endpoints** (Your Internal API)
-
-**REST Endpoints:**
-
-
-**WebSocket Endpoints:**
-
-### 4. **Entities** (Data Structures & Transformations)
-
-**Pure Schema Entities** (no expressions - just type declarations):
+**Basic auth for legacy service:**
 ```fdsl
-// Schema entity for an object
-Entity Product
-  attributes:
-    - id: string;
-    - name: string;
-    - price: number;
-    - data: object<ProductData>?;  // Nested entity reference
-end
-
-Entity ProductData
-  attributes:
-    - color: string;
-    - capacity: string;
+Auth<http> LegacyServiceAuth
+  scheme: basic
+  secret: "LEGACY_CREDS"  // Env var containing "username:password"
 end
 ```
 
-**Wrapper Entities** (for array/primitive responses):
+### User Database Configuration (AuthDB)
+
+By default, FDSL generates a PostgreSQL database with tables for storing credentials. For existing databases (BYODB - Bring Your Own Database), use `AuthDB`:
+
+**Default (no AuthDB):** FDSL generates PostgreSQL + users/tokens/apikeys tables automatically.
+
+**External Database (BYODB):**
 ```fdsl
-// Wrapper for array response
-Entity ProductListWrapper
-  attributes:
-    - items: array<Product>;
+AuthDB UserStore
+  connection: "MY_DATABASE_URL"  // Environment variable name
+  table: "users"                 // Your existing users table
+  columns:
+    id="user_email"              // Login identifier column
+    password="pwd_hash"          // Password hash column (bcrypt)
+    role="user_role"             // Role column
 end
 
-Source<REST> ProductsAPI
-  url: "http://api.example.com/products"
-  method: GET
-  response:
-    type: array
-    entity: ProductListWrapper  // Source provides the wrapper directly
+Auth<http> MyAuth
+  scheme: bearer
 end
-```
-
-**IMPORTANT - Type/Schema Validation Rules:**
-
-All `request:`, `response:`, `subscribe:`, and `publish:` blocks **MUST** include both `type:` and entity reference fields:
-
-1. **Required fields:**
-   - `type:` must be present
-   - For `request:`/`response:` blocks: use `entity:` field
-   - For `subscribe:`/`publish:` blocks: use `entity:` field
-2. **For primitive/array types** (`string`, `number`, `integer`, `boolean`, `array`):
-   - The entity **MUST have EXACTLY ONE attribute**
-   - This is a wrapper entity that wraps the primitive/array value
-3. **For object type:**
-   - The entity can have any number of attributes
-   - Entity attributes are populated with the object's fields by name
-
-**Transformation Entities** (with computed attributes):
-```fdsl
-Entity ProductView(ProductListWrapper)
-  attributes:
-    - products: array = map(ProductListWrapper.items, p ->
-        {
-          "id": p["id"],
-          "name": p["name"],
-          "price": p["price"],
-          "color": get(get(p, "data", {}), "color", "")
-        }
-      );
-    - count: integer = len(ProductListWrapper.items);
-end
-```
-
-**Entity with Parents** (inheritance/composition):
-```fdsl
-Entity CartWithPricing(RawCart)
-  attributes:
-    - items: array(1..) = RawCart.items;
-    - subtotal: number = sum(map(items, i -> i["price"] * i["quantity"]));
-    - tax: number = round(subtotal * 0.1, 2);
-    - total: number = subtotal + tax;
-end
-```
----
-
-## Parameter Handling
-
-Parameters flow **explicitly** from Endpoints to Sources using expressions. This makes data flow transparent, flexible, and self-documenting.
-
-### Basic Syntax
-
-**Endpoint** defines incoming parameters:
-```fdsl
-Endpoint<REST> GetProduct
-  path: "/api/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string
-    query:
-      - format: string?
-  response:
-    type: object
-    entity: ProductDetail
-end
-```
-
-**Source** maps parameters using **expressions**:
-```fdsl
-Source<REST> ProductById
-  url: "http://api.example.com/products/{productId}"
-  method: GET
-  parameters:
-    path:
-      - productId: string = GetProduct.productId;
-    query:
-      - fmt: string = GetProduct.format;
-  response:
-    type: object
-    entity: Product
-end
-```
-
-**Note the semicolon (`;`)** at the end of parameter definitions with expressions.
-
-### Key Features
-
-#### 1. **Explicit Parameter Mapping**
-No magic name matching - you see exactly where values come from:
-```fdsl
-Source<REST> OrderHistory
-  parameters:
-    query:
-      - user_id: string = GetUserOrders.userId;  // Explicit mapping
-```
-
-
-#### 4. **Accessing Parameters in Entities**
-Entities can reference endpoint parameters in expressions:
-```fdsl
-Entity UserOrdersView(UserData, OrderListWrapper)
-  attributes:
-    - requestedUserId: string = GetUserOrders.userId;
-    - appliedFilters: object = {
-        "status": GetUserOrders.status if GetUserOrders.status else "all",
-        "page": GetUserOrders.page if GetUserOrders.page else 1
-      };
-    - orders: array = map(OrderListWrapper["orders"], o -> {
-        "orderId": o["orderId"],
-        "matchesUserId": o["userId"] == GetUserOrders.userId
-      });
-end
-```
----
-
-## Error Handling
-
-Define custom error responses for your REST endpoints using condition-based error mappings. This allows you to return appropriate HTTP status codes based on runtime data.
-
-### Syntax
-
-```fdsl
-Endpoint<REST> GetUser
-  path: "/api/user/{id}"
-  method: GET
-  response:
-    type: object
-    entity: UserData
-  errors:
-    - 404: condition: not UserData["id"] "User not found"
-    - 403: condition: UserData["role"] != "admin" "Access denied"
-    - 400: condition: len(GetUser.id) < 3 "Invalid user ID format"
-end
-```
-
-### Condition Expressions
-
-Error conditions are FDSL expressions that have access to:
-- **Endpoint parameters**: `GetUser.id`, `GetUser.status` (path/query/header params)
-- **Entity data**: `UserData["field"]`, `ProductList.items`
-- **Source responses**: Any entity in the computation context
-- **Built-in functions**: `len()`, `get()`, comparison operators, etc.
-
-
-### Generated Behavior
-
-When you define error conditions:
-1. **Compile-time validation**: Conditions are validated during code generation
-2. **Runtime evaluation**: Conditions are checked after data fetching and entity computation
-3. **HTTPException raised**: First matching condition raises appropriate status code
-4. **OpenAPI documentation**: Errors appear in generated API docs
-5. **Type-safe**: Conditions use the same expression compiler as entity attributes
-
-### Best Practices
-
-1. **Order matters**: Error conditions are checked in the order defined (first match wins)
-2. **Place specific checks first**: Check specific conditions before general ones
-3. **Use safe access**: Use `get()` for optional fields: `get(UserData, "email", "")`
-4. **Keep conditions simple**: Complex validation should be in entity transformations
-5. **Document error messages**: Use clear, actionable error messages for API users
-
----
-
----
-
-## File Structure
-
-```
-my-api-project/
-├── entities.fdsl          # Entity definitions
-├── sources.fdsl           # External service definitions
-├── endpoints.fdsl         # API endpoint definitions
-├── components.fdsl        # UI component definitions
-├── main.fdsl              # Main file (can import others)
-└── generated/             # Generated code (after running fdsl generate)
-    ├── main.py
-    ├── app/
-    │   ├── api/
-    │   │   └── routers/   # One file per Endpoint
-    │   ├── services/      # Business logic
-    │   └── domain/
-    │       └── models.py  # Pydantic models
-    └── frontend/
-        └── components/    # UI components
 ```
 
 ---
 
-## Code Generation
+## 2. Sources (Capability Providers)
 
-### Generate Backend
+Sources are **not** databases or data stores - they are **interaction contracts** with external systems.
+
+**REST Source:**
+```fdsl
+Source<REST> ThermostatAPI
+  url: "http://devices:9001/thermostat"
+  operations: [read, update]
+end
+```
+
+**What this means:**
+- `read` → `GET http://devices:9001/thermostat` (no ID)
+- `update` → `PUT http://devices:9001/thermostat` (no ID)
+- The backing service determines identity from context
+
+**WebSocket Source:**
+```fdsl
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+end
+```
+
+**Key Principles:**
+- Sources define **what actions are possible**, not where data lives
+- Operations are **commands**, not entity methods
+- Identity/persistence is **external** - delegated to backing services
+- Entities define **payload structure** for these commands
+
+---
+
+## 3. Entities (Snapshot Resources)
+
+### Base REST Entity
+
+```fdsl
+Source<REST> ThermostatAPI
+  url: "http://devices:9001/thermostat"
+  operations: [read, update]
+end
+
+Entity RawThermostat
+  source: ThermostatAPI
+  attributes:
+    - current_temp_f: number @readonly;
+    - target_temp_f: number;
+    - mode: string;
+    - humidity_percent: number @readonly;
+  access: [homeowner]
+end
+```
+
+Generates: `GET /api/rawthermostat`, `PUT /api/rawthermostat`
+
+### Composite REST Entity (Read-Only Transformation)
+
+```fdsl
+Entity Climate(RawThermostat, RawAirQuality)
+  attributes:
+    - current_temp_c: number = round((RawThermostat.current_temp_f - 32) * 5 / 9, 1);
+    - outdoor_temp_c: number = round((RawAirQuality.outdoor_temp_f - 32) * 5 / 9, 1);
+    - temp_difference: number = round(RawThermostat.current_temp_f - RawAirQuality.outdoor_temp_f, 1);
+    - comfort_index: string = "comfortable" if RawThermostat.humidity_percent >= 30 and RawThermostat.humidity_percent <= 60 else "uncomfortable";
+  access: public
+end
+```
+
+Generates: `GET /api/climate`
+
+### WebSocket Entity (Inbound - Subscribe)
+
+```fdsl
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+end
+
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - c: string;  // Current price
+    - E: integer; // Event time
+end
+
+Entity CryptoPrice(ETHTick)
+  type: inbound
+  attributes:
+    - timestamp: integer = ETHTick.E;
+    - price: number = toNumber(ETHTick.c);
+    - priceFormatted: string = "$" + toString(round(toNumber(ETHTick.c), 2));
+  access: public
+end
+```
+
+Generates: `ws://localhost:8080/ws/cryptoprice` (client subscribes)
+
+### WebSocket Entity (Outbound - Publish)
+
+```fdsl
+Source<WS> KitchenCommandsWS
+  channel: "ws://kitchen:9001/ws/commands"
+end
+
+Entity OrderCommand
+  type: outbound
+  attributes:
+    - orderId: string;
+    - newStatus: string;
+    - reason: string;
+  access: public
+end
+
+Entity KitchenCommand(OrderCommand)
+  type: outbound
+  attributes:
+    - orderId: string = OrderCommand.orderId;
+    - status: string = OrderCommand.newStatus;
+    - timestamp: string = toString(OrderCommand.orderId);
+  source: KitchenCommandsWS
+end
+```
+
+Generates: `ws://localhost:8080/ws/ordercommand` (client publishes)
+
+---
+
+## 4. Entity Rules
+
+**REST Entities:**
+1. **Base entities** with `source:` inherit operations from source
+2. **Composite entities** (with parents) are **read-only** - no mutations
+3. **No `@id` field** - all entities are snapshots (fixed shape, no collections)
+4. REST paths auto-generated: `/api/{entityname}` (lowercase)
+5. Operations from source: `read`, `create`, `update`, `delete` - all operate on snapshots
+6. **Sources called without IDs**: `GET url`, `PUT url`, etc.
+
+**Mutation Semantics (Critical Concept):**
+- `POST /api/entity` = Send snapshot to source, let it create according to its rules
+- `PUT /api/entity` = Send snapshot to source, let it update based on context (auth, headers, etc.)
+- `DELETE /api/entity` = Request deletion from source, let it determine what to delete
+- **Identity is never in the URL** - it's in auth claims, headers, or request body
+- **State ownership is external** - sources decide how to interpret snapshots
+
+**WebSocket Entities:**
+1. Must have `type: inbound` or `type: outbound`
+2. **Inbound** = receives messages from client, sends to external WS
+3. **Outbound** = receives from external WS, sends to client
+4. WS paths auto-generated: `/ws/{entityname}` (lowercase)
+5. Base entities with `source:` define data source
+6. Composite entities can have `source:` (for outbound) to send to external WS
+
+**Field Decorators:**
+- `@readonly` - excludes field from Create/Update request schemas
+  - Use for: server timestamps, computed fields, auto-generated values
+  - Readonly fields appear in response but NOT in request schemas
+- `@optional` - field not required in Create/Update request schemas
+  - Use for: optional profile fields, metadata, preferences
+  - Optional fields can be omitted from requests entirely
+  - Cannot be combined with `@readonly` (mutually exclusive)
+  - Cannot be used on computed attributes (with `= expression`)
+- `?` (nullable) - field value can be null
+  - Different from `@optional`: nullable fields must be present but can be null
+  - Combine with `@optional` for fields that can be omitted OR sent as null: `bio: string? @optional;`
+
+**Computed Attributes:**
+- Use `=` for computed fields (evaluated server-side)
+- Can reference parent entity attributes: `Parent.field`
+- Support expressions: `round()`, `sum()`, `len()`, conditionals, etc.
+
+---
+
+## 5. Access Control
+
+Access control can be applied at the entity level (all operations) or per-operation. Three access types are supported:
+
+### Access Types
+
+**1. Public Access** - no authentication required:
+```fdsl
+Entity Climate(RawThermostat)
+  attributes:
+    - temp_c: number = round((RawThermostat.current_temp_f - 32) * 5 / 9, 1);
+  access: public
+end
+```
+
+**2. Auth-Only Access** - valid authentication required, no role check:
+```fdsl
+Entity SecureData
+  source: DataAPI
+  attributes:
+    - value: string;
+  access: JWTAuth  // Any valid JWT token
+end
+```
+
+**3. Role-Based Access** - requires specific roles (auth is inferred from role):
+```fdsl
+Entity RawThermostat
+  source: ThermostatAPI
+  attributes:
+    - current_temp_f: number @readonly;
+    - target_temp_f: number;
+  access: [homeowner, admin]  // Requires homeowner OR admin role
+end
+```
+
+### Per-Operation Access Control
+
+Different operations can have different access requirements:
+
+```fdsl
+Auth<apikey> APIKeyAuth
+  in: header
+  name: "X-API-Key"
+end
+
+Role admin uses APIKeyAuth
+Role user uses APIKeyAuth
+Role viewer uses APIKeyAuth
+
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - title: string;
+    - body: string;
+  access:
+    read: public              // Anyone can read
+    create: [admin, user]     // Admin or user role required
+    update: [admin, user]     // Admin or user role required
+    delete: [admin]           // Only admin can delete
+end
+```
+
+### Mixed Auth Types
+
+You can mix auth types within the same API:
+
+```fdsl
+Auth<http> BearerAuth
+  scheme: bearer
+end
+
+Auth<apikey> APIKeyAuth
+  in: header
+  name: "X-API-Key"
+end
+
+Role admin uses BearerAuth
+Role user uses BearerAuth
+Role service uses APIKeyAuth
+
+Entity Config
+  source: ConfigAPI
+  attributes:
+    - setting: string;
+  access:
+    read: [admin, user, service]  // Bearer users or API key service
+    update: [admin]               // Only Bearer admin
+end
+```
+
+### Access Control Rules
+
+- `access: public` = no authentication required
+- `access: AuthName` = valid auth of that type, no role check
+- `access: [role1, role2]` = requires one of these roles (auth inferred)
+- Per-operation: different rules for `read`, `create`, `update`, `delete`
+- No `access:` field defaults to `public`
+- When roles from different Auth types are mixed, multiple auth mechanisms are accepted
+
+---
+
+## 6. Expression System
+
+**Built-in Functions:**
+- `len(array)` - Array length
+- `sum(array)` - Sum numeric array
+- `map(array, lambda)` - Transform array: `map(items, i => i["price"])`
+- `filter(array, lambda)` - Filter array: `filter(items, i => i["quantity"] > 5)`
+- `any(array)` - True if any element is truthy
+- `all(array)` - True if all elements are truthy
+- `round(num, decimals)` - Round number
+- `lower(str)`, `upper(str)` - String case
+- `toString(val)`, `toNumber(val)`, `toInt(val)` - Type conversion
+- `min(array)`, `max(array)` - Min/max values
+- `zip(arr1, arr2, ...)` - Zip arrays together
+
+**Lambda Syntax:**
+```fdsl
+- total: number = sum(map(items, i => i["price"] * i["quantity"]));
+- expensive: array = filter(items, i => i["price"] > 100);
+- hasExpensive: boolean = any(map(items, i => i["price"] > 100));
+```
+
+**Conditionals:**
+```fdsl
+- status: string = "high" if temp > 75 else ("low" if temp < 65 else "normal");
+- comfort: string = "good" if humidity >= 30 and humidity <= 60 else "bad";
+```
+
+---
+
+## 7. Components
+
+**Table:**
+```fdsl
+Component<Table> ComparisonTable
+  entity: CityComparison
+  colNames: ["city", "avg_temp", "max_temp", "min_temp"]
+end
+```
+
+**Chart:**
+```fdsl
+Component<Chart> TempChart
+  entity: TemperatureTrends
+  values: data
+  xLabel: "Time"
+  yLabel: "Temperature (°C)"
+  height: 400
+end
+```
+
+**LiveChart (WebSocket):**
+```fdsl
+Component<LiveChart> CryptoChart
+  entity: CryptoPrices
+  seriesLabels: ["Ethereum", "Bitcoin", "Solana"]
+  xLabel: "Time"
+  yLabel: "Price (USDT)"
+  windowSize: 50
+end
+```
+
+**LiveMetrics (WebSocket):**
+```fdsl
+Component<LiveMetrics> PriceMetrics
+  entity: CryptoPrices
+  metrics: ["eth_price", "btc_price", "sol_price"]
+  label: "Live Crypto Prices"
+end
+```
+
+---
+
+## 8. Code Generation
+
+**Generate Code:**
 ```bash
-fdsl generate my-api.fdsl --out generated/
+cd c:/ffile/functionality-dsl
+venv_WIN/Scripts/fdsl generate <path-to-fdsl-file> --out generated
 ```
 
-### Generated Structure
-- `main.py` - FastAPI app entry point
-- `app/api/routers/` - One file per endpoint
-- `app/services/` - Business logic services
-- `app/domain/models.py` - Pydantic models
-- `app/core/` - Runtime utilities (safe eval, http client, etc.)
-- `frontend/components/` - UI components (if defined)
+**Generated Structure:**
+```
+generated/
+├── app/
+│   ├── api/routers/      # One file per entity
+│   ├── services/         # Transformation logic
+│   ├── sources/          # External API clients
+│   ├── domain/models.py  # Pydantic models
+│   └── core/             # Runtime utilities
+└── main.py
+```
+
+**Generated Schemas:**
+- `{Entity}` - Response schema (all fields)
+- `{Entity}Create` - Create request schema (no @readonly fields, @optional fields not required)
+- `{Entity}Update` - Update request schema (no @readonly fields, @optional fields not required)
 
 ---
 
-## Key Implementation Details
+## 9. Complete REST Example
 
-### 1. **Entity Types** (Critical Concept)
+```fdsl
+Server SmartHome
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
 
-**Pure Schema Entities** (no expressions):
-- Used as **direct responses** from Sources (REST/WebSocket)
-- Used as **request bodies** for Endpoints (POST/PUT/PATCH)
-- Only type declarations: `- name: string;` (note the semicolon!)
-- Cannot have expressions or reference other entities
-- Example: `Entity ProductSchema { attributes: - id: string; - name: string; }`
+Source<REST> ThermostatAPI
+  url: "http://devices:9001/thermostat"
+  operations: [read, update]
+end
 
-**Wrapper Entities** (single attribute, no expression):
-- Required for `type: array` or `type: <primitive>` responses
-- Must have EXACTLY ONE attribute
-- Auto-wrap values from sources/clients
-- Example: `Entity ItemsWrapper { attributes: - items: array<Product>; }`
+Source<REST> LightsAPI
+  url: "http://devices:9001/lights"
+  operations: [read, update]
+end
 
-**Transformation Entities** (with expressions):
-- Inherit from parent entities: `Entity Computed(Parent1, Parent2)`
-- Compute new attributes: `- total: number = sum(items);`
-- Can access endpoint parameters: `GetEndpoint.paramName`
-- All attributes must have expressions (no mixing with schema-only)
-- Example: `Entity ProductView(ProductRaw) { attributes: - count: integer = len(ProductRaw.items); }`
+Entity RawThermostat
+  source: ThermostatAPI
+  attributes:
+    - current_temp_f: number @readonly;
+    - target_temp_f: number;
+    - mode: string;
+    - humidity_percent: number @readonly;
+  access: public
+end
 
-**Key Rule:** Entities that are direct Source responses MUST be pure schema (no expressions). Create a child entity for transformations.
+Entity RawLighting
+  source: LightsAPI
+  attributes:
+    - living_room: integer;
+    - bedroom: integer;
+    - kitchen: integer;
+  access: public
+end
 
-### 3. **Source → Entity Mapping**
-- Sources specify which entity they provide via `response: entity: EntityName`
-- For `type: array`, entity must be a wrapper with single array attribute
-- For `type: object`, entity can have multiple attributes
-- Path parameters flow explicitly via expressions: `- id: string = GetEndpoint.id;`
+Entity HomeStatus(RawThermostat, RawLighting)
+  attributes:
+    - temp_c: number = round((RawThermostat.current_temp_f - 32) * 5 / 9, 1);
+    - climate_active: boolean = RawThermostat.mode != "off";
+    - any_lights_on: boolean = RawLighting.living_room > 0 or RawLighting.bedroom > 0 or RawLighting.kitchen > 0;
+    - total_lights_on: integer = sum([1 if RawLighting.living_room > 0 else 0, 1 if RawLighting.bedroom > 0 else 0, 1 if RawLighting.kitchen > 0 else 0]);
+  access: public
+end
+```
 
-### 4. **Expression Compilation**
-- FDSL expressions compile to Python code
-- Evaluated safely at runtime using restricted `eval()` with `{"__builtins__": {}}`
-- Context contains: entity references, endpoint params, `dsl_funcs` registry
-- Lambdas get special scoping: `(lambda x: x["field"])`
-
-### 4. **Entity Computation Order**
-- Generator uses topological sort for dependency resolution
-- Parent entities computed before children
-- External sources fetched first, then computed entities
-
-### 5. **Type Validation**
-- Format specifications compile to Pydantic types
-- Range constraints compile to `Field()` parameters
-- Validation happens automatically via Pydantic models
-- HTTPException raised on validation failure
-
-### 6. **WebSocket Handling**
-- Separate computation chains for inbound/outbound
-- Bus-based pub/sub for message distribution
-- Persistent connections to external WS sources via `channel:` field
-
----
----
-
-## Debugging Tips
-
-1. **Check logs** - Generated routers have extensive debug logging
-2. **Inspect context** - Logger shows what's in context before each step
-3. **Test expressions** - Use Python REPL to test compiled expressions
-4. **Validate entity order** - Check computation chains in generated services
-5. **Test sources directly** - Use curl to verify external services work
-6. **Use safe access** - Use `get()` function for optional/nested fields
----
-
-### Examples & Demos
-- **`examples/`** - Reorganized demo structure (flat, descriptive folders)
-  - Each demo has: `main.fdsl`, `README.md`, optional `run.sh` + `dummy-service/`
-  - No more simple/medium/advanced distinction
-  - Examples: `rest-basics/`, `user-management/`, `iot-sensors/`, `websocket-chat/`, etc.
-  - See `examples/README.md` for complete catalog with learning path
+**Generated Endpoints:**
+- `GET /api/rawthermostat`
+- `PUT /api/rawthermostat`
+- `GET /api/rawlighting`
+- `PUT /api/rawlighting`
+- `GET /api/homestatus` (read-only composite)
 
 ---
 
-## Testing Workflow
+## 10. Complete WebSocket Example
 
-### Network Architecture
+```fdsl
+Server CryptoTicker
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
 
-The testing environment uses a single shared Docker network: `thesis_fdsl_net`
+Source<WS> BinanceETH
+  channel: "wss://stream.binance.com:9443/ws/ethusdt@ticker"
+end
 
-- **Network creation**: Created automatically when you run `docker compose -p thesis up` on the generated app
-- **Network name**: Always `thesis_fdsl_net` (created by docker-compose with project name prefix)
-- **Shared by**: Both dummy services and generated application containers
+Source<WS> BinanceBTC
+  channel: "wss://stream.binance.com:9443/ws/btcusdt@ticker"
+end
 
-### Dummy Services (External APIs for Testing)
+Entity ETHTick
+  type: inbound
+  source: BinanceETH
+  attributes:
+    - c: string;
+    - E: integer;
+end
 
-When creating dummy/mock external services for testing:
+Entity BTCTick
+  type: inbound
+  source: BinanceBTC
+  attributes:
+    - c: string;
+    - E: integer;
+end
 
-1. **Container naming**: Always prefix container names and images with `dummy-` so the cleanup script can identify and remove them
-   ```yaml
-   services:
-     dummy-user-service:
-       container_name: dummy-user-service
-       image: dummy-user-service
-   ```
+Entity CryptoPrices(ETHTick, BTCTick)
+  type: inbound
+  attributes:
+    - timestamp: integer = ETHTick.E;
+    - eth_price: number = toNumber(ETHTick.c);
+    - btc_price: number = toNumber(BTCTick.c);
+    - avg_price: number = round((toNumber(ETHTick.c) + toNumber(BTCTick.c)) / 2, 2);
+    - price_spread: number = round(abs(toNumber(ETHTick.c) - toNumber(BTCTick.c)), 2);
+  access: public
+end
 
-2. **Network**: Always use `thesis_fdsl_net` as an external network (it must already exist)
-   ```yaml
-   services:
-     dummy-user-service:
-       networks:
-         - thesis_fdsl_net
+Component<LiveChart> PriceChart
+  entity: CryptoPrices
+  seriesLabels: ["Ethereum", "Bitcoin"]
+  xLabel: "Time"
+  yLabel: "Price (USDT)"
+  windowSize: 50
+end
+```
 
-   networks:
-     thesis_fdsl_net:
-       external: true
-   ```
+**Generated WebSocket:**
+- `ws://localhost:8080/ws/cryptoprices` - Client subscribes to receive price updates
 
-### Generated Application Code
+---
 
-When running the generated application:
+## 11. Testing
 
-**Always use the project name `thesis`:**
+**Docker Setup:**
 ```bash
+# Always use project name
 docker compose -p thesis up
-```
 
-**Generated app docker-compose.yml should define the network (not external):**
-```yaml
-networks:
-  thesis_fdsl_net:
-    driver: bridge
-```
-
-This ensures:
-- The network `thesis_fdsl_net` is created when the app starts
-- Consistent naming across all generated services
-- Proper cleanup by the cleanup script
-- All services on the same network can communicate
-
-### Startup Order
-
-1. **First**: Start generated app with `docker compose -p thesis up` (creates network)
-2. **Second**: Start dummy services (joins existing network)
-
-### Cleanup
-
-To clean up all testing containers, images, and generated code:
-```bash
+# Cleanup
 bash scripts/cleanup.sh
 ```
 
-This script removes:
-- All containers with `thesis_` prefix (generated apps)
-- All containers/images with `dummy-` prefix (mock services)
-- The `generated/` folder
-- Networks if they exist
+**Network:** `thesis_fdsl_net` (auto-created)
+
+**WebSocket Testing:**
+```bash
+# Install wscat
+npm install -g wscat
+
+# Test WebSocket endpoint
+wscat -c ws://localhost:8080/ws/cryptoprices
+```
 
 ---
 
-**Remember**: FDSL is declarative - you describe WHAT you want, not HOW to do it. The framework handles all the plumbing (HTTP, WebSockets, validation, error handling, etc.).
+## 12. Key Patterns
+
+### Multi-Source Aggregation (REST)
+Combine multiple snapshot sources into a dashboard:
+```fdsl
+Entity Dashboard(Source1, Source2, Source3)
+  attributes:
+    - metric1: number = Source1.value;
+    - metric2: number = Source2.value;
+    - total: number = Source1.value + Source2.value + Source3.value;
+  access: public
+end
+```
+
+### Temperature Conversion
+```fdsl
+Entity Climate(RawThermostat)
+  attributes:
+    - temp_c: number = round((RawThermostat.current_temp_f - 32) * 5 / 9, 1);
+    - temp_f: number = RawThermostat.current_temp_f;
+  access: public
+end
+```
+
+### WebSocket Latest Tick Synchronization
+Multiple WS sources update independently, composite maintains latest from each:
+```fdsl
+Entity Prices(ETHTick, BTCTick, SOLTick)
+  type: inbound
+  attributes:
+    - eth: number = toNumber(ETHTick.c);
+    - btc: number = toNumber(BTCTick.c);
+    - sol: number = toNumber(SOLTick.c);
+  access: public
+end
+```
+
+### Status Aggregation
+```fdsl
+Entity SystemStatus(Service1, Service2, Service3)
+  attributes:
+    - all_healthy: boolean = Service1.status == "ok" and Service2.status == "ok" and Service3.status == "ok";
+    - services_count: integer = 3;
+    - healthy_count: integer = sum([1 if Service1.status == "ok" else 0, 1 if Service2.status == "ok" else 0, 1 if Service3.status == "ok" else 0]);
+  access: public
+end
+```
+
+---
+
+## 13. Migration Notes
+
+**Old Syntax → New Syntax:**
+
+| Old | New |
+|-----|-----|
+| `access: true` | `access: public` |
+| `expose: operations: [read]` | Removed - operations from source |
+| `rest: "/api/path"` | Removed - paths auto-generated |
+| `@id` field | Removed - snapshot entities only |
+| `list` operation | Not supported - no collections |
+| `/{id}` paths | Not generated - snapshot resources |
+| `filters:` field | Not needed - no list endpoints |
+| `Role admin` | `Role admin uses AuthName` |
+| `Server ... auth: AuthName` | Removed - auth per-entity/per-op |
+
+**Auth Migration:**
+```fdsl
+// OLD (auth with type: field)
+Auth HomeAuth
+  type: jwt
+  secret: "JWT_SECRET"
+end
+Role admin
+Server SmartHome
+  auth: HomeAuth
+end
+
+// NEW (Auth<type> syntax, roles use 'uses', no auth in Server)
+Auth<http> HomeAuth
+  scheme: bearer
+end
+Role admin uses HomeAuth
+Server SmartHome
+  host: "localhost"
+  port: 8080
+end
+```
+
+**Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET url`, `PUT url`, etc.).
+
+## dev notes:
+IMPORTANT!!! : THIS IS HOW YOU GENERATE A FILE
+cd c:/ffile/functionality-dsl && venv_WIN/Scripts/fdsl generate examples/v2/ecommerce/ecommerce_byodb.fdsl --out generated_byodb

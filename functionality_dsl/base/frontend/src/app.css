@@ -34,7 +34,7 @@ select {
 }
 
 /* -------------------------------------------------------
-     Theme Variables
+     Theme Variables - Dark (default)
 ------------------------------------------------------- */
 :root {
     --canvas: #0d1117;
@@ -50,6 +50,47 @@ select {
     --green-text: #4ade80;
     --red-tint: #3a1a1a;
     --red-text: #f87171;
+    --warning-text: #fb923c;
+    --dot-color: rgba(255, 255, 255, 0.05);
+    /* Additional semantic colors for showcase components */
+    --blue-tint: #1a2a3a;
+    --blue-text: #60a5fa;
+    --purple-tint: #2a1a3a;
+    --purple-text: #a78bfa;
+    --cyan-tint: #1a3a3a;
+    --cyan-text: #22d3ee;
+    --yellow-tint: #3a3a1a;
+    --yellow-text: #fbbf24;
+}
+
+/* -------------------------------------------------------
+     Theme Variables - Light (PDF-friendly with warm tint)
+------------------------------------------------------- */
+[data-theme="light"] {
+    --canvas: #f7f6f3;
+    --surface: #fdfcfa;
+    --card: #fffffe;
+    --edge: #d4d0c8;
+    --edge-soft: #e8e5de;
+    --edge-light: #6b6560;
+    --text: #2d2a26;
+    --text-muted: #6b6560;
+    --accent: #5a5fcf;
+    --green-tint: #e8f2e8;
+    --green-text: #2d7a4e;
+    --red-tint: #f8e8e8;
+    --red-text: #b83c3c;
+    --warning-text: #b85c21;
+    --dot-color: rgba(45, 42, 38, 0.035);
+    /* Additional semantic colors for showcase components */
+    --blue-tint: #e8f0f8;
+    --blue-text: #2563eb;
+    --purple-tint: #f0e8f8;
+    --purple-text: #7c3aed;
+    --cyan-tint: #e8f5f8;
+    --cyan-text: #0891b2;
+    --yellow-tint: #f8f5e8;
+    --yellow-text: #b8860b;
 }
 
 /* -------------------------------------------------------
@@ -61,7 +102,7 @@ body {
     background-color: var(--canvas);
     color: var(--text);
     /* Dagster dotted blueprint background */
-    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 2px, transparent 2px);
+    background-image: radial-gradient(var(--dot-color) 2px, transparent 2px);
     background-size: 40px 40px;
     background-position: -20px -20px;
 }
@@ -105,6 +146,12 @@ body {
     border: 3px solid var(--edge-light);
     box-shadow: 0 0 0 1px var(--edge-light), 0px 4px 8px rgba(0, 0, 0, 0.3);
     transform: scale(1.02);
+}
+
+/* Full-width card that breaks out of grid constraints */
+.card-fullwidth {
+    grid-column: 1 / -1;
+    max-width: 100%;
 }
 
 /* Card Header */
@@ -243,4 +290,93 @@ div::-webkit-scrollbar-thumb:hover {
 .dashboard-card > * {
     border: none;
     margin: 0;
+}
+
+/* -------------------------------------------------------
+     Auth Components
+------------------------------------------------------- */
+
+/* Dashboard header with auth info and theme toggle */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+}
+
+.auth-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    background: var(--card);
+    border: 2px solid var(--edge-soft);
+    border-radius: 10px;
+    font-family: "Approach Mono", monospace;
+}
+
+.user-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--text-muted);
+}
+
+.user-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.role-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--accent);
+}
+
+.shield-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--accent);
+}
+
+.logout-button {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--edge);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.logout-button:hover {
+    background: var(--edge-soft);
+    border-color: var(--edge-light);
+}
+
+.logout-icon {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Color variables for auth components */
+:root {
+    --bg-primary: var(--canvas);
+    --bg-secondary: var(--surface);
+    --bg-tertiary: var(--card);
+    --text-primary: var(--text);
+    --border: var(--edge-soft);
+    --accent-light: rgba(124, 131, 255, 0.1);
+    --red-bg: var(--red-tint);
 }

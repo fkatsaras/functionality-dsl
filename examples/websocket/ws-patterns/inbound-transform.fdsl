@@ -1,0 +1,77 @@
+// =============================================================================
+// INBOUND WEBSOCKET - TRANSFORMATIONS
+// Demonstrates: Computed fields and transformations on WS data
+// External data is transformed before being pushed to clients
+// =============================================================================
+
+Server InboundTransform
+  host: "localhost"
+  port: 8080
+  cors: "*"
+  loglevel: debug
+end
+
+// -----------------------------------------------------------------------------
+// Source: External WebSocket pushing raw metrics
+// -----------------------------------------------------------------------------
+Source<WS> MetricsWS
+  channel: "ws://dummy:9001/ws/metrics"
+  operations: [subscribe]
+end
+
+// -----------------------------------------------------------------------------
+// Base Entity: Raw metrics from external source
+// This is the shape of data coming FROM the external WS
+// -----------------------------------------------------------------------------
+Entity RawMetrics
+  flow: inbound
+  source: MetricsWS
+  attributes:
+    - temp_f: number;
+    - pressure_pa: number;
+    - humidity_pct: number;
+    - wind_mph: number;
+    - readings: array;
+    - timestamp: integer;
+end
+
+// -----------------------------------------------------------------------------
+// Transformed Entity: Computed fields derived from raw data
+// All transformations happen server-side before pushing to client
+// -----------------------------------------------------------------------------
+Entity ProcessedMetrics(RawMetrics)
+  flow: inbound
+  attributes:
+    // --- Unit conversions ---
+    - temp_celsius: number = round((RawMetrics.temp_f - 32) * 5 / 9, 1);
+    - temp_fahrenheit: number = RawMetrics.temp_f;
+    - pressure_hpa: number = round(RawMetrics.pressure_pa / 100, 1);
+    - wind_kmh: number = round(RawMetrics.wind_mph * 1.60934, 1);
+
+    // --- Array processing ---
+    - reading_count: integer = len(RawMetrics.readings);
+    - avg_reading: number = round(sum(map(RawMetrics.readings, r => r["value"])) / len(RawMetrics.readings), 2);
+    - max_reading: number = max(map(RawMetrics.readings, r => r["value"]));
+    - min_reading: number = min(map(RawMetrics.readings, r => r["value"]));
+
+    // --- Conditional logic ---
+    - comfort_level: string = "comfortable" if RawMetrics.humidity_pct >= 30 and RawMetrics.humidity_pct <= 60 else "uncomfortable";
+    - temp_status: string = "hot" if RawMetrics.temp_f > 80 else ("cold" if RawMetrics.temp_f < 60 else "mild");
+    - wind_category: string = "calm" if RawMetrics.wind_mph < 5 else ("breezy" if RawMetrics.wind_mph < 15 else "windy");
+
+    // --- Boolean flags ---
+    - is_humid: boolean = RawMetrics.humidity_pct > 70;
+    - is_stormy: boolean = RawMetrics.pressure_pa < 100000 and RawMetrics.wind_mph > 20;
+    - has_anomalies: boolean = any(map(RawMetrics.readings, r => r["value"] > 100));
+
+    // --- Timestamp ---
+    - event_time: integer = RawMetrics.timestamp;
+  access: public
+end
+
+// Generated WebSocket endpoints:
+// ws://localhost:8080/ws/rawmetrics        - Raw data as received
+// ws://localhost:8080/ws/processedmetrics  - Transformed data
+//
+// Both endpoints push data whenever the source WS sends updates
+// ProcessedMetrics applies all transformations before each push

@@ -19,15 +19,16 @@ def _find(xs: Iterable, fn: Callable):
             return x
     return None
 
-def _any(xs: Iterable, fn: Callable):
+def _any(xs: Iterable):
     if xs is None:
         raise TypeError("_any() received None")
-    return any(fn(x) for x in xs)
+    return any(bool(x) for x in xs)
 
-def _all(xs: Iterable, fn: Callable):
+
+def _all(xs: Iterable):
     if xs is None:
         raise TypeError("_all() received None")
-    return all(fn(x) for x in xs)
+    return all(bool(x) for x in xs)
 
 def _flatten(xs: Iterable):
     if xs is None:
@@ -161,8 +162,8 @@ DSL_COLLECTION_FUNCS = {
     "map":      (_map, (2, 2)),
     "filter":   (_filter, (2, 2)),
     "find":     (_find, (2, 2)),
-    "any":      (_any, (2, 2)),
-    "all":      (_all, (2, 2)),
+    "any":      (_any, (1, 1)),
+    "all":      (_all, (1, 1)),
     "flatten":  (_flatten, (1, 1)),
     "reduce":   (_reduce, (2, 3)),
     "groupBy":  (_groupBy, (2, 2)),

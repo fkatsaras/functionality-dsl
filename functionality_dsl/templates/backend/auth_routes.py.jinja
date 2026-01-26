@@ -1,0 +1,422 @@
+"""
+Authentication Routes
+Auto-generated from FDSL Auth configuration
+
+Provides:
+- POST /auth/register - Create new user account
+- POST /auth/login - Authenticate and get credentials
+- GET /auth/me - Get current user info
+
+Auth Type: {{ auth_type }}
+{% if auth_type == "bearer" %}
+Returns: JWT token for Authorization: Bearer header
+{% elif auth_type == "basic" %}
+Returns: Success message (use credentials with Basic auth)
+{% elif auth_type == "apikey" %}
+Returns: API key for {{ apikey_location }} authentication
+{% endif %}
+"""
+
+import secrets
+from typing import Optional
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, status, Response
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select
+
+from app.db import get_db, User, hash_password, verify_password
+{% if auth_type == "bearer" %}
+from app.core.auth_{{ auth_name | lower }} import create_access_token, get_current_user, TokenPayload
+{% elif auth_type == "apikey" %}
+from app.db import APIKey
+from app.core.auth_{{ auth_name | lower }} import get_current_user, TokenPayload
+{% elif auth_type == "basic" %}
+from app.core.auth_{{ auth_name | lower }} import get_current_user, TokenPayload
+{% endif %}
+
+
+# ============================================================================
+# Router
+# ============================================================================
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+# ============================================================================
+# Request/Response Models
+# ============================================================================
+
+class RegisterRequest(BaseModel):
+    """User registration request."""
+    login_id: str = Field(..., description="Login identifier (email, username, etc.)")
+    password: str = Field(..., min_length=8, description="Password (min 8 characters)")
+    role: Optional[str] = Field(default="{{ default_role }}", description="User role")
+
+
+class LoginRequest(BaseModel):
+    """User login request."""
+    login_id: str = Field(..., description="Login identifier (email, username, etc.)")
+    password: str = Field(..., description="User password")
+
+
+{% if auth_type == "bearer" %}
+class AuthResponse(BaseModel):
+    """JWT token response."""
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+{% elif auth_type == "apikey" %}
+class AuthResponse(BaseModel):
+    """API key response."""
+    api_key: str = Field(..., description="API key for authentication")
+    location: str = Field(default="{{ apikey_location }}", description="Where to send the key")
+    key_name: str = Field(default="{{ apikey_name }}", description="Header/cookie/query parameter name")
+    user: Optional["UserResponse"] = Field(None, description="User information")
+{% elif auth_type == "basic" %}
+class AuthResponse(BaseModel):
+    """Basic auth response."""
+    message: str = Field(default="Login successful", description="Success message")
+    login_id: str = Field(..., description="Your login identifier")
+    hint: str = Field(default="Use HTTP Basic auth with your credentials", description="Usage hint")
+{% endif %}
+
+
+class UserResponse(BaseModel):
+    """User information response."""
+    id: int = Field(..., description="User ID")
+    login_id: str = Field(..., description="Login identifier")
+    role: str = Field(..., description="User role")
+    created_at: Optional[datetime] = Field(None, description="Account creation time")
+
+
+class RegisterResponse(BaseModel):
+    """Registration response."""
+    user: UserResponse = Field(..., description="Created user info")
+{% if auth_type == "bearer" %}
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+{% elif auth_type == "apikey" %}
+    api_key: str = Field(..., description="API key for authentication")
+    location: str = Field(default="{{ apikey_location }}", description="Where to send the key")
+    key_name: str = Field(default="{{ apikey_name }}", description="Header/cookie/query parameter name")
+{% elif auth_type == "basic" %}
+    message: str = Field(default="Registration successful", description="Success message")
+    hint: str = Field(default="Use HTTP Basic auth with your credentials", description="Usage hint")
+{% endif %}
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+{% if auth_type == "apikey" %}
+def generate_api_key() -> str:
+    """Generate a secure random API key."""
+    return secrets.token_urlsafe(32)
+
+
+def create_api_key_for_user(db: Session, user: User, description: str = None) -> APIKey:
+    """Create a new API key for a user."""
+    api_key = APIKey(
+        key=generate_api_key(),
+        user_id=user.id,
+        description=description or f"Auto-generated for {user.login_id}",
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    return api_key
+
+
+def get_or_create_api_key(db: Session, user: User) -> APIKey:
+    """Get existing active API key or create a new one."""
+    # Try to find an existing active key
+    existing = db.exec(
+        select(APIKey).where(
+            APIKey.user_id == user.id,
+            APIKey.is_active == True
+        )
+    ).first()
+
+    if existing:
+        return existing
+
+    # Create new key
+    return create_api_key_for_user(db, user, "Login-generated key")
+{% endif %}
+
+
+# ============================================================================
+# Routes
+# ============================================================================
+
+{% if allow_registration %}
+@router.post(
+    "/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register new user",
+{% if auth_type == "bearer" %}
+    description="Create a new user account and get JWT token.",
+{% elif auth_type == "apikey" %}
+    description="Create a new user account and get API key.",
+{% elif auth_type == "basic" %}
+    description="Create a new user account for Basic auth.",
+{% endif %}
+)
+async def register(
+    request: RegisterRequest,
+    db: Session = Depends(get_db),
+{% if auth_type == "apikey" and apikey_location == "cookie" %}
+    response: Response = None,
+{% endif %}
+):
+    """
+    Register a new user account.
+
+    - **login_id**: Unique login identifier (must be unique)
+    - **password**: Password (minimum 8 characters)
+    - **role**: User role (default: {{ default_role }})
+    """
+    # Check if user already exists
+{% if uses_default_db %}
+    existing = db.exec(
+        select(User).where(User.email == request.login_id)
+    ).first()
+{% else %}
+    existing = db.exec(
+        select(User).where(User.login_identifier == request.login_id)
+    ).first()
+{% endif %}
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this login identifier already exists",
+        )
+
+    # Validate role is allowed
+    allowed_roles = {{ roles }}
+    if request.role and request.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Allowed roles: {allowed_roles}",
+        )
+
+    # Create user with hashed password
+{% if uses_default_db %}
+    user = User(
+        email=request.login_id,
+        password_hash=hash_password(request.password),
+        role=request.role or "{{ default_role }}",
+    )
+{% else %}
+    # BYODB: Use internal field names that map to external columns via sa_column
+    user = User(
+        login_identifier=request.login_id,
+        pwd_hash=hash_password(request.password),
+        user_role=request.role or "{{ default_role }}",
+    )
+{% endif %}
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    user_response = UserResponse(
+        id=user.id,
+        login_id=user.login_id,
+        role=user.role,
+        created_at=getattr(user, "created_at", None),
+    )
+
+{% if auth_type == "bearer" %}
+    # Create JWT token
+    access_token = create_access_token(
+        user_id=str(user.id),
+        roles=[user.role],
+    )
+
+    return RegisterResponse(
+        user=user_response,
+        access_token=access_token,
+    )
+{% elif auth_type == "apikey" %}
+    # Create API key for the user
+    api_key = create_api_key_for_user(db, user, "Registration key")
+
+{% if apikey_location == "cookie" %}
+    # Set the API key as a cookie
+    if response:
+        response.set_cookie(
+            key="{{ apikey_name }}",
+            value=api_key.key,
+            httponly=True,
+            samesite="lax",
+        )
+{% endif %}
+
+    return RegisterResponse(
+        user=user_response,
+        api_key=api_key.key,
+        location="{{ apikey_location }}",
+        key_name="{{ apikey_name }}",
+    )
+{% elif auth_type == "basic" %}
+    return RegisterResponse(
+        user=user_response,
+        message="Registration successful. Use HTTP Basic auth with your credentials.",
+        hint="curl -u 'login_id:password' http://...",
+    )
+{% endif %}
+{% endif %}
+
+
+@router.post(
+    "/login",
+    response_model=AuthResponse,
+    summary="User login",
+{% if auth_type == "bearer" %}
+    description="Authenticate with credentials to get JWT token.",
+{% elif auth_type == "apikey" %}
+    description="Authenticate with credentials to get API key.",
+{% elif auth_type == "basic" %}
+    description="Verify credentials for Basic auth.",
+{% endif %}
+)
+async def login(
+    request: LoginRequest,
+    db: Session = Depends(get_db),
+{% if auth_type == "apikey" and apikey_location == "cookie" %}
+    response: Response = None,
+{% endif %}
+):
+    """
+    Authenticate user and return credentials.
+
+    - **login_id**: Login identifier
+    - **password**: User password
+    """
+    # Find user by login identifier
+{% if uses_default_db %}
+    user = db.exec(
+        select(User).where(User.email == request.login_id)
+    ).first()
+{% else %}
+    user = db.exec(
+        select(User).where(User.login_identifier == request.login_id)
+    ).first()
+{% endif %}
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    # Verify password
+    if not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+{% if auth_type == "bearer" %}
+    # Create JWT token
+    access_token = create_access_token(
+        user_id=str(user.id),
+        roles=[user.role],
+    )
+
+    return AuthResponse(access_token=access_token)
+{% elif auth_type == "apikey" %}
+    # Get or create API key for the user
+    api_key = get_or_create_api_key(db, user)
+
+{% if apikey_location == "cookie" %}
+    # Set the API key as a cookie
+    if response:
+        response.set_cookie(
+            key="{{ apikey_name }}",
+            value=api_key.key,
+            httponly=True,
+            samesite="lax",
+        )
+{% endif %}
+
+    return AuthResponse(
+        api_key=api_key.key,
+        location="{{ apikey_location }}",
+        key_name="{{ apikey_name }}",
+        user=UserResponse(
+            id=user.id,
+            login_id=user.login_id,
+            role=user.role,
+            created_at=getattr(user, "created_at", None),
+        ),
+    )
+{% elif auth_type == "basic" %}
+    return AuthResponse(
+        message="Login successful",
+        login_id=user.login_id,
+        hint="Use HTTP Basic auth: curl -u 'login_id:password' http://...",
+    )
+{% endif %}
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user",
+    description="Get information about the currently authenticated user.",
+)
+async def get_me(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get current authenticated user's information.
+
+{% if auth_type == "bearer" %}
+    Requires valid JWT token in Authorization header.
+{% elif auth_type == "apikey" %}
+    Requires valid API key in {{ apikey_location }}.
+{% elif auth_type == "basic" %}
+    Requires valid Basic auth credentials.
+{% endif %}
+    """
+    user = db.exec(
+        select(User).where(User.id == int(current_user.user_id))
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    return UserResponse(
+        id=user.id,
+        login_id=user.login_id,
+        role=user.role,
+        created_at=getattr(user, "created_at", None),
+    )
+
+{% if auth_type == "apikey" and apikey_location == "cookie" %}
+
+@router.post(
+    "/logout",
+    summary="Logout user",
+    description="Clear the authentication cookie.",
+)
+async def logout(response: Response):
+    """
+    Logout by clearing the API key cookie.
+    """
+    response.delete_cookie(
+        key="{{ apikey_name }}",
+        httponly=True,
+        samesite="lax",
+    )
+    return {"message": "Logged out successfully"}
+{% endif %}

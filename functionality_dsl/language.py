@@ -22,13 +22,20 @@ from functionality_dsl.lib.component_types import COMPONENT_TYPES
 # Import validation functions
 from functionality_dsl.validation import (
     _validate_computed_attrs,
-    _validate_parameter_expressions,
-    _validate_error_event_conditions,
-    verify_unique_endpoint_paths,
-    verify_endpoints,
-    verify_path_params,
+    _validate_exposure_blocks,
+    _validate_ws_entities,
+    _validate_entity_access_blocks,
     verify_entities,
     verify_components,
+    verify_server,
+    validate_accesscontrol_dependencies,
+    validate_role_references,
+    validate_server_auth_reference,
+    validate_authdb_singleton,
+    validate_authdb_config,
+    validate_session_byodb_requires_sessions_table,
+    validate_auth_config,
+    validate_source_syntax,
 )
 
 # Import object processors
@@ -151,14 +158,24 @@ def _populate_aggregates(model):
 def model_processor(model, metamodel=None):
     """
     Main model processor - runs after parsing to perform cross-object validation.
-    Order matters: unique names -> endpoints -> entities -> components -> aggregates
+    Order matters: unique names -> RBAC validation -> AuthDB validation -> server -> endpoints -> entities -> components -> aggregates
 
     Note: Imports are handled in build_model() via _expand_imports() before parsing.
     """
     verify_unique_names(model)
-    verify_unique_endpoint_paths(model)
-    verify_endpoints(model)
-    verify_path_params(model)
+
+    # RBAC validation (must run early, before other validations)
+    validate_accesscontrol_dependencies(model)
+    validate_role_references(model)
+    validate_server_auth_reference(model)
+
+    # Auth validation
+    validate_auth_config(model)
+    validate_authdb_singleton(model)
+    validate_authdb_config(model)
+    validate_session_byodb_requires_sessions_table(model)
+
+    verify_server(model)
     verify_entities(model)
     verify_components(model)
     _populate_aggregates(model)
@@ -170,57 +187,76 @@ def model_processor(model, metamodel=None):
 def _component_entity_attr_scope(obj, attr, attr_ref):
     """
     Scope provider for component attribute references.
-    Ties AttrRef.attr to the bound endpoint's entity attributes.
+    Ties AttrRef.attr to the bound entity's attributes.
+    Supports both v2 (entity_ref) and v1 (endpoint) syntax.
     """
     comp = obj
-    while comp is not None and not hasattr(comp, "endpoint"):
+    # Walk up to find component with entity_ref or endpoint
+    while comp is not None and not hasattr(comp, "entity_ref") and not hasattr(comp, "endpoint"):
         comp = getattr(comp, "parent", None)
 
-    if comp is None or getattr(comp, "endpoint", None) is None:
+    if comp is None:
+        # Get location for error reporting
+        try:
+            loc = get_location(attr_ref)
+        except Exception:
+            try:
+                loc = get_location(obj)
+            except Exception:
+                loc = {}
         raise TextXSemanticError(
-            "Component has no 'endpoint:' bound.", **get_location(attr_ref)
+            "Component has no 'entity:' or 'endpoint:' bound.", **loc
         )
 
-    iep = comp.endpoint
-
-    # NEW DESIGN: Extract entity from request/response/subscribe/publish blocks
     entity = None
 
-    # Try response schema (for REST GET or WS publish)
-    response_block = getattr(iep, "response", None)
-    if response_block:
-        schema = getattr(response_block, "schema", None)
-        if schema:
-            entity = getattr(schema, "entity", None)
+    # V2 SYNTAX: Direct entity binding
+    entity_ref = getattr(comp, "entity_ref", None)
+    if entity_ref is not None:
+        entity = entity_ref
+    # V1 SYNTAX: Extract entity from endpoint
+    elif getattr(comp, "endpoint", None) is not None:
+        iep = comp.endpoint
 
-    # Try request schema (for REST POST/PUT/PATCH)
-    if not entity:
-        request_block = getattr(iep, "request", None)
-        if request_block:
-            schema = getattr(request_block, "schema", None)
+        # Extract entity from request/response/subscribe/publish blocks
+        response_block = getattr(iep, "response", None)
+        if response_block:
+            schema = getattr(response_block, "schema", None)
             if schema:
                 entity = getattr(schema, "entity", None)
 
-    # Try publish message (for WS)
-    if not entity:
-        publish_block = getattr(iep, "publish", None)
-        if publish_block:
-            message = getattr(publish_block, "message", None)
-            if message:
-                entity = getattr(message, "entity", None)
+        if not entity:
+            request_block = getattr(iep, "request", None)
+            if request_block:
+                schema = getattr(request_block, "schema", None)
+                if schema:
+                    entity = getattr(schema, "entity", None)
 
-    # Try subscribe message (for WS)
-    if not entity:
-        subscribe_block = getattr(iep, "subscribe", None)
-        if subscribe_block:
-            message = getattr(subscribe_block, "message", None)
-            if message:
-                entity = getattr(message, "entity", None)
+        if not entity:
+            publish_block = getattr(iep, "publish", None)
+            if publish_block:
+                message = getattr(publish_block, "message", None)
+                if message:
+                    entity = getattr(message, "entity", None)
+
+        if not entity:
+            subscribe_block = getattr(iep, "subscribe", None)
+            if subscribe_block:
+                message = getattr(subscribe_block, "message", None)
+                if message:
+                    entity = getattr(message, "entity", None)
 
     if entity is None:
+        # Get location for error reporting
+        try:
+            loc = get_location(attr_ref)
+        except Exception:
+            try:
+                loc = get_location(obj)
+            except Exception:
+                loc = {}
         raise TextXSemanticError(
-            "Internal endpoint has no bound entity in request/response/subscribe/publish schemas.",
-            **get_location(attr_ref)
+            "Component has no bound entity.", **loc
         )
 
     # Build attribute map once per entity
@@ -276,8 +312,8 @@ def _expand_imports(model_path: str, visited=None) -> str:
     if not model_file.exists():
         raise FileNotFoundError(f"File not found: {model_file}")
 
-    # Read the file content
-    content = model_file.read_text()
+    # Read the file content with explicit UTF-8 encoding
+    content = model_file.read_text(encoding="utf-8")
     base_dir = model_file.parent
 
     # Find all import statements
@@ -331,8 +367,10 @@ def get_metamodel(debug: bool = False, global_repo: bool = True):
     # Model processors run after the whole model is built
     mm.register_model_processor(model_processor)
     mm.register_model_processor(_validate_computed_attrs)
-    mm.register_model_processor(_validate_parameter_expressions)
-    mm.register_model_processor(_validate_error_event_conditions)
+    mm.register_model_processor(_validate_exposure_blocks)
+    mm.register_model_processor(_validate_ws_entities)
+    mm.register_model_processor(validate_source_syntax)
+    mm.register_model_processor(_validate_entity_access_blocks)
 
     return mm
 

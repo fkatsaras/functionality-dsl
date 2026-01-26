@@ -4,7 +4,7 @@ Validation module for FDSL.
 This module contains all validation logic for the Functionality DSL, organized by concern:
 - expression_validators: Expression-level validation (references, functions, etc.)
 - entity_validators: Entity-level validation (attributes, schema, computed)
-- endpoint_validators: Endpoint-level validation (REST/WS, parameters, errors/events)
+- exposure_validators: Entity exposure validation (v2 syntax)
 - component_validators: UI component validation
 """
 
@@ -24,16 +24,32 @@ from functionality_dsl.validation.entity_validators import (
     verify_entities,
 )
 
-from functionality_dsl.validation.endpoint_validators import (
-    _validate_parameter_expressions,
-    _validate_error_event_conditions,
-    verify_path_params,
-    verify_unique_endpoint_paths,
-    verify_endpoints,
-)
-
 from functionality_dsl.validation.component_validators import (
     verify_components,
+)
+
+from functionality_dsl.validation.exposure_validators import (
+    _validate_exposure_blocks,
+    _validate_ws_entities,
+    _validate_entity_access_blocks,
+)
+
+from functionality_dsl.validation.server_validators import (
+    verify_server,
+)
+
+from functionality_dsl.validation.rbac_validators import (
+    validate_accesscontrol_dependencies,
+    validate_role_references,
+    validate_server_auth_reference,
+    validate_authdb_singleton,
+    validate_authdb_config,
+    validate_session_byodb_requires_sessions_table,
+    validate_auth_config,
+)
+
+from functionality_dsl.validation.source_validators import (
+    validate_source_syntax,
 )
 
 __all__ = [
@@ -48,12 +64,22 @@ __all__ = [
     "_get_all_entity_attributes",
     "_validate_computed_attrs",
     "verify_entities",
-    # Endpoint validators
-    "_validate_parameter_expressions",
-    "_validate_error_event_conditions",
-    "verify_path_params",
-    "verify_unique_endpoint_paths",
-    "verify_endpoints",
     # Component validators
     "verify_components",
+    # Exposure validators (v2 syntax)
+    "_validate_exposure_blocks",
+    "_validate_ws_entities",
+    "_validate_entity_access_blocks",
+    # Server validators
+    "verify_server",
+    # RBAC validators
+    "validate_accesscontrol_dependencies",
+    "validate_role_references",
+    "validate_server_auth_reference",
+    "validate_authdb_singleton",
+    "validate_authdb_config",
+    "validate_session_byodb_requires_sessions_table",
+    "validate_auth_config",
+    # Source validators
+    "validate_source_syntax",
 ]

@@ -79,6 +79,7 @@ setup: ## Install dependencies and set up development environment
 clean: ## Clean generated files and caches
 	@echo "$(YELLOW)Cleaning generated files...$(NC)"
 	rm -rf $(GENERATED_DIR)
+	rm -rf cookies.txt
 	rm -rf test_gen test_ast_gen generated_ws_test
 	rm -rf **/__pycache__ **/*.pyc **/*.pyo
 	rm -rf .pytest_cache .coverage htmlcov
@@ -156,6 +157,35 @@ generate-all: ## Generate code for all examples
 
 .PHONY: gen
 gen: generate ## Alias for 'generate'
+
+.PHONY: visualize
+visualize: ## Visualize FDSL model (usage: make visualize FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		echo "Usage: make visualize FILE=examples/v2/nested-entities/main.fdsl"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Generating model visualization for $(FILE)...$(NC)"
+	$(FDSL) visualize $(FILE) --output docs
+	@echo "$(GREEN)Visualization generated!$(NC)"
+	@echo "DOT file: docs/$$(basename $(FILE) .fdsl)_diagram.dot"
+	@if command -v dot > /dev/null 2>&1; then \
+		echo "PNG file: docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	else \
+		echo "$(YELLOW)Note: Install GraphViz to generate PNG files$(NC)"; \
+		echo "To convert: dot -Tpng docs/$$(basename $(FILE) .fdsl)_diagram.dot -o docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	fi
+
+.PHONY: viz
+viz: visualize ## Alias for 'visualize'
+
+.PHONY: viz-no-components
+viz-no-components: ## Visualize without UI components (usage: make viz-no-components FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		exit 1; \
+	fi
+	$(FDSL) visualize $(FILE) --output docs --no-components
 
 # ==============================================================================
 # Testing
@@ -272,6 +302,30 @@ count-lines: ## Count lines of code in the project
 	@echo "$(BLUE)Counting lines of code...$(NC)"
 	@find functionality_dsl -name "*.py" | xargs wc -l | tail -1
 	@find examples -name "*.fdsl" | xargs wc -l | tail -1
+
+.PHONY: count-fdsl
+count-fdsl: ## Count FDSL lines in example (usage: make count-fdsl EXAMPLE=rest-basics)
+	@if [ -z "$(EXAMPLE)" ]; then \
+		echo "$(RED)Error: EXAMPLE not specified$(NC)"; \
+		echo "Usage: make count-fdsl EXAMPLE=rest-basics"; \
+		echo "       make count-fdsl EXAMPLE=delivery-tracking"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(EXAMPLES_DIR)/$(EXAMPLE)" ]; then \
+		echo "$(RED)Error: Example '$(EXAMPLE)' not found$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Counting FDSL lines in $(EXAMPLE) (excluding comments)...$(NC)"
+	@echo ""
+	@TOTAL=0; \
+	for file in $$(find $(EXAMPLES_DIR)/$(EXAMPLE) -name "*.fdsl"); do \
+		COUNT=$$(grep -v '^\s*//' "$$file" | grep -v '^\s*$$' | wc -l | tr -d ' '); \
+		FILENAME=$$(basename "$$file"); \
+		printf "  %-30s %s\n" "$$FILENAME:" "$$COUNT"; \
+		TOTAL=$$((TOTAL + COUNT)); \
+	done; \
+	echo ""; \
+	echo "$(GREEN)Total FDSL lines (minus comments): $$TOTAL$(NC)"
 
 .PHONY: count-generated
 count-generated: ## Count lines of code in generated app (usage: make count-generated APP=path/to/generated/app)

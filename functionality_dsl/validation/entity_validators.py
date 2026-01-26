@@ -3,6 +3,8 @@ Entity-level validation for FDSL.
 
 This module contains validation functions for Entity definitions, including
 schema-only entities, computed entities, and entity hierarchies.
+
+All entities are now singletons (no @id field, no collections, no filters).
 """
 
 from collections import deque
@@ -17,6 +19,46 @@ from functionality_dsl.validation.expression_validators import (
     _validate_func,
     _build_validation_context,
 )
+
+
+# ------------------------------------------------------------------------------
+# Parent aliasing helpers
+
+def _get_parent_refs(entity):
+    """
+    Get list of parent references (ParentRef objects) from an entity.
+    Returns empty list if no parents.
+    """
+    return getattr(entity, "parents", []) or []
+
+def _get_parent_entities(entity):
+    """
+    Extract actual Entity objects from ParentRef list.
+    Returns list of Entity objects.
+    """
+    parent_refs = _get_parent_refs(entity)
+    return [ref.entity for ref in parent_refs]
+
+def _get_parent_alias(parent_ref):
+    """
+    Get alias for a parent reference, or use entity name if no alias.
+    Returns string alias name.
+    """
+    if hasattr(parent_ref, 'alias') and parent_ref.alias:
+        return parent_ref.alias
+    return parent_ref.entity.name
+
+def _build_parent_alias_map(entity):
+    """
+    Build mapping from alias -> (ParentRef, Entity) for all parents.
+    Returns dict: {alias: (parent_ref, entity)}
+    """
+    parent_refs = _get_parent_refs(entity)
+    alias_map = {}
+    for ref in parent_refs:
+        alias = _get_parent_alias(ref)
+        alias_map[alias] = (ref, ref.entity)
+    return alias_map
 
 
 # ------------------------------------------------------------------------------
@@ -46,10 +88,138 @@ def _get_all_entity_attributes(entity):
                 seen_names.add(attr.name)
 
         # Add parents to queue
-        parents = getattr(current, "parents", []) or []
-        queue.extend(parents)
+        parent_entities = _get_parent_entities(current)
+        queue.extend(parent_entities)
 
     return all_attrs
+
+
+# ------------------------------------------------------------------------------
+# Nested entity type validation (array<Entity>, object<Entity>)
+
+def _get_nested_entity_refs(entity):
+    """
+    Get all entity references from array<Entity> and object<Entity> attributes.
+    Returns list of (attr_name, referenced_entity) tuples.
+    """
+    refs = []
+    for attr in getattr(entity, "attributes", []) or []:
+        type_spec = getattr(attr, "type", None)
+        if not type_spec:
+            continue
+
+        # Check for array<Entity>
+        item_entity = getattr(type_spec, "itemEntity", None)
+        if item_entity:
+            refs.append((attr.name, item_entity))
+
+        # Check for object<Entity>
+        nested_entity = getattr(type_spec, "nestedEntity", None)
+        if nested_entity:
+            refs.append((attr.name, nested_entity))
+
+    return refs
+
+
+def _validate_nested_entity_circular_refs(model):
+    """
+    Detect circular references in nested entity types.
+
+    Circular references like:
+      Entity A { b: object<B> }
+      Entity B { a: object<A> }
+
+    Would cause issues in generated Pydantic models (forward reference ordering).
+    """
+    entities = {e.name: e for e in get_children_of_type("Entity", model)}
+
+    def find_cycle(start_name, current_name, visited, path):
+        """DFS to find cycles in entity references."""
+        if current_name in visited:
+            if current_name == start_name:
+                return path  # Found cycle back to start
+            return None  # Already visited but not a cycle to start
+
+        if current_name not in entities:
+            return None
+
+        visited.add(current_name)
+        entity = entities[current_name]
+
+        for attr_name, ref_entity in _get_nested_entity_refs(entity):
+            ref_name = ref_entity.name
+            new_path = path + [(current_name, attr_name, ref_name)]
+            cycle = find_cycle(start_name, ref_name, visited.copy(), new_path)
+            if cycle:
+                return cycle
+
+        return None
+
+    # Check each entity as a potential cycle start
+    for entity_name in entities:
+        cycle = find_cycle(entity_name, entity_name, set(), [])
+        if cycle:
+            # Format cycle path for error message
+            cycle_desc = " -> ".join(
+                f"{src}.{attr} -> {tgt}" for src, attr, tgt in cycle
+            )
+            entity = entities[entity_name]
+            raise TextXSemanticError(
+                f"Circular reference detected in nested entity types: {cycle_desc}. "
+                f"Circular references are not supported in array<Entity> or object<Entity> types.",
+                **get_location(entity)
+            )
+
+
+def _validate_nested_entity_self_refs(model):
+    """
+    Detect self-referencing entities in nested types.
+
+    Self-references like:
+      Entity Node { children: array<Node> }
+
+    Are not currently supported (would require Pydantic forward refs).
+    """
+    for entity in get_children_of_type("Entity", model):
+        for attr_name, ref_entity in _get_nested_entity_refs(entity):
+            if ref_entity.name == entity.name:
+                raise TextXSemanticError(
+                    f"Self-reference detected: attribute '{attr_name}' references "
+                    f"its own entity '{entity.name}'. Self-referencing nested types "
+                    f"are not currently supported.",
+                    **get_location(entity)
+                )
+
+
+def _validate_nested_entity_should_be_schema_only(model):
+    """
+    Warn if an entity used in array<Entity> or object<Entity> has its own
+    source or access (meaning it would be exposed as its own endpoint).
+
+    Nested entities should typically be schema-only (no source, no access).
+    """
+    # Collect all entities that are used as nested types
+    nested_type_entities = set()
+    for entity in get_children_of_type("Entity", model):
+        for _, ref_entity in _get_nested_entity_refs(entity):
+            nested_type_entities.add(ref_entity.name)
+
+    # Check if any nested type entity has its own source or access
+    for entity in get_children_of_type("Entity", model):
+        if entity.name not in nested_type_entities:
+            continue
+
+        has_source = getattr(entity, "source", None) is not None
+        has_access = getattr(entity, "access", None) is not None
+
+        if has_source or has_access:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' is used as a nested type (in array<{entity.name}> "
+                f"or object<{entity.name}>) but also has {'source' if has_source else 'access'} defined. "
+                f"Nested type entities should be schema-only (no source or access). "
+                f"Remove the {'source' if has_source else 'access'} declaration or use a separate schema entity.",
+                **get_location(entity)
+            )
 
 
 # ------------------------------------------------------------------------------
@@ -169,6 +339,20 @@ def _validate_computed_attrs(model, metamodel=None):
             message = getattr(publish, "message", None)
             collect_schema_entities(message, schema_entities)
 
+    # NEW SYNTAX: Entities with source bindings (entity-centric exposure)
+    # These are also schema entities when used with CRUD operations
+    for ent in get_children_of_type("Entity", model):
+        source = getattr(ent, "source", None)
+        if source:
+            # Entity is bound to a source, so it's a schema entity
+            schema_entities.add(ent.name)
+
+        # For WebSocket outbound entities, they are schema entities
+        # (they receive data from client to publish to external WS)
+        flow = getattr(ent, "flow", None)
+        if flow == "outbound":
+            schema_entities.add(ent.name)
+
     # Also collect entities referenced in attribute types (array<Entity>, object<Entity>)
     # These nested entities are also schema entities if the parent is
     def collect_nested_schema_entities(entity_name, collected, visited=None):
@@ -219,7 +403,7 @@ def _validate_computed_attrs(model, metamodel=None):
     }
 
     for ent in get_children_of_type("Entity", model):
-        parents = getattr(ent, "parents", []) or []
+        parent_entities = _get_parent_entities(ent)
 
         # Check if entity has any attribute without an expression
         has_schema_only_attrs = False
@@ -248,9 +432,8 @@ def _validate_computed_attrs(model, metamodel=None):
 
             if expr is None:
                 raise TextXSemanticError(
-                    f"Attribute '{a.name}' is missing expression. "
-                    f"Entities with computed attributes must have expressions for ALL attributes, "
-                    f"or be pure schema entities (no expressions at all) when used in request/response.",
+                    f"Attribute '{a.name}' is missing an expression. "
+                    f"Either add '= expr' or make all attributes schema-only.",
                     **get_location(a)
                 )
 
@@ -278,17 +461,15 @@ def _validate_computed_attrs(model, metamodel=None):
                 if var_name in entity_attr_names:
                     raise TextXSemanticError(
                         f"Bare identifier '{var_name}' is ambiguous. "
-                        f"Use explicit syntax '{ent.name}.{var_name}' to reference entity attributes. "
-                        f"Entity attributes must always be referenced with the entity name prefix.",
+                        f"Use '{ent.name}.{var_name}' to reference the attribute.",
                         **get_location(node)
                     )
 
-                # If it matches a known entity/source/endpoint name but used as bare variable, warn
+                # If it matches a known entity/source/endpoint name but used as bare variable, error
                 if var_name in all_known_names:
                     raise TextXSemanticError(
-                        f"Bare identifier '{var_name}' matches a known entity/source/endpoint name. "
-                        f"If you meant to reference this entity, use explicit syntax like '{var_name}.attribute'. "
-                        f"If this is intentional, it will be looked up in the runtime context.",
+                        f"Bare reference '{var_name}' is not allowed. "
+                        f"Use '{var_name}.attributeName' syntax.",
                         **get_location(node)
                     )
 
@@ -316,21 +497,20 @@ def _validate_computed_attrs(model, metamodel=None):
                         # Check if the referenced attribute exists
                         if attr not in attr_order:
                             raise TextXSemanticError(
-                                f"Attribute '{a.name}' references '{ent.name}.{attr}' which does not exist on entity '{ent.name}'.",
+                                f"'{ent.name}.{attr}' does not exist.",
                                 **get_location(node),
                             )
                         # Check that it's referencing an earlier attribute (forward-only)
                         ref_idx = attr_order[attr]
                         if ref_idx >= attr_idx:
                             raise TextXSemanticError(
-                                f"Forward reference: attribute '{a.name}' references '{ent.name}.{attr}' which is defined later. "
-                                f"Move '{attr}' before '{a.name}'.",
+                                f"Forward reference not allowed: '{attr}' must be defined before '{a.name}'.",
                                 **get_location(node),
                             )
                     continue
 
                 # Allow references to parent entities (and validate attr existence)
-                if alias in (p.name for p in parents):
+                if alias in (p.name for p in parent_entities):
                     tgt_attrs = target_attrs.get(alias, set())
                     if attr and attr != "__jsonpath__" and attr not in tgt_attrs:
                         raise TextXSemanticError(
@@ -342,13 +522,12 @@ def _validate_computed_attrs(model, metamodel=None):
                 # Check if referencing another entity
                 if alias in target_attrs:
                     # RULE: All entity references in attributes MUST be declared as parents
-                    parent_names = {p.name for p in parents}
+                    parent_names = {p.name for p in parent_entities}
 
                     if alias not in parent_names:
-                        all_parents = sorted(parent_names | {alias})
                         raise TextXSemanticError(
-                            f"Entity '{ent.name}' references '{alias}' but it's not a parent. "
-                            f"Add to parents: Entity {ent.name}({', '.join(all_parents)})",
+                            f"'{alias}' is not a parent of '{ent.name}'. "
+                            f"Add it: Entity {ent.name}(..., {alias})",
                             **get_location(node),
                         )
                     continue
@@ -406,11 +585,10 @@ def _validate_schema_only_entities(model):
     # Validate each request schema entity
     for entity in schema_entities:
         # Check for parent entities
-        parents = getattr(entity, "parents", [])
-        if parents and len(parents) > 0:
+        parent_entities = _get_parent_entities(entity)
+        if parent_entities and len(parent_entities) > 0:
             raise TextXSemanticError(
-                f"Entity '{entity.name}' is used as a request schema and cannot have parent entities. "
-                f"Request schema entities must be simple, self-contained data structures.",
+                f"Request schema entity '{entity.name}' cannot have parent entities.",
                 **get_location(entity)
             )
 
@@ -420,9 +598,7 @@ def _validate_schema_only_entities(model):
             expr = getattr(attr, "expr", None)
             if expr:
                 raise TextXSemanticError(
-                    f"Entity '{entity.name}' attribute '{attr.name}' has an expression. "
-                    f"Request schema entities must have simple type declarations only (no '= expression' part). "
-                    f"Use: '- {attr.name}: {attr.type}' (without expressions).",
+                    f"Request schema entity '{entity.name}': attribute '{attr.name}' cannot have an expression.",
                     **get_location(attr)
                 )
 
@@ -501,19 +677,8 @@ def _validate_source_response_entities(model):
             for alias, _, node in _collect_refs(expr):
                 if alias == source_name:
                     raise TextXSemanticError(
-                        f"Entity '{entity.name}' attribute '{attr.name}' references Source '{source_name}'. "
-                        f"Entities directly sourced from external Sources (REST/WS) should be pure schema entities "
-                        f"without expressions. Instead, create a transformation entity that inherits from '{entity.name}' "
-                        f"to compute values. Example:\n"
-                        f"  Entity {entity.name}\n"
-                        f"    attributes:\n"
-                        f"      - {attr.name}: {getattr(attr.type, 'typename', 'type')};\n"
-                        f"  end\n"
-                        f"  \n"
-                        f"  Entity {entity.name}Computed({entity.name})\n"
-                        f"    attributes:\n"
-                        f"      - computed: ... = {entity.name}.{attr.name};\n"
-                        f"  end",
+                        f"Source schema entity '{entity.name}' cannot reference its source '{source_name}'. "
+                        f"Create a separate transformation entity instead.",
                         **get_location(attr)
                     )
 
@@ -581,8 +746,8 @@ def _validate_rest_endpoint_entities(model):
                 return True
 
             # Add parents to queue
-            parents = getattr(current, "parents", []) or []
-            queue.extend(parents)
+            parent_entities = _get_parent_entities(current)
+            queue.extend(parent_entities)
 
         return False
 
@@ -603,11 +768,8 @@ def _validate_rest_endpoint_entities(model):
         # Validate the response entity
         if not is_rest_sourced_or_computed(entity):
             raise TextXSemanticError(
-                f"Endpoint<REST> '{endpoint.name}' response entity '{entity.name}' is not sourced from a Source<REST> "
-                f"and has no computed attributes. REST response entities must either:\n"
-                f"  1. Be provided by a Source<REST> response block\n"
-                f"  2. Inherit from an entity provided by Source<REST>\n"
-                f"  3. Be a computed entity (with expressions) that transforms data",
+                f"Response entity '{entity.name}' has no data source. "
+                f"Either bind it to a Source<REST> or add computed attributes.",
                 **get_location(endpoint)
             )
 
@@ -631,12 +793,350 @@ def _validate_entity_inheritance_cycles(model):
             raise
 
 
+def _validate_source_urls(model):
+    """
+    Validate that REST source urls follow best practices:
+    - Should include the resource path, not just the server root
+    - Helps prevent common mistakes where one source is used for multiple resource types
+
+    Example:
+    ✓ GOOD: url: "http://api.example.com/users"
+    ✗ BAD:  url: "http://api.example.com"
+    """
+    sources = get_children_of_type("SourceREST", model)
+
+    for source in sources:
+
+        url = getattr(source, "url", None)
+        if not url:
+            continue
+
+        # Parse the URL to check if it has a path component
+        # Remove protocol
+        url_without_protocol = url
+        if "://" in url:
+            url_without_protocol = url.split("://", 1)[1]
+
+        # Check if there's a path after the host
+        # Format: "host:port/path" or "host/path"
+        parts = url_without_protocol.split("/", 1)
+
+        # If there's only one part (no path after host), warn the user
+        if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ""):
+            raise TextXSemanticError(
+                f"Source '{source.name}' url '{url}' is missing a resource path. "
+                f"Use 'http://host/resource' format.",
+                **get_location(source)
+            )
+
+
+def _is_websocket_entity(entity, model):
+    """
+    Determine if an entity is WebSocket-based (either it or its parents are sourced from WS).
+
+    Returns True if:
+    - Entity has source: field pointing to a Source<WS>
+    - Any parent entity is sourced from Source<WS>
+    """
+    from functionality_dsl.api.extractors import find_source_for_entity
+
+    # Check entity itself
+    source, source_type = find_source_for_entity(entity, model)
+    if source_type == "WS":
+        return True
+
+    # Check parent chain
+    parent_entities = _get_parent_entities(entity)
+    for parent in parent_entities:
+        source, source_type = find_source_for_entity(parent, model)
+        if source_type == "WS":
+            return True
+
+    return False
+
+
+def _validate_websocket_entity_relationships(model):
+    """
+    Validate WebSocket composite entities.
+
+    MVP/v1 RESTRICTION:
+    - WebSocket composite entities can have ONLY ONE WebSocket parent
+    - Multi-source WebSocket aggregation is NOT supported (too complex)
+    - Use separate subscribe endpoints + client-side merge instead
+
+    Rationale:
+    - WebSocket is event-driven (messages arrive asynchronously)
+    - Multi-source merge requires complex state management and timing logic
+    - Better handled client-side or with explicit server logic (future enhancement)
+
+    Allowed:
+    - Single WebSocket parent (transformation): Entity B(WsEntityA)
+    - Mixed parents (REST + WS): Only if one WS parent max
+
+    Disallowed:
+    - Multiple WebSocket parents: Entity C(WsEntityA, WsEntityB) → ERROR
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_refs = _get_parent_refs(entity)
+        parent_entities = _get_parent_entities(entity)
+
+        # If no parents, skip
+        if not parent_refs:
+            continue
+
+        # Count WebSocket parents and check their types
+        from functionality_dsl.api.extractors import find_source_for_entity
+        ws_parents = []
+        ws_parent_types = []  # Track the flow of each WS parent
+
+        for parent in parent_entities:
+            source, source_type = find_source_for_entity(parent, model)
+            if source_type == "WS":
+                ws_parents.append(parent.name)
+                parent_flow = getattr(parent, "flow", None)
+                ws_parent_types.append(parent_flow)
+
+        # RULE: Multiple WebSocket parents are allowed ONLY if they're all the same type (inbound)
+        if len(ws_parents) > 1:
+            # Check if all WS parents have the same flow
+            unique_types = set(ws_parent_types)
+
+            if len(unique_types) > 1:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has WebSocket parents with mixed types. "
+                    f"All WS parents must have the same type.",
+                    **get_location(entity)
+                )
+
+            # If all parents are NOT inbound, disallow multiple parents
+            if unique_types != {'inbound'}:
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' has multiple WebSocket parents. "
+                    f"Only 'type: inbound' entities can have multiple WS parents.",
+                    **get_location(entity)
+                )
+
+
+def _validate_outbound_entities_not_composed(model):
+    """
+    Validate that outbound WebSocket entities cannot be composed.
+
+    RULE: Entities with type: outbound CANNOT have children (composite entities).
+
+    Rationale:
+    - Outbound entities receive data from client and forward to external WS
+    - Composition doesn't make sense for publish flow (client sends directly)
+    - Only inbound entities (subscribe flow) can have transformations via composition
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_refs = _get_parent_refs(entity)
+
+        # Skip if no parents
+        if not parent_refs:
+            continue
+
+        # Check if any parent is outbound
+        parent_entities = _get_parent_entities(entity)
+        for parent in parent_entities:
+            parent_flow = getattr(parent, "flow", None)
+
+            if parent_flow == "outbound":
+                raise TextXSemanticError(
+                    f"Entity '{entity.name}' cannot extend outbound entity '{parent.name}'. "
+                    f"Outbound entities cannot be composed.",
+                    **get_location(entity)
+                )
+
+
+# ------------------------------------------------------------------------------
+# Identity anchor computation and validation
+
+def _compute_identity_anchors(model):
+    """
+    Compute identity markers for all entities.
+
+    All entities are now singletons (no @id field, no collections).
+    This function marks entities as composite or base.
+    """
+    entities = get_children_of_type("Entity", model)
+
+    # Store computed markers on entity objects
+    for entity in entities:
+        parent_entities = _get_parent_entities(entity)
+        entity._is_composite = len(parent_entities) > 0
+
+
+def _get_source_operations(source):
+    """
+    Get list of operation names from a source.
+    Returns list of operations (e.g., ['read', 'create', 'update', 'delete']).
+    """
+    if not source:
+        return []
+
+    source_ops = getattr(source, "operations", None)
+    if source_ops:
+        return list(getattr(source_ops, "operations", []) or [])
+
+    return []
+
+
+def _validate_composite_entities(model):
+    """
+    Validate composite entity rules:
+    1. Composite entities (with parents) CANNOT have 'source' (strictly read-only views)
+    2. All parent entities must have readable data paths (sources with 'read' operation)
+
+    Rationale:
+    - REST composites are read-only transformations of parent data
+    - WS inbound composites transform incoming messages before sending to clients
+    - WS outbound composites don't make sense (use computed fields on base entity instead)
+    - Parent entities must be readable for the composite to fetch and transform their data
+    """
+    from functionality_dsl.api.extractors import find_source_for_entity
+
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_entities = _get_parent_entities(entity)
+
+        # Skip if no parents (base entity)
+        if not parent_entities:
+            continue
+
+        # Rule 1: Entities with parents CANNOT have source
+        source = getattr(entity, "source", None)
+        if source:
+            raise TextXSemanticError(
+                f"Entity '{entity.name}' cannot have both parents and a source. "
+                f"Composite entities are read-only views.",
+                **get_location(entity)
+            )
+
+        # Rule 2: All parent entities must have readable data paths
+        # Check if composite entity is a WebSocket inbound entity (these use subscribe, not read)
+        flow = getattr(entity, "flow", None)
+
+        for parent in parent_entities:
+            parent_source, source_type = find_source_for_entity(parent, model)
+
+            # If parent has no source, it might be a nested composite - check recursively
+            # For now, we only validate parents that have direct sources
+            if not parent_source:
+                continue
+
+            # Get operations from parent's source
+            operations = _get_source_operations(parent_source)
+
+            # For REST sources: require 'read' operation
+            if source_type == "REST":
+                if 'read' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references parent '{parent.name}' "
+                        f"whose source does not support 'read' operation. "
+                        f"Parent entities must be readable for composition. "
+                        f"Add 'read' to the source operations: operations: [read, ...]",
+                        **get_location(entity)
+                    )
+
+            # For WS sources: require 'subscribe' operation (for inbound)
+            elif source_type == "WS":
+                parent_ws_flow = getattr(parent, "flow", None)
+                if parent_ws_flow == "inbound" and 'subscribe' not in operations:
+                    raise TextXSemanticError(
+                        f"Composite entity '{entity.name}' references inbound WS parent '{parent.name}' "
+                        f"whose source does not support 'subscribe' operation.",
+                        **get_location(entity)
+                    )
+
+
+# ------------------------------------------------------------------------------
+# Attribute marker validation (@readonly, @optional)
+
+def _validate_attribute_markers(model):
+    """
+    Validate @readonly and @optional attribute markers.
+
+    Rules:
+    1. @optional on computed attributes is invalid (computed = always derived)
+    2. @optional on composite entity attributes is redundant (composites have no input schemas)
+    3. @readonly and @optional are mutually exclusive (grammar enforces this, but double-check)
+    4. @readonly/@optional on inbound WS entities is invalid (no input schemas)
+    """
+    entities = get_children_of_type("Entity", model)
+
+    for entity in entities:
+        parent_entities = _get_parent_entities(entity)
+        is_composite = len(parent_entities) > 0
+        flow = getattr(entity, "flow", None)
+
+        attrs = getattr(entity, "attributes", []) or []
+
+        for attr in attrs:
+            attr_type = getattr(attr, "type", None)
+            if not attr_type:
+                continue
+
+            is_optional = getattr(attr_type, "optionalMarker", None)
+            is_readonly = getattr(attr_type, "readonlyMarker", None)
+            has_expr = getattr(attr, "expr", None) is not None
+
+            # Rule 1: @optional on computed attributes is invalid
+            if is_optional and has_expr:
+                raise TextXSemanticError(
+                    f"'{attr.name}': @optional cannot be used on computed attributes.",
+                    **get_location(attr)
+                )
+
+            # Rule 2: @optional on composite entities is redundant (warning, not error)
+            # Composite entities don't have create/update schemas, so @optional has no effect
+            # We could warn here, but for now we'll just silently allow it
+
+            # Rule 3: @readonly and @optional together (grammar already prevents this via alternation)
+            # This is just a safety check
+            if is_optional and is_readonly:
+                raise TextXSemanticError(
+                    f"'{attr.name}': @optional and @readonly cannot be combined.",
+                    **get_location(attr)
+                )
+
+            # Rule 4: @readonly/@optional on inbound WS entities is invalid
+            # Inbound entities only output data to clients - they have no input schemas
+            # These markers only affect Create/Update schemas which don't exist for inbound WS
+            if flow == "inbound" and (is_optional or is_readonly):
+                marker = "@optional" if is_optional else "@readonly"
+                raise TextXSemanticError(
+                    f"'{attr.name}': {marker} cannot be used on inbound WebSocket entities. "
+                    f"Inbound entities only output data and have no input schemas.",
+                    **get_location(attr)
+                )
+
+
 # ------------------------------------------------------------------------------
 # Main entity validation entry point
 
 def verify_entities(model):
     """Entity-specific cross-model validation."""
     _validate_entity_inheritance_cycles(model)
+    _compute_identity_anchors(model)  # Mark composite entities
+    _validate_composite_entities(model)  # Validate composite rules
     _validate_schema_only_entities(model)
     _validate_source_response_entities(model)
     _validate_rest_endpoint_entities(model)
+    _validate_source_urls(model)
+    _validate_attribute_markers(model)  # Validate @readonly/@optional markers
+
+    # Nested entity type validation (array<Entity>, object<Entity>)
+    _validate_nested_entity_self_refs(model)  # Check self-refs first (more specific error)
+    _validate_nested_entity_circular_refs(model)
+    _validate_nested_entity_should_be_schema_only(model)
+
+    # WebSocket validation
+    _validate_websocket_entity_relationships(model)  # WebSocket: join semantics
+    _validate_outbound_entities_not_composed(model)  # WebSocket: outbound entities cannot be composed
+
+    _validate_computed_attrs(model)  # Must be last - compiles expressions

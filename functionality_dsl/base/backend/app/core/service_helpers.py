@@ -95,12 +95,12 @@ def log_fetch_success(logger: logging.Logger, entity_name: str, payload: Any) ->
     payload_preview = json.dumps(sanitized_payload, indent=2)[:300]
     if len(json.dumps(sanitized_payload)) > 300:
         payload_preview += "\n  ... (truncated)"
-    logger.info(f"[FETCH] ✓ Received data from {entity_name}:\n{payload_preview}")
+    logger.info(f"[FETCH] OK Received data from {entity_name}:\n{payload_preview}")
 
 
 def log_fetch_error(logger: logging.Logger, entity_name: str, status_code: int) -> None:
     """Log fetch error from external source."""
-    logger.error(f"[FETCH] ✗ HTTP {status_code} from {entity_name}")
+    logger.error(f"[FETCH] X HTTP {status_code} from {entity_name}")
 
 
 def log_write_request(logger: logging.Logger, method: str, url: str, payload: Any) -> None:
@@ -118,12 +118,12 @@ def log_write_success(logger: logging.Logger, target_name: str, response: Any) -
     response_preview = json.dumps(sanitized_response, indent=2)[:300]
     if len(json.dumps(sanitized_response)) > 300:
         response_preview += "\n  ... (truncated)"
-    logger.info(f"[WRITE] ✓ Response from {target_name}:\n{response_preview}")
+    logger.info(f"[WRITE] OK Response from {target_name}:\n{response_preview}")
 
 
 def log_write_error(logger: logging.Logger, target_name: str, status_code: int, response_text: str) -> None:
     """Log write error to external target."""
-    logger.error(f"[WRITE] ✗ HTTP {status_code} from {target_name}")
+    logger.error(f"[WRITE] X HTTP {status_code} from {target_name}")
     logger.error(f"[WRITE] - Response: {response_text[:500]}")
 
 
@@ -216,7 +216,7 @@ def validate_request_body(
 
     try:
         validated_payload = entity_class(**request_body)
-        logger.debug(f"[VALIDATION] ✓ Schema validation passed for {entity_class.__name__}")
+        logger.debug(f"[VALIDATION] OK Schema validation passed for {entity_class.__name__}")
         return validated_payload.model_dump()
     except ValidationError as validation_error:
         # Build simple error message
@@ -229,7 +229,7 @@ def validate_request_body(
         error_summary = "; ".join(error_messages)
         error_detail = f"Validation error: {error_summary}"
 
-        logger.error(f"[VALIDATION] ✗ Schema validation failed for {entity_class.__name__}: {error_summary}")
+        logger.error(f"[VALIDATION] X Schema validation failed for {entity_class.__name__}: {error_summary}")
         log_outgoing_error(logger, error_detail)
 
         raise HTTPException(

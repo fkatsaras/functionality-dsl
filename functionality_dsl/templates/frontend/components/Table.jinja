@@ -3,6 +3,12 @@
 {# props.endpointPath: the bound APIEndpoint<REST> endpoint #}
 {# props.pathParams: list of path parameter names #}
 {# props.queryParams: list of query parameter names #}
+{# props.operations: list of CRUD operations available, e.g. ["read", "create", "update", "delete"] #}
+{# props.readonlyFields: list of readonly field names #}
+{# props.allFields: list of all entity field names #}
+{# props.arrayField: field name containing array of items (null if entity mode) #}
+{# props.keyField: unique key field in items (null if entity mode) #}
+{# props.itemMode: boolean - true if CRUD operates on individual items in array #}
 
 <Table
   name="{{ common.name }}"
@@ -11,4 +17,10 @@
   columns={{ "{" }}{{ props.get('columns') | tojson }}{{ "}" }}
   pathParams={{ "{" }}{{ props.get('pathParams', []) | tojson }}{{ "}" }}
   queryParams={{ "{" }}{{ props.get('queryParams', []) | tojson }}{{ "}" }}
+  operations={{ "{" }}{{ props.get('operations', []) | tojson }}{{ "}" }}
+  readonlyFields={{ "{" }}{{ props.get('readonlyFields', []) | tojson }}{{ "}" }}
+  allFields={{ "{" }}{{ props.get('allFields', []) | tojson }}{{ "}" }}
+  arrayField={{ "{" }}{{ props.get('arrayField') | tojson }}{{ "}" }}
+  keyField={{ "{" }}{{ props.get('keyField') | tojson }}{{ "}" }}
+  itemMode={{ "{" }}{{ props.get('itemMode', false) | tojson }}{{ "}" }}
 />

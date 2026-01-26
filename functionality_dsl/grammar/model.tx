@@ -2,14 +2,17 @@ import utils
 import entity
 import component
 import server
+import rbac
+import auth
 
 FDSLModel:
     (imports+=Import)*
 
     (
-        servers+=Server
-    |   apirest+=EndpointREST
-    |   apiws+=EndpointWS
+        roles+=Role
+    |   authdb+=AuthDB
+    |   auth+=Auth
+    |   servers+=Server
     |   externalrest+=SourceREST
     |   externalws+=SourceWS
     |   entities+=Entity

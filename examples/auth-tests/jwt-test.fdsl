@@ -1,0 +1,53 @@
+// Minimal HTTP Bearer (JWT) Auth Test
+// Test with:
+//   1. Register: curl -X POST http://localhost:8000/auth/register -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123","role":"admin"}'
+//   2. Login: curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d '{"login_id":"admin@test.com","password":"admin123"}'
+//   3. Access: curl http://localhost:8000/api/secretpost -H "Authorization: Bearer <token>"
+
+Auth<http> JWTAuth
+  scheme: bearer
+  secret: "JWT_SECRET"
+end
+
+Role admin uses JWTAuth
+Role user uses JWTAuth
+
+Server JWTTest
+  host: "0.0.0.0"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/1"
+  operations: [read]
+end
+
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: public
+end
+
+Entity SecretPost
+  source: PostsAPI
+  attributes:
+    - id: integer @readonly;
+    - title: string @readonly;
+    - body: string @readonly;
+  access: [admin]
+end
+
+Component<Table> PostTable
+  entity: Post
+  colNames: ["id", "title", "body"]
+end
+
+Component<Table> SecretPostTable
+  entity: SecretPost
+  colNames: ["id", "title", "body"]
+end

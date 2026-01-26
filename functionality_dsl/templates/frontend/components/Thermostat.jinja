@@ -1,0 +1,14 @@
+{# components/Thermostat.jinja #}
+{% set endpoint = props.get('endpointPath') %}
+<Thermostat
+  url="{{ endpoint }}"
+  {%- if props.get('title') %}
+  title={{ props.get('title') | tojson }}
+  {%- endif %}
+  {%- if props.get('minTemp') %}
+  minTemp={{ props.get('minTemp') }}
+  {%- endif %}
+  {%- if props.get('maxTemp') %}
+  maxTemp={{ props.get('maxTemp') }}
+  {%- endif %}
+/>

@@ -1,0 +1,337 @@
+# ========================================================================
+# AUTO-GENERATED ENTITY SERVICE: {{ entity_name }}
+# Generated from entity-centric exposure configuration
+# ========================================================================
+
+import logging
+from typing import Optional, List, Dict, Any
+
+from app.domain.models import {{ entity_name }}
+
+{% if source_name and not has_multiple_parent_sources %}
+from app.sources.{{ source_name | lower }}_source import {{ source_name }}Source
+{% endif %}
+{% if has_multiple_parent_sources %}
+{%- for ps in parent_sources %}
+from app.sources.{{ ps.source_name | lower }}_source import {{ ps.source_class }}
+{%- endfor %}
+{% endif %}
+{% if has_parent_services %}
+{%- for ps in parent_services %}
+from app.services.{{ ps.name | lower }}_service import {{ ps.service_class }}
+{%- endfor %}
+{% endif %}
+{% if has_computed_attrs %}
+from app.core.service_helpers import transform_entity_data
+from app.core.runtime.safe_eval import compile_safe, safe_globals
+{% endif %}
+
+
+logger = logging.getLogger("fdsl.service.{{ entity_name }}")
+
+
+class {{ entity_name }}Service:
+    """Service layer for {{ entity_name }} CRUD operations"""
+
+    def __init__(self):
+        {% if has_parent_services %}
+        # Initialize parent entity services for composition
+        {%- for ps in parent_services %}
+        self.{{ ps.name | lower }}_service = {{ ps.service_class }}()
+        {%- endfor %}
+        {% endif %}
+        {% if has_multiple_parent_sources %}
+        # Initialize multiple parent sources
+        {%- for ps in parent_sources %}
+        self.{{ ps.source_name | lower }}_source = {{ ps.source_class }}()
+        {%- endfor %}
+        {% elif source_name %}
+        self.source = {{ source_name }}Source()
+        {% endif %}
+        {% if not has_parent_services and not has_multiple_parent_sources and not source_name %}
+        pass
+        {% endif %}
+
+    def _transform_entity(self, {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent_data: dict{% else %}raw_data: dict{% endif %}) -> dict:
+        """Transform {% if has_parent_services or has_multiple_parent_sources or has_multiple_ws_sources %}parent entity data{% else %}raw source data{% endif %} to {{ entity_name }}{% if has_computed_attrs %} using computed attributes{% else %} (pass-through){% endif %}."""
+{% if has_computed_attrs %}
+        context = {}
+
+        # Add parent entity data to context
+        {% if has_multiple_ws_sources %}
+        # Parent data comes from multiple WebSocket sources (raw dicts, no Pydantic models)
+        {% for parent in parents %}
+        if "{{ parent }}" in parent_data:
+            context["{{ parent }}"] = parent_data["{{ parent }}"]
+        {% endfor %}
+        {% elif has_parent_services %}
+        # Parent data comes from entity services (Pydantic models or dicts from WS chain)
+        # Using mode="json" to serialize complex types (UUID, date, HttpUrl) to JSON-compatible strings
+        {% for parent_info in parent_services %}
+        if "{{ parent_info.name }}" in parent_data:
+            parent_value = parent_data["{{ parent_info.name }}"]
+            # Handle both Pydantic models (REST composition) and dicts (WS chained composition)
+            if isinstance(parent_value, list):
+                # Check if list items are Pydantic models or dicts
+                if parent_value and hasattr(parent_value[0], "model_dump"):
+                    context["{{ parent_info.name }}"] = [item.model_dump(mode="json") for item in parent_value]
+                else:
+                    context["{{ parent_info.name }}"] = parent_value
+            elif hasattr(parent_value, "model_dump"):
+                # Pydantic model - convert to dict
+                context["{{ parent_info.name }}"] = parent_value.model_dump(mode="json")
+            else:
+                # Already a dict (from WS chained transformation)
+                context["{{ parent_info.name }}"] = parent_value
+        {% endfor %}
+        {% elif has_multiple_parent_sources %}
+        # Parent data comes from multiple sources (raw dicts or lists)
+        {% for parent in parents %}
+        if "{{ parent }}" in parent_data:
+            context["{{ parent }}"] = parent_data["{{ parent }}"]
+        {% endfor %}
+        {% else %}
+        # Parent data comes from single raw source
+        {% for parent in parents %}
+        context["{{ parent }}"] = raw_data
+        {% endfor %}
+        {% endif %}
+
+        # Transform entity data
+        transformed = transform_entity_data(
+            entity_name="{{ entity_name }}",
+            attributes=[
+                {% for attr in computed_attrs %}
+                {"name": "{{ attr.name }}", "expr": """{{ attr.expr }}"""},
+                {% endfor %}
+            ],
+            context=context,
+            safe_globals=safe_globals,
+            compile_safe_fn=compile_safe,
+            logger=logger
+        )
+
+        return transformed
+{% else %}
+        # No computed attributes - pass through raw data
+        return raw_data
+{% endif %}
+
+
+{% for op in operations %}
+    {%- if op.operation == "list" %}
+    async def list_{{ entity_name | lower }}(
+        self,
+        filters: Optional[dict] = None
+    ) -> List[{{ entity_name }}]:
+        """List all {{ entity_name }} instances with optional filters"""
+        logger.debug(f"Listing {{ entity_name }} instances with filters: {filters}")
+
+        {% if has_multiple_parent_sources %}
+        # Fetch from first parent source (list operation)
+        # Note: For multi-parent entities, list comes from first source
+        # Then we fetch other parent data for each item using the appropriate ID field
+        {%- set first_source = parent_sources[0] %}
+        items_raw = await self.{{ first_source.source_name | lower }}_source.list(filters=filters)
+
+        # For each item, fetch data from all parent sources
+        result = []
+        for item in items_raw:
+            parent_data = {}
+            {%- for ps in parent_sources %}
+            # Fetch {{ ps.entity_name }} using {{ ps.id_field }} from the item
+            parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read(item.get("{{ ps.id_field }}"))
+            {%- endfor %}
+
+            # Skip items where any parent data is missing
+            if not all(parent_data.values()):
+                continue
+
+            {% if has_computed_attrs %}
+            transformed = self._transform_entity(parent_data)
+            result.append({{ entity_name }}(**transformed))
+            {% else %}
+            # Merge all parent data
+            merged = {}
+            for data in parent_data.values():
+                if data:
+                    merged.update(data)
+            result.append({{ entity_name }}(**merged))
+            {% endif %}
+
+        return result
+        {% else %}
+        # Fetch from source
+        raw_data = await self.source.list(filters=filters)
+
+        {% if has_computed_attrs %}
+        # Transform each item
+        transformed_items = [self._transform_entity(item) for item in raw_data]
+        return [{{ entity_name }}(**item) for item in transformed_items]
+        {% else %}
+        return [{{ entity_name }}(**item) for item in raw_data]
+        {% endif %}
+        {% endif %}
+
+    {%- elif op.operation == "read" %}
+{% if has_params %}
+    async def get_{{ entity_name | lower }}(
+        self,
+        params: Dict[str, Any]
+    ) -> {{ entity_name }}:
+        """Get the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Getting {{ entity_name }} snapshot with params: {params}")
+{% else %}
+    async def get_{{ entity_name | lower }}(self) -> {{ entity_name }}:
+        """Get the {{ entity_name }} snapshot"""
+        logger.debug("Getting {{ entity_name }} snapshot")
+{% endif %}
+
+        {% if has_parent_services %}
+        # Fetch parent entity data via services (composition pattern)
+        parent_data = {}
+        {%- for ps in parent_services %}
+{% if ps.params %}
+        # Filter params for {{ ps.name }} - only pass params its source needs: {{ ps.params }}
+        {{ ps.name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}({{ ps.name | lower }}_params)
+{% else %}
+        # Parent {{ ps.name }} has no params - call without args
+        parent_data["{{ ps.name }}"] = await self.{{ ps.name | lower }}_service.{{ ps.method }}()
+{% endif %}
+        # Fail fast if parent not found
+        if not parent_data["{{ ps.name }}"]:
+            return None
+        {%- endfor %}
+        {% elif has_multiple_parent_sources %}
+        # Fetch from multiple parent sources
+        parent_data = {}
+        {%- for ps in parent_sources %}
+{% if ps.params %}
+        # Filter params for {{ ps.entity_name }} - only pass params its source needs: {{ ps.params }}
+        {{ ps.entity_name | lower }}_params = {k: v for k, v in params.items() if k in {{ ps.params }}}
+        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read({{ ps.entity_name | lower }}_params)
+{% else %}
+        # Parent {{ ps.entity_name }} has no params - call without args
+        parent_data["{{ ps.entity_name }}"] = await self.{{ ps.source_name | lower }}_source.read()
+{% endif %}
+        {%- endfor %}
+        {% else %}
+        # Fetch from source
+{% if has_params %}
+        raw_data = await self.source.read(params)
+{% else %}
+        raw_data = await self.source.read()
+{% endif %}
+        {% endif %}
+
+        {% if has_computed_attrs %}
+        # Transform entity
+        {% if has_parent_services or has_multiple_parent_sources %}
+        transformed = self._transform_entity(parent_data)
+        {% else %}
+        transformed = self._transform_entity(raw_data)
+        {% endif %}
+        return {{ entity_name }}(**transformed)
+        {% elif is_wrapper_entity %}
+        # Wrapper entity - handles both:
+        # 1. Raw {{ wrapper_attr_type }} response -> wrap in '{{ wrapper_attr_name }}' attribute
+        # 2. JSON object with '{{ wrapper_attr_name }}' field -> pass through
+        if isinstance(raw_data, dict) and "{{ wrapper_attr_name }}" in raw_data:
+            return {{ entity_name }}(**raw_data)
+        else:
+            return {{ entity_name }}({{ wrapper_attr_name }}=raw_data)
+        {% else %}
+        return {{ entity_name }}(**raw_data)
+        {% endif %}
+
+    {%- elif op.operation == "create" %}
+{% if has_params %}
+    async def create_{{ entity_name | lower }}(
+        self,
+        data,
+        params: Dict[str, Any]
+    ) -> {{ entity_name }}:
+        """Create a new {{ entity_name }} with params"""
+        logger.debug(f"Creating {{ entity_name }}: {data} with params: {params}")
+
+        # Call source create operation
+        created = await self.source.create(data.model_dump(), params)
+{% else %}
+    async def create_{{ entity_name | lower }}(
+        self,
+        data
+    ) -> {{ entity_name }}:
+        """Create a new {{ entity_name }}"""
+        logger.debug(f"Creating {{ entity_name }}: {data}")
+
+        # Call source create operation
+        created = await self.source.create(data.model_dump())
+{% endif %}
+
+        {% if has_computed_attrs %}
+        # Transform created entity
+        transformed = self._transform_entity(created)
+        return {{ entity_name }}(**transformed)
+        {% else %}
+        return {{ entity_name }}(**created)
+        {% endif %}
+
+    {%- elif op.operation == "update" %}
+{% if has_params %}
+    async def update_{{ entity_name | lower }}(
+        self,
+        data,
+        params: Dict[str, Any]
+    ) -> Optional[{{ entity_name }}]:
+        """Update the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Updating {{ entity_name }} snapshot with params: {params}")
+
+        # Call source update operation (exclude_none for partial updates)
+        updated = await self.source.update(data.model_dump(exclude_none=True), params)
+{% else %}
+    async def update_{{ entity_name | lower }}(
+        self,
+        data
+    ) -> Optional[{{ entity_name }}]:
+        """Update the {{ entity_name }} snapshot"""
+        logger.debug(f"Updating {{ entity_name }} snapshot")
+
+        # Call source update operation (exclude_none for partial updates)
+        updated = await self.source.update(data.model_dump(exclude_none=True))
+{% endif %}
+
+        if not updated:
+            return None
+
+        {% if has_computed_attrs %}
+        # Transform updated entity
+        transformed = self._transform_entity(updated)
+        return {{ entity_name }}(**transformed)
+        {% else %}
+        return {{ entity_name }}(**updated)
+        {% endif %}
+
+    {%- elif op.operation == "delete" %}
+{% if has_params %}
+    async def delete_{{ entity_name | lower }}(
+        self,
+        params: Dict[str, Any]
+    ) -> None:
+        """Delete the {{ entity_name }} snapshot with params"""
+        logger.debug(f"Deleting {{ entity_name }} snapshot with params: {params}")
+
+        # Call source delete operation
+        await self.source.delete(params)
+{% else %}
+    async def delete_{{ entity_name | lower }}(self) -> None:
+        """Delete the {{ entity_name }} snapshot"""
+        logger.debug("Deleting {{ entity_name }} snapshot")
+
+        # Call source delete operation
+        await self.source.delete()
+{% endif %}
+
+    {%- endif %}
+
+{% endfor %}

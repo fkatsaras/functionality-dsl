@@ -14,10 +14,16 @@ export interface NormalizedChartData {
  * Detect keys from the first row.
  * The 1st key becomes the X axis.
  * The rest of the keys become Y series.
+ * Filters out arrays, objects, and metadata keys.
  */
 export function detectKeys(row: any) {
-    // Filter out metadata keys that shouldn't be part of the chart
-    const keys = Object.keys(row).filter(k => !k.startsWith('__'));
+    // Filter out metadata keys and non-primitive values (arrays, objects)
+    const keys = Object.keys(row).filter(k => {
+        if (k.startsWith('__')) return false;
+        const val = row[k];
+        // Only allow primitives (string, number, boolean, null)
+        return val === null || typeof val !== 'object';
+    });
 
     if (keys.length === 0) {
         return { xKey: null, yKeys: [], series: {} };

@@ -1,0 +1,124 @@
+# ========================================================================
+# AUTO-GENERATED WEBSOCKET ROUTER: {{ entity_name }}
+# Generated from entity-centric WebSocket exposure configuration
+# ========================================================================
+
+import logging
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Set
+import asyncio
+
+from app.services.{{ entity_name | lower }}_service import {{ entity_name }}Service
+
+logger = logging.getLogger("fdsl.ws.{{ entity_name }}")
+
+router = APIRouter()
+
+# Track active WebSocket connections
+active_connections: Set[WebSocket] = set()
+
+
+@router.websocket("{{ ws_channel }}")
+async def websocket_{{ entity_name | lower }}_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for {{ entity_name }}.
+    {% if supports_subscribe %}Supports: subscribe (receive data from server){% endif %}
+    {% if supports_publish %}Supports: publish (send data to server){% endif %}
+    """
+    await websocket.accept()
+    active_connections.add(websocket)
+    logger.info(f"Client connected to {{ ws_channel }}. Total connections: {len(active_connections)}")
+
+    service = {{ entity_name }}Service()
+
+{% if has_source_params %}
+    # Extract source params from query parameters
+    source_params = {}
+    {% for param in ws_source_params %}
+    if "{{ param }}" in websocket.query_params:
+        source_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Source params: {source_params}")
+{% endif %}
+
+{% if has_target_params %}
+    # Extract target params from query parameters
+    target_params = {}
+    {% for param in ws_target_params %}
+    if "{{ param }}" in websocket.query_params:
+        target_params["{{ param }}"] = websocket.query_params.get("{{ param }}")
+    {% endfor %}
+    logger.info(f"Target params: {target_params}")
+{% endif %}
+
+    try:
+        {% if supports_subscribe and ws_source %}
+        # Subscribe mode: Stream data from external source through entity transformation
+        from app.sources.{{ ws_source.name | lower }}_source import {{ ws_source.name }}Source
+
+        source = {{ ws_source.name }}Source()
+
+{% if has_source_params %}
+        async for raw_message in source.subscribe(source_params):
+{% else %}
+        async for raw_message in source.subscribe():
+{% endif %}
+            if raw_message is None:
+                continue
+
+            # Transform raw message through entity service
+            transformed_message = service._transform_entity(raw_message)
+
+            # Send to client
+            await websocket.send_json(transformed_message)
+            logger.debug(f"Sent message to client: {{ entity_name }}")
+
+        {% elif supports_subscribe %}
+        # Subscribe mode: No external source, waiting for messages
+        logger.warning("Subscribe mode enabled but no WebSocket source found for {{ entity_name }}")
+        while True:
+            await asyncio.sleep(1)
+
+        {% elif supports_publish %}
+        # Publish mode: Receive messages from client
+        {% if ws_target %}
+        from app.sources.{{ ws_target.name | lower }}_source import {{ ws_target.name }}Source
+
+        target_source = {{ ws_target.name }}Source()
+        {% endif %}
+
+        while True:
+            data = await websocket.receive_json()
+            logger.debug(f"Received message from client: {data}")
+
+            # Transform through entity service
+            transformed_data = service._transform_entity(data)
+            logger.debug(f"Transformed message: {transformed_data}")
+
+            {% if ws_target %}
+            # Publish to external WebSocket target
+{% if has_target_params %}
+            await target_source.publish(transformed_data, target_params)
+{% else %}
+            await target_source.publish(transformed_data)
+{% endif %}
+            logger.debug(f"Published to external target: {{ ws_target.name }}")
+            {% else %}
+            # No target specified - message processed but not forwarded
+            logger.warning("Message processed but no target specified for {{ entity_name }}")
+            {% endif %}
+
+        {% else %}
+        # No operations defined
+        logger.error("No WebSocket operations defined for {{ entity_name }}")
+        await websocket.close()
+        {% endif %}
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from {{ ws_channel }}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+        logger.info(f"Connection closed. Remaining connections: {len(active_connections)}")

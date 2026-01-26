@@ -1,0 +1,98 @@
+// =============================================================================
+// Cookie Auth Demo - Auth-Only (No Roles)
+// =============================================================================
+// Demonstrates cookie-based authentication without role-based access.
+// Uses `access: SessionAuth` which requires valid session but no role check.
+//
+// Configure session keys via environment variable:
+//   SESSION_KEYS=user_session_key,admin_session_key
+//
+// Test:
+//   curl http://localhost:8000/api/user -b "my_session=user_session_key"
+// =============================================================================
+
+// Auth mechanism - no roles defined! (just validates the key exists)
+Auth<apikey> SessionAuth
+  in: cookie
+  name: "my_session"
+end
+
+// Server config
+Server SessionNoRoleDemo
+  host: "localhost"
+  port: 8000
+  cors: "*"
+  loglevel: debug
+end
+
+// =============================================================================
+// REST SOURCES - JSONPlaceholder
+// =============================================================================
+
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts/{id}"
+  params: [id]
+  operations: [read, create, update, delete]
+end
+
+Source<REST> UsersAPI
+  url: "https://jsonplaceholder.typicode.com/users/{id}"
+  params: [id]
+  operations: [read]
+end
+
+Source<REST> TodosAPI
+  url: "https://jsonplaceholder.typicode.com/todos/{id}"
+  params: [id]
+  operations: [read]
+end
+
+// =============================================================================
+// ENTITIES - Using auth-only access (no roles)
+// =============================================================================
+
+// Public - no auth required
+Entity Post
+  source: PostsAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64>;
+    - title: string;
+    - body: string;
+  access: public
+end
+
+// Auth-only - requires valid session, no role check
+Entity User
+  source: UsersAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - name: string @readonly;
+    - username: string @readonly;
+    - email: string @readonly;
+    - phone: string @readonly;
+    - website: string @readonly;
+  access: SessionAuth  // Any valid session - no role check
+end
+
+// Auth-only - requires valid session, no role check
+Entity Todo
+  source: TodosAPI
+  attributes:
+    - id: integer<int64> @readonly;
+    - userId: integer<int64> @readonly;
+    - title: string @readonly;
+    - completed: boolean @readonly;
+  access: SessionAuth  // Any valid session - no role check
+end
+
+// Composite entity - auth-only
+Entity UserTodoSummary(User, Todo)
+  attributes:
+    - userName: string = User.name;
+    - userEmail: string = User.email;
+    - todoTitle: string = Todo.title;
+    - todoCompleted: boolean = Todo.completed;
+    - summary: string = User.name + " - " + Todo.title;
+  access: SessionAuth  // Any valid session - no role check
+end

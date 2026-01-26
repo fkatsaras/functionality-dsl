@@ -87,20 +87,42 @@ def _validate_type_schema_compatibility(block, block_name, parent_name):
 # ------------------------------------------------------------------------------
 # Source processors (external endpoints)
 
+def _validate_source_params(source, url, source_type):
+    """
+    Validate source params against URL placeholders.
+
+    Rules:
+    - All {placeholders} in URL must be declared in params list
+    - Params not in URL are forwarded as query params (allowed)
+    """
+    params_list = getattr(source, "params", None)
+    declared_params = set()
+
+    if params_list and hasattr(params_list, "params"):
+        declared_params = set(params_list.params)
+
+    # Extract {param} placeholders from URL
+    url_placeholders = set(re.findall(r'\{(\w+)\}', url))
+
+    # All URL placeholders must be declared
+    missing = url_placeholders - declared_params
+    if missing:
+        raise TextXSemanticError(
+            f"{source_type} '{source.name}' has path placeholders {missing} in URL but not declared in params list.",
+            **get_location(source),
+        )
+
+
 def external_rest_endpoint_obj_processor(ep):
     """
     SourceREST validation:
-    - Default method to GET if omitted
-    - Must have absolute url (http/https)
-    - Mutation methods (POST/PUT/PATCH) should have request entity
+    - Must have url: field with absolute url (http/https)
+    - If params declared, validate against URL placeholders
     """
-    if not getattr(ep, "method", None):
-        ep.method = "GET"
-
     url = getattr(ep, "url", None)
     if not url or not isinstance(url, str):
         raise TextXSemanticError(
-            f"Source<REST> '{ep.name}' must define a 'url:'.",
+            f"Source<REST> '{ep.name}' must define 'url:' field.",
             **get_location(ep),
         )
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -109,49 +131,65 @@ def external_rest_endpoint_obj_processor(ep):
             **get_location(ep),
         )
 
-    # Mutation methods should have request or response (at least warn if missing)
-    request = getattr(ep, "request", None)
-    response = getattr(ep, "response", None)
-
-    if request is None and response is None and ep.method.upper() != "DELETE":
-        # It's okay for DELETE to have no schemas, but warn for others
-        pass  # Could add warning here if desired
-
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(request, "request", f"Source<REST> '{ep.name}'")
-    _validate_type_schema_compatibility(response, "response", f"Source<REST> '{ep.name}'")
+    # Validate params against URL placeholders
+    _validate_source_params(ep, url, "Source<REST>")
 
 
 def external_ws_endpoint_obj_processor(ep):
     """
-    SourceWS validation:
-    - Must have ws/wss url
-    - Require entity_in and/or entity_out
+    SourceWS validation (NEW SYNTAX - aligned with REST):
+    - Must have ws/wss channel URL
+    - No operations/subscribe/publish blocks required
+    - Operations inferred from entities that use this source (just like REST)
+
+    NEW SYNTAX (v2):
+        Source<WS> ChatWS
+          channel: "wss://chat.example.com/ws"
+        end
+
+        Entity ChatMessage
+          attributes: ...
+          source: ChatWS  // Just bind to source
+        end
+
+        Entity ChatIncoming(ChatMessage)
+          expose:
+            operations: [subscribe]  // Source infers it needs subscribe
+        end
     """
+    # Check for 'channel' field (new syntax) or fall back to 'url' (old syntax)
+    channel = getattr(ep, "channel", None)
     url = getattr(ep, "url", None)
-    if not url or not isinstance(url, str):
+
+    ws_url = channel or url
+
+    if not ws_url or not isinstance(ws_url, str):
         raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define a 'url:'.",
+            f"Source<WS> '{ep.name}' must define a 'channel:' (WebSocket URL).",
             **get_location(ep),
         )
-    if not (url.startswith("ws://") or url.startswith("wss://")):
+    if not (ws_url.startswith("ws://") or ws_url.startswith("wss://")):
         raise TextXSemanticError(
             f"Source<WS> '{ep.name}' channel must start with ws:// or wss://.",
             **get_location(ep),
         )
 
+    # Validate params against channel URL placeholders
+    _validate_source_params(ep, ws_url, "Source<WS>")
+
+    # NEW SYNTAX: No validation for subscribe/publish blocks
+    # Operations are inferred from entities (just like REST)
+    # The source just declares the external WebSocket connection
+
+    # OLD SYNTAX SUPPORT (for backward compatibility):
+    # If subscribe/publish blocks are present, validate them
     subscribe_block = getattr(ep, "subscribe", None)
     publish_block = getattr(ep, "publish", None)
 
-    if subscribe_block is None and publish_block is None:
-        raise TextXSemanticError(
-            f"Source<WS> '{ep.name}' must define 'subscribe:' or 'publish:' (or both).",
-            **get_location(ep)
-        )
-
-    # Validate type/schema compatibility
-    _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Source<WS> '{ep.name}'")
-    _validate_type_schema_compatibility(publish_block, "publish", f"Source<WS> '{ep.name}'")
+    if subscribe_block:
+        _validate_type_schema_compatibility(subscribe_block, "subscribe", f"Source<WS> '{ep.name}'")
+    if publish_block:
+        _validate_type_schema_compatibility(publish_block, "publish", f"Source<WS> '{ep.name}'")
 
 
 # ------------------------------------------------------------------------------

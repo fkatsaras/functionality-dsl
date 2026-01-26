@@ -22,25 +22,17 @@ def verify_components(model):
 
 def _validate_table_component(comp):
     """Table component validation rules."""
-    # Must have endpoint
-    if comp.endpoint is None:
+    # Must have entity_ref
+    if comp.entity_ref is None:
         raise TextXSemanticError(
-            f"Table '{comp.name}' must bind an 'endpoint:'.",
+            f"Table '{comp.name}' must bind an 'entity:'.",
             **get_location(comp)
-        )
-
-    # Check if endpoint has response schema
-    response = getattr(comp.endpoint, "response", None)
-    if response is None:
-        raise TextXSemanticError(
-            f"Table '{comp.name}': endpoint has no response schema defined.",
-            **get_location(comp.endpoint)
         )
 
     # colNames must not be empty
     if not comp.colNames:
         raise TextXSemanticError(
-            f"Table '{comp.name}': 'colNames:' cannot be empty.",
+            f"Table '{comp.name}': 'colNames:' or 'columns:' cannot be empty.",
             **get_location(comp)
         )
 
@@ -54,29 +46,17 @@ def _validate_table_component(comp):
 
 def _validate_camera_component(comp):
     """Camera component validation rules."""
-    # Must have WebSocket endpoint
-    if comp.endpoint is None:
+    # Must have entity_ref (v2 syntax)
+    if comp.entity_ref is None:
         raise TextXSemanticError(
-            f"Camera '{comp.name}' must bind an 'endpoint:' Endpoint<WS>.",
+            f"Camera '{comp.name}' must bind an 'entity:'.",
             **get_location(comp)
         )
 
-    # Verify it's a WebSocket endpoint
-    if comp.endpoint.__class__.__name__ != "EndpointWS":
+    # Verify it's an inbound WebSocket entity
+    flow = getattr(comp.entity_ref, "flow", None)
+    if flow != "inbound":
         raise TextXSemanticError(
-            f"Camera '{comp.name}' requires Endpoint<WS>, got {comp.endpoint.__class__.__name__}.",
-            **get_location(comp.endpoint)
+            f"Camera '{comp.name}' requires entity with 'type: inbound' for WebSocket streaming, got type={flow}.",
+            **get_location(comp)
         )
-
-    # Check subscribe block for content type
-    subscribe = getattr(comp.endpoint, "subscribe", None)
-    if subscribe:
-        content_type = getattr(subscribe, "content_type", None)
-        if content_type:
-            # Validate it's an image or binary content type
-            valid_types = ["image/png", "image/jpeg", "application/octet-stream"]
-            if content_type not in valid_types:
-                raise TextXSemanticError(
-                    f"Camera '{comp.name}': endpoint content-type '{content_type}' is not valid for camera feed (expected image/png, image/jpeg, or application/octet-stream).",
-                    **get_location(subscribe)
-                )

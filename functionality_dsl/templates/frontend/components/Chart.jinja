@@ -2,16 +2,21 @@
 <Chart
   name="{{ common.name }}"
   url="{{ endpoint }}"
+  values={{ props.get('values') | tojson }}
+  {%- if props.get('xField') %}
+  xField={{ props.get('xField') | tojson }}
+  {%- endif %}
+  {%- if props.get('yField') %}
+  yField={{ props.get('yField') | tojson }}
+  {%- endif %}
   {%- if props.get('seriesLabels') %}
   seriesLabels={{ "{" }}{{ props.get('seriesLabels') | tojson }}{{ "}" }}
   {%- endif %}
   {%- if props.get('xLabel') %}
-  xLabel="{{ props.get('xLabel').get('text') if props.get('xLabel') else '' }}"
-  xMeta={{ "{" }}{{ props.get('xLabel') | tojson }}{{ "}" }}
+  xLabel={{ props.get('xLabel') | tojson }}
   {%- endif %}
   {%- if props.get('yLabel') %}
-  yLabel="{{ props.get('yLabel').get('text') if props.get('yLabel') else '' }}"
-  yMeta={{ "{" }}{{ props.get('yLabel') | tojson }}{{ "}" }}
+  yLabel={{ props.get('yLabel') | tojson }}
   {%- endif %}
   {%- if props.get('refreshMs') %}
   refreshMs={{ props.get('refreshMs') }}

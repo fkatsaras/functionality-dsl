@@ -1,0 +1,47 @@
+// ============================================
+// Smart Home - Source Definitions
+// REST and WebSocket sources for device control and monitoring
+// ============================================
+
+// ============================================
+// REST SOURCES - Device Control APIs
+// ============================================
+
+Source<REST> ThermostatAPI
+  url: "http://dummy-smart-home-devices:9001/thermostat"
+  operations: [read, update]
+end
+
+Source<REST> LightsAPI
+  url: "http://dummy-smart-home-devices:9001/lights"
+  operations: [read, update]
+end
+
+Source<REST> AppliancesAPI
+  url: "http://dummy-smart-home-devices:9001/appliances"
+  operations: [read, update]
+end
+
+// ============================================
+// WEBSOCKET SOURCES - Real-time Monitoring
+// ============================================
+
+Source<WS> EnergyMonitorWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/energy"
+  operations: [subscribe]
+end
+
+Source<WS> ClimateMonitorWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/climate/monitor"
+  operations: [subscribe]
+end
+
+Source<WS> SecurityCameraWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/camera/feed"
+  operations: [subscribe]
+end
+
+Source<WS> RoombaCommandWS
+  channel: "ws://dummy-smart-home-devices:9001/ws/roomba/commands"
+  operations: [publish]
+end
