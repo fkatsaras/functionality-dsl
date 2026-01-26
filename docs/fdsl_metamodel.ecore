@@ -68,17 +68,16 @@
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="AccessBlock" abstract="true"/>
-  <eClassifiers xsi:type="ecore:EClass" name="PublicAccess" eSuperTypes="#//AccessBlock"/>
-  <eClassifiers xsi:type="ecore:EClass" name="RoleBasedAccess" eSuperTypes="#//AccessBlock">
+  <eClassifiers xsi:type="ecore:EClass" name="AccessBlock">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="isPublic" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="roles" eType="#//Role" upperBound="-1"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="PerOperationAccess" eSuperTypes="#//AccessBlock">
     <eStructuralFeatures xsi:type="ecore:EReference" name="rules" eType="#//AccessRule" upperBound="-1" containment="true"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="AccessRule">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="operation" eType="#//Operation"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="isPublic" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="auth" eType="#//Auth"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="roles" eType="#//Role" upperBound="-1"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="Auth" abstract="true">
