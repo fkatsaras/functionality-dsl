@@ -58,39 +58,33 @@
     <eStructuralFeatures xsi:type="ecore:EReference" name="entities" upperBound="-1"
         eType="#//Entity" containment="true"/>
   </eClassifiers>
+  <eClassifiers xsi:type="ecore:EEnum" name="AuthType">
+    <eLiterals name="HTTP"/>
+    <eLiterals name="APIKEY" value="1"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EEnum" name="HttpScheme">
+    <eLiterals name="BEARER"/>
+    <eLiterals name="BASIC" value="1"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EEnum" name="ApiKeyLocation">
+    <eLiterals name="HEADER"/>
+    <eLiterals name="QUERY" value="1"/>
+    <eLiterals name="COOKIE" value="2"/>
+  </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="Import">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="importURI" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="Auth">
+  <eClassifiers xsi:type="ecore:EClass" name="Auth" abstract="true">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="db" eType="#//AuthDB"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="jwt_config" eType="#//JWTAuthConfig"
-        containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="session_config" eType="#//SessionAuthConfig"
-        containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="apikey_config" eType="#//APIKeyAuthConfig"
-        containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="basic_config" eType="#//BasicAuthConfig"
-        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="type" eType="#//AuthType"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="JWTAuthConfig">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="header" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="scheme" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="algorithm" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="user_id_claim" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="roles_claim" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="SessionAuthConfig">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="cookie" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="expiry" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
-  </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="APIKeyAuthConfig">
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="header" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="query" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  <eClassifiers xsi:type="ecore:EClass" name="HttpAuth" eSuperTypes="#//Auth">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="scheme" eType="#//HttpScheme"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="BasicAuthConfig">
+  <eClassifiers xsi:type="ecore:EClass" name="ApiKeyAuth" eSuperTypes="#//Auth">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="in" eType="#//ApiKeyLocation"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="keyName" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="secret" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="AuthDB">
