@@ -63,25 +63,46 @@ Auth:
 // Maps to OpenAPI: type: http
 // Supports standard HTTP authentication schemes (RFC 7235)
 //
+// Two usage modes:
+// 1. Entity auth (DB-backed): Validates incoming tokens/credentials
+//    - No secret field, tokens/credentials stored in database
+//    - For authenticating users to YOUR API
+//
+// 2. Source auth (env var): Static token/credentials for calling external APIs
+//    - Include secret field with env var name
+//    - For authenticating YOUR API to external services
+//
 // Schemes:
 // - bearer: Token-based auth in Authorization: Bearer <token>
-//   Token is validated against database (treated as opaque credential)
 // - basic: Username:password in Authorization: Basic base64(user:pass)
-//   Credentials validated against database
 //
-// All auth is DB-backed - credentials and roles stored in database.
+// Config:
+// - scheme: bearer or basic
+// - secret: (optional) env var name for static token/credentials (source auth only)
+//   For bearer: env var contains the token
+//   For basic: env var contains "username:password"
 //
 // Examples:
+//   // Entity auth - validates against DB
 //   Auth<http> BearerAuth
 //     scheme: bearer
 //   end
 //
-//   Auth<http> BasicAuth
+//   // Source auth - static bearer token from env var
+//   Auth<http> ExternalAPIAuth
+//     scheme: bearer
+//     secret: "EXTERNAL_API_TOKEN"
+//   end
+//
+//   // Source auth - basic credentials from env var
+//   Auth<http> LegacyServiceAuth
 //     scheme: basic
+//     secret: "LEGACY_SERVICE_CREDS"
 //   end
 AuthHTTP:
   'Auth<' kind='http' '>' name=ID
     'scheme:' scheme=HTTPScheme
+    ('secret:' secret=STRING)?
   'end'
 ;
 

@@ -309,13 +309,7 @@ class SecuritySchemeConverter:
     """Converts OpenAPI securitySchemes to FDSL Auth declarations."""
 
     # OpenAPI security scheme type -> FDSL auth kind mapping
-    SUPPORTED_TYPES = {
-        "apiKey": "apikey",
-        "http": {
-            "bearer": "jwt",
-            "basic": "basic",
-        },
-    }
+    # FDSL supports: Auth<http> (scheme: bearer|basic) and Auth<apikey> (in: header|query|cookie)
     UNSUPPORTED_TYPES = ["oauth2", "openIdConnect"]
 
     def __init__(self, parser: OpenAPIParser):
@@ -340,6 +334,11 @@ class SecuritySchemeConverter:
         """
         Extract Auth blocks from OpenAPI securitySchemes.
 
+        Maps to FDSL auth grammar:
+        - OpenAPI apiKey -> Auth<apikey> with in: header|query|cookie, name: "key-name"
+        - OpenAPI http/bearer -> Auth<http> with scheme: bearer
+        - OpenAPI http/basic -> Auth<http> with scheme: basic
+
         Returns:
             Tuple of (supported auth schemes, skipped scheme names)
         """
@@ -351,14 +350,16 @@ class SecuritySchemeConverter:
             scheme_type = scheme_def.get("type")
 
             if scheme_type == "apiKey":
-                # API Key authentication
-                location = scheme_def.get("in", "header")  # "header" or "query"
+                # API Key authentication -> Auth<apikey>
+                location = scheme_def.get("in", "header")  # "header", "query", or "cookie"
                 key_name = scheme_def.get("name", "api_key")
-                env_var = self._to_env_var_name(scheme_name) + "_KEYS"
 
+                # FDSL Auth<apikey> syntax: in: location, name: "key-name", secret: "ENV_VAR"
+                # OpenAPI transforms are for calling external APIs, so secret is required
                 config = {
-                    location: key_name,  # "header" or "query" as key
-                    "secret": env_var,
+                    "in": location,
+                    "name": key_name,
+                    "secret": self._to_env_var_name(scheme_name),
                 }
 
                 auth_blocks.append(FDSLAuth(
@@ -368,24 +369,31 @@ class SecuritySchemeConverter:
                 ))
 
             elif scheme_type == "http":
-                # HTTP authentication (Bearer JWT or Basic)
+                # HTTP authentication -> Auth<http>
                 http_scheme = scheme_def.get("scheme", "").lower()
 
                 if http_scheme == "bearer":
-                    # JWT Bearer token
-                    env_var = self._to_env_var_name(scheme_name) + "_SECRET"
+                    # Bearer token -> Auth<http> scheme: bearer
+                    # OpenAPI transforms are for calling external APIs, so secret is required
                     auth_blocks.append(FDSLAuth(
                         name=self._to_pascal_case(scheme_name),
-                        kind="jwt",
-                        config={"secret": env_var},
+                        kind="http",
+                        config={
+                            "scheme": "bearer",
+                            "secret": self._to_env_var_name(scheme_name) + "_TOKEN",
+                        },
                     ))
 
                 elif http_scheme == "basic":
-                    # HTTP Basic auth
+                    # HTTP Basic -> Auth<http> scheme: basic
+                    # OpenAPI transforms are for calling external APIs, so secret is required
                     auth_blocks.append(FDSLAuth(
                         name=self._to_pascal_case(scheme_name),
-                        kind="basic",
-                        config={},  # Basic auth uses default env var
+                        kind="http",
+                        config={
+                            "scheme": "basic",
+                            "secret": self._to_env_var_name(scheme_name) + "_CREDS",
+                        },
                     ))
 
                 else:
@@ -798,8 +806,20 @@ class FDSLGenerator:
         # Auth blocks (before Server)
         for auth in self.model.auth_schemes:
             lines.append(f"Auth<{auth.kind}> {auth.name}")
-            for key, value in auth.config.items():
-                lines.append(f'  {key}: "{value}"')
+            if auth.kind == "apikey":
+                # Auth<apikey> syntax: in: keyword (unquoted), name: "string"
+                if "in" in auth.config:
+                    lines.append(f'  in: {auth.config["in"]}')
+                if "name" in auth.config:
+                    lines.append(f'  name: "{auth.config["name"]}"')
+                if "secret" in auth.config:
+                    lines.append(f'  secret: "{auth.config["secret"]}"')
+            elif auth.kind == "http":
+                # Auth<http> syntax: scheme: keyword (unquoted), secret: "string"
+                if "scheme" in auth.config:
+                    lines.append(f'  scheme: {auth.config["scheme"]}')
+                if "secret" in auth.config:
+                    lines.append(f'  secret: "{auth.config["secret"]}"')
             lines.append("end")
             lines.append("")
 

@@ -18,7 +18,8 @@ def _extract_auth_config(source):
     Returns:
         dict with auth config or None if no auth:
         {
-            "kind": "apikey" | "jwt" | "basic",
+            "kind": "apikey" | "http",
+            "scheme": "bearer" | "basic" (for http auth),
             "header_name": str (for apikey header),
             "query_name": str (for apikey query),
             "secret_env": str (env var name for the secret/token),
@@ -48,20 +49,20 @@ def _extract_auth_config(source):
         # secret is env var name for static API key (source auth)
         config["secret_env"] = getattr(auth, "secret", None)
 
-    elif kind == "jwt":
-        # JWT uses Authorization: Bearer <token>
-        # For source auth, we use a static token from env var
-        config["secret_env"] = getattr(auth, "secret", None)
+    elif kind == "http":
+        # HTTP auth: bearer or basic
+        scheme = getattr(auth, "scheme", "bearer")
+        config["scheme"] = scheme
 
-    elif kind == "basic":
-        # Basic auth uses Authorization: Basic <base64(user:pass)>
-        # Uses BASIC_AUTH_USERS env var by default
-        config["secret_env"] = "BASIC_AUTH_USERS"
-
-    elif kind == "session":
-        # Session auth doesn't make sense for outbound requests
-        # Skip it
-        return None
+        # secret is env var name for static token/credentials (source auth)
+        # For bearer: env var contains the token
+        # For basic: env var contains "username:password"
+        secret = getattr(auth, "secret", None)
+        if secret:
+            config["secret_env"] = secret
+        elif scheme == "basic":
+            # Default env var for basic auth
+            config["secret_env"] = "BASIC_AUTH_USERS"
 
     return config
 

@@ -43,7 +43,7 @@ class FDSLAttribute:
 class FDSLAuth:
     """Represents an FDSL Auth block."""
     name: str
-    kind: str  # "jwt", "apikey", "basic"
+    kind: str  # "http" or "apikey" (aligned with FDSL grammar)
     config: Dict[str, str] = field(default_factory=dict)
 
 
@@ -162,20 +162,12 @@ class AsyncAPIParser:
 
 
 class SecuritySchemeConverter:
-    """Converts AsyncAPI securitySchemes to FDSL Auth blocks."""
+    """Converts AsyncAPI securitySchemes to FDSL Auth blocks.
 
-    # Mapping from AsyncAPI security scheme types to FDSL auth kinds
-    SUPPORTED_TYPES = {
-        "apiKey": "apikey",
-        "httpApiKey": "apikey",
-        "http": {
-            "bearer": "jwt",
-            "basic": "basic",
-        },
-        "userPassword": "basic",
-        "scramSha256": "basic",
-        "scramSha512": "basic",
-    }
+    FDSL supports only:
+    - Auth<http> with scheme: bearer|basic
+    - Auth<apikey> with in: header|query|cookie, name: "key-name"
+    """
 
     UNSUPPORTED_TYPES = ["oauth2", "openIdConnect", "X509", "symmetricEncryption", "asymmetricEncryption"]
 
@@ -187,6 +179,15 @@ class SecuritySchemeConverter:
         # Remove non-alphanumeric, split on common delimiters
         parts = re.split(r'[-_\s]+', name)
         return ''.join(word.capitalize() for word in parts if word)
+
+    def _to_env_var_name(self, name: str) -> str:
+        """Convert scheme name to ENV_VAR_NAME format."""
+        # Handle camelCase, snake_case, kebab-case
+        # Insert underscore before uppercase letters
+        s = re.sub(r'([a-z])([A-Z])', r'\1_\2', name)
+        # Replace hyphens with underscores
+        s = s.replace('-', '_')
+        return s.upper()
 
     def extract_auth_schemes(self) -> Tuple[List[FDSLAuth], List[str], Dict[str, str]]:
         """
@@ -218,28 +219,34 @@ class SecuritySchemeConverter:
         return auth_list, skipped, name_map
 
     def _convert_scheme(self, name: str, scheme: Dict[str, Any]) -> Optional[FDSLAuth]:
-        """Convert a single security scheme to FDSL Auth."""
+        """Convert a single security scheme to FDSL Auth.
+
+        Maps to FDSL auth grammar:
+        - OpenAPI/AsyncAPI apiKey -> Auth<apikey> with in: header|query|cookie, name: "key-name"
+        - OpenAPI/AsyncAPI http/bearer -> Auth<http> with scheme: bearer
+        - OpenAPI/AsyncAPI http/basic -> Auth<http> with scheme: basic
+        """
         scheme_type = scheme.get("type", "")
         fdsl_name = self._sanitize_name(name)
         config: Dict[str, str] = {}
 
         if scheme_type == "apiKey":
-            # API key in header, query, or user (MQTT-style)
+            # API key in header, query, or cookie
             location = scheme.get("in", "header")
             param_name = scheme.get("name", "X-API-Key")
 
-            if location == "header":
-                config["header"] = param_name
-            elif location == "query":
-                config["query"] = param_name
-            elif location == "user":
-                # MQTT-style auth via username field - map to header auth
-                config["header"] = "X-API-Key"
-            else:
-                return None  # Unsupported location (e.g., cookie)
+            # FDSL supports header, query, cookie
+            if location == "user":
+                # MQTT-style auth via username field - map to header
+                location = "header"
+                param_name = "X-API-Key"
+            elif location not in ("header", "query", "cookie"):
+                return None  # Unsupported location
 
-            # Generate env var name from scheme name
-            config["secret"] = f"{name.upper().replace('-', '_')}_KEYS"
+            config["in"] = location
+            config["name"] = param_name
+            # AsyncAPI transforms are for calling external APIs, so secret is required
+            config["secret"] = self._to_env_var_name(name)
 
             return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
 
@@ -248,14 +255,13 @@ class SecuritySchemeConverter:
             param_name = scheme.get("name", "X-API-Key")
             location = scheme.get("in", "header")
 
-            if location == "header":
-                config["header"] = param_name
-            elif location == "query":
-                config["query"] = param_name
-            else:
+            if location not in ("header", "query", "cookie"):
                 return None
 
-            config["secret"] = f"{name.upper().replace('-', '_')}_KEYS"
+            config["in"] = location
+            config["name"] = param_name
+            # AsyncAPI transforms are for calling external APIs, so secret is required
+            config["secret"] = self._to_env_var_name(name)
 
             return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
 
@@ -263,24 +269,37 @@ class SecuritySchemeConverter:
             http_scheme = scheme.get("scheme", "").lower()
 
             if http_scheme == "bearer":
-                # JWT/Bearer token
-                config["secret"] = f"{name.upper().replace('-', '_')}_SECRET"
-                return FDSLAuth(name=fdsl_name, kind="jwt", config=config)
+                # Bearer token -> Auth<http> scheme: bearer
+                # AsyncAPI transforms are for calling external APIs, so secret is required
+                return FDSLAuth(name=fdsl_name, kind="http", config={
+                    "scheme": "bearer",
+                    "secret": self._to_env_var_name(name) + "_TOKEN",
+                })
 
             elif http_scheme == "basic":
-                # HTTP Basic auth - no config needed (uses BASIC_AUTH_USERS)
-                return FDSLAuth(name=fdsl_name, kind="basic", config={})
+                # HTTP Basic -> Auth<http> scheme: basic
+                # AsyncAPI transforms are for calling external APIs, so secret is required
+                return FDSLAuth(name=fdsl_name, kind="http", config={
+                    "scheme": "basic",
+                    "secret": self._to_env_var_name(name) + "_CREDS",
+                })
 
             else:
                 return None  # Unsupported HTTP scheme
 
         elif scheme_type == "userPassword":
-            # Username/password auth -> map to basic
-            return FDSLAuth(name=fdsl_name, kind="basic", config={})
+            # Username/password auth -> map to Auth<http> basic
+            return FDSLAuth(name=fdsl_name, kind="http", config={
+                "scheme": "basic",
+                "secret": self._to_env_var_name(name) + "_CREDS",
+            })
 
         elif scheme_type in ("scramSha256", "scramSha512"):
-            # SCRAM auth -> map to basic (closest equivalent)
-            return FDSLAuth(name=fdsl_name, kind="basic", config={})
+            # SCRAM auth -> map to Auth<http> basic (closest equivalent)
+            return FDSLAuth(name=fdsl_name, kind="http", config={
+                "scheme": "basic",
+                "secret": self._to_env_var_name(name) + "_CREDS",
+            })
 
         return None
 
@@ -641,16 +660,20 @@ class FDSLWSGenerator:
         for auth in self.model.auth_schemes:
             lines.append(f"Auth<{auth.kind}> {auth.name}")
             if auth.kind == "apikey":
-                if "header" in auth.config:
-                    lines.append(f'  header: "{auth.config["header"]}"')
-                elif "query" in auth.config:
-                    lines.append(f'  query: "{auth.config["query"]}"')
-                lines.append(f'  secret: "{auth.config.get("secret", "API_KEYS")}"')
-                lines.append("end")
-            elif auth.kind == "jwt":
-                lines.append(f'  secret: "{auth.config.get("secret", "JWT_SECRET")}"')
-                lines.append("end")
-            # basic has no config fields and no 'end' keyword
+                # Auth<apikey> syntax: in: keyword (unquoted), name: "string"
+                if "in" in auth.config:
+                    lines.append(f'  in: {auth.config["in"]}')
+                if "name" in auth.config:
+                    lines.append(f'  name: "{auth.config["name"]}"')
+                if "secret" in auth.config:
+                    lines.append(f'  secret: "{auth.config["secret"]}"')
+            elif auth.kind == "http":
+                # Auth<http> syntax: scheme: keyword (unquoted), secret: "string"
+                if "scheme" in auth.config:
+                    lines.append(f'  scheme: {auth.config["scheme"]}')
+                if "secret" in auth.config:
+                    lines.append(f'  secret: "{auth.config["secret"]}"')
+            lines.append("end")
             lines.append("")
 
         # Server
@@ -681,7 +704,7 @@ class FDSLWSGenerator:
         for entity in self.model.entities:
             lines.append("")
             lines.append(f"Entity {entity.name}")
-            lines.append(f"  type: {entity.ws_type}")
+            lines.append(f"  flow: {entity.ws_type}")
             if entity.source_name:
                 lines.append(f"  source: {entity.source_name}")
             lines.append("  attributes:")

@@ -147,6 +147,52 @@ end
 | Storage | DB (tokens table) | DB (users table) | DB (apikeys table) |
 | Use case | APIs, mobile apps | Simple tools, testing | Third-party integrations, sessions |
 
+### Source Authentication (Calling External APIs)
+
+Auth can be used in two modes:
+1. **Entity auth** (no `secret`): Validates incoming requests against database
+2. **Source auth** (with `secret`): Provides credentials for calling external APIs
+
+Add the `secret:` field to use auth for outbound requests to external services:
+
+**Bearer token for external API:**
+```fdsl
+Auth<http> ExternalAPIAuth
+  scheme: bearer
+  secret: "EXTERNAL_API_TOKEN"  // Env var containing the token
+end
+
+Source<REST> ExternalAPI
+  url: "https://api.example.com/data"
+  operations: [read]
+  auth: ExternalAPIAuth
+end
+```
+
+**API key for external API:**
+```fdsl
+Auth<apikey> FinnhubAuth
+  in: query
+  name: "token"
+  secret: "FINNHUB_API_KEY"  // Env var containing the API key
+end
+
+Source<REST> FinnhubAPI
+  url: "https://finnhub.io/api/v1/quote"
+  params: [symbol]
+  operations: [read]
+  auth: FinnhubAuth
+end
+```
+
+**Basic auth for legacy service:**
+```fdsl
+Auth<http> LegacyServiceAuth
+  scheme: basic
+  secret: "LEGACY_CREDS"  // Env var containing "username:password"
+end
+```
+
 ### User Database Configuration (AuthDB)
 
 By default, FDSL generates a PostgreSQL database with tables for storing credentials. For existing databases (BYODB - Bring Your Own Database), use `AuthDB`:

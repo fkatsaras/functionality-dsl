@@ -10,7 +10,7 @@ import json
 from typing import AsyncIterator, Optional, Dict, Any
 from urllib.parse import urlencode{% if has_params %}, urlparse, urlunparse{% endif %}
 
-{% if auth_config and auth_config.kind == 'basic' %}
+{% if auth_config and (auth_config.kind == 'basic' or (auth_config.kind == 'http' and auth_config.scheme == 'basic')) %}
 import base64
 {% endif %}
 
@@ -41,10 +41,11 @@ class {{ source_name }}Source:
         self._auth_location = "query"
 {% endif %}
         self._auth_secret_env = "{{ auth_config.secret_env }}"
-{% elif auth_config.kind == 'jwt' %}
+{% elif auth_config.kind == 'http' %}
+        self._auth_scheme = "{{ auth_config.scheme }}"
+{% if auth_config.secret_env %}
         self._auth_secret_env = "{{ auth_config.secret_env }}"
-{% elif auth_config.kind == 'basic' %}
-        self._auth_secret_env = "{{ auth_config.secret_env }}"
+{% endif %}
 {% endif %}
 
     def _get_auth_headers(self) -> Dict[str, str]:
@@ -59,21 +60,18 @@ class {{ source_name }}Source:
             api_key = api_key.split(",")[0].split(":")[0].strip()
             headers[self._auth_header_name] = api_key
 {% endif %}
-{% elif auth_config.kind == 'jwt' %}
-        # JWT Bearer token
+{% elif auth_config.kind == 'http' and auth_config.scheme == 'bearer' and auth_config.secret_env %}
+        # HTTP Bearer token from env var
         token = os.getenv(self._auth_secret_env, "")
         if token:
             headers["Authorization"] = f"Bearer {token}"
-{% elif auth_config.kind == 'basic' %}
-        # HTTP Basic auth
+{% elif auth_config.kind == 'http' and auth_config.scheme == 'basic' and auth_config.secret_env %}
+        # HTTP Basic auth from env var
         creds = os.getenv(self._auth_secret_env, "")
         if creds:
-            # Format: username:password:roles,... - take first entry
-            first_cred = creds.split(",")[0].strip()
-            parts = first_cred.split(":")
-            if len(parts) >= 2:
-                username, password = parts[0], parts[1]
-                encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+            # Format: username:password (single credential for outbound)
+            if ":" in creds:
+                encoded = base64.b64encode(creds.encode()).decode()
                 headers["Authorization"] = f"Basic {encoded}"
 {% endif %}
         return headers

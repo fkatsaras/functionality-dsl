@@ -7,6 +7,7 @@
 Auth<apikey> ApiKey
   in: header
   name: "api_key"
+  secret: "API_KEY"
 end
 
 Server SwaggerPetstoreOpenAPI30
@@ -20,7 +21,7 @@ end
 Source<REST> PetAPI
   url: "https://petstore3.swagger.io/api/v3/pet/{petId}"
   params: [petId, name, status]
-  operations: [delete, create, update, read]
+  operations: [read, update, delete, create]
   auth: ApiKey
 end
 
@@ -39,13 +40,13 @@ end
 Source<REST> OrderAPI
   url: "https://petstore3.swagger.io/api/v3/store/order/{orderId}"
   params: [orderId]
-  operations: [delete, create, read]
+  operations: [read, create, delete]
 end
 
 Source<REST> UserAPI
   url: "https://petstore3.swagger.io/api/v3/user/{username}"
   params: [username]
-  operations: [delete, create, update, read]
+  operations: [read, create, update, delete]
 end
 
 Source<REST> CreatewithlistAPI
@@ -55,7 +56,7 @@ end
 
 Source<REST> LoginAPI
   url: "https://petstore3.swagger.io/api/v3/user/login"
-  params: [password, username]
+  params: [username, password]
   operations: [read]
 end
 

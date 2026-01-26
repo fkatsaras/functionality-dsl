@@ -7,15 +7,17 @@
 Auth<apikey> Apikey
   in: header
   name: "X-API-Key"
+  secret: "API_KEY"
 end
 
 Auth<http> Bearerauth
   scheme: bearer
-  secret: "BEARERAUTH_SECRET"
+  secret: "BEARER_AUTH_TOKEN"
 end
 
 Auth<http> Basicauth
   scheme: basic
+  secret: "BASIC_AUTH_CREDS"
 end
 
 Server StreetlightsMQTTAPI

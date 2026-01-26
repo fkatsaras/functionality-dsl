@@ -82,6 +82,7 @@
                         {% raw %}{:else}{% endraw %}
                             {% raw %}{@const perm = getComponentPermission("{% endraw %}{{ cmp.name }}{% raw %}")}{% endraw %}
                             <Unauthorized
+                                title="{{ cmp.name }}"
                                 requiredRoles={% raw %}{perm.roles}{% endraw %}
                                 operation={% raw %}{perm.operation}{% endraw %}
                             />

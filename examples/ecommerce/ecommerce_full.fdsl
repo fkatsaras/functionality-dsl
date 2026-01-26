@@ -64,7 +64,7 @@ Source<REST> ShippingAPI
   url: "http://dummy-ecomm-service:9001/rates"
   params: [zip_code, weight]
   operations: [read]
-  auth: IntegrationAuth  // API key auth disabled for now
+  auth: IntegrationAuth
 end
 
 Source<WS> OrderUpdatesWS

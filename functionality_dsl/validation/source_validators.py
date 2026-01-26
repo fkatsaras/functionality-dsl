@@ -22,15 +22,17 @@ def validate_source_syntax(model, metamodel=None):
     3. REST operations can only be: create, read, update, delete, list
     4. WS operations can only be: subscribe, publish
     5. At least one operation must be defined
+    6. Source auth references MUST have 'secret:' field (for outbound auth)
     """
-
     # Validate REST sources
     for source in get_children_of_type("SourceREST", model):
         _validate_rest_source(source)
+        _validate_source_auth(source)
 
     # Validate WS sources
     for source in get_children_of_type("SourceWS", model):
         _validate_ws_source(source)
+        _validate_source_auth(source)
 
 
 def _validate_rest_source(source):
@@ -102,3 +104,25 @@ def _extract_operations(source):
         ops = getattr(operations_obj, "operations", []) or []
         return [op for op in ops]
     return []
+
+
+def _validate_source_auth(source):
+    """
+    Validate source auth configuration.
+
+    If a source references an Auth block, it MUST have a 'secret:' field
+    to provide credentials for outbound requests.
+    """
+    auth = getattr(source, "auth", None)
+    if not auth:
+        return
+
+    # Check if auth has a secret field
+    secret = getattr(auth, "secret", None)
+    if not secret:
+        raise TextXSemanticError(
+            f"Source '{source.name}' references Auth '{auth.name}' which has no 'secret:' field. "
+            f"Source auth requires 'secret:' to provide credentials for outbound requests. "
+            f"Add 'secret: \"ENV_VAR_NAME\"' to the Auth block.",
+            **get_location(source)
+        )

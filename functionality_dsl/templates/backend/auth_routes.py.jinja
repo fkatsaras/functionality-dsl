@@ -71,6 +71,7 @@ class AuthResponse(BaseModel):
     api_key: str = Field(..., description="API key for authentication")
     location: str = Field(default="{{ apikey_location }}", description="Where to send the key")
     key_name: str = Field(default="{{ apikey_name }}", description="Header/cookie/query parameter name")
+    user: Optional["UserResponse"] = Field(None, description="User information")
 {% elif auth_type == "basic" %}
 class AuthResponse(BaseModel):
     """Basic auth response."""
@@ -347,6 +348,12 @@ async def login(
         api_key=api_key.key,
         location="{{ apikey_location }}",
         key_name="{{ apikey_name }}",
+        user=UserResponse(
+            id=user.id,
+            login_id=user.login_id,
+            role=user.role,
+            created_at=getattr(user, "created_at", None),
+        ),
     )
 {% elif auth_type == "basic" %}
     return AuthResponse(

@@ -2,9 +2,9 @@
     import { onMount } from "svelte";
     import { authStore } from "$lib/stores/authStore";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
-    import Badge from "$lib/primitives/Badge.svelte";
     import Card from "$lib/primitives/Card.svelte";
-    import { Pencil, Trash2, Plus, X, Check, AlertTriangle } from "lucide-svelte";
+    import PlusIcon from "$lib/primitives/icons/PlusIcon.svelte";
+    import { Pencil, Trash2, X, Check, AlertTriangle, Lock } from "lucide-svelte";
 
     interface ColumnInfo {
         name: string;
@@ -59,6 +59,7 @@
     let deleteConfirmRow = $state<number | null>(null);
     let saving = $state(false);
     let actionError = $state<string | null>(null);
+    let isPermissionError = $state(false);  // Track if error is a 403 permission error
 
     // Get initial auth state synchronously
     const initialAuth = authStore.getState();
@@ -107,11 +108,20 @@
 
         loading = true;
         error = null;
+        isPermissionError = false;
 
         try {
             const { headers, fetchOptions } = getAuthHeaders();
             const response = await fetch(finalUrl, { ...fetchOptions, headers });
-            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+            if (!response.ok) {
+                // Check for permission error (403)
+                if (response.status === 403) {
+                    isPermissionError = true;
+                    const errBody = await response.json().catch(() => ({ detail: "Forbidden" }));
+                    throw new Error(errBody.detail || "You don't have permission to view this data");
+                }
+                throw new Error(`${response.status} ${response.statusText}`);
+            }
 
             const json = await response.json();
 
@@ -198,6 +208,7 @@
 
         saving = true;
         actionError = null;
+        isPermissionError = false;
 
         try {
             const { headers, fetchOptions } = getAuthHeaders();
@@ -227,7 +238,14 @@
 
             if (!response.ok) {
                 const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(errBody.detail || `HTTP ${response.status}`);
+                // Parse error detail (may be string or array from Pydantic)
+                const errorDetail = parseErrorDetail(errBody.detail);
+                // Check for permission error (403)
+                if (response.status === 403) {
+                    isPermissionError = true;
+                    throw new Error(errorDetail || "You don't have permission to update items");
+                }
+                throw new Error(errorDetail || `HTTP ${response.status}`);
             }
 
             // Refresh data after successful update
@@ -249,12 +267,14 @@
             createData[field] = "";
         }
         actionError = null;
+        isPermissionError = false;
     }
 
     function cancelCreate() {
         showCreateForm = false;
         createData = {};
         actionError = null;
+        isPermissionError = false;
     }
 
     async function submitCreate() {
@@ -262,6 +282,7 @@
 
         saving = true;
         actionError = null;
+        isPermissionError = false;
 
         try {
             const { headers, fetchOptions } = getAuthHeaders();
@@ -293,7 +314,14 @@
 
             if (!response.ok) {
                 const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(errBody.detail || `HTTP ${response.status}`);
+                // Parse error detail (may be string or array from Pydantic)
+                const errorDetail = parseErrorDetail(errBody.detail);
+                // Check for permission error (403)
+                if (response.status === 403) {
+                    isPermissionError = true;
+                    throw new Error(errorDetail || "You don't have permission to create items");
+                }
+                throw new Error(errorDetail || `HTTP ${response.status}`);
             }
 
             // Refresh data after successful create
@@ -322,6 +350,7 @@
 
         saving = true;
         actionError = null;
+        isPermissionError = false;
 
         try {
             const { headers, fetchOptions } = getAuthHeaders();
@@ -353,7 +382,14 @@
 
             if (!response.ok) {
                 const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(errBody.detail || `HTTP ${response.status}`);
+                // Parse error detail (may be string or array from Pydantic)
+                const errorDetail = parseErrorDetail(errBody.detail);
+                // Check for permission error (403)
+                if (response.status === 403) {
+                    isPermissionError = true;
+                    throw new Error(errorDetail || "You don't have permission to delete items");
+                }
+                throw new Error(errorDetail || `HTTP ${response.status}`);
             }
 
             // Refresh data after successful delete
@@ -369,6 +405,28 @@
     // ============================================================================
     // Helpers
     // ============================================================================
+
+    /**
+     * Parse error detail from API response (handles Pydantic validation errors)
+     */
+    function parseErrorDetail(detail: any): string {
+        if (typeof detail === 'string') return detail;
+        if (Array.isArray(detail)) {
+            // Pydantic validation errors are arrays of {loc, msg, type}
+            return detail.map((err: any) => {
+                if (typeof err === 'string') return err;
+                if (err.msg) {
+                    const field = err.loc?.slice(1).join('.') || '';
+                    return field ? `${field}: ${err.msg}` : err.msg;
+                }
+                return JSON.stringify(err);
+            }).join(', ');
+        }
+        if (typeof detail === 'object' && detail !== null) {
+            return detail.msg || detail.message || JSON.stringify(detail);
+        }
+        return String(detail);
+    }
 
     function getValueByName(row: any, fieldName: string) {
         return row[fieldName];
@@ -475,12 +533,16 @@
                         disabled={showCreateForm || editingRow !== null}
                         title="Create new"
                     >
-                        <Plus size={14} />
-                        <span>New</span>
+                        <PlusIcon size={18} />
                     </button>
                 {/if}
                 {#if error}
-                    <Badge class="text-[var(--edge-light)] mt-2">{error}</Badge>
+                    <div class={isPermissionError ? "header-permission-error" : "header-error"}>
+                        {#if isPermissionError}
+                            <Lock size={12} />
+                        {/if}
+                        <span>{error}</span>
+                    </div>
                 {/if}
                 <RefreshButton onRefresh={load} loading={loading} />
             </div>
@@ -488,17 +550,22 @@
     </svelte:fragment>
 
     <svelte:fragment slot="children">
-        <!-- Create Form -->
+        <!-- Create Form (Inline) -->
         {#if showCreateForm}
             <div class="crud-form">
                 <div class="crud-form-header">
-                    <h4>Create New</h4>
+                    <h4>Create New {name}</h4>
                     <button class="icon-btn cancel" onclick={cancelCreate} disabled={saving}>
                         <X size={16} />
                     </button>
                 </div>
                 {#if actionError}
-                    <div class="action-error">{actionError}</div>
+                    <div class={isPermissionError ? "permission-error" : "action-error"}>
+                        {#if isPermissionError}
+                            <Lock size={14} />
+                        {/if}
+                        <span>{actionError}</span>
+                    </div>
                 {/if}
                 <div class="crud-form-fields">
                     {#each editableFields as field}
@@ -551,7 +618,12 @@
                     <h4>Confirm Delete</h4>
                     <p>Are you sure you want to delete this item? This action cannot be undone.</p>
                     {#if actionError}
-                        <div class="action-error">{actionError}</div>
+                        <div class={isPermissionError ? "permission-error" : "action-error"}>
+                            {#if isPermissionError}
+                                <Lock size={14} />
+                            {/if}
+                            <span>{actionError}</span>
+                        </div>
                     {/if}
                     <div class="delete-confirm-actions">
                         <button class="btn-secondary" onclick={cancelDelete} disabled={saving}>Cancel</button>
@@ -646,7 +718,12 @@
                                             </button>
                                         </div>
                                         {#if actionError}
-                                            <div class="action-error-inline">{actionError}</div>
+                                            <div class={isPermissionError ? "permission-error-inline" : "action-error-inline"}>
+                                                {#if isPermissionError}
+                                                    <Lock size={12} />
+                                                {/if}
+                                                <span>{actionError}</span>
+                                            </div>
                                         {/if}
                                     </td>
                                 </tr>
@@ -795,30 +872,18 @@
         color: white;
     }
 
-    /* Create button */
-    .create-btn {
-        display: flex;
-        align-items: center;
-        gap: 0.35rem;
-        padding: 0.35rem 0.75rem;
-        border: 1px solid var(--accent);
-        border-radius: 6px;
-        background: transparent;
-        color: var(--accent);
-        font-size: 0.8rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .create-btn:hover:not(:disabled) {
+    /* Create button (icon only, accent style) */
+    .icon-btn.create {
+        border-color: var(--accent);
         background: var(--accent);
         color: white;
     }
 
-    .create-btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
+    .icon-btn.create:hover:not(:disabled) {
+        opacity: 0.9;
+        border-color: var(--accent);
+        background: var(--accent);
+        color: white;
     }
 
     /* Edit input in table */
@@ -845,7 +910,32 @@
         cursor: pointer;
     }
 
-    /* CRUD Form (Create) */
+    /* Create button (accent-colored plus icon) */
+    .create-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--accent);
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .create-btn:hover:not(:disabled) {
+        background: var(--edge-soft);
+        transform: scale(1.05);
+    }
+
+    .create-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    /* Inline CRUD Form */
     .crud-form {
         background: var(--surface-secondary);
         border: 1px solid var(--edge);
@@ -859,10 +949,12 @@
         align-items: center;
         justify-content: space-between;
         margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--edge);
     }
 
     .crud-form-header h4 {
-        font-size: 1rem;
+        font-size: 0.9rem;
         font-weight: 600;
         color: var(--text);
         margin: 0;
@@ -870,9 +962,17 @@
 
     .crud-form-fields {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 1rem;
         margin-bottom: 1rem;
+    }
+
+    .crud-form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--edge);
     }
 
     .form-field {
@@ -904,11 +1004,6 @@
         border-color: var(--accent);
     }
 
-    .crud-form-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
-    }
 
     .btn-primary,
     .btn-secondary,
@@ -1013,8 +1108,111 @@
     }
 
     .action-error-inline {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
         font-size: 0.7rem;
         color: var(--red-text, #dc2626);
         margin-top: 0.25rem;
+    }
+
+    /* Permission error styles (yellow/warning) */
+    .permission-error {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
+        background: var(--yellow-tint, #fefce8);
+        color: var(--yellow-text, #a16207);
+        font-size: 0.8rem;
+        margin-bottom: 1rem;
+        border: 1px solid var(--yellow-text, #a16207);
+    }
+
+    .permission-error-inline {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.7rem;
+        color: var(--yellow-text, #a16207);
+        margin-top: 0.25rem;
+    }
+
+    /* Header errors */
+    .header-error {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        background: var(--red-tint, #fef2f2);
+        color: var(--red-text, #dc2626);
+        font-size: 0.75rem;
+    }
+
+    .header-permission-error {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        background: var(--yellow-tint, #fefce8);
+        color: var(--yellow-text, #a16207);
+        border: 1px solid var(--yellow-text, #a16207);
+        font-size: 0.75rem;
+    }
+
+    /* Create Modal */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+    }
+
+    .modal-content {
+        background: var(--surface);
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        padding: 1.5rem;
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--edge);
+    }
+
+    .modal-header h4 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text);
+        margin: 0;
+    }
+
+    .modal-form-fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--edge);
     }
 </style>
