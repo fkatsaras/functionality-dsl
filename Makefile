@@ -187,6 +187,13 @@ viz-no-components: ## Visualize without UI components (usage: make viz-no-compon
 	fi
 	$(FDSL) visualize $(FILE) --output docs --no-components
 
+.PHONY: viz-metamodel
+viz-metamodel: ## Generate metamodel visualization (TextX grammar diagram, PlantUML)
+	@echo "$(BLUE)Generating metamodel visualization...$(NC)"
+	$(FDSL) visualize functionality_dsl/grammar/model.tx --output docs --metamodel --engine plantuml
+	@echo "$(GREEN)Metamodel visualization generated!$(NC)"
+	@echo "PlantUML file: docs/model_metamodel.pu"
+
 # ==============================================================================
 # Testing
 # ==============================================================================
