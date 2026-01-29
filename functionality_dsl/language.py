@@ -35,6 +35,7 @@ from functionality_dsl.validation import (
     validate_authdb_config,
     validate_session_byodb_requires_sessions_table,
     validate_auth_config,
+    validate_role_auth_not_source_auth,
     validate_source_syntax,
 )
 
@@ -168,6 +169,7 @@ def model_processor(model, metamodel=None):
     validate_accesscontrol_dependencies(model)
     validate_role_references(model)
     validate_server_auth_reference(model)
+    validate_role_auth_not_source_auth(model)
 
     # Auth validation
     validate_auth_config(model)

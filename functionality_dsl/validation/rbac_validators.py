@@ -252,3 +252,53 @@ def validate_auth_config(model):
                     f"Auth<apikey> '{auth_name}' must specify 'name:' (header/query/cookie name).",
                     **get_location(auth),
                 )
+
+
+def validate_role_auth_not_source_auth(model):
+    """Validate that Roles only reference user-facing Auth (no secret: field).
+
+    Auth declarations with a 'secret:' field are for outbound authentication
+    (calling external APIs/sources), not for inbound user authentication.
+    Roles should only be associated with Auth mechanisms used to authenticate users.
+
+    Example of invalid configuration:
+        Auth<apikey> ExternalAPIAuth
+          in: header
+          name: "X-API-Key"
+          secret: "EXTERNAL_API_KEY"  # This is for calling external APIs
+        end
+
+        Role admin uses ExternalAPIAuth  # ERROR: Can't use source auth for roles
+    """
+    auths = getattr(model, "auth", []) or []
+    roles = get_children_of_type("Role", model)
+
+    # Build a map of auth names to their secret status
+    source_auths = {}  # Auth names that have secret: field (source auth)
+    for auth in auths:
+        auth_name = getattr(auth, "name", None)
+        secret = getattr(auth, "secret", None)
+        if auth_name and secret:
+            source_auths[auth_name] = auth
+
+    # Check each role's auth reference
+    for role in roles:
+        role_name = getattr(role, "name", None)
+        auth_ref = getattr(role, "auth", None)
+
+        if not auth_ref:
+            continue
+
+        # Get the auth name (could be object or string)
+        if hasattr(auth_ref, "name"):
+            auth_name = auth_ref.name
+        else:
+            auth_name = str(auth_ref)
+
+        if auth_name in source_auths:
+            raise TextXSemanticError(
+                f"Role '{role_name}' references Auth '{auth_name}' which has a 'secret:' field. "
+                f"Auth with 'secret:' is for authenticating with external sources, not for user authentication. "
+                f"Create a separate Auth declaration without 'secret:' for user roles.",
+                **get_location(role),
+            )

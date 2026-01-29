@@ -29,6 +29,15 @@ from app.db.database import (
 )
 {% endif %}
 
+{% if needs_tokens_table %}
+from app.db.database import (
+    Token,
+    TOKEN_COLUMN,
+    TOKEN_USER_ID_COLUMN,
+    TOKEN_ROLES_COLUMN,
+)
+{% endif %}
+
 __all__ = [
     "get_db",
     "init_db",
@@ -44,5 +53,11 @@ __all__ = [
     "APIKey",
     "APIKEY_KEY_COLUMN",
     "APIKEY_USER_ID_COLUMN",
+{% endif %}
+{% if needs_tokens_table %}
+    "Token",
+    "TOKEN_COLUMN",
+    "TOKEN_USER_ID_COLUMN",
+    "TOKEN_ROLES_COLUMN",
 {% endif %}
 ]

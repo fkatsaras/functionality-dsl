@@ -212,14 +212,22 @@
                 const data = await response.json();
 
                 if (credentialAuthType === "jwt" && data.access_token) {
-                    // JWT: decode the token to extract user_id and roles
-                    const decoded = decodeJWT(data.access_token);
-                    if (decoded) {
-                        authStore.loginJWT(data.access_token, decoded.sub || loginId.trim(), decoded.roles);
+                    // Bearer token auth: prefer explicit user_id and roles from response
+                    // Fall back to JWT decode for actual JWT tokens
+                    if (data.user_id && data.roles) {
+                        // Server returned user info directly (database-backed bearer tokens)
+                        const roles = Array.isArray(data.roles) ? data.roles : [data.roles];
+                        authStore.loginJWT(data.access_token, data.user_id, roles);
                     } else {
-                        // Fallback if decoding fails - shouldn't happen with valid tokens
-                        console.warn('Failed to decode JWT token');
-                        authStore.loginJWT(data.access_token, loginId.trim(), []);
+                        // Try to decode as JWT (for actual JWT tokens with encoded claims)
+                        const decoded = decodeJWT(data.access_token);
+                        if (decoded) {
+                            authStore.loginJWT(data.access_token, decoded.sub || loginId.trim(), decoded.roles);
+                        } else {
+                            // Fallback if decoding fails
+                            console.warn('Failed to decode JWT token and no user info in response');
+                            authStore.loginJWT(data.access_token, loginId.trim(), []);
+                        }
                     }
                 } else if (credentialAuthType === "apikey" && data.api_key) {
                     // API key auth: server returns api_key, location, key_name, and user info
@@ -320,12 +328,46 @@
         loading = true;
 
         try {
-            // For manual API key entry, store the key directly
-            // Role verification happens server-side on each request
-            // Manual entry is only for header/query based apikey (not cookie)
-            authStore.loginAPIKey(apiKey.trim(), apiKeyHeader, "api-user", allRoles, apiKeyLocation as APIKeyLocation);
+            // Validate API key with backend by calling /auth/me
+            // Build headers based on API key location
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+
+            // For header-based API key, add it to the request headers
+            if (apiKeyLocation === "header") {
+                headers[apiKeyHeader] = apiKey.trim();
+            }
+
+            // Build URL with query param if needed
+            let meUrl = `${apiBase}/auth/me`;
+            if (apiKeyLocation === "query") {
+                meUrl += `?${apiKeyHeader}=${encodeURIComponent(apiKey.trim())}`;
+            }
+
+            const response = await fetch(meUrl, {
+                method: 'GET',
+                headers,
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error("Invalid API key");
+                }
+                const errorData = await response.json().catch(() => ({ detail: 'API key validation failed' }));
+                throw new Error(parseErrorDetail(errorData.detail) || `HTTP ${response.status}`);
+            }
+
+            const userData = await response.json();
+
+            // Store API key with actual user info from backend
+            const userId = userData.login_id || userData.id || "api-user";
+            const userRoles = userData.role ? [userData.role] : [];
+
+            authStore.loginAPIKey(apiKey.trim(), apiKeyHeader, userId, userRoles, apiKeyLocation as APIKeyLocation);
         } catch (e: any) {
-            error = e.message || "Failed to set API key";
+            error = e.message || "Failed to validate API key";
         } finally {
             loading = false;
         }

@@ -377,7 +377,25 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
         # -------------------------------
         # Auth<type> mechanisms
         # -------------------------------
+        # Collect referenced auth names (by roles, sources, or entity access)
+        referenced_auths = set()
+        for role in model.roles:
+            auth_ref = getattr(role, "auth", None)
+            if auth_ref:
+                referenced_auths.add(auth_ref.name)
+        for s in model.externalrest:
+            auth_ref = getattr(s, "auth", None)
+            if auth_ref:
+                referenced_auths.add(auth_ref.name)
+        for s in model.externalws:
+            auth_ref = getattr(s, "auth", None)
+            if auth_ref:
+                referenced_auths.add(auth_ref.name)
+
         for a in model.auth:
+            # Skip orphaned auth declarations (not referenced by any role or source)
+            if a.name not in referenced_auths:
+                continue
             # Get auth type from class name (AuthJWT -> jwt, AuthSession -> session, etc.)
             class_name = a.__class__.__name__
             if class_name.startswith("Auth"):

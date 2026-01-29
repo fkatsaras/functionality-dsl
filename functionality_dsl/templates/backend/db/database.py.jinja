@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Column, String, Integer
 {% endif %}
 
-{% if needs_apikeys_table %}
+{% if needs_apikeys_table or needs_tokens_table %}
 if TYPE_CHECKING:
     pass  # Forward references handled by SQLModel
 {% endif %}
@@ -191,6 +191,51 @@ class APIKey(SQLModel, table=True):
 
 {% endif %}
 
+{% if needs_tokens_table %}
+# ============================================================================
+# Token Model (generated for Auth<http> scheme: bearer)
+# ============================================================================
+
+# Token column constants
+TOKEN_COLUMN = "token"
+TOKEN_USER_ID_COLUMN = "user_id"
+TOKEN_ROLES_COLUMN = "roles"
+
+
+class Token(SQLModel, table=True):
+    """
+    Bearer token model - opaque tokens for authentication.
+    Used by: Auth<http> scheme: bearer
+
+    Tokens are stored in the database and looked up on each request.
+    Roles are stored with the token (comma-separated or JSON array).
+{% if not uses_default_db %}
+
+    NOTE (BYODB): This table must exist in your external database.
+    Required schema:
+        CREATE TABLE tokens (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(255) UNIQUE NOT NULL,
+            user_id VARCHAR(255) NOT NULL,
+            roles VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW(),
+            expires_at TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE
+        );
+{% endif %}
+    """
+    __tablename__ = "tokens"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token: str = Field(unique=True, index=True, max_length=255)
+    user_id: str = Field(index=True, max_length=255)
+    roles: Optional[str] = Field(default=None, max_length=255)  # Comma-separated roles
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: Optional[datetime] = Field(default=None)
+    is_active: bool = Field(default=True)
+
+{% endif %}
+
 
 # ============================================================================
 # Database Session Dependency
@@ -256,6 +301,19 @@ def init_db():
             is_active BOOLEAN DEFAULT TRUE
         );
 {% endif %}
+{% if needs_tokens_table %}
+
+    IMPORTANT: If using Auth<http> bearer, ensure the 'tokens' table exists:
+        CREATE TABLE tokens (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(255) UNIQUE NOT NULL,
+            user_id VARCHAR(255) NOT NULL,
+            roles VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW(),
+            expires_at TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE
+        );
+{% endif %}
 {% endif %}
     """
 {% if uses_default_db %}
@@ -268,5 +326,8 @@ def init_db():
     print("[DB] Using external database: {{ authdb.table }}")
 {% if needs_apikeys_table %}
     print("[DB] NOTE: Ensure 'apikeys' table exists in your database")
+{% endif %}
+{% if needs_tokens_table %}
+    print("[DB] NOTE: Ensure 'tokens' table exists in your database")
 {% endif %}
 {% endif %}

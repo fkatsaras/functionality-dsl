@@ -144,7 +144,6 @@
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="optional" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="constraint" eType="#//TypeConstraint"
         containment="true"/>
-    <eStructuralFeatures xsi:type="ecore:EReference" name="itemEntity" eType="#//Entity"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="nestedEntity" eType="#//Entity"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="Attribute">
@@ -153,15 +152,15 @@
         containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="expr" eType="#//Expr" containment="true"/>
   </eClassifiers>
-  <eClassifiers xsi:type="ecore:EClass" name="ParentRef">
+  <eClassifiers xsi:type="ecore:EClass" name="Parent">
     <eStructuralFeatures xsi:type="ecore:EReference" name="entity" eType="#//Entity"/>
   </eClassifiers>
   <eClassifiers xsi:type="ecore:EClass" name="Entity">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
-    <eStructuralFeatures xsi:type="ecore:EAttribute" name="ws_flow_type" eType="#//WSFlowType"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="flow" eType="#//WSFlowType"/>
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="strict" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="parents" upperBound="-1"
-        eType="#//ParentRef" containment="true"/>
+        eType="#//Parent" containment="true"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="source" eType="#//Source"/>
     <eStructuralFeatures xsi:type="ecore:EReference" name="attributes" upperBound="-1"
         eType="#//Attribute" containment="true"/>

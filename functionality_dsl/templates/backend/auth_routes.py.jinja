@@ -62,9 +62,11 @@ class LoginRequest(BaseModel):
 
 {% if auth_type == "bearer" %}
 class AuthResponse(BaseModel):
-    """JWT token response."""
-    access_token: str = Field(..., description="JWT access token")
+    """Bearer token response."""
+    access_token: str = Field(..., description="Bearer access token")
     token_type: str = Field(default="bearer", description="Token type")
+    user_id: str = Field(..., description="User identifier")
+    roles: list[str] = Field(..., description="User roles")
 {% elif auth_type == "apikey" %}
 class AuthResponse(BaseModel):
     """API key response."""
@@ -231,10 +233,11 @@ async def register(
     )
 
 {% if auth_type == "bearer" %}
-    # Create JWT token
+    # Create bearer token
     access_token = create_access_token(
         user_id=str(user.id),
         roles=[user.role],
+        db=db,
     )
 
     return RegisterResponse(
@@ -322,13 +325,18 @@ async def login(
         )
 
 {% if auth_type == "bearer" %}
-    # Create JWT token
+    # Create bearer token
     access_token = create_access_token(
         user_id=str(user.id),
         roles=[user.role],
+        db=db,
     )
 
-    return AuthResponse(access_token=access_token)
+    return AuthResponse(
+        access_token=access_token,
+        user_id=user.login_id,
+        roles=[user.role],
+    )
 {% elif auth_type == "apikey" %}
     # Get or create API key for the user
     api_key = get_or_create_api_key(db, user)

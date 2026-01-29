@@ -15,7 +15,6 @@
 
 Auth<http> HealthAuth
   scheme: bearer
-  secret: "HEALTH_JWT_SECRET"
 end
 
 Role patient uses HealthAuth
@@ -98,18 +97,24 @@ Entity HealthGoal
   access: [patient]
 end
 
-// Medications - per-operation access control demonstration
-// Patients can view and add medications, but only doctors can modify or remove them
-Entity Medication
-  source: MedicationAPI
+// Medication item schema (nested type for array)
+Entity MedicationItem
   attributes:
-    - medication_id: string @readonly;
+    - medication_id: string;
     - name: string;
     - dosage: string;
     - frequency: string;
-    - time_of_day: string @optional;
-    - active: boolean @optional;
-    - notes: string @optional;
+    - time_of_day: string?;
+    - active: boolean?;
+    - notes: string?;
+end
+
+// Medications list - per-operation access control demonstration
+// Patients can view and add medications, but only doctors can modify or remove them
+Entity Medications
+  source: MedicationAPI
+  attributes:
+    - medication: array<MedicationItem>;
   access:
     read: [patient, doctor]
     create: [patient, doctor]
@@ -212,13 +217,12 @@ Component<EntityCard> GoalCard
   highlight: "type"
 end
 
-// 3. MEDICATION - Per-operation access demo (patients read/create, doctors update/delete)
-Component<EntityCard> MedicationCard
-  entity: Medication
-  type: rest
-  fields: ["medication_id", "name", "dosage", "frequency", "time_of_day", "active"]
-  title: "Medication"
-  highlight: "name"
+// 3. MEDICATIONS TABLE - Per-operation access demo (patients read/create, doctors update/delete)
+Component<Table> MedicationsTable
+  entity: Medications
+  arrayField: "medication"
+  keyField: "medication_id"
+  colNames: ["medication_id", "name", "dosage", "frequency", "active"]
 end
 
 // 4. LIVE CHART - Real-time heart rate visualization

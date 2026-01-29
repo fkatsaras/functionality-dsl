@@ -16,7 +16,16 @@ sock = Sock(app)
 
 # In-memory storage (simple demo user for all requests)
 DEFAULT_USER = "demo-user"
-user_carts = {}  # user_id -> cart data
+user_carts = {
+    DEFAULT_USER: {
+        "items": [
+            {"product_id": 1, "name": "MacBook Pro 14\"", "price": 1999.99, "quantity": 1},
+            {"product_id": 2, "name": "Magic Mouse", "price": 79.99, "quantity": 2},
+            {"product_id": 3, "name": "Mechanical Keyboard", "price": 149.99, "quantity": 1},
+        ],
+        "updated_at": "2026-01-27T10:00:00Z"
+    }
+}
 user_orders = {}  # order_id -> order data
 
 # Products data matching the FDSL schema

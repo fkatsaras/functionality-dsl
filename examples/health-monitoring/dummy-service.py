@@ -168,50 +168,91 @@ def delete_goal():
 
 @app.route('/medications', methods=['GET'])
 def get_medications():
-    # Return the first active medication as singleton
-    active_meds = [m for m in medications if m.get('active', True)]
-    if active_meds:
-        return jsonify(active_meds[0])
-    return jsonify({})
+    # Return all medications as array
+    return jsonify({
+        "medication": medications,
+        "total": len(medications)
+    })
 
 @app.route('/medications', methods=['POST'])
 def create_medication():
     data = request.get_json()
 
-    new_med = {
-        "medication_id": f"MED-{id_counters['medication']:03d}",
-        "name": data.get("name", "Unknown"),
-        "dosage": data.get("dosage", ""),
-        "frequency": data.get("frequency", "daily"),
-        "time_of_day": data.get("time_of_day", "morning"),
-        "active": data.get("active", True),
-        "notes": data.get("notes")
-    }
+    # Handle both single item and array payload
+    # If payload has 'medication' array, we're receiving the full entity
+    if 'medication' in data and isinstance(data['medication'], list):
+        # Find new items (items without medication_id or with new IDs)
+        for item in data['medication']:
+            if not item.get('medication_id') or not any(m['medication_id'] == item['medication_id'] for m in medications):
+                new_med = {
+                    "medication_id": f"MED-{id_counters['medication']:03d}",
+                    "name": item.get("name", "Unknown"),
+                    "dosage": item.get("dosage", ""),
+                    "frequency": item.get("frequency", "daily"),
+                    "time_of_day": item.get("time_of_day"),
+                    "active": item.get("active", True),
+                    "notes": item.get("notes")
+                }
+                id_counters['medication'] += 1
+                medications.append(new_med)
+    else:
+        # Single item creation
+        new_med = {
+            "medication_id": f"MED-{id_counters['medication']:03d}",
+            "name": data.get("name", "Unknown"),
+            "dosage": data.get("dosage", ""),
+            "frequency": data.get("frequency", "daily"),
+            "time_of_day": data.get("time_of_day"),
+            "active": data.get("active", True),
+            "notes": data.get("notes")
+        }
+        id_counters['medication'] += 1
+        medications.append(new_med)
 
-    id_counters['medication'] += 1
-    medications.insert(0, new_med)
-
-    return jsonify(new_med), 201
+    return jsonify({
+        "medication": medications,
+        "total": len(medications)
+    }), 201
 
 @app.route('/medications', methods=['PUT'])
 def update_medication():
     data = request.get_json()
 
-    if medications:
-        med = medications[0]
-        for field in ['name', 'dosage', 'frequency', 'time_of_day', 'active', 'notes']:
-            if field in data:
-                med[field] = data[field]
-        return jsonify(med)
+    # If payload has 'medication' array, replace entire list
+    if 'medication' in data and isinstance(data['medication'], list):
+        medications.clear()
+        for item in data['medication']:
+            med = {
+                "medication_id": item.get("medication_id", f"MED-{id_counters['medication']:03d}"),
+                "name": item.get("name", "Unknown"),
+                "dosage": item.get("dosage", ""),
+                "frequency": item.get("frequency", "daily"),
+                "time_of_day": item.get("time_of_day"),
+                "active": item.get("active", True),
+                "notes": item.get("notes")
+            }
+            medications.append(med)
+    else:
+        # Update single medication by ID if provided
+        med_id = data.get('medication_id')
+        if med_id:
+            for med in medications:
+                if med['medication_id'] == med_id:
+                    for field in ['name', 'dosage', 'frequency', 'time_of_day', 'active', 'notes']:
+                        if field in data:
+                            med[field] = data[field]
+                    break
 
-    return jsonify({"error": "No medication found"}), 404
+    return jsonify({
+        "medication": medications,
+        "total": len(medications)
+    })
 
 @app.route('/medications', methods=['DELETE'])
 def delete_medication():
-    if medications:
-        medications.pop(0)
-        return '', 204
-    return jsonify({"error": "No medication found"}), 404
+    # Delete all medications (snapshot-based)
+    medications.clear()
+    return '', 204
 
 # ============================================
 # VITALS SNAPSHOT ENDPOINT (Read-only)

@@ -62,6 +62,9 @@ def generate_auth_modules(model, templates_dir, out_dir):
     core_dir = out_dir / "app" / "core"
     core_dir.mkdir(parents=True, exist_ok=True)
 
+    # Generate auth_base.py (shared code for all auth types)
+    _generate_auth_base(env, core_dir, out_dir)
+
     auth_configs = {}
 
     for auth in auth_blocks:
@@ -102,6 +105,20 @@ def generate_auth_modules(model, templates_dir, out_dir):
     _generate_auth_context(auth_configs, env, core_dir, out_dir)
 
     return auth_configs
+
+
+def _generate_auth_base(env, core_dir, out_dir):
+    """
+    Generate auth_base.py with shared authentication utilities.
+
+    This includes TokenPayload and role checking factories used by all auth modules.
+    """
+    template = env.get_template("auth_base.py.jinja")
+    rendered = template.render()
+
+    auth_base_file = core_dir / "auth_base.py"
+    auth_base_file.write_text(rendered, encoding="utf-8")
+    print(f"    [OK] {auth_base_file.relative_to(out_dir)}")
 
 
 def _get_template_name(auth_config):

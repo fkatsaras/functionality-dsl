@@ -117,6 +117,16 @@ def _needs_apikeys_table(model) -> bool:
     return auth_types["has_apikey"]
 
 
+def _needs_tokens_table(model) -> bool:
+    """
+    Determine if tokens table is needed.
+
+    Tokens table is needed for Auth<http> scheme: bearer (DB-backed tokens).
+    """
+    auth_types = _get_auth_types(model)
+    return auth_types["has_bearer"]
+
+
 def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
     """
     Generate database module with SQLModel models.
@@ -266,6 +276,7 @@ def _extract_database_config(model) -> dict:
     base_config = {
         "auth_types": auth_types,
         "needs_apikeys_table": _needs_apikeys_table(model),
+        "needs_tokens_table": _needs_tokens_table(model),
         "debug": False,
     }
 

@@ -17,16 +17,22 @@ AuthDB ShopUserStore
 end
 
 // Cookie auth for web/mobile users (session-like)
-// Keys: SESSION_KEYS=customer_session:customer,admin_session:admin
 Auth<apikey> UserAuth
   in: cookie
   name: "ecomm_session"
 end
 
-// API key for third-party integrations (shipping, analytics)
+// API key for third-party partner users (inbound authentication)
 Auth<apikey> IntegrationAuth
   in: header
   name: "X-API-Key"
+end
+
+// API key for calling external shipping service (outbound source auth)
+Auth<apikey> ShippingServiceAuth
+  in: query
+  name: "api_key"
+  secret: "SHIPPING_API_KEY"
 end
 
 // Roles - different auth mechanisms
@@ -64,7 +70,7 @@ Source<REST> ShippingAPI
   url: "http://dummy-ecomm-service:9001/rates"
   params: [zip_code, weight]
   operations: [read]
-  auth: IntegrationAuth
+  auth: ShippingServiceAuth
 end
 
 Source<WS> OrderUpdatesWS
@@ -143,7 +149,10 @@ Entity Cart
   attributes:
     - items: array<LineItem>;
     - updated_at: string<datetime> @readonly;
-  access: [customer]
+  access:
+    read: [customer, admin]
+    update: [customer]
+    delete: [customer]
 end
 
 Entity Order
@@ -169,7 +178,7 @@ Entity ShippingRates
   source: ShippingAPI
   attributes:
     - options: array<ShippingOption>;
-  access: [customer, partner]
+  access: [customer, admin, partner]
 end
 
 // --- WEBSOCKET ENTITIES ---
@@ -206,7 +215,7 @@ Entity CartSummary(Cart)
     - shipping: number = 0 if CartSummary.subtotal >= 50 else 10;
     - total: number = round(CartSummary.subtotal + CartSummary.tax + CartSummary.shipping, 2);
     - free_shipping: boolean = CartSummary.subtotal >= 50;
-  access: [customer]
+  access: [customer, admin]
 end
 
 Entity Checkout(Cart, ShippingRates)
@@ -216,7 +225,7 @@ Entity Checkout(Cart, ShippingRates)
     - cheapest_ship: number = min(map(ShippingRates.options, o => o["price"]));
     - total: number = round(Checkout.subtotal + Checkout.tax + Checkout.cheapest_ship, 2);
     - can_checkout: boolean = len(Cart.items) > 0;
-  access: [customer]
+  access: [customer, admin]
 end
 
 Entity ProductStats(Products)
@@ -231,14 +240,6 @@ end
 // ============================================================================
 // UI COMPONENTS
 // ============================================================================
-
-Component<EntityCard> CartTotalCard
-  entity: CartSummary
-  type: rest
-  fields: ["total"]
-  title: "Cart Total"
-  highlight: "total"
-end
 
 Component<EntityCard> CheckoutCard
   entity: Checkout
@@ -256,23 +257,11 @@ Component<EntityCard> OrderTracker
 end
 
 // ============================================================================
-// EDITABLE ENTITY CARD - Showcase inline editing with RBAC
-// Cart has update operation, so EntityCard will show pencil icon
-// updated_at is @readonly so it will show lock icon in edit mode
-// ============================================================================
-Component<EntityCard> CartEditor
-  entity: Cart
-  type: rest
-  fields: ["items", "updated_at"]
-  title: "Shopping Cart"
-end
-
-// ============================================================================
 // TABLE WITH ITEM-LEVEL CRUD - Showcase array field CRUD
 // Cart has items: array<LineItem>, Table auto-detects and enables item-level CRUD
 // Operations modify individual items in the array and PUT the whole entity back
 // ============================================================================
-Component<Table> CartItemsTable
+Component<Table> ShoppingCart
   entity: Cart
   arrayField: "items"
   keyField: "product_id"
@@ -282,4 +271,22 @@ end
 Component<Table> ProductsTable
   entity: Products
   colNames: ["id", "sku", "name", "price", "stock"]
+end
+
+// Pie chart showing product stock distribution
+Component<PieChart> StockDistribution
+  entity: ProductStats
+  slices:
+    - field: "in_stock" label: "In Stock" color: "#4CAF50"
+    - field: "out_of_stock" label: "Out of Stock" color: "#F44336"
+    - field: "on_sale" label: "On Sale" color: "#FF9800"
+  title: "Product Stock Distribution"
+  size: 300
+end
+
+// Shipping rates table
+Component<Table> ShippingRatesTable
+  entity: ShippingRates
+  arrayField: "options"
+  colNames: ["carrier", "service", "price", "days"]
 end
