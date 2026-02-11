@@ -1,7 +1,4 @@
-// ============================================
 // Smart Home Control System
-// Device Control + Climate/Energy Monitoring
-// ============================================
 
 import sources
 import entities

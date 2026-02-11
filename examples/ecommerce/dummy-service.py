@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-Dummy E-Commerce Service
-Simulates Products, Cart, Orders, Shipping Rates, and Order Status WebSocket
-Simple data provider - no authentication (auth handled by FDSL API layer)
-"""
-
 from flask import Flask, jsonify, request
 from flask_sock import Sock
 from datetime import datetime
@@ -14,7 +8,6 @@ import time
 app = Flask(__name__)
 sock = Sock(app)
 
-# In-memory storage (simple demo user for all requests)
 DEFAULT_USER = "demo-user"
 user_carts = {
     DEFAULT_USER: {
@@ -26,9 +19,8 @@ user_carts = {
         "updated_at": "2026-01-27T10:00:00Z"
     }
 }
-user_orders = {}  # order_id -> order data
+user_orders = {}
 
-# Products data matching the FDSL schema
 products_data = {
     "items": [
         {
@@ -85,7 +77,6 @@ products_data = {
     "total": 5
 }
 
-# Shipping rates data
 shipping_rates = {
     "options": [
         {"carrier": "USPS", "service": "Ground", "price": 5.99, "days": 7},
@@ -96,11 +87,8 @@ shipping_rates = {
 }
 
 def get_user_id():
-    """Simple demo - always return default user. Auth is handled by FDSL API layer."""
     return DEFAULT_USER
 
-
-# Helper: Initialize default cart for user
 def get_or_create_cart(user_id):
     if user_id not in user_carts:
         user_carts[user_id] = {
@@ -108,11 +96,6 @@ def get_or_create_cart(user_id):
             "updated_at": datetime.now().isoformat() + "Z"
         }
     return user_carts[user_id]
-
-
-# ============================================
-# PRODUCTS ENDPOINTS
-# ============================================
 
 @app.route('/products', methods=['GET'])
 def get_products():
@@ -122,11 +105,9 @@ def get_products():
 
     items = products_data["items"]
 
-    # Filter by category if provided
     if category:
         items = [p for p in items if p["category"]["slug"] == category]
 
-    # Filter by search term if provided
     if search:
         search_lower = search.lower()
         items = [p for p in items if search_lower in p["name"].lower() or search_lower in p["sku"].lower()]
@@ -139,7 +120,6 @@ def get_products():
 
 @app.route('/products', methods=['POST'])
 def create_product():
-    """Create a new product"""
     data = request.get_json()
     new_id = max(p["id"] for p in products_data["items"]) + 1
 
@@ -162,7 +142,6 @@ def create_product():
 
 @app.route('/products', methods=['PUT'])
 def update_products():
-    """Update products (replaces items array)"""
     data = request.get_json()
 
     if "items" in data:
@@ -174,7 +153,6 @@ def update_products():
 
 @app.route('/products', methods=['DELETE'])
 def delete_product():
-    """Delete a product by id (passed in body or query)"""
     product_id = request.args.get('id') or (request.get_json() or {}).get('id')
 
     if product_id:
@@ -183,11 +161,6 @@ def delete_product():
         products_data["total"] = len(products_data["items"])
 
     return jsonify(products_data)
-
-
-# ============================================
-# CART ENDPOINTS (User-Scoped Singleton)
-# ============================================
 
 @app.route('/cart', methods=['GET'])
 def get_cart():
@@ -198,7 +171,6 @@ def get_cart():
 
 @app.route('/cart', methods=['POST'])
 def create_cart():
-    """Create/reset cart with new items"""
     user_id = get_user_id()
     data = request.get_json()
     items = data.get("items", [])
@@ -213,12 +185,10 @@ def create_cart():
 
 @app.route('/cart', methods=['PUT'])
 def update_cart():
-    """Update cart items"""
     user_id = get_user_id()
     cart = get_or_create_cart(user_id)
     data = request.get_json()
 
-    # Update items if provided
     if "items" in data:
         cart["items"] = data["items"]
 
@@ -229,7 +199,6 @@ def update_cart():
 
 @app.route('/cart', methods=['DELETE'])
 def delete_cart():
-    """Clear cart"""
     user_id = get_user_id()
     user_carts[user_id] = {
         "items": [],
@@ -237,11 +206,6 @@ def delete_cart():
     }
 
     return '', 204
-
-
-# ============================================
-# SHIPPING RATES ENDPOINTS
-# ============================================
 
 @app.route('/rates', methods=['GET'])
 def get_shipping_rates():
@@ -251,11 +215,6 @@ def get_shipping_rates():
     # weight = request.args.get('weight')
     # For demo, just return static rates
     return jsonify(shipping_rates)
-
-
-# ============================================
-# ORDERS ENDPOINTS
-# ============================================
 
 @app.route('/orders', methods=['GET'])
 def get_orders():
@@ -270,7 +229,6 @@ def get_orders():
 
 @app.route('/orders', methods=['POST'])
 def create_order():
-    """Create a new order"""
     data = request.get_json()
 
     order_id = f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -311,7 +269,6 @@ def order_status_ws(ws, order_id):
         order_ws_clients[order_id] = []
     order_ws_clients[order_id].append(ws)
 
-    # Send initial status
     initial_status = {
         "order_id": order_id,
         "status": "pending",
@@ -319,29 +276,23 @@ def order_status_ws(ws, order_id):
         "timestamp": int(time.time() * 1000)
     }
 
-    # Check if order exists
     if order_id in user_orders:
         initial_status["status"] = user_orders[order_id].get("status", "pending")
 
     try:
         ws.send(json.dumps(initial_status))
 
-        # Simulate order progression for demo
         statuses = ["pending", "processing", "shipped", "delivered"]
         current_idx = statuses.index(initial_status["status"]) if initial_status["status"] in statuses else 0
 
         while True:
-            # Wait for messages or send periodic updates
             try:
-                # Non-blocking receive with timeout
                 message = ws.receive(timeout=5)
                 if message:
-                    # Handle any client messages if needed
                     print(f"[WS] Received from client: {message}")
             except Exception:
                 pass
 
-            # For demo: progress order status every 10 seconds
             if current_idx < len(statuses) - 1:
                 current_idx += 1
                 status_update = {
@@ -352,7 +303,6 @@ def order_status_ws(ws, order_id):
                 }
                 ws.send(json.dumps(status_update))
 
-                # Update stored order if exists
                 if order_id in user_orders:
                     user_orders[order_id]["status"] = statuses[current_idx]
 

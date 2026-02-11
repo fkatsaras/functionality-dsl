@@ -1,8 +1,4 @@
-// =============================================================================
-// Smart Home Dashboard - UI Components
-// =============================================================================
-
-// 1. ENERGY CONSUMPTION CHART - Real-time energy monitoring (wide)
+// Smart Home Dashboard
 Component<LiveChart> EnergyChart
   entity: EnergyMetrics
   seriesLabels: ["HVAC", "Lighting", "Appliances", "Total"]
@@ -13,7 +9,6 @@ Component<LiveChart> EnergyChart
   fullWidth: true
 end
 
-// 2. HUMIDITY GAUGE - Live humidity monitoring
 Component<Gauge> HumidityGauge
   entity: ClimateAlerts
   value: "humidity"
@@ -23,7 +18,6 @@ Component<Gauge> HumidityGauge
   unit: "%"
 end
 
-// 3. LIGHT & APPLIANCE CONTROLS - Toggle panel (one card, multiple switches)
 Component<TogglePanel> LightControls
   entity: Lights
   toggles:
@@ -39,7 +33,6 @@ Component<Toggle> OvenToggle
   label: "Oven Power"
 end
 
-// TEMPERATURE GAUGE - Live temperature monitoring
 Component<Gauge> TemperatureGauge
   entity: ClimateAlerts
   value: "temp_f"
@@ -49,13 +42,11 @@ Component<Gauge> TemperatureGauge
   unit: "°F"
 end
 
-// 4. SECURITY CAMERA - Live camera feed with day/night adaptation
 Component<Camera> SecurityCamera
   entity: AdaptiveCamera
   label: "Front Door Camera"
 end
 
-// 5. HOME STATUS CARD - Overview of all devices
 Component<EntityCard> HomeStatusCard
   entity: HomeStatus
   type: rest

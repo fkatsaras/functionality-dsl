@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-Dummy Smart Home Devices Service
-Simulates various smart home devices with realistic data
-"""
-
 from flask import Flask, jsonify, request
 from flask_sock import Sock
 import random
@@ -17,11 +12,9 @@ import threading
 app = Flask(__name__)
 sock = Sock(app)
 
-# Camera feed configuration
-CAMERA_FRAME_RATE_MS = 100  # 10 fps
+CAMERA_FRAME_RATE_MS = 100
 CAMERA_IMAGE_DIR = os.environ.get('CAMERA_IMAGE_DIR', '/app/camera_frames')
 
-# Simulated device states
 class SmartHomeState:
     def __init__(self):
         self.start_time = time.time()
@@ -35,7 +28,6 @@ class SmartHomeState:
             "kitchen": True,
         }
 
-        # Roomba state
         self.roomba_status = "docked"
         self.roomba_power = 2
 
@@ -52,23 +44,19 @@ class SmartHomeState:
         self.coffee_maker = False
 
     def get_current_temp(self):
-        # Simulate temperature drifting toward target
         elapsed = time.time() - self.start_time
         drift = 2 * (0.5 - random.random())
         return round(self.thermostat_target + drift, 1)
 
     def get_outdoor_temp(self):
-        # Simulate outdoor temperature varying throughout day
         hour = datetime.now().hour
-        base_temp = 60 + 15 * abs(12 - hour) / 12  # Warmer at noon
+        base_temp = 60 + 15 * abs(12 - hour) / 12
         return round(base_temp + 5 * random.random(), 1)
 
     def get_motion_detected(self):
-        # Motion detected if lights are on in living areas
         return self.lights["living_room"] or self.lights["kitchen"]
 
     def get_total_lights_power(self):
-        # Assume each light on = 10W LED
         total = sum([10 if v else 0 for v in self.lights.values()])
         return round(total, 1)
 
@@ -136,13 +124,11 @@ def update_security():
 
 @app.route('/energy', methods=['GET'])
 def get_energy():
-    # Calculate power consumption from all devices
     hvac_watts = 2500 if state.thermostat_mode != "off" else 0
     lighting_watts = state.get_total_lights_power()
 
-    # Appliances base load
     oven_watts = 3500 if state.oven_on else 0
-    fridge_watts = 150  # Always running
+    fridge_watts = 150
     washer_watts = 500 if random.random() < 0.1 else 0
     dryer_watts = 3000 if random.random() < 0.05 else 0
     dishwasher_watts = 1800 if random.random() < 0.08 else 0
@@ -150,10 +136,9 @@ def get_energy():
 
     total_watts = hvac_watts + lighting_watts + appliances_watts
 
-    # Solar production (simulate based on time of day)
     hour = datetime.now().hour
     if 6 <= hour <= 18:
-        solar_peak = 4000  # 4kW solar system
+        solar_peak = 4000
         solar_watts = solar_peak * (1 - abs(12 - hour) / 6) + random.random() * 200
     else:
         solar_watts = 0
@@ -176,14 +161,12 @@ def get_air_quality():
     indoor_temp = state.get_current_temp()
     outdoor_temp = state.get_outdoor_temp()
 
-    # CO2 higher when motion detected
     base_co2 = 400
     if state.get_motion_detected():
         co2_ppm = base_co2 + int(200 * random.random())
     else:
         co2_ppm = base_co2 + int(100 * random.random())
 
-    # PM2.5 lower when purifier is on
     if state.purifier_on:
         pm25 = round(5 + 5 * random.random(), 1)
     else:
@@ -201,7 +184,6 @@ def get_air_quality():
 
 @app.route('/appliances', methods=['GET'])
 def get_appliances():
-    # Washer/dryer have 10% chance of running
     washer_running = random.random() < 0.1
     dryer_running = random.random() < 0.05
     dishwasher_running = random.random() < 0.08
@@ -222,7 +204,7 @@ def update_appliances():
     if 'oven_on' in data:
         state.oven_on = bool(data['oven_on'])
         if state.oven_on:
-            state.oven_temp = 350  # Preheat to 350F
+            state.oven_temp = 350
         else:
             state.oven_temp = 0
     return get_appliances()
@@ -231,18 +213,15 @@ def update_appliances():
 def health():
     return jsonify({"status": "healthy", "service": "smart-home-devices"})
 
-# WebSocket endpoint: Security events stream
 @sock.route('/ws/security/events')
 def security_events(ws):
-    """Stream security events every 2 seconds"""
     print("Client connected to /ws/security/events")
     try:
         while True:
-            # Simulate security state changes
-            if random.random() < 0.1:  # 10% chance to toggle door lock
+            if random.random() < 0.1:
                 state.door_locked = not state.door_locked
 
-            if random.random() < 0.05:  # 5% chance to toggle armed state
+            if random.random() < 0.05:
                 state.security_armed = not state.security_armed
 
             event = {
@@ -256,18 +235,15 @@ def security_events(ws):
     except Exception as e:
         print(f"Security events WebSocket error: {e}")
 
-# WebSocket endpoint: Climate monitoring stream
 @sock.route('/ws/climate/monitor')
 def climate_monitor(ws):
-    """Stream climate data every 3 seconds"""
     print("Client connected to /ws/climate/monitor")
     try:
         while True:
             current_temp = state.get_current_temp()
             humidity = round(45 + 10 * random.random(), 1)
 
-            # Simulate temperature drift
-            if random.random() < 0.2:  # 20% chance to change target temp
+            if random.random() < 0.2:
                 state.thermostat_target += random.choice([-1, 1])
                 state.thermostat_target = max(65, min(80, state.thermostat_target))
 
@@ -281,14 +257,11 @@ def climate_monitor(ws):
     except Exception as e:
         print(f"Climate monitor WebSocket error: {e}")
 
-# WebSocket endpoint: Energy consumption stream
 @sock.route('/ws/energy')
 def energy_stream(ws):
-    """Stream energy consumption data every 2 seconds"""
     print("Client connected to /ws/energy")
     try:
         while True:
-            # HVAC consumption varies with mode
             if state.thermostat_mode == "off":
                 hvac_kwh = 0
             elif state.thermostat_mode == "eco":
@@ -296,11 +269,9 @@ def energy_stream(ws):
             else:
                 hvac_kwh = round(2.0 + 1.0 * random.random(), 2)
 
-            # Lighting based on actual light levels
             lighting_kwh = round(state.get_total_lights_power() / 1000, 3)
 
-            # Appliances - oven is big consumer
-            base_appliances = 0.15  # Fridge, standby, etc.
+            base_appliances = 0.15
             oven_kwh = 3.5 if state.oven_on else 0
             appliances_kwh = round(base_appliances + oven_kwh + 0.2 * random.random(), 2)
 
@@ -315,21 +286,16 @@ def energy_stream(ws):
     except Exception as e:
         print(f"Energy stream WebSocket error: {e}")
 
-# WebSocket endpoint: Security camera feed (binary frames)
 @sock.route('/ws/camera/feed')
 def camera_feed(ws):
-    """Stream binary image frames from security camera"""
     print("Client connected to /ws/camera/feed")
 
-    # Load image files
     image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.png')))
     if not image_files:
-        # Try jpg as fallback
         image_files = sorted(glob.glob(os.path.join(CAMERA_IMAGE_DIR, '*.jpg')))
 
     if not image_files:
         print(f"WARNING: No image files found in {CAMERA_IMAGE_DIR}")
-        # Send a placeholder message and close
         ws.send(b'NO_IMAGES_AVAILABLE')
         return
 
@@ -338,26 +304,18 @@ def camera_feed(ws):
 
     try:
         while True:
-            # Read current frame as binary
             frame_file = image_files[frame_index]
             with open(frame_file, 'rb') as f:
                 frame_data = f.read()
 
-            # Send raw binary frame
             ws.send(frame_data)
-
-            # Move to next frame (loop)
             frame_index = (frame_index + 1) % len(image_files)
-
-            # Wait for next frame
             time.sleep(CAMERA_FRAME_RATE_MS / 1000.0)
     except Exception as e:
         print(f"Camera feed WebSocket error: {e}")
 
-# WebSocket endpoint: Roomba commands (receives commands from clients)
 @sock.route('/ws/roomba/commands')
 def roomba_commands(ws):
-    """Receive commands for Roomba vacuum robot"""
     print("Client connected to /ws/roomba/commands")
     try:
         while True:
@@ -373,7 +331,6 @@ def roomba_commands(ws):
 
                 print(f"Roomba command received: {command}, room={room}, power={power}")
 
-                # Update state based on command
                 if command == 'start':
                     state.roomba_status = 'cleaning'
                     state.roomba_power = power
@@ -385,7 +342,6 @@ def roomba_commands(ws):
                     state.roomba_status = f'cleaning_{room}'
                     state.roomba_power = power
 
-                # Send acknowledgment
                 ack = {
                     "status": "ok",
                     "roomba_status": state.roomba_status,

@@ -1,17 +1,4 @@
-// =============================================================================
-// Health Monitoring System - Full CRUD + Real-time Vitals
-// =============================================================================
-// Demonstrates:
-// - REST CRUD: Patient profiles, health goals, medications
-// - Per-operation access control: Medications (patients can read/create,
-//   only doctors can update/delete)
-// - WebSocket inbound: Real-time heart rate from wearables
-// - WebSocket outbound: Emergency SOS alerts from patients
-// - Complex aggregations: BMI, health scores, vital status
-//
-// Thesis Focus: Data collection from wearables + processing (BMI, status)
-//               + aggregation (health summaries)
-// =============================================================================
+// Health Monitoring System
 
 Auth<http> HealthAuth
   scheme: bearer
@@ -27,9 +14,7 @@ Server HealthMonitor
   loglevel: debug
 end
 
-// =============================================================================
-// REST SOURCES - Patient Data Management
-// =============================================================================
+// REST Sources
 
 Source<REST> PatientAPI
   url: "http://dummy-health-monitoring:9001/patient"
@@ -51,9 +36,7 @@ Source<REST> VitalsSnapshotAPI
   operations: [read]
 end
 
-// =============================================================================
-// WEBSOCKET SOURCES - Real-time Monitoring
-// =============================================================================
+// WebSocket Sources
 
 Source<WS> WearableHeartRate
   channel: "ws://dummy-health-monitoring:9001/ws/heartrate"
@@ -65,11 +48,8 @@ Source<WS> EmergencyChannel
   operations: [publish]
 end
 
-// =============================================================================
-// REST ENTITIES - CRUD Operations
-// =============================================================================
+// REST Entities
 
-// Patient Profile - read/update own data
 Entity PatientProfile
   source: PatientAPI
   attributes:
@@ -84,7 +64,6 @@ Entity PatientProfile
   access: [patient, doctor]
 end
 
-// Health Goals - full CRUD
 Entity HealthGoal
   source: GoalsAPI
   attributes:
@@ -97,7 +76,6 @@ Entity HealthGoal
   access: [patient]
 end
 
-// Medication item schema (nested type for array)
 Entity MedicationItem
   attributes:
     - medication_id: string;
@@ -109,8 +87,6 @@ Entity MedicationItem
     - notes: string?;
 end
 
-// Medications list - per-operation access control demonstration
-// Patients can view and add medications, but only doctors can modify or remove them
 Entity Medications
   source: MedicationAPI
   attributes:
@@ -122,7 +98,6 @@ Entity Medications
     delete: [doctor]
 end
 
-// Current Vitals Snapshot (read-only)
 Entity VitalsSnapshot
   source: VitalsSnapshotAPI
   attributes:
@@ -135,11 +110,8 @@ Entity VitalsSnapshot
   access: [patient, doctor]
 end
 
-// =============================================================================
-// WEBSOCKET ENTITIES - Real-time Data
-// =============================================================================
+// WebSocket Entities
 
-// Inbound: Real-time heart rate from wearable
 Entity HeartRateTick
   flow: inbound
   source: WearableHeartRate
@@ -149,24 +121,19 @@ Entity HeartRateTick
     - device_id: string;
 end
 
-// Outbound: Emergency SOS from patient to emergency services
 Entity EmergencyAlert
   flow: outbound
   source: EmergencyChannel
   attributes:
-    - cause: string;    // "fall", "chest_pain", "breathing", "other"
-    - severity: string;      // "low", "medium", "high", "critical"
+    - cause: string;
+    - severity: string;
     - location: string @optional;
     - message: string @optional;
   access: [patient]
 end
 
-// =============================================================================
-// COMPOSITE ENTITIES - Aggregations & Analysis
-// =============================================================================
+// Composite Entities
 
-// Real-time heart rate with analysis
-// Note: WebSocket auth requires token in query param - using public for demo simplicity
 Entity HeartRateMonitor(HeartRateTick)
   flow: inbound
   attributes:
@@ -178,7 +145,6 @@ Entity HeartRateMonitor(HeartRateTick)
   access: public
 end
 
-// Health Summary - combines profile + vitals with BMI calculation
 Entity HealthSummary(PatientProfile, VitalsSnapshot)
   attributes:
     - patient_name: string = PatientProfile.name;
@@ -195,11 +161,8 @@ Entity HealthSummary(PatientProfile, VitalsSnapshot)
   access: [patient, doctor]
 end
 
-// =============================================================================
-// UI COMPONENTS
-// =============================================================================
+// UI Components
 
-// 1. PATIENT PROFILE - EntityCard with update capability (doctors/patients can edit)
 Component<EntityCard> PatientCard
   entity: PatientProfile
   type: rest
@@ -208,7 +171,6 @@ Component<EntityCard> PatientCard
   highlight: "name"
 end
 
-// 2. HEALTH GOAL - Full CRUD EntityCard (patients can create/update/delete their goals)
 Component<EntityCard> GoalCard
   entity: HealthGoal
   type: rest
@@ -217,7 +179,6 @@ Component<EntityCard> GoalCard
   highlight: "type"
 end
 
-// 3. MEDICATIONS TABLE - Per-operation access demo (patients read/create, doctors update/delete)
 Component<Table> MedicationsTable
   entity: Medications
   arrayField: "medication"
@@ -225,7 +186,6 @@ Component<Table> MedicationsTable
   colNames: ["medication_id", "name", "dosage", "frequency", "active"]
 end
 
-// 4. LIVE CHART - Real-time heart rate visualization
 Component<LiveChart> HeartRateChart
   entity: HeartRateMonitor
   values: current_bpm
@@ -237,7 +197,6 @@ Component<LiveChart> HeartRateChart
   fullWidth: true
 end
 
-// 5. HEART RATE GAUGE - Live heart rate monitoring
 Component<Gauge> HeartRateGauge
   entity: HeartRateMonitor
   value: "current_bpm"
@@ -247,7 +206,6 @@ Component<Gauge> HeartRateGauge
   unit: "bpm"
 end
 
-// 6. HEALTH SUMMARY - Aggregated health overview
 Component<EntityCard> HealthOverview
   entity: HealthSummary
   type: rest

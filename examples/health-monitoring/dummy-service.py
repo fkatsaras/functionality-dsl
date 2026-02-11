@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-Dummy Health Monitoring Service
-Simulates patient data, vitals, medications, goals, and wearable device streams.
-"""
-
 from flask import Flask, jsonify, request
 from flask_sock import Sock
 import random
@@ -13,10 +8,6 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 sock = Sock(app)
-
-# ============================================
-# IN-MEMORY DATA STORES
-# ============================================
 
 patient_profile = {
     "patient_id": "PAT-001",
@@ -69,18 +60,12 @@ medications = [
     }
 ]
 
-# Counter for generating IDs
 id_counters = {
     "goal": 3,
     "medication": 3
 }
 
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
-
 def generate_vitals():
-    """Generate realistic vital signs with some variation"""
     base_hr = 72
     base_systolic = 120
     base_diastolic = 80
@@ -93,10 +78,6 @@ def generate_vitals():
         "oxygen_saturation": random.randint(95, 100),
         "recorded_at": datetime.now().isoformat() + "Z"
     }
-
-# ============================================
-# PATIENT PROFILE ENDPOINTS
-# ============================================
 
 @app.route('/patient', methods=['GET'])
 def get_patient():
@@ -113,13 +94,8 @@ def update_patient():
     patient_profile['updated_at'] = datetime.now().isoformat() + "Z"
     return jsonify(patient_profile)
 
-# ============================================
-# HEALTH GOALS ENDPOINTS (CRUD)
-# ============================================
-
 @app.route('/goals', methods=['GET'])
 def get_goals():
-    # Return the first goal as singleton (or empty if none)
     if health_goals:
         return jsonify(health_goals[0])
     return jsonify({})
@@ -138,8 +114,7 @@ def create_goal():
     }
 
     id_counters['goal'] += 1
-    health_goals.insert(0, new_goal)  # Add to front
-
+    health_goals.insert(0, new_goal)
     return jsonify(new_goal), 201
 
 @app.route('/goals', methods=['PUT'])
@@ -162,13 +137,8 @@ def delete_goal():
         return '', 204
     return jsonify({"error": "No goal found"}), 404
 
-# ============================================
-# MEDICATIONS ENDPOINTS (CRUD)
-# ============================================
-
 @app.route('/medications', methods=['GET'])
 def get_medications():
-    # Return all medications as array
     return jsonify({
         "medication": medications,
         "total": len(medications)
@@ -178,10 +148,7 @@ def get_medications():
 def create_medication():
     data = request.get_json()
 
-    # Handle both single item and array payload
-    # If payload has 'medication' array, we're receiving the full entity
     if 'medication' in data and isinstance(data['medication'], list):
-        # Find new items (items without medication_id or with new IDs)
         for item in data['medication']:
             if not item.get('medication_id') or not any(m['medication_id'] == item['medication_id'] for m in medications):
                 new_med = {
@@ -196,7 +163,6 @@ def create_medication():
                 id_counters['medication'] += 1
                 medications.append(new_med)
     else:
-        # Single item creation
         new_med = {
             "medication_id": f"MED-{id_counters['medication']:03d}",
             "name": data.get("name", "Unknown"),
@@ -218,7 +184,6 @@ def create_medication():
 def update_medication():
     data = request.get_json()
 
-    # If payload has 'medication' array, replace entire list
     if 'medication' in data and isinstance(data['medication'], list):
         medications.clear()
         for item in data['medication']:
@@ -233,7 +198,6 @@ def update_medication():
             }
             medications.append(med)
     else:
-        # Update single medication by ID if provided
         med_id = data.get('medication_id')
         if med_id:
             for med in medications:
@@ -250,21 +214,12 @@ def update_medication():
 
 @app.route('/medications', methods=['DELETE'])
 def delete_medication():
-    # Delete all medications (snapshot-based)
     medications.clear()
     return '', 204
-
-# ============================================
-# VITALS SNAPSHOT ENDPOINT (Read-only)
-# ============================================
 
 @app.route('/vitals', methods=['GET'])
 def get_vitals():
     return jsonify(generate_vitals())
-
-# ============================================
-# HEALTH CHECK
-# ============================================
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -275,13 +230,8 @@ def health():
         "medications_count": len(medications)
     })
 
-# ============================================
-# WEBSOCKET: Heart Rate Stream (Inbound to FDSL)
-# ============================================
-
 @sock.route('/ws/heartrate')
 def heartrate_stream(ws):
-    """Simulates wearable device sending heart rate data"""
     print("Client connected to /ws/heartrate")
 
     base_bpm = 72
@@ -289,34 +239,27 @@ def heartrate_stream(ws):
 
     try:
         while True:
-            # Simulate realistic heart rate variations
-            # Occasionally spike for exercise or stress
-            if random.random() < 0.05:  # 5% chance of elevated HR
+            if random.random() < 0.05:
                 bpm = base_bpm + random.randint(30, 50)
-            elif random.random() < 0.02:  # 2% chance of low HR (sleeping)
+            elif random.random() < 0.02:
                 bpm = base_bpm - random.randint(15, 25)
             else:
                 bpm = base_bpm + random.randint(-8, 12)
 
             event = {
-                "bpm": max(45, min(180, bpm)),  # Clamp to realistic range
+                "bpm": max(45, min(180, bpm)),
                 "timestamp": int(time.time() * 1000),
                 "device_id": device_id
             }
 
             ws.send(json.dumps(event))
-            time.sleep(1)  # Send every second
+            time.sleep(1)
 
     except Exception as e:
         print(f"Heart rate stream error: {e}")
 
-# ============================================
-# WEBSOCKET: Emergency SOS Receiver (Outbound from FDSL)
-# ============================================
-
 @sock.route('/ws/sos')
 def emergency_receiver(ws):
-    """Receives emergency alerts from patients"""
     print("Emergency SOS receiver connected")
 
     try:
@@ -334,7 +277,6 @@ def emergency_receiver(ws):
                 print(f"  Message: {data.get('message', 'none')}")
                 print(f"  Timestamp: {datetime.now().isoformat()}")
 
-                # Send acknowledgment
                 ack = {
                     "status": "received",
                     "alert_id": f"ALERT-{int(time.time())}",
@@ -349,10 +291,6 @@ def emergency_receiver(ws):
 
     except Exception as e:
         print(f"Emergency receiver error: {e}")
-
-# ============================================
-# MAIN
-# ============================================
 
 if __name__ == '__main__':
     print("Health Monitoring Dummy Service starting on port 9001...")

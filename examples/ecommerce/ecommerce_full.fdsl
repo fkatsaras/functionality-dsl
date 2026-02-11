@@ -1,12 +1,7 @@
-// ============================================================================
-// E-Commerce API - Full Featured Example
-// Demonstrates: BYODB, multiple auth types, params, nested entities,
-// composites, per-operation access, WebSocket, UI components
-// ============================================================================
+// E-Commerce API
 
-// --- AUTHENTICATION ---
+// Authentication
 
-// External user database (BYODB)
 AuthDB ShopUserStore
   connection: "MY_ECOMM_DB_URL"
   table: "shop_users"
@@ -16,31 +11,27 @@ AuthDB ShopUserStore
     role="user_role"
 end
 
-// Cookie auth for web/mobile users (session-like)
 Auth<apikey> UserAuth
   in: cookie
   name: "ecomm_session"
 end
 
-// API key for third-party partner users (inbound authentication)
 Auth<apikey> IntegrationAuth
   in: header
   name: "X-API-Key"
 end
 
-// API key for calling external shipping service (outbound source auth)
 Auth<apikey> ShippingServiceAuth
   in: query
   name: "api_key"
   secret: "SHIPPING_API_KEY"
 end
 
-// Roles - different auth mechanisms
 Role customer uses UserAuth
 Role admin uses UserAuth
 Role partner uses IntegrationAuth
 
-// --- SERVER & SOURCES ---
+// Server & Sources
 
 Server EcommerceAPI
   host: "localhost"
@@ -79,7 +70,7 @@ Source<WS> OrderUpdatesWS
   operations: [subscribe]
 end
 
-// --- NESTED SCHEMA ENTITIES ---
+// Nested Schema Entities
 
 Entity Category
   attributes:
@@ -130,7 +121,7 @@ Entity ShippingOption
     - days: integer;
 end
 
-// --- REST ENTITIES ---
+// REST Entities
 
 Entity Products
   source: ProductsAPI
@@ -181,7 +172,7 @@ Entity ShippingRates
   access: [customer, admin, partner]
 end
 
-// --- WEBSOCKET ENTITIES ---
+// WebSocket Entities
 
 Entity RawOrderUpdate
   flow: inbound
@@ -205,7 +196,7 @@ Entity OrderStatus(RawOrderUpdate)
   access: [customer, admin]
 end
 
-// --- COMPOSITE ENTITIES ---
+// Composite Entities
 
 Entity CartSummary(Cart)
   attributes:
@@ -237,9 +228,7 @@ Entity ProductStats(Products)
   access: [admin]
 end
 
-// ============================================================================
-// UI COMPONENTS
-// ============================================================================
+// UI Components
 
 Component<EntityCard> CheckoutCard
   entity: Checkout
@@ -256,24 +245,17 @@ Component<EntityCard> OrderTracker
   title: "Order Status"
 end
 
-// ============================================================================
-// TABLE WITH ITEM-LEVEL CRUD - Showcase array field CRUD
-// Cart has items: array<LineItem>, Table auto-detects and enables item-level CRUD
-// Operations modify individual items in the array and PUT the whole entity back
-// ============================================================================
 Component<Table> ShoppingCart
   entity: Cart
   arrayField: "items"
   keyField: "product_id"
 end
 
-// Products Table - auto-detects items: array<Product>
 Component<Table> ProductsTable
   entity: Products
   colNames: ["id", "sku", "name", "price", "stock"]
 end
 
-// Pie chart showing product stock distribution
 Component<PieChart> StockDistribution
   entity: ProductStats
   slices:
@@ -284,7 +266,6 @@ Component<PieChart> StockDistribution
   size: 300
 end
 
-// Shipping rates table
 Component<Table> ShippingRatesTable
   entity: ShippingRates
   arrayField: "options"
