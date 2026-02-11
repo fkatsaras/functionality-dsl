@@ -333,12 +333,4 @@ def health():
 
 if __name__ == '__main__':
     print(" E-Commerce Dummy Service starting on port 9001...")
-    print("   REST Endpoints:")
-    print("   - Products: /products (GET, POST, PUT, DELETE)")
-    print("   - Cart: /cart (GET, POST, PUT, DELETE)")
-    print("   - Orders: /orders (GET, POST)")
-    print("   - Shipping: /rates (GET)")
-    print("   WebSocket Endpoints:")
-    print("   - Order Status: /ws/status/<order_id>")
-    print("   No auth required - simple data provider for demo")
     app.run(host='0.0.0.0', port=9001, debug=True)

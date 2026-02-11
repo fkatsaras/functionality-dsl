@@ -294,12 +294,4 @@ def emergency_receiver(ws):
 
 if __name__ == '__main__':
     print("Health Monitoring Dummy Service starting on port 9001...")
-    print("REST Endpoints:")
-    print("  • /patient (GET, PUT)")
-    print("  • /goals (GET, POST, PUT, DELETE)")
-    print("  • /medications (GET, POST, PUT, DELETE)")
-    print("  • /vitals (GET)")
-    print("WebSocket Endpoints:")
-    print("  • /ws/heartrate (streams heart rate data)")
-    print("  • /ws/sos (receives emergency alerts)")
     app.run(host='0.0.0.0', port=9001, debug=True)
