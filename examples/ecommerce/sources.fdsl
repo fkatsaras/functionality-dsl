@@ -1,0 +1,62 @@
+// Authentication
+
+AuthDB ShopUserStore
+  connection: "MY_ECOMM_DB_URL"
+  table: "shop_users"
+  columns:
+    id="email"
+    password="password_hash"
+    role="user_role"
+end
+
+Auth<apikey> UserAuth
+  in: cookie
+  name: "ecomm_session"
+end
+
+Auth<apikey> IntegrationAuth
+  in: header
+  name: "X-API-Key"
+end
+
+Auth<apikey> ShippingServiceAuth
+  in: query
+  name: "api_key"
+  secret: "SHIPPING_API_KEY"
+end
+
+Role customer uses UserAuth
+Role admin uses UserAuth
+Role partner uses IntegrationAuth
+
+// Sources
+
+Source<REST> ProductsAPI
+  url: "http://dummy-ecomm-service:9001/products"
+  params: [category, search]
+  operations: [read, create, update, delete]
+end
+
+Source<REST> CartAPI
+  url: "http://dummy-ecomm-service:9001/cart"
+  operations: [read, update, delete]
+end
+
+Source<REST> OrdersAPI
+  url: "http://dummy-ecomm-service:9001/orders"
+  params: [order_id]
+  operations: [read, create]
+end
+
+Source<REST> ShippingAPI
+  url: "http://dummy-ecomm-service:9001/rates"
+  params: [zip_code, weight]
+  operations: [read]
+  auth: ShippingServiceAuth
+end
+
+Source<WS> OrderUpdatesWS
+  channel: "ws://dummy-ecomm-service:9001/ws/status/{order_id}"
+  params: [order_id]
+  operations: [subscribe]
+end

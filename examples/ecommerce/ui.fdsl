@@ -1,0 +1,41 @@
+Component<EntityCard> CheckoutCard
+  entity: Checkout
+  type: rest
+  fields: ["subtotal", "tax", "cheapest_ship", "total"]
+  title: "Checkout"
+  highlight: "total"
+end
+
+Component<EntityCard> OrderTracker
+  entity: OrderStatus
+  type: ws
+  fields: ["order_id", "status", "is_shipped", "is_delivered"]
+  title: "Order Status"
+end
+
+Component<Table> ShoppingCart
+  entity: Cart
+  arrayField: "items"
+  keyField: "product_id"
+end
+
+Component<Table> ProductsTable
+  entity: Products
+  colNames: ["id", "sku", "name", "price", "stock"]
+end
+
+Component<PieChart> StockDistribution
+  entity: ProductStats
+  slices:
+    - field: "in_stock" label: "In Stock" color: "#4CAF50"
+    - field: "out_of_stock" label: "Out of Stock" color: "#F44336"
+    - field: "on_sale" label: "On Sale" color: "#FF9800"
+  title: "Product Stock Distribution"
+  size: 300
+end
+
+Component<Table> ShippingRatesTable
+  entity: ShippingRates
+  arrayField: "options"
+  colNames: ["carrier", "service", "price", "days"]
+end
