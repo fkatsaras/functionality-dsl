@@ -56,7 +56,7 @@ class FDSLEntity:
     name: str
     source_name: Optional[str] = None
     attributes: List[FDSLAttribute] = field(default_factory=list)
-    access: str = "public"
+    access: Optional[str] = "public"  # None for schema-only entities (no source)
 
 
 @dataclass
@@ -176,20 +176,48 @@ class SchemaConverter:
     def __init__(self, parser: OpenAPIParser):
         self.parser = parser
 
-    def convert_type(self, schema: Dict[str, Any]) -> str:
+    def _extract_ref_name(self, ref: str) -> Optional[str]:
+        """Extract schema name from $ref like #/components/schemas/Pet -> Pet"""
+        if not ref.startswith("#/components/schemas/"):
+            return None
+        return ref.split("/")[-1]
+
+    def convert_type(self, schema: Dict[str, Any], original_schema: Optional[Dict[str, Any]] = None) -> str:
         """
         Convert OpenAPI type to FDSL type with optional format qualifier.
+
+        Args:
+            schema: The schema to convert (may be resolved)
+            original_schema: The original unresolved schema (to check for $ref)
 
         Returns type strings like:
         - "string" (no format)
         - "string<email>" (with format)
         - "integer<int64>" (with format)
         - "binary" (binary format)
+        - "object<Category>" (object reference)
+        - "array<Tag>" (array of references)
         """
-        schema = self.parser.resolve_schema(schema)
+        # Check if original schema has a $ref before resolving (object reference)
+        if original_schema and "$ref" in original_schema:
+            ref_name = self._extract_ref_name(original_schema["$ref"])
+            if ref_name:
+                return f"object<{ref_name}>"
 
+        schema = self.parser.resolve_schema(schema)
         openapi_type = schema.get("type", "string")
         openapi_format = schema.get("format")
+
+        # Handle arrays with items that are references
+        if openapi_type == "array":
+            items = schema.get("items", {})
+            if "$ref" in items:
+                ref_name = self._extract_ref_name(items["$ref"])
+                if ref_name:
+                    return f"array<{ref_name}>"
+            # FDSL only supports array<Entity> for entity references, not array<primitive>
+            # For primitive arrays (array<string>, etc.), just return "array"
+            return "array"
 
         # Check if format maps to a specific FDSL type with qualifier
         if openapi_format and openapi_format in self.FORMAT_QUALIFIER_MAP:
@@ -269,11 +297,11 @@ class SchemaConverter:
             request_required = set(request_schema.get("required", []))
 
         attributes = []
-        for prop_name, prop_schema in properties.items():
-            prop_schema = self.parser.resolve_schema(prop_schema)
+        for prop_name, original_prop_schema in properties.items():
+            prop_schema = self.parser.resolve_schema(original_prop_schema)
 
-            # Determine type
-            fdsl_type = self.convert_type(prop_schema)
+            # Determine type (pass original to detect $ref)
+            fdsl_type = self.convert_type(prop_schema, original_prop_schema)
 
             # Determine if nullable
             nullable = prop_schema.get("nullable", False)
@@ -882,7 +910,9 @@ class FDSLGenerator:
                 attr_line += ";"
                 lines.append(attr_line)
 
-            lines.append(f"  access: {entity.access}")
+            # Only add access for entities with sources (not schema-only entities)
+            if entity.access:
+                lines.append(f"  access: {entity.access}")
             lines.append("end")
 
         lines.append("")
@@ -955,6 +985,30 @@ def transform_openapi_to_fdsl(
     grouper = PathGrouper(parser)
     sources, entity_schemas = grouper.group_paths(base_url, auth_name_map)
 
+    # Collect all referenced schema names (for nested entities)
+    referenced_schemas: Set[str] = set()
+
+    def collect_schema_refs(schema: Dict[str, Any]):
+        """Recursively collect all $ref schema names from a schema"""
+        if "$ref" in schema:
+            ref_name = schema["$ref"].split("/")[-1]
+            if ref_name and ref_name.startswith("#/components/schemas/") == False:
+                # It's just a schema name, not a full ref
+                pass
+            else:
+                ref_name = schema["$ref"].split("/")[-1]
+            if ref_name:
+                referenced_schemas.add(ref_name)
+                # Recursively check the resolved schema
+                resolved = parser.resolve_schema(schema)
+                collect_schema_refs(resolved)
+        elif isinstance(schema, dict):
+            if schema.get("type") == "array" and "items" in schema:
+                collect_schema_refs(schema["items"])
+            if "properties" in schema:
+                for prop_schema in schema["properties"].values():
+                    collect_schema_refs(prop_schema)
+
     # Convert schemas to entities
     converter = SchemaConverter(parser)
     entities = []
@@ -982,6 +1036,11 @@ def transform_openapi_to_fdsl(
                 primary_schema = request_schema
 
         if primary_schema:
+            # Collect schema references from this schema
+            collect_schema_refs(primary_schema)
+            if request_schema:
+                collect_schema_refs(request_schema)
+
             # Always pass request_schema for comparison (handles array write detection)
             attributes = converter.convert_schema_to_attributes(
                 primary_schema,
@@ -1003,6 +1062,31 @@ def transform_openapi_to_fdsl(
             source_name=schema_info.get("source_name"),
             attributes=attributes,
             access="public",  # Entity access is for our endpoints, not source auth
+        ))
+
+    # Generate nested entities for referenced schemas (Category, Tag, etc.)
+    # Use case-insensitive comparison to avoid duplicates (e.g., "post" vs "Post")
+    entity_names_lower = {e.name.lower() for e in entities}
+    for ref_name in referenced_schemas:
+        if ref_name.lower() in entity_names_lower:
+            # Already generated as a main entity (case-insensitive match)
+            continue
+
+        # Get schema from components
+        ref_schema = parser.get_schema(ref_name)
+        if not ref_schema:
+            continue
+
+        # Convert to attributes (nested entities have no source)
+        attributes = converter.convert_schema_to_attributes(ref_schema, None)
+        if not attributes:
+            continue
+
+        entities.append(FDSLEntity(
+            name=ref_name,
+            source_name=None,  # Nested entities don't have sources
+            attributes=attributes,
+            access=None,  # Nested entities are schema-only, no access control
         ))
 
     # Build model

@@ -45,6 +45,7 @@ class FDSLAuth:
     name: str
     kind: str  # "http" or "apikey" (aligned with FDSL grammar)
     config: Dict[str, str] = field(default_factory=dict)
+    secret: Optional[str] = None  # Environment variable name for source authentication
 
 
 @dataclass
@@ -54,7 +55,7 @@ class FDSLWSEntity:
     source_name: Optional[str] = None
     ws_type: str = "inbound"  # inbound or outbound
     attributes: List[FDSLAttribute] = field(default_factory=list)
-    access: str = "public"
+    access: Optional[str] = "public"  # None for schema-only entities (no source)
 
 
 @dataclass
@@ -245,10 +246,14 @@ class SecuritySchemeConverter:
 
             config["in"] = location
             config["name"] = param_name
-            # AsyncAPI transforms are for calling external APIs, so secret is required
-            config["secret"] = self._to_env_var_name(name)
 
-            return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
+            # AsyncAPI transforms are for calling external APIs, so secret is required
+            return FDSLAuth(
+                name=fdsl_name,
+                kind="apikey",
+                config=config,
+                secret=self._to_env_var_name(name)
+            )
 
         elif scheme_type == "httpApiKey":
             # Similar to apiKey but specifically for HTTP
@@ -260,10 +265,14 @@ class SecuritySchemeConverter:
 
             config["in"] = location
             config["name"] = param_name
-            # AsyncAPI transforms are for calling external APIs, so secret is required
-            config["secret"] = self._to_env_var_name(name)
 
-            return FDSLAuth(name=fdsl_name, kind="apikey", config=config)
+            # AsyncAPI transforms are for calling external APIs, so secret is required
+            return FDSLAuth(
+                name=fdsl_name,
+                kind="apikey",
+                config=config,
+                secret=self._to_env_var_name(name)
+            )
 
         elif scheme_type == "http":
             http_scheme = scheme.get("scheme", "").lower()
@@ -271,35 +280,43 @@ class SecuritySchemeConverter:
             if http_scheme == "bearer":
                 # Bearer token -> Auth<http> scheme: bearer
                 # AsyncAPI transforms are for calling external APIs, so secret is required
-                return FDSLAuth(name=fdsl_name, kind="http", config={
-                    "scheme": "bearer",
-                    "secret": self._to_env_var_name(name) + "_TOKEN",
-                })
+                return FDSLAuth(
+                    name=fdsl_name,
+                    kind="http",
+                    config={"scheme": "bearer"},
+                    secret=self._to_env_var_name(name) + "_TOKEN"
+                )
 
             elif http_scheme == "basic":
                 # HTTP Basic -> Auth<http> scheme: basic
                 # AsyncAPI transforms are for calling external APIs, so secret is required
-                return FDSLAuth(name=fdsl_name, kind="http", config={
-                    "scheme": "basic",
-                    "secret": self._to_env_var_name(name) + "_CREDS",
-                })
+                return FDSLAuth(
+                    name=fdsl_name,
+                    kind="http",
+                    config={"scheme": "basic"},
+                    secret=self._to_env_var_name(name) + "_CREDS"
+                )
 
             else:
                 return None  # Unsupported HTTP scheme
 
         elif scheme_type == "userPassword":
             # Username/password auth -> map to Auth<http> basic
-            return FDSLAuth(name=fdsl_name, kind="http", config={
-                "scheme": "basic",
-                "secret": self._to_env_var_name(name) + "_CREDS",
-            })
+            return FDSLAuth(
+                name=fdsl_name,
+                kind="http",
+                config={"scheme": "basic"},
+                secret=self._to_env_var_name(name) + "_CREDS"
+            )
 
         elif scheme_type in ("scramSha256", "scramSha512"):
             # SCRAM auth -> map to Auth<http> basic (closest equivalent)
-            return FDSLAuth(name=fdsl_name, kind="http", config={
-                "scheme": "basic",
-                "secret": self._to_env_var_name(name) + "_CREDS",
-            })
+            return FDSLAuth(
+                name=fdsl_name,
+                kind="http",
+                config={"scheme": "basic"},
+                secret=self._to_env_var_name(name) + "_CREDS"
+            )
 
         return None
 
@@ -359,12 +376,40 @@ class SchemaConverter:
     def __init__(self, parser: AsyncAPIParser):
         self.parser = parser
 
-    def convert_type(self, schema: Dict[str, Any]) -> str:
-        """Convert AsyncAPI/JSON Schema type to FDSL type with optional format qualifier."""
-        schema = self.parser.resolve_schema(schema)
+    def _extract_ref_name(self, ref: str) -> Optional[str]:
+        """Extract schema name from $ref like #/components/schemas/LightState -> LightState"""
+        if not ref.startswith("#/components/schemas/"):
+            return None
+        return ref.split("/")[-1]
 
+    def convert_type(self, schema: Dict[str, Any], original_schema: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Convert AsyncAPI/JSON Schema type to FDSL type with optional format qualifier.
+
+        Args:
+            schema: The schema to convert (may be resolved)
+            original_schema: The original unresolved schema (to check for $ref)
+        """
+        # Check if original schema has a $ref before resolving (object reference)
+        if original_schema and "$ref" in original_schema:
+            ref_name = self._extract_ref_name(original_schema["$ref"])
+            if ref_name:
+                return f"object<{ref_name}>"
+
+        schema = self.parser.resolve_schema(schema)
         schema_type = schema.get("type", "string")
         schema_format = schema.get("format")
+
+        # Handle arrays with items that are references
+        if schema_type == "array":
+            items = schema.get("items", {})
+            if "$ref" in items:
+                ref_name = self._extract_ref_name(items["$ref"])
+                if ref_name:
+                    return f"array<{ref_name}>"
+            # FDSL only supports array<Entity> for entity references, not array<primitive>
+            # For primitive arrays (array<string>, etc.), just return "array"
+            return "array"
 
         # Check if format maps to a specific FDSL type with qualifier
         if schema_format and schema_format in self.FORMAT_QUALIFIER_MAP:
@@ -412,10 +457,11 @@ class SchemaConverter:
         required_fields = set(schema.get("required", []))
 
         attributes = []
-        for prop_name, prop_schema in properties.items():
-            prop_schema = self.parser.resolve_schema(prop_schema)
+        for prop_name, original_prop_schema in properties.items():
+            prop_schema = self.parser.resolve_schema(original_prop_schema)
 
-            fdsl_type = self.convert_type(prop_schema)
+            # Pass original schema to detect $ref
+            fdsl_type = self.convert_type(prop_schema, original_prop_schema)
             nullable = prop_schema.get("nullable", False)
             readonly = prop_schema.get("readOnly", False) or is_readonly
             optional = prop_name not in required_fields and not readonly
@@ -665,14 +711,14 @@ class FDSLWSGenerator:
                     lines.append(f'  in: {auth.config["in"]}')
                 if "name" in auth.config:
                     lines.append(f'  name: "{auth.config["name"]}"')
-                if "secret" in auth.config:
-                    lines.append(f'  secret: "{auth.config["secret"]}"')
+                if auth.secret:
+                    lines.append(f'  secret: "{auth.secret}"')
             elif auth.kind == "http":
                 # Auth<http> syntax: scheme: keyword (unquoted), secret: "string"
                 if "scheme" in auth.config:
                     lines.append(f'  scheme: {auth.config["scheme"]}')
-                if "secret" in auth.config:
-                    lines.append(f'  secret: "{auth.config["secret"]}"')
+                if auth.secret:
+                    lines.append(f'  secret: "{auth.secret}"')
             lines.append("end")
             lines.append("")
 
@@ -730,7 +776,9 @@ class FDSLWSGenerator:
                 attr_line += ";"
                 lines.append(attr_line)
 
-            lines.append(f"  access: {entity.access}")
+            # Only add access for entities with sources (not schema-only entities)
+            if entity.access:
+                lines.append(f"  access: {entity.access}")
             lines.append("end")
 
         lines.append("")

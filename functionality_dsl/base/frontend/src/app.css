@@ -154,6 +154,12 @@ body {
     max-width: 100%;
 }
 
+/* Table card that spans 2 columns */
+.card-table-2col {
+    grid-column: span 2;
+    max-width: 100%;
+}
+
 /* Card Header */
 .card-header {
     padding: 1rem 1.25rem;

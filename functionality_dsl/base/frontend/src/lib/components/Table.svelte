@@ -520,7 +520,7 @@
     });
 </script>
 
-<Card class="table-card">
+<Card class="table-card" fullWidth={true}>
     <svelte:fragment slot="header">
         <div class="flex items-center justify-between w-full">
             <span>{name}</span>

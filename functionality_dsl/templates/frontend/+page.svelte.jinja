@@ -75,7 +75,7 @@
         </div>
         <div class="dashboard-grid">
             {% for cmp in components %}
-                <div class="dashboard-item">
+                <div class="dashboard-item{% if cmp.kind == 'Table' %} card-table-2col{% endif %}">
                     <div class="dashboard-card">
                         {% raw %}{#if canAccessComponent("{% endraw %}{{ cmp.name }}{% raw %}", authState.roles)}{% endraw %}
                             {{ macros.render_component(cmp) }}
@@ -100,7 +100,7 @@
     </div>
     <div class="dashboard-grid">
         {% for cmp in components %}
-            <div class="dashboard-item">
+            <div class="dashboard-item{% if cmp.kind == 'Table' %} card-table-2col{% endif %}">
                 <div class="dashboard-card">
                     {{ macros.render_component(cmp) }}
                 </div>

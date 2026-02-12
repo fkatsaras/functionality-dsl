@@ -12,8 +12,8 @@ end
 
 Source<REST> PostAPI
   url: "https://jsonplaceholder.typicode.com/posts/{post_id}"
-  params: [post_id, userId, title]
-  operations: [read, update, delete, create]
+  params: [post_id, title, userId]
+  operations: [update, read, delete, create]
 end
 
 Entity Post

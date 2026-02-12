@@ -171,14 +171,6 @@ Component<EntityCard> PatientCard
   highlight: "name"
 end
 
-Component<EntityCard> GoalCard
-  entity: HealthGoal
-  type: rest
-  fields: ["goal_id", "type", "target_value", "current_value", "deadline"]
-  title: "Health Goal"
-  highlight: "type"
-end
-
 Component<Table> MedicationsTable
   entity: Medications
   arrayField: "medication"

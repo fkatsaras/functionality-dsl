@@ -20,8 +20,8 @@ end
 
 Source<REST> PetAPI
   url: "https://petstore3.swagger.io/api/v3/pet/{petId}"
-  params: [petId, name, status]
-  operations: [read, update, delete, create]
+  params: [petId, status, name]
+  operations: [create, read, update, delete]
   auth: ApiKey
 end
 
@@ -46,7 +46,7 @@ end
 Source<REST> UserAPI
   url: "https://petstore3.swagger.io/api/v3/user/{username}"
   params: [username]
-  operations: [read, create, update, delete]
+  operations: [update, read, create, delete]
 end
 
 Source<REST> CreatewithlistAPI
@@ -56,7 +56,7 @@ end
 
 Source<REST> LoginAPI
   url: "https://petstore3.swagger.io/api/v3/user/login"
-  params: [username, password]
+  params: [password, username]
   operations: [read]
 end
 
@@ -71,9 +71,9 @@ Entity Pet
   attributes:
     - id: integer<int64> @optional;
     - name: string;
-    - category: object @optional;
+    - category: object<Category> @optional;
     - photoUrls: array;
-    - tags: array @optional;
+    - tags: array<Tag> @optional;
     - status: string @optional;
   access: public
 end
@@ -137,4 +137,16 @@ Entity Uploadimage
   attributes:
     - data: binary;
   access: public
+end
+
+Entity Tag
+  attributes:
+    - id: integer<int64> @optional;
+    - name: string @optional;
+end
+
+Entity Category
+  attributes:
+    - id: integer<int64> @optional;
+    - name: string @optional;
 end

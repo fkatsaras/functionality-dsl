@@ -25,7 +25,14 @@ def generate_domain_models(model, templates_dir, output_dir):
     # Build exposure map to get optional_fields for each entity
     exposure_map = build_exposure_map(model)
 
-    for entity in get_entities(model):
+    # Sort entities: schema-only entities (no source) first, then entities with sources
+    # This ensures nested entities are defined before entities that reference them
+    all_entities = list(get_entities(model))
+    schema_only_entities = [e for e in all_entities if not hasattr(e, 'source') or e.source is None]
+    entities_with_sources = [e for e in all_entities if hasattr(e, 'source') and e.source is not None]
+    sorted_entities = schema_only_entities + entities_with_sources
+
+    for entity in sorted_entities:
         attribute_configs = []
         has_self_reference = False
 

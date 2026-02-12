@@ -71,6 +71,12 @@ def generate_auth_modules(model, templates_dir, out_dir):
         auth_name = auth.name
         auth_kind = getattr(auth, "kind", None)
 
+        # Skip Auth blocks with 'secret:' - they're for source authentication only
+        secret = getattr(auth, "secret", None)
+        if secret:
+            print(f"  Skipping {auth_name} (source auth with secret: {secret})")
+            continue
+
         if not auth_kind:
             print(f"  Auth {auth_name} has no kind - skipping")
             continue

@@ -25,6 +25,9 @@ def _get_auth_types(model) -> dict:
     """
     Analyze auth declarations and return their types.
 
+    IMPORTANT: Only counts Auth blocks WITHOUT 'secret:' field.
+    Auth with 'secret:' is for source authentication (outbound calls) and doesn't need a database.
+
     Returns dict with:
     - has_bearer: bool - Auth<http> scheme: bearer exists
     - has_basic: bool - Auth<http> scheme: basic exists
@@ -45,6 +48,11 @@ def _get_auth_types(model) -> dict:
     }
 
     for auth in auths:
+        # Skip Auth blocks with 'secret:' - they're for source authentication only
+        secret = getattr(auth, "secret", None)
+        if secret:
+            continue
+
         auth_kind = getattr(auth, "kind", None)
         auth_name = getattr(auth, "name", "unknown")
 
