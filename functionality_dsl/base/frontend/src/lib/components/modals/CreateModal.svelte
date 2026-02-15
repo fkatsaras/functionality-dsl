@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { X } from "lucide-svelte";
+    import XIcon from "$lib/primitives/icons/XIcon.svelte";
 
     interface ColumnInfo {
         name: string;
@@ -41,8 +41,6 @@
             case "integer":
             case "number":
                 return "number";
-            case "boolean":
-                return "checkbox";
             default:
                 return "text";
         }
@@ -70,7 +68,7 @@
         <div class="create-modal-header">
             <h4>New Entry</h4>
             <button class="icon-btn cancel" onclick={handleCancel} disabled={saving}>
-                <X size={16} />
+                <XIcon size={16} />
             </button>
         </div>
         {#if actionError && !isPermissionError}
@@ -80,15 +78,7 @@
             {#each fields as field}
                 <div class="form-field">
                     <label for="create-{field}">{toCamelLabel(field)}</label>
-                    {#if getInputType(field) === "checkbox"}
-                        <input
-                            id="create-{field}"
-                            type="checkbox"
-                            checked={formData[field] || false}
-                            onchange={(e) => formData[field] = e.currentTarget.checked}
-                            disabled={saving}
-                        />
-                    {:else if getInputType(field) === "number"}
+                    {#if getInputType(field) === "number"}
                         <input
                             id="create-{field}"
                             type="number"
@@ -126,7 +116,7 @@
     .create-modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--overlay);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -204,24 +194,24 @@
     }
 
     .form-field input.input-error {
-        border-color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
     }
 
     .form-field input.input-error:focus {
-        border-color: var(--red-text, #dc2626);
-        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+        border-color: var(--red-text);
+        box-shadow: 0 0 0 2px var(--red-subtle);
     }
 
     .field-error {
         font-size: 0.72rem;
-        color: var(--red-text, #dc2626);
+        color: var(--red-text);
         font-family: "Approach Mono", ui-monospace, monospace;
     }
 
     .action-error {
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
-        border: 1px solid var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
+        border: 1px solid var(--red-text);
         border-radius: 6px;
         padding: 0.5rem 0.75rem;
         font-size: 0.8rem;
@@ -243,12 +233,12 @@
     }
 
     .icon-btn.cancel {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text, #dc2626);
+        background: var(--red-text);
         color: white;
     }
 

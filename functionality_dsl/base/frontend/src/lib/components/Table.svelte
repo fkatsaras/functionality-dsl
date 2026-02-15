@@ -5,8 +5,12 @@
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import Card from "$lib/primitives/Card.svelte";
     import PlusIcon from "$lib/primitives/icons/PlusIcon.svelte";
-    import { Pencil, Trash2, X, Check, AlertTriangle, Lock } from "lucide-svelte";
-    import CreateModal from "$lib/primitives/CreateModal.svelte";
+    import EditIcon from "$lib/primitives/icons/EditIcon.svelte";
+    import DeleteIcon from "$lib/primitives/icons/DeleteIcon.svelte";
+    import SaveIcon from "$lib/primitives/icons/SaveIcon.svelte";
+    import XIcon from "$lib/primitives/icons/XIcon.svelte";
+    import CreateModal from "$lib/components/modals/CreateModal.svelte";
+    import DeleteModal from "$lib/components/modals/DeleteModal.svelte";
 
     interface ColumnInfo {
         name: string;
@@ -653,7 +657,7 @@
                                                 disabled={saving}
                                                 title="Save"
                                             >
-                                                <Check size={14} />
+                                                <SaveIcon size={14} />
                                             </button>
                                             <button
                                                 class="icon-btn cancel"
@@ -661,7 +665,7 @@
                                                 disabled={saving}
                                                 title="Cancel"
                                             >
-                                                <X size={14} />
+                                                <XIcon size={14} />
                                             </button>
                                         </div>
                                     </td>
@@ -695,7 +699,7 @@
                                                         disabled={editingRow !== null || showCreateForm}
                                                         title="Edit"
                                                     >
-                                                        <Pencil size={14} />
+                                                        <EditIcon size={14} />
                                                     </button>
                                                 {/if}
                                                 {#if canDelete}
@@ -705,7 +709,7 @@
                                                         disabled={editingRow !== null || showCreateForm}
                                                         title="Delete"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <DeleteIcon size={14} />
                                                     </button>
                                                 {/if}
                                             </div>
@@ -735,31 +739,15 @@
     />
 {/if}
 
-<!-- Delete Confirmation Modal - rendered outside Card to avoid transform stacking context -->
+<!-- Delete Modal - rendered outside Card to avoid transform stacking context -->
 {#if deleteConfirmRow !== null}
-    <div class="delete-confirm-overlay">
-        <div class="delete-confirm-modal">
-            <div class="delete-confirm-icon">
-                <AlertTriangle size={32} />
-            </div>
-            <h4>Confirm Delete</h4>
-            <p>Are you sure you want to delete this item? This action cannot be undone.</p>
-            {#if actionError}
-                <div class={isPermissionError ? "permission-error" : "action-error"}>
-                    {#if isPermissionError}
-                        <Lock size={14} />
-                    {/if}
-                    <span>{actionError}</span>
-                </div>
-            {/if}
-            <div class="delete-confirm-actions">
-                <button class="btn-secondary" onclick={cancelDelete} disabled={saving}>Cancel</button>
-                <button class="btn-danger" onclick={executeDelete} disabled={saving}>
-                    {saving ? "Deleting..." : "Delete"}
-                </button>
-            </div>
-        </div>
-    </div>
+    <DeleteModal
+        saving={saving}
+        actionError={actionError}
+        isPermissionError={isPermissionError}
+        onConfirm={executeDelete}
+        onCancel={cancelDelete}
+    />
 {/if}
 
 <style>
@@ -828,27 +816,27 @@
     }
 
     .icon-btn.delete:hover:not(:disabled) {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.save {
-        border-color: var(--green-text, #16a34a);
-        color: var(--green-text, #16a34a);
+        border-color: var(--green-text);
+        color: var(--green-text);
     }
 
     .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text, #16a34a);
+        background: var(--green-text);
         color: white;
     }
 
     .icon-btn.cancel {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text, #dc2626);
+        background: var(--red-text);
         color: white;
     }
 
@@ -881,7 +869,7 @@
     .edit-input:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 99, 102, 241), 0.2);
+        box-shadow: 0 0 0 2px var(--accent-subtle);
     }
 
     .edit-checkbox {
@@ -915,56 +903,12 @@
         cursor: not-allowed;
     }
 
-    /* Delete Confirmation */
-    .delete-confirm-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-    }
-
-    .delete-confirm-modal {
-        background: var(--surface);
-        border: 1px solid var(--edge);
-        border-radius: 12px;
-        padding: 1.5rem;
-        max-width: 400px;
-        text-align: center;
-    }
-
-    .delete-confirm-icon {
-        color: var(--red-text, #dc2626);
-        margin-bottom: 1rem;
-    }
-
-    .delete-confirm-modal h4 {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0 0 0.5rem 0;
-    }
-
-    .delete-confirm-modal p {
-        font-size: 0.875rem;
-        color: var(--text-muted);
-        margin: 0 0 1rem 0;
-    }
-
-    .delete-confirm-actions {
-        display: flex;
-        justify-content: center;
-        gap: 0.75rem;
-    }
-
     /* Error messages */
     .action-error {
         padding: 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.8rem;
         margin-bottom: 1rem;
     }
@@ -974,7 +918,7 @@
         align-items: center;
         gap: 0.25rem;
         font-size: 0.7rem;
-        color: var(--red-text, #dc2626);
+        color: var(--red-text);
         margin-top: 0.25rem;
     }
 
@@ -985,11 +929,11 @@
         gap: 0.5rem;
         padding: 0.5rem 0.75rem;
         border-radius: 4px;
-        background: var(--yellow-tint, #fefce8);
-        color: var(--yellow-text, #a16207);
+        background: var(--yellow-tint);
+        color: var(--yellow-text);
         font-size: 0.8rem;
         margin-bottom: 1rem;
-        border: 1px solid var(--yellow-text, #a16207);
+        border: 1px solid var(--yellow-text);
     }
 
     .permission-error-inline {
@@ -997,7 +941,7 @@
         align-items: center;
         gap: 0.25rem;
         font-size: 0.7rem;
-        color: var(--yellow-text, #a16207);
+        color: var(--yellow-text);
         margin-top: 0.25rem;
     }
 
@@ -1008,8 +952,8 @@
         gap: 0.35rem;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.75rem;
     }
 
@@ -1019,62 +963,10 @@
         gap: 0.35rem;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
-        background: var(--yellow-tint, #fefce8);
-        color: var(--yellow-text, #a16207);
-        border: 1px solid var(--yellow-text, #a16207);
+        background: var(--yellow-tint);
+        color: var(--yellow-text);
+        border: 1px solid var(--yellow-text);
         font-size: 0.75rem;
     }
 
-    /* Create Modal */
-    .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-    }
-
-    .modal-content {
-        background: var(--surface);
-        border: 1px solid var(--edge);
-        border-radius: 12px;
-        padding: 1.5rem;
-        min-width: 400px;
-        max-width: 600px;
-        max-height: 80vh;
-        overflow-y: auto;
-    }
-
-    .modal-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--edge);
-    }
-
-    .modal-header h4 {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0;
-    }
-
-    .modal-form-fields {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--edge);
-    }
 </style>

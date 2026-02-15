@@ -542,22 +542,22 @@
     }
 
     .icon-btn.save {
-        border-color: var(--green-text, #16a34a);
-        color: var(--green-text, #16a34a);
+        border-color: var(--green-text);
+        color: var(--green-text);
     }
 
     .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text, #16a34a);
+        background: var(--green-text);
         color: white;
     }
 
     .icon-btn.cancel {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text, #dc2626);
+        background: var(--red-text);
         color: white;
     }
 
@@ -642,8 +642,8 @@
     .edit-error {
         padding: 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.8rem;
         margin-bottom: 0.5rem;
     }
@@ -698,12 +698,12 @@
     }
 
     .json-input.json-error {
-        border-color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
     }
 
     .json-error-msg {
         font-size: 0.7rem;
-        color: var(--red-text, #dc2626);
+        color: var(--red-text);
     }
 
     /* WebSocket params form styles */
