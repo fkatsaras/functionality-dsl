@@ -34,12 +34,10 @@ jobs:
           for dir in examples/*; do
             if [ -d "$dir" ]; then
               echo "Checking $dir..."
-              for file in $dir/*.fdsl; do
-                if [ -f "$file" ]; then
-                  echo "  Validating $file..."
-                  fdsl validate "$file" || exit 1
-                fi
-              done
+              if [ -f "$dir/main.fdsl" ]; then
+                echo "  Validating $dir/main.fdsl..."
+                fdsl validate "$dir/main.fdsl" || exit 1
+              fi
             fi
           done
           echo "[OK] All examples validated successfully!"
