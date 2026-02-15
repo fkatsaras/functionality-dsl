@@ -11,18 +11,8 @@
     import XIcon from "$lib/primitives/icons/XIcon.svelte";
     import CreateModal from "$lib/components/modals/CreateModal.svelte";
     import DeleteModal from "$lib/components/modals/DeleteModal.svelte";
-
-    interface ColumnInfo {
-        name: string;
-        type?: {
-            baseType: string;
-            format?: string;
-            min?: number;
-            max?: number;
-            exact?: number;
-            nullable?: boolean;
-        };
-    }
+    import { formatValue, getInputType, type ColumnInfo } from "$lib/utils/tableFormat";
+    import { loadTableData, saveRow, createRow, deleteRow } from "$lib/utils/tableApi";
 
     const {
         url = null,
@@ -32,7 +22,6 @@
         operations = [],
         readonlyFields = [],
         allFields = [],
-        // Item mode props for array field CRUD
         arrayField = null,
         keyField = null,
         itemMode = false,
@@ -49,9 +38,8 @@
         itemMode?: boolean;
     }>();
 
-    // Full entity data (for itemMode, this is the parent entity used for PUT)
+    // Data state
     let entityData = $state<Record<string, any> | null>(null);
-    // Items to display in table (extracted from arrayField in itemMode)
     let data = $state<any[]>([]);
     let loading = $state(false);
     let error = $state<string | null>(null);
@@ -65,139 +53,54 @@
     let deleteConfirmRow = $state<number | null>(null);
     let saving = $state(false);
     let actionError = $state<string | null>(null);
-    let isPermissionError = $state(false);  // Track if error is a 403 permission error
+    let isPermissionError = $state(false);
 
-    // Get initial auth state synchronously
+    // Auth state
     const initialAuth = authStore.getState();
     let authToken = $state<string | null>(initialAuth.token);
     let authType = $state<string>(initialAuth.authType);
+    authStore.subscribe((state) => { authToken = state.token; authType = state.authType; });
 
-    // Subscribe to auth store for updates
-    authStore.subscribe((state) => {
-        authToken = state.token;
-        authType = state.authType;
-    });
+    const authConfig = $derived({ authType, authToken });
 
-    // Derived: which operations are available
+    // Derived capabilities
     const canCreate = $derived(operations.includes("create"));
     const canUpdate = $derived(operations.includes("update"));
     const canDelete = $derived(operations.includes("delete"));
     const hasActions = $derived(canUpdate || canDelete);
+    const editableFields = $derived(allFields.filter(f => !readonlyFields.includes(f)));
 
-    // Get editable fields (non-readonly)
-    const editableFields = $derived(
-        allFields.filter(f => !readonlyFields.includes(f))
-    );
-
-    function getAuthHeaders(): { headers: Record<string, string>; fetchOptions: RequestInit } {
-        const headers: Record<string, string> = {};
-        const fetchOptions: RequestInit = { headers };
-
-        if (authType === 'jwt' && authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        } else if (authType === 'basic' && authToken) {
-            // For Basic auth, authToken contains base64-encoded credentials
-            headers['Authorization'] = `Basic ${authToken}`;
-        } else if (authType === 'session') {
-            fetchOptions.credentials = 'include';
-        }
-
-        return { headers, fetchOptions };
-    }
+    // ============================================================================
+    // Load
+    // ============================================================================
 
     async function load() {
-        const finalUrl = url || "";
-        if (!finalUrl) {
-            error = "No URL provided";
-            return;
-        }
-
+        if (!url) { error = "No URL provided"; return; }
         loading = true;
         error = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            const response = await fetch(finalUrl, { ...fetchOptions, headers });
-            if (!response.ok) {
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    const errBody = await response.json().catch(() => ({ detail: "Forbidden" }));
-                    throw new Error(errBody.detail || "You don't have permission to view this data");
-                }
-                throw new Error(`${response.status} ${response.statusText}`);
-            }
-
-            const json = await response.json();
-
-            // Item mode: store full entity, extract items from arrayField
-            if (itemMode && arrayField) {
-                entityData = json;
-                data = json[arrayField] || [];
-                if (data.length > 0 && typeof data[0] === "object") {
-                    entityKeys = Object.keys(data[0]);
-                }
+            const result = await loadTableData(url, authConfig, itemMode, arrayField);
+            if (result.error) {
+                error = result.error;
+                isPermissionError = result.isPermissionError;
+                data = []; entityData = null; entityKeys = [];
+                if (isPermissionError) toastStore.warning("Access Denied", error);
             } else {
-                // Entity mode: heuristic extraction (backwards compatible)
-                entityData = null;
-
-                if (Array.isArray(json)) {
-                    if (
-                        json.length === 1 &&
-                        typeof json[0] === "object" &&
-                        Object.keys(json[0]).length === 1
-                    ) {
-                        const firstKey = Object.keys(json[0])[0];
-                        data = json[0][firstKey];
-                    } else {
-                        data = json;
-                    }
-                } else if (json && typeof json === "object") {
-                    const keys = Object.keys(json);
-                    if (keys.length === 1) {
-                        const first = json[keys[0]];
-                        if (Array.isArray(first)) {
-                            data = first;
-                        } else if (first && typeof first === "object") {
-                            const innerKeys = Object.keys(first);
-                            if (innerKeys.length === 1 && Array.isArray(first[innerKeys[0]])) {
-                                data = first[innerKeys[0]];
-                            } else {
-                                throw new Error("Expected object with single array field inside entity.");
-                            }
-                        } else {
-                            throw new Error("Expected entity object or array.");
-                        }
-                    } else {
-                        const arrayKey = keys.find(k => Array.isArray(json[k]));
-                        if (arrayKey) {
-                            data = json[arrayKey];
-                        } else {
-                            throw new Error("Expected single entity key or an object with an array field.");
-                        }
-                    }
-                }
-
-                if (data.length > 0 && typeof data[0] === "object") {
-                    entityKeys = Object.keys(data[0]);
-                }
+                data = result.data;
+                entityData = result.entityData;
+                entityKeys = result.entityKeys;
             }
         } catch (err: any) {
             error = err?.message ?? "Failed to load data from source.";
-            data = [];
-            entityData = null;
-            entityKeys = [];
-            if (isPermissionError) {
-                toastStore.warning("Access Denied", error ?? "You don't have permission to view this data");
-            }
+            data = []; entityData = null; entityKeys = [];
         } finally {
             loading = false;
         }
     }
 
     // ============================================================================
-    // CRUD Operations
+    // Edit
     // ============================================================================
 
     function startEdit(rowIndex: number) {
@@ -214,50 +117,15 @@
 
     async function saveEdit() {
         if (editingRow === null || !url) return;
-
         saving = true;
         actionError = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: update item in array, PUT entire entity
-                const updatedItems = [...data];
-                updatedItems[editingRow] = editData;
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-            } else {
-                // Entity mode: PUT the edited data directly
-                payload = editData;
+            const result = await saveRow(url, authConfig, editData, itemMode, arrayField, entityData, data, editingRow);
+            if (result.error) {
+                isPermissionError = result.isPermissionError;
+                throw new Error(result.error);
             }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method: 'PUT',
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to update items");
-                }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful update
             await load();
             editingRow = null;
             editData = {};
@@ -273,6 +141,10 @@
             saving = false;
         }
     }
+
+    // ============================================================================
+    // Create
+    // ============================================================================
 
     function openCreateForm() {
         showCreateForm = true;
@@ -290,74 +162,16 @@
 
     async function submitCreate(formData: Record<string, any>) {
         if (!url) return;
-
         saving = true;
         actionError = null;
         createFieldErrors = {};
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let method: string;
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: add item to array, PUT entire entity
-                const updatedItems = [...data, formData];
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-                method = 'PUT';  // PUT the whole entity, not POST
-            } else {
-                // Entity mode: POST the new data
-                payload = formData;
-                method = 'POST';
-            }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method,
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(parseErrorDetail(errBody.detail) || "You don't have permission to create items");
-                }
-                // Try to extract per-field Pydantic errors
-                if (Array.isArray(errBody.detail)) {
-                    const fieldErrs: Record<string, string> = {};
-                    const formErrs: string[] = [];
-                    for (const err of errBody.detail) {
-                        // loc is e.g. ["body", "name"] or ["body", "items", 0, "active"]
-                        // Take the last string segment as the field key
-                        const fieldKey = err.loc
-                            ? [...err.loc].reverse().find((s: any) => typeof s === 'string' && s !== 'body')
-                            : null;
-                        if (fieldKey && editableFields.includes(fieldKey)) {
-                            fieldErrs[fieldKey] = err.msg ?? 'Invalid value';
-                        } else {
-                            formErrs.push(err.msg ?? JSON.stringify(err));
-                        }
-                    }
-                    createFieldErrors = fieldErrs;
-                    if (formErrs.length > 0) {
-                        throw new Error(formErrs.join(', '));
-                    }
-                    // All errors mapped to fields — no top-level banner needed
-                    return;
-                }
-                throw new Error(parseErrorDetail(errBody.detail) || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful create
+            const result = await createRow(url, authConfig, formData, editableFields, itemMode, arrayField, entityData, data);
+            isPermissionError = result.isPermissionError;
+            createFieldErrors = result.fieldErrors;
+            if (result.error) throw new Error(result.error);
+            if (!result.success) return;
             await load();
             showCreateForm = false;
         } catch (err: any) {
@@ -369,6 +183,10 @@
             saving = false;
         }
     }
+
+    // ============================================================================
+    // Delete
+    // ============================================================================
 
     function confirmDelete(rowIndex: number) {
         deleteConfirmRow = rowIndex;
@@ -382,52 +200,15 @@
 
     async function executeDelete() {
         if (deleteConfirmRow === null || !url) return;
-
         saving = true;
         actionError = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let method: string;
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: remove item from array, PUT entire entity
-                const updatedItems = data.filter((_, idx) => idx !== deleteConfirmRow);
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-                method = 'PUT';  // PUT the whole entity, not DELETE
-            } else {
-                // Entity mode: DELETE with row data
-                payload = data[deleteConfirmRow];
-                method = 'DELETE';
+            const result = await deleteRow(url, authConfig, deleteConfirmRow, itemMode, arrayField, entityData, data);
+            if (result.error) {
+                isPermissionError = result.isPermissionError;
+                throw new Error(result.error);
             }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method,
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to delete items");
-                }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful delete
             await load();
             deleteConfirmRow = null;
         } catch (err: any) {
@@ -442,121 +223,14 @@
     }
 
     // ============================================================================
-    // Helpers
+    // Template helpers
     // ============================================================================
 
-    /**
-     * Parse error detail from API response (handles Pydantic validation errors)
-     */
-    function parseErrorDetail(detail: any): string {
-        if (typeof detail === 'string') return detail;
-        if (Array.isArray(detail)) {
-            // Pydantic validation errors are arrays of {loc, msg, type}
-            return detail.map((err: any) => {
-                if (typeof err === 'string') return err;
-                if (err.msg) {
-                    const field = err.loc?.slice(1).join('.') || '';
-                    return field ? `${field}: ${err.msg}` : err.msg;
-                }
-                return JSON.stringify(err);
-            }).join(', ');
-        }
-        if (typeof detail === 'object' && detail !== null) {
-            return detail.msg || detail.message || JSON.stringify(detail);
-        }
-        return String(detail);
-    }
+    function getValueByName(row: any, fieldName: string) { return row[fieldName]; }
+    function isFieldReadonly(fieldName: string): boolean { return readonlyFields.includes(fieldName); }
+    function getColInputType(fieldName: string): string { return getInputType(fieldName, columns); }
 
-    function getValueByName(row: any, fieldName: string) {
-        return row[fieldName];
-    }
-
-    function formatValue(value: any, column: ColumnInfo): string {
-        if (value === null || value === undefined) {
-            return column.type?.nullable ? "null" : "—";
-        }
-
-        const typeInfo = column.type;
-        if (!typeInfo) return String(value);
-
-        switch (typeInfo.baseType) {
-            case "integer":
-            case "number":
-                if (typeof value === "number") {
-                    if (typeInfo.baseType === "number") {
-                        return value.toFixed(2);
-                    }
-                    return String(value);
-                }
-                return String(value);
-
-            case "boolean":
-                return value ? "✓" : "✗";
-
-            case "string":
-                if (typeInfo.format) {
-                    switch (typeInfo.format) {
-                        case "date":
-                            if (typeof value === "string") {
-                                try {
-                                    const date = new Date(value);
-                                    return date.toLocaleDateString();
-                                } catch {
-                                    return String(value);
-                                }
-                            }
-                            return String(value);
-                        case "time":
-                            return String(value);
-                        case "email":
-                        case "uri":
-                        case "image":
-                            return String(value);
-                        default:
-                            return String(value);
-                    }
-                }
-                return String(value);
-
-            case "array":
-                if (Array.isArray(value)) {
-                    return `[${value.length} items]`;
-                }
-                return String(value);
-
-            case "object":
-                if (typeof value === "object") {
-                    return "{...}";
-                }
-                return String(value);
-
-            default:
-                return String(value);
-        }
-    }
-
-    function getInputType(fieldName: string): string {
-        const col = columns.find(c => c.name === fieldName);
-        if (!col?.type) return "text";
-
-        switch (col.type.baseType) {
-            case "integer":
-            case "number":
-                return "number";
-            case "boolean":
-                return "checkbox";
-            default:
-                return "text";
-        }
-    }
-
-    function isFieldReadonly(fieldName: string): boolean {
-        return readonlyFields.includes(fieldName);
-    }
-
-    onMount(() => {
-        load();
-    });
+    onMount(() => { load(); });
 </script>
 
 <Card class="table-card" fullWidth={true}>
@@ -622,7 +296,7 @@
                                         <td class="px-3 py-2 border-b border-[color:var(--edge)]">
                                             {#if isReadonly}
                                                 <span class="text-text/50">{formatValue(row[fieldName], column)}</span>
-                                            {:else if getInputType(fieldName) === "checkbox"}
+                                            {:else if getColInputType(fieldName) === "checkbox"}
                                                 <input
                                                     type="checkbox"
                                                     checked={editData[fieldName] || false}
@@ -630,7 +304,7 @@
                                                     disabled={saving}
                                                     class="edit-checkbox"
                                                 />
-                                            {:else if getInputType(fieldName) === "number"}
+                                            {:else if getColInputType(fieldName) === "number"}
                                                 <input
                                                     type="number"
                                                     value={editData[fieldName] ?? ""}
