@@ -269,13 +269,7 @@
     // Formatting helpers
     // ============================================================================
     function formatFieldName(field: string): string {
-        return field
-            .replace(/_/g, " ")
-            .replace(/([A-Z])/g, " $1")
-            .trim()
-            .split(" ")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ");
+        return field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     }
 
     function formatValue(val: any): string {
@@ -601,9 +595,8 @@
     .field-label {
         font-size: 0.75rem;
         font-weight: 500;
+        font-family: "Approach Mono", ui-monospace, monospace;
         color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
         min-width: 100px;
     }
 

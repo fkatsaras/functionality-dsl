@@ -1,10 +1,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { authStore } from "$lib/stores/authStore";
+    import { toastStore } from "$lib/stores/toastStore";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import Card from "$lib/primitives/Card.svelte";
     import PlusIcon from "$lib/primitives/icons/PlusIcon.svelte";
     import { Pencil, Trash2, X, Check, AlertTriangle, Lock } from "lucide-svelte";
+    import CreateModal from "$lib/primitives/CreateModal.svelte";
 
     interface ColumnInfo {
         name: string;
@@ -55,7 +57,7 @@
     let editingRow = $state<number | null>(null);
     let editData = $state<Record<string, any>>({});
     let showCreateForm = $state(false);
-    let createData = $state<Record<string, any>>({});
+    let createFieldErrors = $state<Record<string, string>>({});
     let deleteConfirmRow = $state<number | null>(null);
     let saving = $state(false);
     let actionError = $state<string | null>(null);
@@ -182,6 +184,9 @@
             data = [];
             entityData = null;
             entityKeys = [];
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", error ?? "You don't have permission to view this data");
+            }
         } finally {
             loading = false;
         }
@@ -254,6 +259,12 @@
             editData = {};
         } catch (err: any) {
             actionError = err?.message ?? "Failed to update";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to update items");
+                cancelEdit();
+            } else {
+                toastStore.error("Update Failed", actionError);
+            }
         } finally {
             saving = false;
         }
@@ -261,27 +272,24 @@
 
     function openCreateForm() {
         showCreateForm = true;
-        // Initialize with empty values for editable fields
-        createData = {};
-        for (const field of editableFields) {
-            createData[field] = "";
-        }
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
     }
 
     function cancelCreate() {
         showCreateForm = false;
-        createData = {};
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
     }
 
-    async function submitCreate() {
+    async function submitCreate(formData: Record<string, any>) {
         if (!url) return;
 
         saving = true;
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
 
         try {
@@ -293,7 +301,7 @@
 
             if (itemMode && arrayField && entityData) {
                 // Item mode: add item to array, PUT entire entity
-                const updatedItems = [...data, createData];
+                const updatedItems = [...data, formData];
                 payload = {
                     ...entityData,
                     [arrayField]: updatedItems
@@ -301,7 +309,7 @@
                 method = 'PUT';  // PUT the whole entity, not POST
             } else {
                 // Entity mode: POST the new data
-                payload = createData;
+                payload = formData;
                 method = 'POST';
             }
 
@@ -314,22 +322,45 @@
 
             if (!response.ok) {
                 const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
                 // Check for permission error (403)
                 if (response.status === 403) {
                     isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to create items");
+                    throw new Error(parseErrorDetail(errBody.detail) || "You don't have permission to create items");
                 }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
+                // Try to extract per-field Pydantic errors
+                if (Array.isArray(errBody.detail)) {
+                    const fieldErrs: Record<string, string> = {};
+                    const formErrs: string[] = [];
+                    for (const err of errBody.detail) {
+                        // loc is e.g. ["body", "name"] or ["body", "items", 0, "active"]
+                        // Take the last string segment as the field key
+                        const fieldKey = err.loc
+                            ? [...err.loc].reverse().find((s: any) => typeof s === 'string' && s !== 'body')
+                            : null;
+                        if (fieldKey && editableFields.includes(fieldKey)) {
+                            fieldErrs[fieldKey] = err.msg ?? 'Invalid value';
+                        } else {
+                            formErrs.push(err.msg ?? JSON.stringify(err));
+                        }
+                    }
+                    createFieldErrors = fieldErrs;
+                    if (formErrs.length > 0) {
+                        throw new Error(formErrs.join(', '));
+                    }
+                    // All errors mapped to fields — no top-level banner needed
+                    return;
+                }
+                throw new Error(parseErrorDetail(errBody.detail) || `HTTP ${response.status}`);
             }
 
             // Refresh data after successful create
             await load();
             showCreateForm = false;
-            createData = {};
         } catch (err: any) {
             actionError = err?.message ?? "Failed to create";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to create items");
+            }
         } finally {
             saving = false;
         }
@@ -397,6 +428,10 @@
             deleteConfirmRow = null;
         } catch (err: any) {
             actionError = err?.message ?? "Failed to delete";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to delete items");
+                deleteConfirmRow = null;
+            }
         } finally {
             saving = false;
         }
@@ -536,11 +571,8 @@
                         <PlusIcon size={18} />
                     </button>
                 {/if}
-                {#if error}
-                    <div class={isPermissionError ? "header-permission-error" : "header-error"}>
-                        {#if isPermissionError}
-                            <Lock size={12} />
-                        {/if}
+                {#if error && !isPermissionError}
+                    <div class="header-error">
                         <span>{error}</span>
                     </div>
                 {/if}
@@ -550,92 +582,7 @@
     </svelte:fragment>
 
     <svelte:fragment slot="children">
-        <!-- Create Form (Inline) -->
-        {#if showCreateForm}
-            <div class="crud-form">
-                <div class="crud-form-header">
-                    <h4>Create New {name}</h4>
-                    <button class="icon-btn cancel" onclick={cancelCreate} disabled={saving}>
-                        <X size={16} />
-                    </button>
-                </div>
-                {#if actionError}
-                    <div class={isPermissionError ? "permission-error" : "action-error"}>
-                        {#if isPermissionError}
-                            <Lock size={14} />
-                        {/if}
-                        <span>{actionError}</span>
-                    </div>
-                {/if}
-                <div class="crud-form-fields">
-                    {#each editableFields as field}
-                        <div class="form-field">
-                            <label for="create-{field}">{field}</label>
-                            {#if getInputType(field) === "checkbox"}
-                                <input
-                                    id="create-{field}"
-                                    type="checkbox"
-                                    checked={createData[field] || false}
-                                    onchange={(e) => createData[field] = e.currentTarget.checked}
-                                    disabled={saving}
-                                />
-                            {:else if getInputType(field) === "number"}
-                                <input
-                                    id="create-{field}"
-                                    type="number"
-                                    value={createData[field] || ""}
-                                    oninput={(e) => createData[field] = parseFloat(e.currentTarget.value) || 0}
-                                    disabled={saving}
-                                />
-                            {:else}
-                                <input
-                                    id="create-{field}"
-                                    type="text"
-                                    value={createData[field] || ""}
-                                    oninput={(e) => createData[field] = e.currentTarget.value}
-                                    disabled={saving}
-                                />
-                            {/if}
-                        </div>
-                    {/each}
-                </div>
-                <div class="crud-form-actions">
-                    <button class="btn-secondary" onclick={cancelCreate} disabled={saving}>Cancel</button>
-                    <button class="btn-primary" onclick={submitCreate} disabled={saving}>
-                        {saving ? "Creating..." : "Create"}
-                    </button>
-                </div>
-            </div>
-        {/if}
-
-        <!-- Delete Confirmation Modal -->
-        {#if deleteConfirmRow !== null}
-            <div class="delete-confirm-overlay">
-                <div class="delete-confirm-modal">
-                    <div class="delete-confirm-icon">
-                        <AlertTriangle size={32} />
-                    </div>
-                    <h4>Confirm Delete</h4>
-                    <p>Are you sure you want to delete this item? This action cannot be undone.</p>
-                    {#if actionError}
-                        <div class={isPermissionError ? "permission-error" : "action-error"}>
-                            {#if isPermissionError}
-                                <Lock size={14} />
-                            {/if}
-                            <span>{actionError}</span>
-                        </div>
-                    {/if}
-                    <div class="delete-confirm-actions">
-                        <button class="btn-secondary" onclick={cancelDelete} disabled={saving}>Cancel</button>
-                        <button class="btn-danger" onclick={executeDelete} disabled={saving}>
-                            {saving ? "Deleting..." : "Delete"}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        {/if}
-
-        <div class="overflow-x-auto w-full">
+        <div class="overflow-x-auto -mx-5">
             <table class="min-w-full border-collapse text-sm font-mono">
                 <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
                     <tr>
@@ -717,14 +664,6 @@
                                                 <X size={14} />
                                             </button>
                                         </div>
-                                        {#if actionError}
-                                            <div class={isPermissionError ? "permission-error-inline" : "action-error-inline"}>
-                                                {#if isPermissionError}
-                                                    <Lock size={12} />
-                                                {/if}
-                                                <span>{actionError}</span>
-                                            </div>
-                                        {/if}
                                     </td>
                                 </tr>
                             {:else}
@@ -781,6 +720,47 @@
         </div>
     </svelte:fragment>
 </Card>
+
+<!-- Create Modal - rendered outside Card to avoid transform stacking context -->
+{#if showCreateForm}
+    <CreateModal
+        fields={editableFields}
+        columns={columns}
+        saving={saving}
+        actionError={actionError}
+        isPermissionError={isPermissionError}
+        fieldErrors={createFieldErrors}
+        onSubmit={submitCreate}
+        onCancel={cancelCreate}
+    />
+{/if}
+
+<!-- Delete Confirmation Modal - rendered outside Card to avoid transform stacking context -->
+{#if deleteConfirmRow !== null}
+    <div class="delete-confirm-overlay">
+        <div class="delete-confirm-modal">
+            <div class="delete-confirm-icon">
+                <AlertTriangle size={32} />
+            </div>
+            <h4>Confirm Delete</h4>
+            <p>Are you sure you want to delete this item? This action cannot be undone.</p>
+            {#if actionError}
+                <div class={isPermissionError ? "permission-error" : "action-error"}>
+                    {#if isPermissionError}
+                        <Lock size={14} />
+                    {/if}
+                    <span>{actionError}</span>
+                </div>
+            {/if}
+            <div class="delete-confirm-actions">
+                <button class="btn-secondary" onclick={cancelDelete} disabled={saving}>Cancel</button>
+                <button class="btn-danger" onclick={executeDelete} disabled={saving}>
+                    {saving ? "Deleting..." : "Delete"}
+                </button>
+            </div>
+        </div>
+    </div>
+{/if}
 
 <style>
     table {
@@ -910,7 +890,7 @@
         cursor: pointer;
     }
 
-    /* Create button (accent-colored plus icon) */
+    /* Create button */
     .create-btn {
         display: flex;
         align-items: center;
@@ -920,7 +900,7 @@
         border: none;
         border-radius: 6px;
         background: transparent;
-        color: var(--accent);
+        color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
     }
@@ -932,124 +912,6 @@
 
     .create-btn:disabled {
         opacity: 0.4;
-        cursor: not-allowed;
-    }
-
-    /* Inline CRUD Form */
-    .crud-form {
-        background: var(--surface-secondary);
-        border: 1px solid var(--edge);
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .crud-form-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--edge);
-    }
-
-    .crud-form-header h4 {
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0;
-    }
-
-    .crud-form-fields {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .crud-form-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--edge);
-    }
-
-    .form-field {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-    }
-
-    .form-field label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-    }
-
-    .form-field input[type="text"],
-    .form-field input[type="number"] {
-        padding: 0.5rem;
-        border: 1px solid var(--edge);
-        border-radius: 4px;
-        background: var(--surface);
-        color: var(--text);
-        font-size: 0.875rem;
-    }
-
-    .form-field input:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-
-
-    .btn-primary,
-    .btn-secondary,
-    .btn-danger {
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .btn-primary {
-        background: var(--accent);
-        color: white;
-        border: none;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-        opacity: 0.9;
-    }
-
-    .btn-secondary {
-        background: transparent;
-        color: var(--text-muted);
-        border: 1px solid var(--edge);
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-        border-color: var(--text-muted);
-    }
-
-    .btn-danger {
-        background: var(--red-text, #dc2626);
-        color: white;
-        border: none;
-    }
-
-    .btn-danger:hover:not(:disabled) {
-        opacity: 0.9;
-    }
-
-    .btn-primary:disabled,
-    .btn-secondary:disabled,
-    .btn-danger:disabled {
-        opacity: 0.5;
         cursor: not-allowed;
     }
 
