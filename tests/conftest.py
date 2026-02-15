@@ -198,12 +198,12 @@ Server TestServer
   port: 8080
 end
 
-Auth<jwt> JWTAuth
-  secret: "JWT_SECRET"
+Auth<http> BearerAuth
+  scheme: bearer
 end
 
-Role admin uses JWTAuth
-Role user uses JWTAuth
+Role admin uses BearerAuth
+Role user uses BearerAuth
 
 Source<REST> DataAPI
   url: "http://api.example.com/data"

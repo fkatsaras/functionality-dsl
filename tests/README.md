@@ -1,43 +1,26 @@
-# FDSL v2 Test Suite
-
-Simple, focused tests for core v2 functionality.
+# FDSL Test Suite
 
 ## Running Tests
 
 ```bash
-# All tests
-pytest tests/
-
-# Unit tests only
-pytest tests/unit/
-
-# Integration tests only
-pytest tests/integration/
-
-# Specific test
-pytest tests/integration/test_asyncapi_generation.py -v
+pytest tests/                        # All tests
+pytest tests/unit/                   # Unit tests only
+pytest tests/integration/            # Integration tests only
 ```
 
-## Test Categories
+## Test Structure
 
-### Unit Tests (`tests/unit/`)
-- Expression compiler
-- Built-in functions
-- Dependency graph
-- Core utilities
+### Unit Tests
+- Expression compiler (28 tests)
+- Built-in functions (35 tests)
 
-### Integration Tests (`tests/integration/`)
-- AsyncAPI generation
-- Validation
-- Basic parsing
+### Integration Tests
+- Model generation (15 tests)
+- REST router generation (15 tests)
+- WebSocket handler generation (13 tests)
+- Expression evaluation (14 tests)
+- OpenAPI/AsyncAPI specs (12 tests)
+- Authentication generation (8 tests)
+- Validation (31 tests)
 
-## Philosophy
-
-**Keep it simple**: Test core functionality that must work. Build up complexity gradually.
-
-## Current Tests
-
-✅ `test_asyncapi_generation.py` - AsyncAPI spec excludes REST entities
-✅ `test_validation_basic.py` - Basic FDSL validation
-⏳ `test_rest_generation.py` - Disabled (needs refactoring)
-⏳ `test_websocket_generation.py` - Disabled (needs refactoring)
+**Total: 171 tests**

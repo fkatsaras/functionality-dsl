@@ -234,8 +234,8 @@ class TestAuthValidation:
           port: 8080
         end
 
-        Auth<jwt> MyAuth
-          secret: "JWT_SECRET"
+        Auth<http> MyAuth
+          scheme: bearer
         end
 
         Role public uses MyAuth
@@ -293,17 +293,17 @@ class TestAuthValidation:
           port: 8080
         end
 
-        Auth<jwt> JWTAuth
-          secret: "JWT_SECRET"
+        Auth<http> BearerAuth
+          scheme: bearer
         end
 
         Auth<apikey> APIKeyAuth
-          header: "X-API-Key"
-          secret: "API_KEYS"
+          in: header
+          name: "X-API-Key"
         end
 
-        Role admin uses JWTAuth
-        Role user uses JWTAuth
+        Role admin uses BearerAuth
+        Role user uses BearerAuth
         Role service uses APIKeyAuth
 
         Source<REST> DataAPI
