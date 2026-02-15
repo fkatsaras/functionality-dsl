@@ -11,21 +11,20 @@
     }
 
     function applyTheme(t: "light" | "dark") {
-        if (t === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
+        if (t === "dark") {
+            document.documentElement.setAttribute("data-theme", "dark");
         } else {
             document.documentElement.removeAttribute("data-theme");
         }
     }
 
     onMount(() => {
-        // Check localStorage first, otherwise default to light
         const stored = localStorage.getItem("fdsl-theme") as "light" | "dark" | null;
         if (stored) {
             theme = stored;
+            applyTheme(theme);
         }
-        // Default is already light, no need for system preference check
-        applyTheme(theme);
+        // Default is light (no attribute needed)
     });
 </script>
 
@@ -55,11 +54,12 @@
         background: var(--card);
         color: var(--text-muted);
         cursor: pointer;
-        transition: all 0.15s linear;
+        box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.25);
+        transition: box-shadow 150ms linear, color 150ms linear;
     }
 
     .theme-toggle:hover {
-        border: 3px solid var(--edge-light);
+        box-shadow: 0px 6px 18px rgba(0, 0, 0, 0.35);
         color: var(--text);
     }
 

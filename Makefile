@@ -76,14 +76,15 @@ setup: ## Install dependencies and set up development environment
 	@echo "Python: $(PYTHON)"
 
 .PHONY: clean
-clean: ## Clean generated files and caches
-	@echo "$(YELLOW)Cleaning generated files...$(NC)"
-	rm -rf $(GENERATED_DIR)
-	rm -rf cookies.txt
-	rm -rf test_gen test_ast_gen generated_ws_test
-	rm -rf **/__pycache__ **/*.pyc **/*.pyo
-	rm -rf .pytest_cache .coverage htmlcov
-	rm -rf *.egg-info build dist
+clean: ## Clean generated files, Docker resources, and caches
+	@echo "$(YELLOW)Cleaning previous generated app...$(NC)"
+	@bash scripts/docker_cleanup.sh
+	@echo "$(YELLOW)Cleaning Python caches...$(NC)"
+	@rm -rf cookies.txt
+	@rm -rf test_gen test_ast_gen generated_ws_test
+	@rm -rf **/__pycache__ **/*.pyc **/*.pyo
+	@rm -rf .pytest_cache .coverage htmlcov
+	@rm -rf *.egg-info build dist
 	@echo "$(GREEN)Clean complete!$(NC)"
 
 # ==============================================================================

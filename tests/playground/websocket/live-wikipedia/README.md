@@ -16,7 +16,7 @@
 
 **WebSocket Subscribe (Wikipedia Edits):**
 ```
-External WikiMon WS → WikiEdit (source:) → EditGauge/WikiEditStream (expose:) → Client
+External WikiMon WS -> WikiEdit (source:) -> EditGauge/WikiEditStream (expose:) -> Client
 ```
 
 ### Key v2 Syntax Features

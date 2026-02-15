@@ -47,7 +47,7 @@ end
 **Benefits:**
 - Entity owns its exposure configuration
 - Direct entity-to-component binding
-- Clearer data flow: `Binance WS → BTCRaw → Prices (transformed) → WebSocket → LiveChart`
+- Clearer data flow: `Binance WS -> BTCRaw -> Prices (transformed) -> WebSocket -> LiveChart`
 
 ## How to run
 

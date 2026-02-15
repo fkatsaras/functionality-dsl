@@ -38,7 +38,7 @@ end
 //
 // Data flow:
 // Client (sends to /ws/devicecommand)
-//   → FDSL Server
-//   → External WS (ws://dummy:9001/ws/commands)
+//   -> FDSL Server
+//   -> External WS (ws://dummy:9001/ws/commands)
 //
 // Client sends messages in the shape defined by DeviceCommand

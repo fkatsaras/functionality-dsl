@@ -1,6 +1,8 @@
 <script lang="ts">
     import { authStore } from "$lib/stores/authStore";
     import Card from "$lib/primitives/Card.svelte";
+    import ErrorIcon from "$lib/primitives/icons/ErrorIcon.svelte";
+    import CheckIcon from "$lib/primitives/icons/CheckIcon.svelte";
 
     const props = $props<{
         roles: string[];
@@ -185,7 +187,7 @@
         <form class="login-form" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
             <div class="form-group">
                 <label for="loginId" class="form-label">
-                    {mode === 'login' ? 'Email or Username' : 'Email'}
+                    ID
                 </label>
                 <input
                     id="loginId"
@@ -226,7 +228,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Register as</label>
+                    <label class="form-label">Role</label>
                     <div class="roles-grid">
                         {#each props.roles as role}
                             <button
@@ -248,13 +250,15 @@
 
             {#if error}
                 <div class="error-message">
-                    {error}
+                    <ErrorIcon size={18} />
+                    <span>{error}</span>
                 </div>
             {/if}
 
             {#if success}
                 <div class="success-message">
-                    {success}
+                    <CheckIcon size={18} />
+                    <span>{success}</span>
                 </div>
             {/if}
 
@@ -316,7 +320,7 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
-        max-width: 400px;
+        max-width: 500px;
         width: 100%;
     }
 
@@ -329,9 +333,9 @@
     .form-label {
         font-family: "Approach Mono", monospace;
         font-size: 0.875rem;
-        font-weight: 500;
+        font-weight: 600;
         letter-spacing: 0.02em;
-        color: var(--text-primary);
+        color: var(--text-muted);
     }
 
     .form-input {
@@ -343,6 +347,10 @@
         font-family: "Approach Mono", monospace;
         font-size: 0.875rem;
         transition: border-color 0.2s;
+    }
+
+    .form-input::placeholder {
+        opacity: 0.4;
     }
 
     .form-input:focus {
@@ -417,7 +425,11 @@
     }
 
     .error-message {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.75rem;
+        border: 2px solid var(--red-text);
         border-radius: 0.5rem;
         background: var(--red-bg);
         color: var(--red-text);
@@ -426,7 +438,11 @@
     }
 
     .success-message {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.75rem;
+        border: 2px solid var(--green-text);
         border-radius: 0.5rem;
         background: var(--green-tint);
         color: var(--green-text);

@@ -1,42 +1,35 @@
 #!/bin/bash
 set -e
 
-echo "* Stopping and removing backend/frontend containers..."
-docker ps -a --format '{{.Names}}' | grep -E 'backend|frontend' | xargs -r docker rm -f
+PROJECT_NAME="thesis"
 
-echo "* Removing backend/frontend images..."
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'backend|frontend' | xargs -r docker rmi -f
+echo "Cleaning up previous generated app..."
 
-# Remove dummy DB container and image
-echo "* Removing dummy container/image..."
-docker ps -a --format '{{.Names}}' | grep 'dummy' | xargs -r docker rm -f
-docker images --format '{{.Repository}}:{{.Tag}}' | grep 'dummy' | xargs -r docker rmi -f
-
-# Remove database containers (postgres, db, etc.)
-echo "* Removing database containers..."
-docker ps -a --format '{{.Names}}' | grep -E '\-db$' | xargs -r docker rm -f
-
-# Remove postgres volumes
-echo "* Removing postgres volumes..."
-docker volume ls --format '{{.Name}}' | grep -E 'postgres_data' | xargs -r docker volume rm -f
-
-# Remove network if exists
-NETWORK_NAME="thesis_fdsl_net"
-if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
-  echo "* Removing Docker network: $NETWORK_NAME..."
-  docker network rm "$NETWORK_NAME" || echo "!  Network still in use, skipping removal."
-else
-  echo "! Network $NETWORK_NAME not found, skipping."
+# Stop and remove all thesis containers and volumes
+if [ -d "generated" ]; then
+  cd generated
+  docker compose -p "$PROJECT_NAME" down -v 2>/dev/null || true
+  cd ..
 fi
 
-# Also try to remove fdsl_net (used by generated docker-compose)
-if docker network inspect "fdsl_net" >/dev/null 2>&1; then
-  echo "* Removing Docker network: fdsl_net..."
-  docker network rm "fdsl_net" || echo "!  Network still in use, skipping removal."
+# Remove any orphaned thesis_* volumes
+docker volume ls --format '{{.Name}}' | grep "^${PROJECT_NAME}_" | xargs -r docker volume rm 2>/dev/null || true
+
+# Remove generated_* volumes (pgadmin data, db data, etc. from named generated projects)
+docker volume ls --format '{{.Name}}' | grep "^generated" | xargs -r docker volume rm 2>/dev/null || true
+
+# Remove anonymous volumes (hash-only names, 64 hex chars)
+docker volume ls --format '{{.Name}}' | grep -E '^[a-f0-9]{64}$' | xargs -r docker volume rm 2>/dev/null || true
+
+# Remove thesis networks
+docker network ls --format '{{.Name}}' | grep "^${PROJECT_NAME}_" | xargs -r docker network rm 2>/dev/null || true
+
+# Remove all thesis-* images (generated app images)
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | grep "^thesis-" | awk '{print $2}' | xargs -r docker rmi -f 2>/dev/null || true
+
+# Clean up generated directory
+if [ -d "generated" ]; then
+  rm -rf generated
 fi
 
-# Clean up any generated project networks (pattern: *_fdsl_net)
-echo "* Removing any project fdsl networks..."
-docker network ls --format '{{.Name}}' | grep -E '_fdsl_net$' | xargs -r docker network rm 2>/dev/null || true
-
-echo "[OK] Cleanup complete."
+echo "✓ Cleanup complete"

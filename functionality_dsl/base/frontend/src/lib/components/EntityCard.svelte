@@ -9,7 +9,10 @@
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
     import ErrorState from "../primitives/icons/ErrorState.svelte";
     import UnauthorizedState from "../primitives/icons/UnauthorizedState.svelte";
-    import { Pencil, X, Check, Lock } from "lucide-svelte";
+    import { Lock } from "lucide-svelte";
+    import EditIcon from "$lib/primitives/icons/EditIcon.svelte";
+    import SaveIcon from "$lib/primitives/icons/SaveIcon.svelte";
+    import XIcon from "$lib/primitives/icons/XIcon.svelte";
 
     const props = $props<{
         // REST mode props
@@ -269,13 +272,7 @@
     // Formatting helpers
     // ============================================================================
     function formatFieldName(field: string): string {
-        return field
-            .replace(/_/g, " ")
-            .replace(/([A-Z])/g, " $1")
-            .trim()
-            .split(" ")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ");
+        return field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     }
 
     function formatValue(val: any): string {
@@ -349,7 +346,7 @@
                         disabled={saving}
                         title="Cancel"
                     >
-                        <X size={16} />
+                        <XIcon size={16} />
                     </button>
                     <button
                         class="icon-btn save"
@@ -357,7 +354,7 @@
                         disabled={saving}
                         title="Save"
                     >
-                        <Check size={16} />
+                        <SaveIcon size={16} />
                     </button>
                 {:else if !isWebSocketMode}
                     {#if canEdit}
@@ -367,7 +364,7 @@
                             disabled={loading || !data}
                             title="Edit"
                         >
-                            <Pencil size={14} />
+                            <EditIcon size={14} />
                         </button>
                     {/if}
                     <RefreshButton onRefresh={fetchData} {loading} />
@@ -524,9 +521,9 @@
         justify-content: center;
         width: 28px;
         height: 28px;
-        border: 1px solid var(--edge);
+        border: none;
         border-radius: 6px;
-        background: var(--surface);
+        background: transparent;
         color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
@@ -548,22 +545,22 @@
     }
 
     .icon-btn.save {
-        border-color: var(--green-text, #16a34a);
-        color: var(--green-text, #16a34a);
+        border-color: var(--green-text);
+        color: var(--green-text);
     }
 
     .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text, #16a34a);
+        background: var(--green-text);
         color: white;
     }
 
     .icon-btn.cancel {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text, #dc2626);
+        background: var(--red-text);
         color: white;
     }
 
@@ -601,9 +598,8 @@
     .field-label {
         font-size: 0.75rem;
         font-weight: 500;
+        font-family: "Approach Mono", ui-monospace, monospace;
         color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
         min-width: 100px;
     }
 
@@ -649,8 +645,8 @@
     .edit-error {
         padding: 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.8rem;
         margin-bottom: 0.5rem;
     }
@@ -705,12 +701,12 @@
     }
 
     .json-input.json-error {
-        border-color: var(--red-text, #dc2626);
+        border-color: var(--red-text);
     }
 
     .json-error-msg {
         font-size: 0.7rem;
-        color: var(--red-text, #dc2626);
+        color: var(--red-text);
     }
 
     /* WebSocket params form styles */

@@ -124,7 +124,7 @@ export function normalizeX(value: any, xMeta: any): number | null {
             return Number.isNaN(t) ? null : t;
         }
 
-        // generic string → not usable as axis
+        // generic string -> not usable as axis
         return null;
     }
 

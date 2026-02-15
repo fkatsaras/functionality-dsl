@@ -874,7 +874,7 @@ def _validate_websocket_entity_relationships(model):
     - Mixed parents (REST + WS): Only if one WS parent max
 
     Disallowed:
-    - Multiple WebSocket parents: Entity C(WsEntityA, WsEntityB) → ERROR
+    - Multiple WebSocket parents: Entity C(WsEntityA, WsEntityB) -> ERROR
     """
     entities = get_children_of_type("Entity", model)
 

@@ -10,6 +10,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from textx import get_children_of_type
 
 from ...extractors import extract_server_config
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def generate_random_secret(length: int = 32) -> str:
@@ -62,7 +65,7 @@ def render_infrastructure_files(context, templates_dir, output_dir, target="all"
         template = env.get_template(template_name)
         content = template.render(**context)
         (output_dir / output_file).write_text(content, encoding="utf-8")
-        print(f"[GENERATED] {output_file}")
+        logger.debug(f"[GENERATED] {output_file}")
 
 
 def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Path = None):
@@ -72,7 +75,7 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
     Automatically patches imports so the generated backend
     is fully self-contained (no dependency on functionality_dsl).
     """
-    print("[SCAFFOLD] Copying DSL runtime modules...")
+    logger.debug("[SCAFFOLD] Copying DSL runtime modules...")
 
     src_dirs = ["builtins", "runtime"]
     backend_core_dir.mkdir(parents=True, exist_ok=True)
@@ -81,10 +84,10 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         src = lib_root / d
         dest = backend_core_dir / d
         if not src.exists():
-            print(f"  [WARN] Missing {src}, skipping.")
+            logger.warning(f"  [WARN] Missing {src}, skipping.")
             continue
         copytree(src, dest, dirs_exist_ok=True)
-        print(f"  [OK] Copied {d}/")
+        logger.debug(f"  [OK] Copied {d}/")
 
     # --- Patch safe_eval.py to remove absolute import ---
     safe_eval_dest = backend_core_dir / "runtime" / "safe_eval.py"
@@ -99,7 +102,7 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         )
 
         safe_eval_dest.write_text(patched, encoding="utf-8")
-        print("  [PATCH] Updated import in runtime/safe_eval.py")
+        logger.debug("  [PATCH] Updated import in runtime/safe_eval.py")
 
     # --- Create a lightweight computed.py facade ---
     computed_dest = backend_core_dir / "computed.py"
@@ -113,7 +116,7 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         "from app.core.compiler.expr_compiler import compile_expr_to_python\n",
         encoding="utf-8",
     )
-    print("  [OK] Created app/core/computed.py")
+    logger.debug("  [OK] Created app/core/computed.py")
 
     # --- Copy error_handlers.py to app/core ---
     if templates_dir:
@@ -121,11 +124,11 @@ def _copy_runtime_libs(lib_root: Path, backend_core_dir: Path, templates_dir: Pa
         error_handlers_dest = backend_core_dir / "error_handlers.py"
         if error_handlers_src.exists():
             shutil.copy2(error_handlers_src, error_handlers_dest)
-            print("  [OK] Created app/core/error_handlers.py")
+            logger.debug("  [OK] Created app/core/error_handlers.py")
         else:
-            print("  [WARN] error_handlers.py template not found")
+            logger.warning("  [WARN] error_handlers.py template not found")
     else:
-        print("  [WARN] templates_dir not provided, skipping error_handlers.py")
+        logger.warning("  [WARN] templates_dir not provided, skipping error_handlers.py")
 
 
 def _extract_auth_configs(model):
@@ -195,7 +198,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
         db_context: Database context for templates (optional)
         target: Generation target ("all", "backend", or "frontend")
     """
-    print("\n[SCAFFOLD] Creating backend structure...")
+    logger.debug("[SCAFFOLD] Creating backend structure...")
 
     # Extract server configuration
     context = extract_server_config(model)
@@ -209,7 +212,7 @@ def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend
 
     # Copy base backend files
     copytree(base_backend_dir, out_dir, dirs_exist_ok=True)
-    print(f"[SCAFFOLD] Copied base files to {out_dir}")
+    logger.debug(f"[SCAFFOLD] Copied base files to {out_dir}")
 
     # ---  Copy DSL runtime ---
     from functionality_dsl.lib import builtins  # ensures proper path resolution

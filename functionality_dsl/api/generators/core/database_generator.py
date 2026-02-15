@@ -19,6 +19,9 @@ AuthDB Configuration (BYODB):
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _get_auth_types(model) -> dict:
@@ -148,10 +151,10 @@ def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
         bool: True if database module was generated
     """
     if not _needs_database(model):
-        print("  No auth declarations found - skipping database generation")
+        logger.debug("  No auth declarations found - skipping database generation")
         return False
 
-    print("  Generating database module...")
+    logger.debug("  Generating database module...")
 
     # Extract database configuration
     db_config = _extract_database_config(model)
@@ -167,14 +170,14 @@ def generate_database_module(model, templates_dir: Path, out_dir: Path) -> bool:
     rendered = template.render(**db_config)
     db_file = db_dir / "database.py"
     db_file.write_text(rendered, encoding="utf-8")
-    print(f"    [OK] {db_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {db_file.relative_to(out_dir)}")
 
     # Render and write __init__.py
     init_template = env.get_template("db/__init__.py.jinja")
     init_rendered = init_template.render(**db_config)
     init_file = db_dir / "__init__.py"
     init_file.write_text(init_rendered, encoding="utf-8")
-    print(f"    [OK] {init_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {init_file.relative_to(out_dir)}")
 
     return True
 
@@ -196,7 +199,7 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
     if not _has_any_auth(model):
         return False
 
-    print("  Generating password utilities...")
+    logger.debug("  Generating password utilities...")
 
     # Render password template (no context needed)
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -209,7 +212,7 @@ def generate_password_module(model, templates_dir: Path, out_dir: Path) -> bool:
 
     password_file = db_dir / "password.py"
     password_file.write_text(rendered, encoding="utf-8")
-    print(f"    [OK] {password_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {password_file.relative_to(out_dir)}")
 
     return True
 
@@ -239,13 +242,13 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
         scheme = getattr(auth, "scheme", "bearer")
         if scheme == "bearer":
             auth_type = "bearer"
-            print("  Generating JWT authentication routes...")
+            logger.debug("  Generating JWT authentication routes...")
         else:
             auth_type = "basic"
-            print("  Generating Basic authentication routes...")
+            logger.debug("  Generating Basic authentication routes...")
     else:
         auth_type = "apikey"
-        print("  Generating API Key authentication routes...")
+        logger.debug("  Generating API Key authentication routes...")
 
     # Extract auth routes configuration
     routes_config = _extract_auth_routes_config(model, auth_type)
@@ -261,7 +264,7 @@ def generate_auth_routes(model, templates_dir: Path, out_dir: Path) -> bool:
 
     auth_routes_file = routers_dir / "auth.py"
     auth_routes_file.write_text(rendered, encoding="utf-8")
-    print(f"    [OK] {auth_routes_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {auth_routes_file.relative_to(out_dir)}")
 
     return True
 

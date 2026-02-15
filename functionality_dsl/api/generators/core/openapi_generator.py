@@ -13,12 +13,15 @@ from typing import Dict, Any, List
 
 from ...exposure_map import build_exposure_map
 from ...extractors import get_entities, map_to_openapi_type
+from ...gen_logging import get_logger
 from ...crud_helpers import (
     get_operation_http_method,
     get_operation_status_code,
     requires_request_body,
     derive_request_schema_name,
 )
+
+logger = get_logger(__name__)
 
 
 def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any] = None):
@@ -39,7 +42,7 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
     }
 
     if not rest_entities:
-        print("  No REST entities found - skipping OpenAPI spec generation")
+        logger.debug("  No REST entities found - skipping OpenAPI spec generation")
         return
 
     # Default server config
@@ -125,7 +128,7 @@ def generate_openapi_spec(model, output_dir: Path, server_config: Dict[str, Any]
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(spec, f, sort_keys=False, default_flow_style=False, allow_unicode=True)
 
-    print(f"[GENERATED] OpenAPI spec: {output_file}")
+    logger.debug(f"[GENERATED] OpenAPI spec: {output_file}")
 
 
 def _generate_entity_schema(entity) -> Dict[str, Any]:

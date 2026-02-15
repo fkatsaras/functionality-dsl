@@ -9,6 +9,15 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 sock = Sock(app)
 
+@app.before_request
+def log_request_body():
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        body = request.get_json(silent=True, force=True)
+        if body is not None:
+            print(f"\n[{request.method} {request.path}] body: {json.dumps(body, indent=2)}\n", flush=True)
+        elif request.data:
+            print(f"\n[{request.method} {request.path}] body (raw): {request.data.decode()}\n", flush=True)
+
 patient_profile = {
     "patient_id": "PAT-001",
     "name": "John Doe",

@@ -36,7 +36,6 @@ end
 - **Rich Expressions** - Lambda functions and built-in functions for data transformation
 - **WebSocket Support** - Real-time data streams with automatic synchronization
 - **Flexible Auth** - HTTP Bearer, Basic, and API Key authentication with RBAC
-- **UI Generation** - Svelte components for tables, charts, gauges, and live metrics
 
 ---
 
@@ -91,64 +90,6 @@ Visit http://localhost:8080/docs
 
 ---
 
-## Examples
-
-### E-Commerce
-```bash
-fdsl generate examples/ecommerce/main.fdsl --out generated
-```
-Shopping cart with products, orders, WebSocket order tracking, and role-based access control.
-
-### Smart Home
-```bash
-fdsl generate examples/smart-home/main.fdsl --out generated
-```
-Multi-device control with REST APIs and real-time monitoring via WebSocket.
-
-### Crypto Ticker
-```bash
-fdsl generate examples/websocket/crypto-ticker/main.fdsl --out generated
-```
-Real-time cryptocurrency prices from Binance WebSocket streams.
-
----
-
-## Core Concepts
-
-**Sources** - External REST APIs or WebSocket streams
-```fdsl
-Source<REST> PaymentsAPI
-  url: "http://payments-service/api"
-  operations: [create]
-end
-```
-
-**Entities** - Data structures with computed fields
-```fdsl
-Entity OrderSummary(Order)
-  attributes:
-    - total: number = sum(map(Order.items, i => i["price"] * i["qty"]));
-  access: [customer, admin]
-end
-```
-
-**Authentication** - Multiple auth mechanisms
-```fdsl
-Auth<http> BearerAuth
-  scheme: bearer
-end
-
-Role admin uses BearerAuth
-
-Entity SecureData
-  source: DataAPI
-  attributes: [...]
-  access: [admin]
-end
-```
-
----
-
 ## CLI Commands
 
 ```bash
@@ -162,11 +103,5 @@ fdsl from-asyncapi <file> --out <file>  # AsyncAPI to FDSL
 
 ## Documentation
 
-- [Examples](examples/) - 40+ working examples
 - [Model & Metamodel Diagrams](docs/) - Generated visualizations for all examples
 
----
-
-## License
-
-MIT License

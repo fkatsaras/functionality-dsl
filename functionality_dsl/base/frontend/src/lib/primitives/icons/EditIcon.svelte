@@ -1,5 +1,5 @@
 <script>
-    const { size = 20, class: className = "" } = $props();
+    const { size = 16, class: className = "" } = $props();
 </script>
 
 <svg
@@ -13,6 +13,5 @@
     stroke-linejoin="round"
     class={className}
 >
-    <line x1="12" y1="5" x2="12" y2="19"/>
-    <line x1="5" y1="12" x2="19" y2="12"/>
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
 </svg>

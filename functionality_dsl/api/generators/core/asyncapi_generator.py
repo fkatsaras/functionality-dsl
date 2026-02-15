@@ -11,6 +11,9 @@ from typing import Dict, Any, List
 
 from ...exposure_map import build_exposure_map
 from ...extractors import get_entities, map_to_openapi_type
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any] = None):
@@ -31,7 +34,7 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
     }
 
     if not ws_entities:
-        print("  No WebSocket entities found - skipping AsyncAPI spec generation")
+        logger.debug("  No WebSocket entities found - skipping AsyncAPI spec generation")
         return
 
     # Default server config
@@ -218,7 +221,7 @@ def generate_asyncapi_spec(model, output_dir: Path, server_config: Dict[str, Any
     with open(asyncapi_file, "w") as f:
         yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
 
-    print(f"[GENERATED] AsyncAPI spec: {asyncapi_file}")
+    logger.debug(f"[GENERATED] AsyncAPI spec: {asyncapi_file}")
 
 
 def _generate_entity_schema(entity) -> Dict[str, Any]:

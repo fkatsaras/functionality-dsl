@@ -9,6 +9,9 @@ import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+from functionality_dsl.api.gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _extract_auth_config(source):
@@ -178,15 +181,15 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     # Extract auth config for outbound requests
     auth_config = _extract_auth_config(source)
 
-    print(f"    Generating WebSocket source client for {source_name}")
-    print(f"      Channel: {channel}")
-    print(f"      Operations: {operations}")
+    logger.debug(f"    Generating WebSocket source client for {source_name}")
+    logger.debug(f"      Channel: {channel}")
+    logger.debug(f"      Operations: {operations}")
     if has_params:
-        print(f"      Params: {all_params} (path: {path_params}, query: {query_params})")
+        logger.debug(f"      Params: {all_params} (path: {path_params}, query: {query_params})")
     if binary_attr_name:
-        print(f"      Binary attribute: {binary_attr_name}")
+        logger.debug(f"      Binary attribute: {binary_attr_name}")
     if auth_config:
-        print(f"      Auth: {auth_config['kind']}")
+        logger.debug(f"      Auth: {auth_config['kind']}")
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -214,4 +217,4 @@ def generate_websocket_source_client(source, model, templates_dir, out_dir, expo
     source_file = sources_dir / f"{source_name.lower()}_source.py"
     source_file.write_text(rendered)
 
-    print(f"      [OK] {source_file.relative_to(out_dir)}")
+    logger.debug(f"      [OK] {source_file.relative_to(out_dir)}")

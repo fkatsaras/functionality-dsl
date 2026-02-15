@@ -10,6 +10,9 @@ import os
 import re
 from os.path import join, dirname, abspath
 from pathlib import Path
+from functionality_dsl.api.gen_logging import get_logger as _get_gen_logger
+
+_logger = _get_gen_logger(__name__)
 from textx import (
     metamodel_from_file,
     get_children_of_type,
@@ -323,14 +326,14 @@ def _expand_imports(model_path: str, visited=None) -> str:
 
     def replace_import(match):
         imp_uri = match.group(1)
-        # Convert "products" → "products.fdsl", "shop.products" → "shop/products.fdsl"
+        # Convert "products" -> "products.fdsl", "shop.products" -> "shop/products.fdsl"
         rel_path = imp_uri.replace(".", os.sep) + ".fdsl"
         import_path = (base_dir / rel_path).resolve()
 
         if not import_path.exists():
             raise FileNotFoundError(f"Import not found: {import_path}")
 
-        print(f"[IMPORT] Inlining {import_path.name}")
+        _logger.debug(f"[IMPORT] Inlining {import_path.name}")
 
         # Recursively expand the imported file
         imported_content = _expand_imports(str(import_path), visited)

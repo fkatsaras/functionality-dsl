@@ -23,8 +23,8 @@ The final entity in a transformation chain that gets sent to external targets or
 
 ### Chain
 Sequence of entity transformations from source to destination.
-- **Inbound Chain**: Client → Server → External
-- **Outbound Chain**: External → Server → Client
+- **Inbound Chain**: Client -> Server -> External
+- **Outbound Chain**: External -> Server -> Client
 
 ## WebSocket Terminology
 
@@ -39,14 +39,14 @@ Sequence of entity transformations from source to destination.
 ## Data Flow Patterns
 
 ### Query Flow (GET)
-`External Source → Pure Schema Entity → Transformation Entity → APIEndpoint → Response`
+`External Source -> Pure Schema Entity -> Transformation Entity -> APIEndpoint -> Response`
 
 ### Mutation Flow (POST/PUT/DELETE)
-`APIEndpoint → Request Entity → Transformation Entity → External Target`
+`APIEndpoint -> Request Entity -> Transformation Entity -> External Target`
 
 ### WebSocket Duplex Flow
-**Inbound**: `APIEndpoint.publish → Wrapper → Transformation → Source.publish → External`
-**Outbound**: `External → Source.subscribe → Transformation → APIEndpoint.subscribe → Client`
+**Inbound**: `APIEndpoint.publish -> Wrapper -> Transformation -> Source.publish -> External`
+**Outbound**: `External -> Source.subscribe -> Transformation -> APIEndpoint.subscribe -> Client`
 
 ## Special Markers
 

@@ -130,3 +130,6 @@ test_*/
 cookies.txt
 
 .metadata
+
+
+temp/*

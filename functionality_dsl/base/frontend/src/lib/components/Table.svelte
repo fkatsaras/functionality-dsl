@@ -1,22 +1,18 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { authStore } from "$lib/stores/authStore";
+    import { toastStore } from "$lib/stores/toastStore";
     import RefreshButton from "$lib/primitives/RefreshButton.svelte";
     import Card from "$lib/primitives/Card.svelte";
     import PlusIcon from "$lib/primitives/icons/PlusIcon.svelte";
-    import { Pencil, Trash2, X, Check, AlertTriangle, Lock } from "lucide-svelte";
-
-    interface ColumnInfo {
-        name: string;
-        type?: {
-            baseType: string;
-            format?: string;
-            min?: number;
-            max?: number;
-            exact?: number;
-            nullable?: boolean;
-        };
-    }
+    import EditIcon from "$lib/primitives/icons/EditIcon.svelte";
+    import DeleteIcon from "$lib/primitives/icons/DeleteIcon.svelte";
+    import SaveIcon from "$lib/primitives/icons/SaveIcon.svelte";
+    import XIcon from "$lib/primitives/icons/XIcon.svelte";
+    import CreateModal from "$lib/components/modals/CreateModal.svelte";
+    import DeleteModal from "$lib/components/modals/DeleteModal.svelte";
+    import { formatValue, getInputType, type ColumnInfo } from "$lib/utils/tableFormat";
+    import { loadTableData, saveRow, createRow, deleteRow } from "$lib/utils/tableApi";
 
     const {
         url = null,
@@ -26,7 +22,6 @@
         operations = [],
         readonlyFields = [],
         allFields = [],
-        // Item mode props for array field CRUD
         arrayField = null,
         keyField = null,
         itemMode = false,
@@ -43,9 +38,8 @@
         itemMode?: boolean;
     }>();
 
-    // Full entity data (for itemMode, this is the parent entity used for PUT)
+    // Data state
     let entityData = $state<Record<string, any> | null>(null);
-    // Items to display in table (extracted from arrayField in itemMode)
     let data = $state<any[]>([]);
     let loading = $state(false);
     let error = $state<string | null>(null);
@@ -55,140 +49,58 @@
     let editingRow = $state<number | null>(null);
     let editData = $state<Record<string, any>>({});
     let showCreateForm = $state(false);
-    let createData = $state<Record<string, any>>({});
+    let createFieldErrors = $state<Record<string, string>>({});
     let deleteConfirmRow = $state<number | null>(null);
     let saving = $state(false);
     let actionError = $state<string | null>(null);
-    let isPermissionError = $state(false);  // Track if error is a 403 permission error
+    let isPermissionError = $state(false);
 
-    // Get initial auth state synchronously
+    // Auth state
     const initialAuth = authStore.getState();
     let authToken = $state<string | null>(initialAuth.token);
     let authType = $state<string>(initialAuth.authType);
+    authStore.subscribe((state) => { authToken = state.token; authType = state.authType; });
 
-    // Subscribe to auth store for updates
-    authStore.subscribe((state) => {
-        authToken = state.token;
-        authType = state.authType;
-    });
+    const authConfig = $derived({ authType, authToken });
 
-    // Derived: which operations are available
+    // Derived capabilities
     const canCreate = $derived(operations.includes("create"));
     const canUpdate = $derived(operations.includes("update"));
     const canDelete = $derived(operations.includes("delete"));
     const hasActions = $derived(canUpdate || canDelete);
+    const editableFields = $derived(allFields.filter(f => !readonlyFields.includes(f)));
 
-    // Get editable fields (non-readonly)
-    const editableFields = $derived(
-        allFields.filter(f => !readonlyFields.includes(f))
-    );
-
-    function getAuthHeaders(): { headers: Record<string, string>; fetchOptions: RequestInit } {
-        const headers: Record<string, string> = {};
-        const fetchOptions: RequestInit = { headers };
-
-        if (authType === 'jwt' && authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        } else if (authType === 'basic' && authToken) {
-            // For Basic auth, authToken contains base64-encoded credentials
-            headers['Authorization'] = `Basic ${authToken}`;
-        } else if (authType === 'session') {
-            fetchOptions.credentials = 'include';
-        }
-
-        return { headers, fetchOptions };
-    }
+    // ============================================================================
+    // Load
+    // ============================================================================
 
     async function load() {
-        const finalUrl = url || "";
-        if (!finalUrl) {
-            error = "No URL provided";
-            return;
-        }
-
+        if (!url) { error = "No URL provided"; return; }
         loading = true;
         error = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            const response = await fetch(finalUrl, { ...fetchOptions, headers });
-            if (!response.ok) {
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    const errBody = await response.json().catch(() => ({ detail: "Forbidden" }));
-                    throw new Error(errBody.detail || "You don't have permission to view this data");
-                }
-                throw new Error(`${response.status} ${response.statusText}`);
-            }
-
-            const json = await response.json();
-
-            // Item mode: store full entity, extract items from arrayField
-            if (itemMode && arrayField) {
-                entityData = json;
-                data = json[arrayField] || [];
-                if (data.length > 0 && typeof data[0] === "object") {
-                    entityKeys = Object.keys(data[0]);
-                }
+            const result = await loadTableData(url, authConfig, itemMode, arrayField);
+            if (result.error) {
+                error = result.error;
+                isPermissionError = result.isPermissionError;
+                data = []; entityData = null; entityKeys = [];
+                if (isPermissionError) toastStore.warning("Access Denied", error);
             } else {
-                // Entity mode: heuristic extraction (backwards compatible)
-                entityData = null;
-
-                if (Array.isArray(json)) {
-                    if (
-                        json.length === 1 &&
-                        typeof json[0] === "object" &&
-                        Object.keys(json[0]).length === 1
-                    ) {
-                        const firstKey = Object.keys(json[0])[0];
-                        data = json[0][firstKey];
-                    } else {
-                        data = json;
-                    }
-                } else if (json && typeof json === "object") {
-                    const keys = Object.keys(json);
-                    if (keys.length === 1) {
-                        const first = json[keys[0]];
-                        if (Array.isArray(first)) {
-                            data = first;
-                        } else if (first && typeof first === "object") {
-                            const innerKeys = Object.keys(first);
-                            if (innerKeys.length === 1 && Array.isArray(first[innerKeys[0]])) {
-                                data = first[innerKeys[0]];
-                            } else {
-                                throw new Error("Expected object with single array field inside entity.");
-                            }
-                        } else {
-                            throw new Error("Expected entity object or array.");
-                        }
-                    } else {
-                        const arrayKey = keys.find(k => Array.isArray(json[k]));
-                        if (arrayKey) {
-                            data = json[arrayKey];
-                        } else {
-                            throw new Error("Expected single entity key or an object with an array field.");
-                        }
-                    }
-                }
-
-                if (data.length > 0 && typeof data[0] === "object") {
-                    entityKeys = Object.keys(data[0]);
-                }
+                data = result.data;
+                entityData = result.entityData;
+                entityKeys = result.entityKeys;
             }
         } catch (err: any) {
             error = err?.message ?? "Failed to load data from source.";
-            data = [];
-            entityData = null;
-            entityKeys = [];
+            data = []; entityData = null; entityKeys = [];
         } finally {
             loading = false;
         }
     }
 
     // ============================================================================
-    // CRUD Operations
+    // Edit
     // ============================================================================
 
     function startEdit(rowIndex: number) {
@@ -205,135 +117,76 @@
 
     async function saveEdit() {
         if (editingRow === null || !url) return;
-
         saving = true;
         actionError = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: update item in array, PUT entire entity
-                const updatedItems = [...data];
-                updatedItems[editingRow] = editData;
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-            } else {
-                // Entity mode: PUT the edited data directly
-                payload = editData;
+            const result = await saveRow(url, authConfig, editData, itemMode, arrayField, entityData, data, editingRow);
+            if (result.error) {
+                isPermissionError = result.isPermissionError;
+                throw new Error(result.error);
             }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method: 'PUT',
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to update items");
-                }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful update
             await load();
             editingRow = null;
             editData = {};
         } catch (err: any) {
             actionError = err?.message ?? "Failed to update";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to update items");
+                cancelEdit();
+            } else {
+                toastStore.error("Update Failed", actionError);
+            }
         } finally {
             saving = false;
         }
     }
 
+    // ============================================================================
+    // Create
+    // ============================================================================
+
     function openCreateForm() {
         showCreateForm = true;
-        // Initialize with empty values for editable fields
-        createData = {};
-        for (const field of editableFields) {
-            createData[field] = "";
-        }
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
     }
 
     function cancelCreate() {
         showCreateForm = false;
-        createData = {};
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
     }
 
-    async function submitCreate() {
+    async function submitCreate(formData: Record<string, any>) {
         if (!url) return;
-
         saving = true;
         actionError = null;
+        createFieldErrors = {};
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let method: string;
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: add item to array, PUT entire entity
-                const updatedItems = [...data, createData];
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-                method = 'PUT';  // PUT the whole entity, not POST
-            } else {
-                // Entity mode: POST the new data
-                payload = createData;
-                method = 'POST';
-            }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method,
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to create items");
-                }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful create
+            const result = await createRow(url, authConfig, formData, editableFields, itemMode, arrayField, entityData, data);
+            isPermissionError = result.isPermissionError;
+            createFieldErrors = result.fieldErrors;
+            if (result.error) throw new Error(result.error);
+            if (!result.success) return;
             await load();
             showCreateForm = false;
-            createData = {};
         } catch (err: any) {
             actionError = err?.message ?? "Failed to create";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to create items");
+            }
         } finally {
             saving = false;
         }
     }
+
+    // ============================================================================
+    // Delete
+    // ============================================================================
 
     function confirmDelete(rowIndex: number) {
         deleteConfirmRow = rowIndex;
@@ -347,177 +200,37 @@
 
     async function executeDelete() {
         if (deleteConfirmRow === null || !url) return;
-
         saving = true;
         actionError = null;
         isPermissionError = false;
-
         try {
-            const { headers, fetchOptions } = getAuthHeaders();
-            headers['Content-Type'] = 'application/json';
-
-            let method: string;
-            let payload: any;
-
-            if (itemMode && arrayField && entityData) {
-                // Item mode: remove item from array, PUT entire entity
-                const updatedItems = data.filter((_, idx) => idx !== deleteConfirmRow);
-                payload = {
-                    ...entityData,
-                    [arrayField]: updatedItems
-                };
-                method = 'PUT';  // PUT the whole entity, not DELETE
-            } else {
-                // Entity mode: DELETE with row data
-                payload = data[deleteConfirmRow];
-                method = 'DELETE';
+            const result = await deleteRow(url, authConfig, deleteConfirmRow, itemMode, arrayField, entityData, data);
+            if (result.error) {
+                isPermissionError = result.isPermissionError;
+                throw new Error(result.error);
             }
-
-            const response = await fetch(url, {
-                ...fetchOptions,
-                method,
-                headers,
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-                // Parse error detail (may be string or array from Pydantic)
-                const errorDetail = parseErrorDetail(errBody.detail);
-                // Check for permission error (403)
-                if (response.status === 403) {
-                    isPermissionError = true;
-                    throw new Error(errorDetail || "You don't have permission to delete items");
-                }
-                throw new Error(errorDetail || `HTTP ${response.status}`);
-            }
-
-            // Refresh data after successful delete
             await load();
             deleteConfirmRow = null;
         } catch (err: any) {
             actionError = err?.message ?? "Failed to delete";
+            if (isPermissionError) {
+                toastStore.warning("Access Denied", actionError ?? "You don't have permission to delete items");
+                deleteConfirmRow = null;
+            }
         } finally {
             saving = false;
         }
     }
 
     // ============================================================================
-    // Helpers
+    // Template helpers
     // ============================================================================
 
-    /**
-     * Parse error detail from API response (handles Pydantic validation errors)
-     */
-    function parseErrorDetail(detail: any): string {
-        if (typeof detail === 'string') return detail;
-        if (Array.isArray(detail)) {
-            // Pydantic validation errors are arrays of {loc, msg, type}
-            return detail.map((err: any) => {
-                if (typeof err === 'string') return err;
-                if (err.msg) {
-                    const field = err.loc?.slice(1).join('.') || '';
-                    return field ? `${field}: ${err.msg}` : err.msg;
-                }
-                return JSON.stringify(err);
-            }).join(', ');
-        }
-        if (typeof detail === 'object' && detail !== null) {
-            return detail.msg || detail.message || JSON.stringify(detail);
-        }
-        return String(detail);
-    }
+    function getValueByName(row: any, fieldName: string) { return row[fieldName]; }
+    function isFieldReadonly(fieldName: string): boolean { return readonlyFields.includes(fieldName); }
+    function getColInputType(fieldName: string): string { return getInputType(fieldName, columns); }
 
-    function getValueByName(row: any, fieldName: string) {
-        return row[fieldName];
-    }
-
-    function formatValue(value: any, column: ColumnInfo): string {
-        if (value === null || value === undefined) {
-            return column.type?.nullable ? "null" : "—";
-        }
-
-        const typeInfo = column.type;
-        if (!typeInfo) return String(value);
-
-        switch (typeInfo.baseType) {
-            case "integer":
-            case "number":
-                if (typeof value === "number") {
-                    if (typeInfo.baseType === "number") {
-                        return value.toFixed(2);
-                    }
-                    return String(value);
-                }
-                return String(value);
-
-            case "boolean":
-                return value ? "✓" : "✗";
-
-            case "string":
-                if (typeInfo.format) {
-                    switch (typeInfo.format) {
-                        case "date":
-                            if (typeof value === "string") {
-                                try {
-                                    const date = new Date(value);
-                                    return date.toLocaleDateString();
-                                } catch {
-                                    return String(value);
-                                }
-                            }
-                            return String(value);
-                        case "time":
-                            return String(value);
-                        case "email":
-                        case "uri":
-                        case "image":
-                            return String(value);
-                        default:
-                            return String(value);
-                    }
-                }
-                return String(value);
-
-            case "array":
-                if (Array.isArray(value)) {
-                    return `[${value.length} items]`;
-                }
-                return String(value);
-
-            case "object":
-                if (typeof value === "object") {
-                    return "{...}";
-                }
-                return String(value);
-
-            default:
-                return String(value);
-        }
-    }
-
-    function getInputType(fieldName: string): string {
-        const col = columns.find(c => c.name === fieldName);
-        if (!col?.type) return "text";
-
-        switch (col.type.baseType) {
-            case "integer":
-            case "number":
-                return "number";
-            case "boolean":
-                return "checkbox";
-            default:
-                return "text";
-        }
-    }
-
-    function isFieldReadonly(fieldName: string): boolean {
-        return readonlyFields.includes(fieldName);
-    }
-
-    onMount(() => {
-        load();
-    });
+    onMount(() => { load(); });
 </script>
 
 <Card class="table-card" fullWidth={true}>
@@ -536,11 +249,8 @@
                         <PlusIcon size={18} />
                     </button>
                 {/if}
-                {#if error}
-                    <div class={isPermissionError ? "header-permission-error" : "header-error"}>
-                        {#if isPermissionError}
-                            <Lock size={12} />
-                        {/if}
+                {#if error && !isPermissionError}
+                    <div class="header-error">
                         <span>{error}</span>
                     </div>
                 {/if}
@@ -550,92 +260,7 @@
     </svelte:fragment>
 
     <svelte:fragment slot="children">
-        <!-- Create Form (Inline) -->
-        {#if showCreateForm}
-            <div class="crud-form">
-                <div class="crud-form-header">
-                    <h4>Create New {name}</h4>
-                    <button class="icon-btn cancel" onclick={cancelCreate} disabled={saving}>
-                        <X size={16} />
-                    </button>
-                </div>
-                {#if actionError}
-                    <div class={isPermissionError ? "permission-error" : "action-error"}>
-                        {#if isPermissionError}
-                            <Lock size={14} />
-                        {/if}
-                        <span>{actionError}</span>
-                    </div>
-                {/if}
-                <div class="crud-form-fields">
-                    {#each editableFields as field}
-                        <div class="form-field">
-                            <label for="create-{field}">{field}</label>
-                            {#if getInputType(field) === "checkbox"}
-                                <input
-                                    id="create-{field}"
-                                    type="checkbox"
-                                    checked={createData[field] || false}
-                                    onchange={(e) => createData[field] = e.currentTarget.checked}
-                                    disabled={saving}
-                                />
-                            {:else if getInputType(field) === "number"}
-                                <input
-                                    id="create-{field}"
-                                    type="number"
-                                    value={createData[field] || ""}
-                                    oninput={(e) => createData[field] = parseFloat(e.currentTarget.value) || 0}
-                                    disabled={saving}
-                                />
-                            {:else}
-                                <input
-                                    id="create-{field}"
-                                    type="text"
-                                    value={createData[field] || ""}
-                                    oninput={(e) => createData[field] = e.currentTarget.value}
-                                    disabled={saving}
-                                />
-                            {/if}
-                        </div>
-                    {/each}
-                </div>
-                <div class="crud-form-actions">
-                    <button class="btn-secondary" onclick={cancelCreate} disabled={saving}>Cancel</button>
-                    <button class="btn-primary" onclick={submitCreate} disabled={saving}>
-                        {saving ? "Creating..." : "Create"}
-                    </button>
-                </div>
-            </div>
-        {/if}
-
-        <!-- Delete Confirmation Modal -->
-        {#if deleteConfirmRow !== null}
-            <div class="delete-confirm-overlay">
-                <div class="delete-confirm-modal">
-                    <div class="delete-confirm-icon">
-                        <AlertTriangle size={32} />
-                    </div>
-                    <h4>Confirm Delete</h4>
-                    <p>Are you sure you want to delete this item? This action cannot be undone.</p>
-                    {#if actionError}
-                        <div class={isPermissionError ? "permission-error" : "action-error"}>
-                            {#if isPermissionError}
-                                <Lock size={14} />
-                            {/if}
-                            <span>{actionError}</span>
-                        </div>
-                    {/if}
-                    <div class="delete-confirm-actions">
-                        <button class="btn-secondary" onclick={cancelDelete} disabled={saving}>Cancel</button>
-                        <button class="btn-danger" onclick={executeDelete} disabled={saving}>
-                            {saving ? "Deleting..." : "Delete"}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        {/if}
-
-        <div class="overflow-x-auto w-full">
+        <div class="overflow-x-auto -mx-5">
             <table class="min-w-full border-collapse text-sm font-mono">
                 <thead class="bg-[color:var(--surface)] sticky top-0 z-10">
                     <tr>
@@ -671,7 +296,7 @@
                                         <td class="px-3 py-2 border-b border-[color:var(--edge)]">
                                             {#if isReadonly}
                                                 <span class="text-text/50">{formatValue(row[fieldName], column)}</span>
-                                            {:else if getInputType(fieldName) === "checkbox"}
+                                            {:else if getColInputType(fieldName) === "checkbox"}
                                                 <input
                                                     type="checkbox"
                                                     checked={editData[fieldName] || false}
@@ -679,7 +304,7 @@
                                                     disabled={saving}
                                                     class="edit-checkbox"
                                                 />
-                                            {:else if getInputType(fieldName) === "number"}
+                                            {:else if getColInputType(fieldName) === "number"}
                                                 <input
                                                     type="number"
                                                     value={editData[fieldName] ?? ""}
@@ -706,7 +331,7 @@
                                                 disabled={saving}
                                                 title="Save"
                                             >
-                                                <Check size={14} />
+                                                <SaveIcon size={14} />
                                             </button>
                                             <button
                                                 class="icon-btn cancel"
@@ -714,17 +339,9 @@
                                                 disabled={saving}
                                                 title="Cancel"
                                             >
-                                                <X size={14} />
+                                                <XIcon size={14} />
                                             </button>
                                         </div>
-                                        {#if actionError}
-                                            <div class={isPermissionError ? "permission-error-inline" : "action-error-inline"}>
-                                                {#if isPermissionError}
-                                                    <Lock size={12} />
-                                                {/if}
-                                                <span>{actionError}</span>
-                                            </div>
-                                        {/if}
                                     </td>
                                 </tr>
                             {:else}
@@ -756,7 +373,7 @@
                                                         disabled={editingRow !== null || showCreateForm}
                                                         title="Edit"
                                                     >
-                                                        <Pencil size={14} />
+                                                        <EditIcon size={14} />
                                                     </button>
                                                 {/if}
                                                 {#if canDelete}
@@ -766,7 +383,7 @@
                                                         disabled={editingRow !== null || showCreateForm}
                                                         title="Delete"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <DeleteIcon size={14} />
                                                     </button>
                                                 {/if}
                                             </div>
@@ -781,6 +398,31 @@
         </div>
     </svelte:fragment>
 </Card>
+
+<!-- Create Modal - rendered outside Card to avoid transform stacking context -->
+{#if showCreateForm}
+    <CreateModal
+        fields={editableFields}
+        columns={columns}
+        saving={saving}
+        actionError={actionError}
+        isPermissionError={isPermissionError}
+        fieldErrors={createFieldErrors}
+        onSubmit={submitCreate}
+        onCancel={cancelCreate}
+    />
+{/if}
+
+<!-- Delete Modal - rendered outside Card to avoid transform stacking context -->
+{#if deleteConfirmRow !== null}
+    <DeleteModal
+        saving={saving}
+        actionError={actionError}
+        isPermissionError={isPermissionError}
+        onConfirm={executeDelete}
+        onCancel={cancelDelete}
+    />
+{/if}
 
 <style>
     table {
@@ -824,9 +466,9 @@
         justify-content: center;
         width: 28px;
         height: 28px;
-        border: 1px solid var(--edge);
+        border: none;
         border-radius: 6px;
-        background: var(--surface);
+        background: transparent;
         color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
@@ -848,28 +490,16 @@
     }
 
     .icon-btn.delete:hover:not(:disabled) {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
-    }
-
-    .icon-btn.save {
-        border-color: var(--green-text, #16a34a);
-        color: var(--green-text, #16a34a);
+        border-color: var(--red-text);
+        color: var(--red-text);
     }
 
     .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text, #16a34a);
-        color: white;
-    }
-
-    .icon-btn.cancel {
-        border-color: var(--red-text, #dc2626);
-        color: var(--red-text, #dc2626);
+        color: var(--green-text);
     }
 
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text, #dc2626);
-        color: white;
+        color: var(--red-text);
     }
 
     /* Create button (icon only, accent style) */
@@ -901,7 +531,7 @@
     .edit-input:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 99, 102, 241), 0.2);
+        box-shadow: 0 0 0 2px var(--accent-subtle);
     }
 
     .edit-checkbox {
@@ -910,7 +540,7 @@
         cursor: pointer;
     }
 
-    /* Create button (accent-colored plus icon) */
+    /* Create button */
     .create-btn {
         display: flex;
         align-items: center;
@@ -920,7 +550,7 @@
         border: none;
         border-radius: 6px;
         background: transparent;
-        color: var(--accent);
+        color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
     }
@@ -935,174 +565,12 @@
         cursor: not-allowed;
     }
 
-    /* Inline CRUD Form */
-    .crud-form {
-        background: var(--surface-secondary);
-        border: 1px solid var(--edge);
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .crud-form-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--edge);
-    }
-
-    .crud-form-header h4 {
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0;
-    }
-
-    .crud-form-fields {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .crud-form-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--edge);
-    }
-
-    .form-field {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-    }
-
-    .form-field label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-    }
-
-    .form-field input[type="text"],
-    .form-field input[type="number"] {
-        padding: 0.5rem;
-        border: 1px solid var(--edge);
-        border-radius: 4px;
-        background: var(--surface);
-        color: var(--text);
-        font-size: 0.875rem;
-    }
-
-    .form-field input:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-
-
-    .btn-primary,
-    .btn-secondary,
-    .btn-danger {
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .btn-primary {
-        background: var(--accent);
-        color: white;
-        border: none;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-        opacity: 0.9;
-    }
-
-    .btn-secondary {
-        background: transparent;
-        color: var(--text-muted);
-        border: 1px solid var(--edge);
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-        border-color: var(--text-muted);
-    }
-
-    .btn-danger {
-        background: var(--red-text, #dc2626);
-        color: white;
-        border: none;
-    }
-
-    .btn-danger:hover:not(:disabled) {
-        opacity: 0.9;
-    }
-
-    .btn-primary:disabled,
-    .btn-secondary:disabled,
-    .btn-danger:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    /* Delete Confirmation */
-    .delete-confirm-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-    }
-
-    .delete-confirm-modal {
-        background: var(--surface);
-        border: 1px solid var(--edge);
-        border-radius: 12px;
-        padding: 1.5rem;
-        max-width: 400px;
-        text-align: center;
-    }
-
-    .delete-confirm-icon {
-        color: var(--red-text, #dc2626);
-        margin-bottom: 1rem;
-    }
-
-    .delete-confirm-modal h4 {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0 0 0.5rem 0;
-    }
-
-    .delete-confirm-modal p {
-        font-size: 0.875rem;
-        color: var(--text-muted);
-        margin: 0 0 1rem 0;
-    }
-
-    .delete-confirm-actions {
-        display: flex;
-        justify-content: center;
-        gap: 0.75rem;
-    }
-
     /* Error messages */
     .action-error {
         padding: 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.8rem;
         margin-bottom: 1rem;
     }
@@ -1112,7 +580,7 @@
         align-items: center;
         gap: 0.25rem;
         font-size: 0.7rem;
-        color: var(--red-text, #dc2626);
+        color: var(--red-text);
         margin-top: 0.25rem;
     }
 
@@ -1123,11 +591,11 @@
         gap: 0.5rem;
         padding: 0.5rem 0.75rem;
         border-radius: 4px;
-        background: var(--yellow-tint, #fefce8);
-        color: var(--yellow-text, #a16207);
+        background: var(--yellow-tint);
+        color: var(--yellow-text);
         font-size: 0.8rem;
         margin-bottom: 1rem;
-        border: 1px solid var(--yellow-text, #a16207);
+        border: 1px solid var(--yellow-text);
     }
 
     .permission-error-inline {
@@ -1135,7 +603,7 @@
         align-items: center;
         gap: 0.25rem;
         font-size: 0.7rem;
-        color: var(--yellow-text, #a16207);
+        color: var(--yellow-text);
         margin-top: 0.25rem;
     }
 
@@ -1146,8 +614,8 @@
         gap: 0.35rem;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
-        background: var(--red-tint, #fef2f2);
-        color: var(--red-text, #dc2626);
+        background: var(--red-tint);
+        color: var(--red-text);
         font-size: 0.75rem;
     }
 
@@ -1157,62 +625,10 @@
         gap: 0.35rem;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
-        background: var(--yellow-tint, #fefce8);
-        color: var(--yellow-text, #a16207);
-        border: 1px solid var(--yellow-text, #a16207);
+        background: var(--yellow-tint);
+        color: var(--yellow-text);
+        border: 1px solid var(--yellow-text);
         font-size: 0.75rem;
     }
 
-    /* Create Modal */
-    .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-    }
-
-    .modal-content {
-        background: var(--surface);
-        border: 1px solid var(--edge);
-        border-radius: 12px;
-        padding: 1.5rem;
-        min-width: 400px;
-        max-width: 600px;
-        max-height: 80vh;
-        overflow-y: auto;
-    }
-
-    .modal-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--edge);
-    }
-
-    .modal-header h4 {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0;
-    }
-
-    .modal-form-fields {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--edge);
-    }
 </style>

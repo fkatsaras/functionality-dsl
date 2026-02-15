@@ -18,6 +18,9 @@ Without AuthDB, a default Postgres database is used.
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from textx import get_children_of_type
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _get_global_authdb(model):
@@ -42,7 +45,7 @@ def generate_auth_modules(model, templates_dir, out_dir):
     auth_blocks = getattr(model, "auth", []) or []
 
     if not auth_blocks:
-        print("  No Auth declarations found - skipping auth generation")
+        logger.debug("  No Auth declarations found - skipping auth generation")
         return {}
 
     # Get global AuthDB (shared by all DB-backed auths)
@@ -74,11 +77,11 @@ def generate_auth_modules(model, templates_dir, out_dir):
         # Skip Auth blocks with 'secret:' - they're for source authentication only
         secret = getattr(auth, "secret", None)
         if secret:
-            print(f"  Skipping {auth_name} (source auth with secret: {secret})")
+            logger.debug(f"  Skipping {auth_name} (source auth with secret: {secret})")
             continue
 
         if not auth_kind:
-            print(f"  Auth {auth_name} has no kind - skipping")
+            logger.warning(f"  Auth {auth_name} has no kind - skipping")
             continue
 
         # Extract config for this auth
@@ -89,10 +92,10 @@ def generate_auth_modules(model, templates_dir, out_dir):
         # Determine template based on type and scheme/location
         template_name = _get_template_name(auth_config)
         if not template_name:
-            print(f"    Unknown auth configuration for {auth_name} - skipping")
+            logger.warning(f"    Unknown auth configuration for {auth_name} - skipping")
             continue
 
-        print(f"  Generating auth module: {auth_name} (type: {auth_config['auth_type']})")
+        logger.debug(f"  Generating auth module: {auth_name} (type: {auth_config['auth_type']})")
 
         template = env.get_template(template_name)
         rendered = template.render(**auth_config)
@@ -101,7 +104,7 @@ def generate_auth_modules(model, templates_dir, out_dir):
         auth_file = core_dir / f"auth_{auth_name.lower()}.py"
         auth_file.write_text(rendered, encoding="utf-8")
 
-        print(f"    [OK] {auth_file.relative_to(out_dir)}")
+        logger.debug(f"    [OK] {auth_file.relative_to(out_dir)}")
 
     # Generate unified auth.py that imports all auth modules
     if auth_configs:
@@ -124,7 +127,7 @@ def _generate_auth_base(env, core_dir, out_dir):
 
     auth_base_file = core_dir / "auth_base.py"
     auth_base_file.write_text(rendered, encoding="utf-8")
-    print(f"    [OK] {auth_base_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {auth_base_file.relative_to(out_dir)}")
 
 
 def _get_template_name(auth_config):
@@ -261,7 +264,7 @@ def _generate_unified_auth_module(auth_configs, core_dir, out_dir):
 
     auth_file = core_dir / "auth.py"
     auth_file.write_text("\n".join(lines), encoding="utf-8")
-    print(f"    [OK] {auth_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {auth_file.relative_to(out_dir)}")
 
 
 def _generate_auth_context(auth_configs, env, core_dir, out_dir):
@@ -308,7 +311,7 @@ def _generate_auth_context(auth_configs, env, core_dir, out_dir):
 
     auth_context_file = core_dir / "auth_context.py"
     auth_context_file.write_text(rendered, encoding="utf-8")
-    print(f"    [OK] {auth_context_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {auth_context_file.relative_to(out_dir)}")
 
 
 def _extract_auth_config(auth, roles, global_authdb=None):

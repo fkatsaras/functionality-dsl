@@ -2,6 +2,8 @@
     import { authStore, type APIKeyLocation } from "$lib/stores/authStore";
     import Card from "$lib/primitives/Card.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import ErrorIcon from "$lib/primitives/icons/ErrorIcon.svelte";
+    import CheckIcon from "$lib/primitives/icons/CheckIcon.svelte";
 
     /**
      * Auth mechanism configuration
@@ -444,7 +446,7 @@
                 <!-- Login ID -->
                 <div class="form-group">
                     <label for="loginId" class="form-label">
-                        {credentialAuthType === "basic" ? "Username" : "Login ID"}
+                        User ID
                     </label>
                     <input
                         id="loginId"
@@ -486,7 +488,7 @@
                     <!-- Role Selection (register only) -->
                     {#if allRoles.length > 0}
                         <div class="form-group">
-                            <label class="form-label">Select Role</label>
+                            <label class="form-label">Role</label>
                             <div class="roles-grid">
                                 {#each allRoles as role}
                                     <button
@@ -558,47 +560,19 @@
             <!-- Success Message -->
             {#if success}
                 <div class="success-message">
-                    {success}
+                    <CheckIcon size={18} />
+                    <span>{success}</span>
                 </div>
             {/if}
 
             <!-- Error Message -->
             {#if error}
                 <div class="error-message">
-                    {error}
+                    <ErrorIcon size={18} />
+                    <span>{error}</span>
                 </div>
             {/if}
 
-            <!-- Info Text -->
-            <div class="info-text">
-                {#if activeTab === "credentials"}
-                    <p class="info-title">
-                        {credentialAuthType === "jwt" ? "Token-based" : credentialAuthType === "apikey" ? "API Key" : "Basic"} authentication
-                    </p>
-                    <p class="info-desc">
-                        {#if credentialMode === "login"}
-                            {#if credentialAuthType === "jwt"}
-                                A JWT token will be issued and stored locally for API authentication.
-                            {:else if credentialAuthType === "apikey"}
-                                {#if apiKeyLocation === "cookie"}
-                                    An API key will be set as a cookie for seamless authentication.
-                                {:else}
-                                    An API key will be issued for {apiKeyLocation}-based authentication.
-                                {/if}
-                            {:else}
-                                Credentials are validated with each request using HTTP Basic auth.
-                            {/if}
-                        {:else}
-                            Create an account to access protected resources. Your password will be securely hashed.
-                        {/if}
-                    </p>
-                {:else}
-                    <p class="info-title">API Key authentication</p>
-                    <p class="info-desc">
-                        Enter your API key to authenticate. The key will be sent with each request in the <code>{apiKeyHeader}</code> {apiKeyLocation}.
-                    </p>
-                {/if}
-            </div>
         </div>
     </Card>
     </div>
@@ -623,11 +597,11 @@
 
     .card-wrapper {
         width: 100%;
-        max-width: 380px;
+        max-width: 500px;
     }
 
     .card-wrapper :global(.card) {
-        max-width: 380px;
+        max-width: 500px;
         margin: 0 auto;
     }
 
@@ -715,7 +689,7 @@
         display: flex;
         flex-direction: column;
         gap: 1.25rem;
-        max-width: 360px;
+        max-width: 500px;
         width: 100%;
         padding-top: 0.5rem;
     }
@@ -728,8 +702,9 @@
 
     .form-label {
         font-size: 0.8rem;
-        font-weight: 500;
-        color: var(--text);
+        font-weight: 400;
+        font-family: "Approach Mono", monospace;
+        color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.03em;
     }
@@ -756,6 +731,7 @@
 
     .form-input::placeholder {
         color: var(--text-muted);
+        opacity: 0.4;
     }
 
     .form-hint {
@@ -849,21 +825,27 @@
     }
 
     .success-message {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.75rem;
         border-radius: 0.5rem;
         background: var(--green-tint);
         color: var(--green-text);
         font-size: 0.8rem;
-        border: 1px solid var(--green-text);
+        border: 2px solid var(--green-text);
     }
 
     .error-message {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.75rem;
         border-radius: 0.5rem;
         background: var(--red-tint);
         color: var(--red-text);
         font-size: 0.8rem;
-        border: 1px solid var(--red-text);
+        border: 2px solid var(--red-text);
     }
 
     .submit-button {
@@ -887,31 +869,5 @@
         cursor: not-allowed;
     }
 
-    .info-text {
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        background: var(--surface);
-        border: 1px solid var(--edge-soft);
-    }
 
-    .info-title {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: var(--text);
-        margin-bottom: 0.25rem;
-    }
-
-    .info-desc {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-        line-height: 1.4;
-        margin: 0;
-    }
-
-    .info-desc code {
-        background: var(--edge);
-        padding: 0.1rem 0.3rem;
-        border-radius: 0.25rem;
-        font-size: 0.65rem;
-    }
 </style>
