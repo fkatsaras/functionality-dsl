@@ -136,26 +136,7 @@ end
 // UI COMPONENTS
 // =============================================================================
 
-Component<DataCard> LondonCard
+Component<Table> ComparisonTable
   entity: CityComparison
-  fields: ["london_pm2_5", "london_pm10", "london_ozone", "london_uv"]
-  title: "London Air Quality"
-end
-
-Component<DataCard> ParisCard
-  entity: CityComparison
-  fields: ["paris_pm2_5", "paris_pm10", "paris_ozone", "paris_uv"]
-  title: "Paris Air Quality"
-end
-
-Component<DataCard> BeijingCard
-  entity: CityComparison
-  fields: ["beijing_pm2_5", "beijing_pm10", "beijing_ozone", "beijing_uv"]
-  title: "Beijing Air Quality"
-end
-
-Component<DataCard> StatsCard
-  entity: AirQualityStats
-  fields: ["london_status", "paris_status", "beijing_status"]
-  title: "Air Quality Status"
+  colNames: ["london_pm2_5", "paris_pm2_5", "beijing_pm2_5"]
 end
