@@ -8,6 +8,9 @@ Supports source-level authentication for outbound requests.
 import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+from functionality_dsl.api.gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _extract_auth_config(source):
@@ -109,19 +112,19 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
     if not url:
         return
 
-    print(f"  Generating source client for {source.name}")
+    logger.debug(f"  Generating source client for {source.name}")
 
     # Extract params
     all_params, path_params, query_params = _extract_source_params(source)
     has_params = len(all_params) > 0
 
     if has_params:
-        print(f"    Params: {all_params} (path: {path_params}, query: {query_params})")
+        logger.debug(f"    Params: {all_params} (path: {path_params}, query: {query_params})")
 
     # Extract auth config for outbound requests
     auth_config = _extract_auth_config(source)
     if auth_config:
-        print(f"    Auth: {auth_config['kind']} (env: {auth_config.get('secret_env', 'N/A')})")
+        logger.debug(f"    Auth: {auth_config['kind']} (env: {auth_config.get('secret_env', 'N/A')})")
 
     # Infer operations from entities that bind to this source
     operations = set()
@@ -135,7 +138,7 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
 
     # If no operations found, skip
     if not operations:
-        print(f"  Warning: No operations found for source {source.name}, skipping client generation")
+        logger.warning(f"  No operations found for source {source.name}, skipping client generation")
         return
 
     operations = list(operations)
@@ -205,4 +208,4 @@ def generate_source_client(source, model, templates_dir, out_dir, exposure_map=N
     source_file = sources_dir / f"{source.name.lower()}_source.py"
     source_file.write_text(rendered)
 
-    print(f"    [OK] {source_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {source_file.relative_to(out_dir)}")

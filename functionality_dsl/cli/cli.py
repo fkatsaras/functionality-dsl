@@ -13,6 +13,7 @@ from textx.export import metamodel_export, PlantUmlRenderer
 from plantuml import PlantUML
 
 from functionality_dsl.api.generator import scaffold_backend_from_model, render_domain_files
+from functionality_dsl.api.gen_logging import configure_gen_logging
 from functionality_dsl.api.frontend_generator import render_frontend_files, scaffold_frontend_from_model
 from functionality_dsl.api.generators.core.database_generator import get_database_context
 from functionality_dsl.language import build_model
@@ -233,7 +234,10 @@ def cli(context):
 @cli.command("validate", help="Model Validation")
 @click.pass_context
 @click.argument("model_path")
-def validate(context, model_path):
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose (DEBUG) output.")
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Suppress info output (warnings and errors only).")
+def validate(context, model_path, verbose, quiet):
+    configure_gen_logging(verbose=verbose, quiet=quiet)
     try:
         _ = build_model(model_path)
         console.print(f"[{date.today().strftime('%Y-%m-%d')}] Model validation success!", style='green')
@@ -253,7 +257,10 @@ def validate(context, model_path):
     help="What to generate (default: all)."
 )
 @click.option("--out", "out_dir", default="generated", help="Output directory (default: ./generated)")
-def generate(context, model_path, target, out_dir):
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose (DEBUG) output.")
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Suppress info output (warnings and errors only).")
+def generate(context, model_path, target, out_dir, verbose, quiet):
+    configure_gen_logging(verbose=verbose, quiet=quiet)
     try:
         model = build_model(model_path)
         out_path = Path(out_dir).resolve()

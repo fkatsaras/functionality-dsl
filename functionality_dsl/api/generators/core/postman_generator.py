@@ -8,6 +8,9 @@ for API testing and documentation.
 import json
 import yaml
 from pathlib import Path
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 from typing import Dict, Any, List
 
 
@@ -83,7 +86,7 @@ def generate_postman_collection(openapi_file: Path, output_dir: Path):
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(collection, f, indent=2)
 
-    print(f"[GENERATED] Postman collection: {output_file}")
+    logger.debug(f"[GENERATED] Postman collection: {output_file}")
 
 
 def _create_request_item(path: str, method: str, operation: Dict, schemas: Dict, base_url: str) -> Dict:

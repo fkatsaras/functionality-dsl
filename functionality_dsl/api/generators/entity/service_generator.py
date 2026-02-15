@@ -5,6 +5,9 @@ Generates service layer that orchestrates CRUD operations and entity transformat
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
+from functionality_dsl.api.gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _validate_mutation_operations(entity_name, operations, has_multiple_parents, attributes, readonly_fields):
@@ -67,7 +70,7 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     operations = config["operations"]
     source = config["source"]
 
-    print(f"  Generating service for {entity_name}")
+    logger.debug(f"  Generating service for {entity_name}")
 
     # Check if entity has computed attributes (transformation entity)
     has_computed_attrs = False
@@ -247,4 +250,4 @@ def generate_entity_service(entity_name, config, model, templates_dir, out_dir):
     service_file = services_dir / f"{entity_name.lower()}_service.py"
     service_file.write_text(rendered)
 
-    print(f"    [OK] {service_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {service_file.relative_to(out_dir)}")

@@ -1,4 +1,7 @@
 import ast
+import logging
+
+_logger = logging.getLogger("fdsl.gen.expr_compiler")
 
 # ---------------- AST safety ----------------
 RESERVED = {'in', 'for', 'if', 'else', 'not', 'and', 'or'}
@@ -401,7 +404,7 @@ def compile_expr_to_python(expr, validate_context=None) -> str:
     # Convert AST to Python code string
     py_code = ast.unparse(expr_node.body)
 
-    print(py_code)
+    _logger.debug(py_code)
     return py_code
 
 

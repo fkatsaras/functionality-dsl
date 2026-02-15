@@ -20,6 +20,9 @@ from functionality_dsl.api.crud_helpers import (
     derive_request_schema_name,
 )
 from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
+from functionality_dsl.api.gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
@@ -45,7 +48,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     if not rest_path:
         return
 
-    print(f"  Generating router for {entity_name} (REST: {rest_path})")
+    logger.debug(f"  Generating router for {entity_name} (REST: {rest_path})")
 
     # All entities are singletons - use the entire path as base prefix
     base_prefix = rest_path
@@ -139,7 +142,7 @@ def generate_entity_router(entity_name, config, model, templates_dir, out_dir):
     router_file = routers_dir / f"{entity_name.lower()}_router.py"
     router_file.write_text(rendered)
 
-    print(f"    [OK] {router_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {router_file.relative_to(out_dir)}")
 
 
 def _parse_access_requirement(access_req):

@@ -3,6 +3,9 @@
 import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from ...gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 from ...extractors import (
     get_entities,
@@ -182,4 +185,4 @@ def generate_domain_models(model, templates_dir, output_dir):
     output_file = Path(output_dir) / "app" / "domain" / "models.py"
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(models_code, encoding="utf-8")
-    print(f"[GENERATED] Domain models: {output_file}")
+    logger.debug(f"[GENERATED] Domain models: {output_file}")

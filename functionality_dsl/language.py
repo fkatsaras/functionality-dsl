@@ -10,6 +10,9 @@ import os
 import re
 from os.path import join, dirname, abspath
 from pathlib import Path
+from functionality_dsl.api.gen_logging import get_logger as _get_gen_logger
+
+_logger = _get_gen_logger(__name__)
 from textx import (
     metamodel_from_file,
     get_children_of_type,
@@ -330,7 +333,7 @@ def _expand_imports(model_path: str, visited=None) -> str:
         if not import_path.exists():
             raise FileNotFoundError(f"Import not found: {import_path}")
 
-        print(f"[IMPORT] Inlining {import_path.name}")
+        _logger.debug(f"[IMPORT] Inlining {import_path.name}")
 
         # Recursively expand the imported file
         imported_content = _expand_imports(str(import_path), visited)

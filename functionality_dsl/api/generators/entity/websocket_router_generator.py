@@ -8,6 +8,9 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from functionality_dsl.api.generators.core.auth_generator import get_permission_dependencies
+from functionality_dsl.api.gen_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _extract_ws_source_params(source):
@@ -48,7 +51,7 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     if not ws_channel:
         return
 
-    print(f"  Generating WebSocket router for {entity_name} (WS: {ws_channel})")
+    logger.debug(f"  Generating WebSocket router for {entity_name} (WS: {ws_channel})")
 
     # Check which operations are supported
     supports_subscribe = "subscribe" in operations
@@ -95,9 +98,9 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     has_target_params = len(ws_target_params) > 0
 
     if has_source_params:
-        print(f"    Source params: {ws_source_params}")
+        logger.debug(f"    Source params: {ws_source_params}")
     if has_target_params:
-        print(f"    Target params: {ws_target_params}")
+        logger.debug(f"    Target params: {ws_target_params}")
 
     # Render template
     env = Environment(loader=FileSystemLoader(str(templates_dir)))
@@ -127,7 +130,7 @@ def generate_entity_websocket_router(entity_name, config, model, templates_dir, 
     router_file = routers_dir / f"{entity_name.lower()}_ws_router.py"
     router_file.write_text(rendered)
 
-    print(f"    [OK] {router_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {router_file.relative_to(out_dir)}")
 
 
 def generate_combined_websocket_router(ws_channel, entities, model, templates_dir, out_dir):
@@ -141,7 +144,7 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         templates_dir: Templates directory path
         out_dir: Output directory path
     """
-    print(f"  Generating combined WebSocket router for {ws_channel}")
+    logger.debug(f"  Generating combined WebSocket router for {ws_channel}")
 
     # Separate subscribe and publish entities
     subscribe_entity = None
@@ -242,7 +245,7 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         has_subscribe_params = len(subscribe_source_params) > 0
 
         if has_subscribe_params:
-            print(f"    Subscribe source params: {subscribe_source_params}")
+            logger.debug(f"    Subscribe source params: {subscribe_source_params}")
 
         context.update({
             "subscribe_entity_name": entity_name,
@@ -295,7 +298,7 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
         has_publish_params = len(publish_source_params) > 0
 
         if has_publish_params:
-            print(f"    Publish source params: {publish_source_params}")
+            logger.debug(f"    Publish source params: {publish_source_params}")
 
         context.update({
             "publish_entity_name": entity_name,
@@ -367,8 +370,7 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
                 }
                 has_auth = True
 
-    # Debug output
-    print(f"    Auth config: has_auth={has_auth}, subscribe={subscribe_auth_info}, publish={publish_auth_info}")
+    logger.debug(f"    Auth config: has_auth={has_auth}, subscribe={subscribe_auth_info}, publish={publish_auth_info}")
 
     context.update({
         "has_auth": has_auth,
@@ -399,4 +401,4 @@ def generate_combined_websocket_router(ws_channel, entities, model, templates_di
     router_file = routers_dir / f"{channel_name}_ws.py"
     router_file.write_text(rendered)
 
-    print(f"    [OK] {router_file.relative_to(out_dir)}")
+    logger.debug(f"    [OK] {router_file.relative_to(out_dir)}")

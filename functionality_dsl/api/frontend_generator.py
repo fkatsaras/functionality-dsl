@@ -257,13 +257,3 @@ def render_frontend_files(model, templates_dir: Path, out_dir: Path):
         encoding="utf-8",
     )
 
-    # Format for readability
-    # try:
-    #     page_path = out_dir / "src" / "routes" / "+page.svelte"
-
-    #     raw = page_path.read_text(encoding="utf-8")
-    #     pretty = beautify_html(raw)
-
-    #     page_path.write_text(pretty, encoding="utf-8")
-    # except Exception as e:
-    #     print("[WARN] HTML beautification failed:", e)
