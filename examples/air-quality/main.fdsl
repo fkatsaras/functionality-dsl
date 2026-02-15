@@ -1,9 +1,3 @@
-// =============================================================================
-// Global Air Quality Monitor - Multi-City Comparison
-// =============================================================================
-// Demonstrates: Multi-source REST aggregation with computed fields
-// Data Source: Open-Meteo Air Quality API (FREE - No API key required!)
-// =============================================================================
 
 Server AirQualityAPI
   host: "localhost"
@@ -13,9 +7,7 @@ Server AirQualityAPI
   timeout: 30
 end
 
-// =============================================================================
 // EXTERNAL SOURCES - Open-Meteo Air Quality API
-// =============================================================================
 
 Source<REST> LondonAirQuality
   url: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=51.51&longitude=-0.13&hourly=pm10,pm2_5,ozone,uv_index"
@@ -32,9 +24,7 @@ Source<REST> BeijingAirQuality
   operations: [read]
 end
 
-// =============================================================================
-// BASE ENTITIES - Raw Air Quality Data (Singletons)
-// =============================================================================
+// BASE ENTITIES - Raw Air Quality Data
 
 Entity LondonAir
   source: LondonAirQuality
@@ -43,7 +33,7 @@ Entity LondonAir
     - longitude: number;
     - timezone: string;
     - hourly_units: object;
-    - hourly: object;  // { time: [], pm10: [], pm2_5: [], ozone: [], uv_index: [] }
+    - hourly: object;
   access: public
 end
 
@@ -69,9 +59,7 @@ Entity BeijingAir
   access: public
 end
 
-// =============================================================================
 // DERIVED ENTITY - City Comparison (Current Readings)
-// =============================================================================
 
 Entity CityComparison(LondonAir, ParisAir, BeijingAir)
   attributes:
@@ -95,9 +83,7 @@ Entity CityComparison(LondonAir, ParisAir, BeijingAir)
   access: public
 end
 
-// =============================================================================
 // DERIVED ENTITY - Air Quality Analytics
-// =============================================================================
 
 Entity AirQualityStats(LondonAir, ParisAir, BeijingAir, CityComparison)
   attributes:
@@ -118,9 +104,7 @@ Entity AirQualityStats(LondonAir, ParisAir, BeijingAir, CityComparison)
   access: public
 end
 
-// =============================================================================
 // DERIVED ENTITY - PM2.5 Trends (Chart Data)
-// =============================================================================
 
 Entity PM25Trends(LondonAir, ParisAir, BeijingAir)
   attributes:
@@ -132,9 +116,7 @@ Entity PM25Trends(LondonAir, ParisAir, BeijingAir)
   access: public
 end
 
-// =============================================================================
 // UI COMPONENTS
-// =============================================================================
 
 Component<Table> ComparisonTable
   entity: CityComparison

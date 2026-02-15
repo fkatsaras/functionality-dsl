@@ -1,14 +1,3 @@
-// =============================================================================
-// Weather Comparison API - Multi-City Weather Analytics
-// =============================================================================
-// This example demonstrates:
-// - Multiple singleton REST endpoints (one per city)
-// - Computed weather statistics per city
-// - Cross-city comparison in tables and charts
-//
-// External API: Open-Meteo forecast API (3 cities)
-// =============================================================================
-
 Server WeatherAnalyticsAPI
   host: "localhost"
   port: 8000
@@ -16,9 +5,7 @@ Server WeatherAnalyticsAPI
   loglevel: debug
 end
 
-// =============================================================================
-// EXTERNAL SOURCES - Open-Meteo API for 3 Cities
-// =============================================================================
+// EXTERNAL SOURCES
 
 Source<REST> ThessalonikiAPI
   url: "https://api.open-meteo.com/v1/forecast?latitude=40.64&longitude=22.94&hourly=temperature_2m,relative_humidity_2m"
@@ -35,9 +22,7 @@ Source<REST> TokyoAPI
   operations: [read]
 end
 
-// =============================================================================
-// BASE ENTITIES - Raw Forecast Data (Singletons)
-// =============================================================================
+// BASE ENTITIES 
 
 Entity ThessalonikiForecast
   source: ThessalonikiAPI
@@ -84,9 +69,6 @@ Entity TokyoForecast
   access: public
 end
 
-// =============================================================================
-// CITY COMPARISON - Aggregated Statistics
-// =============================================================================
 
 Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   attributes:
@@ -106,9 +88,6 @@ Entity CityComparison(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
 end
 
 
-// =============================================================================
-// TEMPERATURE TRENDS - Chart Data (Time Series with 3 Cities)
-// =============================================================================
 
 Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   attributes:
@@ -130,9 +109,6 @@ Entity TemperatureTrends(ThessalonikiForecast, NewYorkForecast, TokyoForecast)
   access: public
 end
 
-// =============================================================================
-// UI COMPONENTS
-// =============================================================================
 
 Component<Table> ComparisonTable
   entity: CityComparison
