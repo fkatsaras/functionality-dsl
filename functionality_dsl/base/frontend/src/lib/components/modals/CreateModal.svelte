@@ -224,22 +224,16 @@
         justify-content: center;
         width: 28px;
         height: 28px;
-        border: 1px solid var(--edge);
+        border: none;
         border-radius: 6px;
-        background: var(--surface);
+        background: transparent;
         color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
     }
 
-    .icon-btn.cancel {
-        border-color: var(--red-text);
-        color: var(--red-text);
-    }
-
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text);
-        color: white;
+        color: var(--red-text);
     }
 
     .icon-btn:disabled {

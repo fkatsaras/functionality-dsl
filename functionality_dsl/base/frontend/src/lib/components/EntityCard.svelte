@@ -9,7 +9,10 @@
     import EmptyState from "$lib/primitives/icons/EmptyState.svelte";
     import ErrorState from "../primitives/icons/ErrorState.svelte";
     import UnauthorizedState from "../primitives/icons/UnauthorizedState.svelte";
-    import { Pencil, X, Check, Lock } from "lucide-svelte";
+    import { Lock } from "lucide-svelte";
+    import EditIcon from "$lib/primitives/icons/EditIcon.svelte";
+    import SaveIcon from "$lib/primitives/icons/SaveIcon.svelte";
+    import XIcon from "$lib/primitives/icons/XIcon.svelte";
 
     const props = $props<{
         // REST mode props
@@ -343,7 +346,7 @@
                         disabled={saving}
                         title="Cancel"
                     >
-                        <X size={16} />
+                        <XIcon size={16} />
                     </button>
                     <button
                         class="icon-btn save"
@@ -351,7 +354,7 @@
                         disabled={saving}
                         title="Save"
                     >
-                        <Check size={16} />
+                        <SaveIcon size={16} />
                     </button>
                 {:else if !isWebSocketMode}
                     {#if canEdit}
@@ -361,7 +364,7 @@
                             disabled={loading || !data}
                             title="Edit"
                         >
-                            <Pencil size={14} />
+                            <EditIcon size={14} />
                         </button>
                     {/if}
                     <RefreshButton onRefresh={fetchData} {loading} />
@@ -518,9 +521,9 @@
         justify-content: center;
         width: 28px;
         height: 28px;
-        border: 1px solid var(--edge);
+        border: none;
         border-radius: 6px;
-        background: var(--surface);
+        background: transparent;
         color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;

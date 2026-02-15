@@ -792,9 +792,9 @@
         justify-content: center;
         width: 28px;
         height: 28px;
-        border: 1px solid var(--edge);
+        border: none;
         border-radius: 6px;
-        background: var(--surface);
+        background: transparent;
         color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
@@ -820,24 +820,12 @@
         color: var(--red-text);
     }
 
-    .icon-btn.save {
-        border-color: var(--green-text);
+    .icon-btn.save:hover:not(:disabled) {
         color: var(--green-text);
     }
 
-    .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text);
-        color: white;
-    }
-
-    .icon-btn.cancel {
-        border-color: var(--red-text);
-        color: var(--red-text);
-    }
-
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text);
-        color: white;
+        color: var(--red-text);
     }
 
     /* Create button (icon only, accent style) */

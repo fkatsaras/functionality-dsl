@@ -5,14 +5,14 @@
 <svg
     width={size}
     height={size}
-    viewBox="0 0 20 20"
+    viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.8"
+    stroke-width="2.8"
     stroke-linecap="round"
     stroke-linejoin="round"
-    class={`animate-fade-in ${className}`}
+    class={className}
 >
-    <circle cx="10" cy="10" r="8.5" />
-    <path d="M10 6.5v7M6.5 10h7" />
+    <line x1="12" y1="5" x2="12" y2="19"/>
+    <line x1="5" y1="12" x2="19" y2="12"/>
 </svg>
