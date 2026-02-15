@@ -15,7 +15,6 @@ services:
   # ===================== PostgreSQL Database =====================
   db:
     image: postgres:16-alpine
-    container_name: {{ server.name | lower | replace(' ', '-') }}-db
     environment:
       POSTGRES_USER: {{ db_user }}
       POSTGRES_PASSWORD: {{ db_password }}
@@ -36,7 +35,6 @@ services:
   # ===================== pgAdmin (Database UI) =====================
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: {{ server.name | lower | replace(' ', '-') }}-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@fdsl.dev
       PGADMIN_DEFAULT_PASSWORD: admin
@@ -58,7 +56,6 @@ services:
     # ===================== DEV (Hot Reload) =====================
     image: python:3.11-slim
     working_dir: /app
-    container_name: {{ server.name | lower | replace(' ', '-') }}-backend
     environment:
       - PYTHONUNBUFFERED=1
       - FORCE_COLOR=1
@@ -86,7 +83,6 @@ services:
     {% else %}
     # ===================== PROD =====================
     build: .
-    container_name: {{ server.name | lower | replace(' ', '-') }}-backend
     ports:
       - "{{ server.port }}:{{ server.port }}"
     env_file:
@@ -107,7 +103,6 @@ services:
     # ===================== DEV (HMR) =====================
     image: node:20-alpine
     working_dir: /app
-    container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
     environment:
       # Vite proxy target uses Docker network hostname (container-to-container)
       - VITE_API_URL=http://backend:{{ server.port }}
@@ -131,7 +126,6 @@ services:
     # ===================== PROD =====================
     build:
       context: ./frontend
-    container_name: {{ server.name | lower | replace(' ', '-') }}-frontend
     environment:
       # Vite proxy target uses Docker network hostname (container-to-container)
       - VITE_API_URL=http://backend:{{ server.port }}

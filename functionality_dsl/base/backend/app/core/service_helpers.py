@@ -76,17 +76,17 @@ def log_outgoing_response(logger: logging.Logger, response_data: Any) -> None:
     response_preview = json.dumps(sanitized_data, indent=2)[:400]
     if len(json.dumps(sanitized_data)) > 400:
         response_preview += "\n  ... (truncated)"
-    logger.info(f"[RESPONSE] → Outgoing response:\n{response_preview}")
+    logger.info(f"[RESPONSE] -> Outgoing response:\n{response_preview}")
 
 
 def log_outgoing_error(logger: logging.Logger, error_detail: str) -> None:
     """Log outgoing error response in a structured format."""
-    logger.info(f"[RESPONSE] → Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
+    logger.info(f"[RESPONSE] -> Outgoing error response:\n{json.dumps({'detail': error_detail}, indent=2)}")
 
 
 def log_fetch_request(logger: logging.Logger, method: str, url: str, entity_name: str) -> None:
     """Log external source fetch request."""
-    logger.info(f"[FETCH] → {method} {url}")
+    logger.info(f"[FETCH] -> {method} {url}")
 
 
 def log_fetch_success(logger: logging.Logger, entity_name: str, payload: Any) -> None:
@@ -109,7 +109,7 @@ def log_write_request(logger: logging.Logger, method: str, url: str, payload: An
     payload_preview = json.dumps(sanitized_payload, indent=2)[:300]
     if len(json.dumps(sanitized_payload)) > 300:
         payload_preview += "\n  ... (truncated)"
-    logger.info(f"[WRITE] → {method} {url}\nPayload:\n{payload_preview}")
+    logger.info(f"[WRITE] -> {method} {url}\nPayload:\n{payload_preview}")
 
 
 def log_write_success(logger: logging.Logger, target_name: str, response: Any) -> None:

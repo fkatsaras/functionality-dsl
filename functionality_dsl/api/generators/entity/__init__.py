@@ -17,17 +17,17 @@ SEPARATION OF CONCERNS:
 
 REST Flow:
 ----------
-Entity → operations: [list, read, create, update, delete]
-→ router_generator → FastAPI HTTP endpoints
-→ service_generator → Service methods (CRUD)
-→ source client → External REST API
+Entity -> operations: [list, read, create, update, delete]
+-> router_generator -> FastAPI HTTP endpoints
+-> service_generator -> Service methods (CRUD)
+-> source client -> External REST API
 
 WebSocket Flow:
 --------------
-Entity → operations: [subscribe, publish]
-→ websocket_router_generator → FastAPI WebSocket endpoints
-→ service_generator → Service methods (message transformation)
-→ source client → External WebSocket connection
+Entity -> operations: [subscribe, publish]
+-> websocket_router_generator -> FastAPI WebSocket endpoints
+-> service_generator -> Service methods (message transformation)
+-> source client -> External WebSocket connection
 """
 
 from .router_generator import generate_entity_router

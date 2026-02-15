@@ -14,15 +14,15 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 - **Identity resolution** is delegated to backing services (via auth, headers, query params)
 
 **Key Components:**
-- **Entities** - Data snapshots with optional transformation logic (schema → computed attributes)
+- **Entities** - Data snapshots with optional transformation logic (schema -> computed attributes)
 - **Sources** - Capability providers that define interaction contracts (read/create/update/delete)
 - **Components** - UI elements (Table, Chart) that bind to entities
 - **Access Control** - Entity-level authorization
 
 **Data Flow:**
 - **REST**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
-- **WS Subscribe**: `External WS → Entity → Client`
-- **WS Publish**: `Client → Entity → External WS`
+- **WS Subscribe**: `External WS -> Entity -> Client`
+- **WS Publish**: `Client -> Entity -> External WS`
 
 ### Philosophy: Snapshot-Based Mutations
 
@@ -230,8 +230,8 @@ end
 ```
 
 **What this means:**
-- `read` → `GET http://devices:9001/thermostat` (no ID)
-- `update` → `PUT http://devices:9001/thermostat` (no ID)
+- `read` -> `GET http://devices:9001/thermostat` (no ID)
+- `update` -> `PUT http://devices:9001/thermostat` (no ID)
 - The backing service determines identity from context
 
 **WebSocket Source:**
@@ -785,7 +785,7 @@ end
 
 ## 13. Migration Notes
 
-**Old Syntax → New Syntax:**
+**Old Syntax -> New Syntax:**
 
 | Old | New |
 |-----|-----|

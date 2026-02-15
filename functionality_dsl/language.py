@@ -323,7 +323,7 @@ def _expand_imports(model_path: str, visited=None) -> str:
 
     def replace_import(match):
         imp_uri = match.group(1)
-        # Convert "products" → "products.fdsl", "shop.products" → "shop/products.fdsl"
+        # Convert "products" -> "products.fdsl", "shop.products" -> "shop/products.fdsl"
         rel_path = imp_uri.replace(".", os.sep) + ".fdsl"
         import_path = (base_dir / rel_path).resolve()
 

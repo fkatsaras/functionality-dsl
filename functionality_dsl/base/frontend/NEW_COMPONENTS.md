@@ -62,8 +62,8 @@ end
 - `refreshMs:` - Auto-refresh interval in ms (optional)
 
 **Features:**
-- Auto-formats field names (snake_case → Title Case)
-- Formats values (booleans → Yes/No, arrays → [N items], etc.)
+- Auto-formats field names (snake_case -> Title Case)
+- Formats values (booleans -> Yes/No, arrays -> [N items], etc.)
 - Highlights specified field with background color
 
 **Example Use Case:**

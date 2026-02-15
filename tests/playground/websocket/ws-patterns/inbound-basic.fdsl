@@ -39,7 +39,7 @@ end
 //
 // Data flow:
 // External WS (ws://dummy:9001/ws/sensor)
-//   → FDSL Server
-//   → Client (subscribes to /ws/sensorreading)
+//   -> FDSL Server
+//   -> Client (subscribes to /ws/sensorreading)
 //
 // Client receives messages in the shape defined by SensorReading

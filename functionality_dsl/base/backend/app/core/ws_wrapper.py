@@ -5,8 +5,8 @@ Handles conversion between wire format (primitives) and internal format (dicts).
 
 Design principle:
 - Internally, all entities are dicts with attributes as fields
-- For type: object → no wrapping needed (already a dict)
-- For type: primitive → wrap/unwrap between primitive value and {"attribute": value}
+- For type: object -> no wrapping needed (already a dict)
+- For type: primitive -> wrap/unwrap between primitive value and {"attribute": value}
 """
 
 import logging

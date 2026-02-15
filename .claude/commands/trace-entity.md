@@ -13,5 +13,5 @@ Output:
 2. Child entities that use it
 3. Which Source provides it (if any)
 4. Which APIEndpoint exposes it (if any)
-5. Full transformation chain (ancestors → entity → descendants)
+5. Full transformation chain (ancestors -> entity -> descendants)
 6. Whether it's a terminal entity
