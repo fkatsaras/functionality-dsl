@@ -544,24 +544,12 @@
         color: var(--accent);
     }
 
-    .icon-btn.save {
-        border-color: var(--green-text);
+    .icon-btn.save:hover:not(:disabled) {
         color: var(--green-text);
     }
 
-    .icon-btn.save:hover:not(:disabled) {
-        background: var(--green-text);
-        color: white;
-    }
-
-    .icon-btn.cancel {
-        border-color: var(--red-text);
-        color: var(--red-text);
-    }
-
     .icon-btn.cancel:hover:not(:disabled) {
-        background: var(--red-text);
-        color: white;
+        color: var(--red-text);
     }
 
     .state-container {

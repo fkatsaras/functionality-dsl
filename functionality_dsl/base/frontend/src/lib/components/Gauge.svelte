@@ -33,6 +33,9 @@
     // reactive numeric needle value
     let value = $state(initialN);
 
+    // smooth display value (less flickering)
+    let displayValue = $state(initialN);
+
     // spring animation
     const valueSpring = spring(initialN, {
         stiffness: 0.4,
@@ -46,7 +49,10 @@
 
     function animateTo(next: number) {
         lastTarget = next;
-        
+
+        // update display value immediately (smooth, no jitter)
+        displayValue = next;
+
         // trigger the main spring wiggle
         valueSpring.set(next);
     }
@@ -204,7 +210,7 @@
         
             <div class="text-center mt-4">
                 <div class="text-3xl font-approachmono font-bold">
-                    {value.toFixed(2)}{unit ? ` ${unit}` : ""}
+                    {displayValue.toFixed(2)}{unit ? ` ${unit}` : ""}
                 </div>
                 {#if label}
                     <div class="text-sm text-text-muted font-approachmono">{label}</div>
