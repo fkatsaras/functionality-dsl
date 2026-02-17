@@ -1,5 +1,4 @@
-<img src="functionality_dsl/logo.night.png#gh-dark-mode-only" alt="fDSL" width="300"/>
-<img src="functionality_dsl/logo.png#gh-light-mode-only" alt="fDSL" width="300"/>
+<img src="functionality_dsl/logo.transparent.png" alt="fDSL" width="300"/>
 
 A declarative domain-specific language for building REST and WebSocket APIs. Generate production-ready FastAPI backends from high-level specifications.
 
