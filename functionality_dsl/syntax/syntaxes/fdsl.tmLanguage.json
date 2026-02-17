@@ -32,7 +32,17 @@
         },
         {
           "name": "meta.block.role.fdsl",
-          "match": "^\\s*(Role)\\s+([A-Za-z][A-Za-z0-9_]*)",
+          "match": "^\\s*(Role)\\s+([A-Za-z][A-Za-z0-9_]*)(?:\\s+(uses)\\s+([A-Za-z][A-Za-z0-9_]*))?",
+          "captures": {
+            "1": {"name": "storage.type.class.fdsl"},
+            "2": {"name": "entity.name.class.fdsl"},
+            "3": {"name": "keyword.control.uses.fdsl"},
+            "4": {"name": "entity.name.type.entity-ref.fdsl"}
+          }
+        },
+        {
+          "name": "meta.block.authdb.fdsl",
+          "match": "^\\s*(AuthDB)\\s+([A-Za-z][A-Za-z0-9_]*)",
           "captures": {
             "1": {"name": "storage.type.class.fdsl"},
             "2": {"name": "entity.name.class.fdsl"}
@@ -40,10 +50,12 @@
         },
         {
           "name": "meta.block.auth.fdsl",
-          "match": "^\\s*(Auth)\\s+([A-Za-z][A-Za-z0-9_]*)",
+          "match": "^\\s*(Auth)(<(http|apikey)>)?\\s+([A-Za-z][A-Za-z0-9_]*)",
           "captures": {
             "1": {"name": "storage.type.class.fdsl"},
-            "2": {"name": "entity.name.class.fdsl"}
+            "2": {"name": "meta.generic.fdsl"},
+            "3": {"name": "entity.name.type.kind.fdsl"},
+            "4": {"name": "entity.name.class.fdsl"}
           }
         },
         {
@@ -67,8 +79,29 @@
           ]
         },
         {
+          "name": "meta.property.authdb-column.fdsl",
+          "match": "^\\s*(id|password|role)\\s*(=)\\s*(\"[^\"]*\")",
+          "captures": {
+            "1": {"name": "entity.name.tag.property.fdsl"},
+            "2": {"name": "keyword.operator.assignment.fdsl"},
+            "3": {"name": "string.quoted.double.fdsl"}
+          }
+        },
+        {
+          "name": "meta.property.access-operation.fdsl",
+          "begin": "^\\s*(read|create|update|delete)\\s*(:)",
+          "beginCaptures": {
+            "1": {"name": "keyword.control.operation.fdsl"},
+            "2": {"name": "punctuation.separator.key-value.fdsl"}
+          },
+          "end": "$",
+          "patterns": [
+            {"include": "#property-values"}
+          ]
+        },
+        {
           "name": "meta.property.fdsl",
-          "begin": "^\\s*(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|subscribe|publish|auth|summary|parameters|query|headers|path|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media|filename|buttonText|showPreview|metrics|operations|secret|application/json|application/xml|application/pdf|application/octet-stream|text/html|text/plain|text/csv|image/png|image/jpeg)\\s*(:)",
+          "begin": "^\\s*(host|port|cors|loglevel|env|url|method|channel|path|type|entity|request|response|auth|summary|parameters|query|headers|token|username|password|key|value|attributes|fields|endpoint|columns|colNames|label|unit|min|max|submitLabel|pathKey|refreshMs|windowSize|height|values|seriesLabels|xLabel|yLabel|placeholder|initial|onLabel|offLabel|errors|events|condition|message|contentType|media|filename|buttonText|showPreview|metrics|operations|secret|params|scheme|in|name|connection|table)\\s*(:)",
           "beginCaptures": {
             "1": {"name": "entity.name.tag.property.fdsl"},
             "2": {"name": "punctuation.separator.key-value.fdsl"}
@@ -100,11 +133,11 @@
         },
         {
           "name": "constant.language.operation.fdsl",
-          "match": "\\b(read|create|update|delete)\\b"
+          "match": "\\b(read|create|update|delete|subscribe|publish)\\b"
         },
         {
           "name": "constant.language.auth-type.fdsl",
-          "match": "\\b(jwt|basic|api_key)\\b"
+          "match": "\\b(bearer|basic|jwt|api_key|header|query|cookie)\\b"
         },
         {
           "name": "constant.language.mime-type.fdsl",

@@ -1,4 +1,5 @@
 
+
 Auth<apikey> UserAuth
   in: header
   name: "X-API-Key"
@@ -81,34 +82,28 @@ end
 
 Entity StockDashboard(RawQuote, RawProfile)
   attributes:
-    // Company info
     - ticker: string = RawProfile.ticker;
     - companyName: string = RawProfile.name;
     - industry: string = RawProfile.finnhubIndustry;
     - exchange: string = RawProfile.exchange;
     - logoUrl: string = RawProfile.logo;
 
-    // Current price data
     - currentPrice: number = RawQuote.c;
     - priceChange: number = RawQuote.d;
     - percentChange: number = round(RawQuote.dp, 2);
 
-    // Price formatted as string with currency
     - priceFormatted: string = "$" + toString(round(RawQuote.c, 2));
     - changeFormatted: string = toString(round(RawQuote.d, 2)) + " (" + toString(round(RawQuote.dp, 2)) + "%)";
 
-    // Day range
     - dayHigh: number = RawQuote.h;
     - dayLow: number = RawQuote.l;
     - dayRange: string = "$" + toString(round(RawQuote.l, 2)) + " - $" + toString(round(RawQuote.h, 2));
 
-    // Market data
     - openPrice: number = RawQuote.o;
     - previousClose: number = RawQuote.pc;
     - marketCap: number = RawProfile.marketCapitalization;
     - marketCapFormatted: string = "$" + toString(round(RawProfile.marketCapitalization / 1000, 2)) + "B";
 
-    // Calculated metrics
     - priceVsOpen: number = round(RawQuote.c - RawQuote.o, 2);
     - dayVolatility: number = round((RawQuote.h - RawQuote.l) / RawQuote.l * 100, 2);
     - isPositive: boolean = RawQuote.d >= 0;
