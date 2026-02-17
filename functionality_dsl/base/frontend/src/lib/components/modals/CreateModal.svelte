@@ -1,16 +1,8 @@
 <script lang="ts">
     import XIcon from "$lib/primitives/icons/XIcon.svelte";
 
-    interface ColumnInfo {
-        name: string;
-        type?: {
-            baseType: string;
-        };
-    }
-
     const {
         fields = [],
-        columns = [],
         saving = false,
         actionError = null,
         isPermissionError = false,
@@ -19,7 +11,6 @@
         onCancel,
     } = $props<{
         fields?: string[];
-        columns?: ColumnInfo[];
         saving?: boolean;
         actionError?: string | null;
         isPermissionError?: boolean;
@@ -32,18 +23,6 @@
 
     function toCamelLabel(field: string): string {
         return field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    }
-
-    function getInputType(fieldName: string): string {
-        const col = columns.find(c => c.name === fieldName);
-        if (!col?.type) return "text";
-        switch (col.type.baseType) {
-            case "integer":
-            case "number":
-                return "number";
-            default:
-                return "text";
-        }
     }
 
     function handleSubmit() {
@@ -78,25 +57,14 @@
             {#each fields as field}
                 <div class="form-field">
                     <label for="create-{field}">{toCamelLabel(field)}</label>
-                    {#if getInputType(field) === "number"}
-                        <input
-                            id="create-{field}"
-                            type="number"
-                            value={formData[field] || ""}
-                            oninput={(e) => formData[field] = parseFloat(e.currentTarget.value) || 0}
-                            disabled={saving}
-                            class={fieldErrors[field] ? "input-error" : ""}
-                        />
-                    {:else}
-                        <input
-                            id="create-{field}"
-                            type="text"
-                            value={formData[field] || ""}
-                            oninput={(e) => formData[field] = e.currentTarget.value}
-                            disabled={saving}
-                            class={fieldErrors[field] ? "input-error" : ""}
-                        />
-                    {/if}
+                    <input
+                        id="create-{field}"
+                        type="text"
+                        value={formData[field] ?? ""}
+                        oninput={(e) => formData[field] = e.currentTarget.value}
+                        disabled={saving}
+                        class={fieldErrors[field] ? "input-error" : ""}
+                    />
                     {#if fieldErrors[field]}
                         <span class="field-error">{fieldErrors[field]}</span>
                     {/if}

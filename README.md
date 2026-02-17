@@ -1,15 +1,16 @@
-# Functionality DSL (FDSL)
+<img src="functionality_dsl/logo.night.png#gh-dark-mode-only" alt="fDSL" width="300"/>
+<img src="functionality_dsl/logo.png#gh-light-mode-only" alt="fDSL" width="300"/>
 
 A declarative domain-specific language for building REST and WebSocket APIs. Generate production-ready FastAPI backends from high-level specifications.
 
 ---
 
 
-## What is FDSL?
+## What is fDSL?
 
-Define your data sources, entities, and UI components in a simple syntax. FDSL generates routers, services, authentication, WebSocket handlers, and frontend components.
+Define your data sources, entities, and UI components in a simple syntax. fDSL generates routers, services, authentication, WebSocket handlers, and frontend components.
 
-```fdsl
+```fDSL
 Source<REST> ProductsAPI
   url: "http://api.example.com/products"
   operations: [read, create, update]
@@ -53,9 +54,9 @@ pip install -e .
 
 ## Quick Start
 
-Create `my-api.fdsl`:
+Create `my-api.fDSL`:
 
-```fdsl
+```fDSL
 Server MyAPI
   host: "localhost"
   port: 8080
@@ -80,7 +81,7 @@ end
 Generate and run:
 
 ```bash
-fdsl generate my-api.fdsl --out generated
+fDSL generate my-api.fDSL --out generated
 cd generated
 pip install -r requirements.txt
 uvicorn main:app --reload
@@ -93,10 +94,10 @@ Visit http://localhost:8080/docs
 ## CLI Commands
 
 ```bash
-fdsl validate <file>                    # Validate syntax
-fdsl generate <file> --out <dir>        # Generate code
-fdsl from-openapi <file> --out <file>   # OpenAPI to FDSL
-fdsl from-asyncapi <file> --out <file>  # AsyncAPI to FDSL
+fDSL validate <file>                    # Validate syntax
+fDSL generate <file> --out <dir>        # Generate code
+fDSL from-openapi <file> --out <file>   # OpenAPI to fDSL
+fDSL from-asyncapi <file> --out <file>  # AsyncAPI to fDSL
 ```
 
 ---

@@ -48,6 +48,7 @@
     // CRUD state
     let editingRow = $state<number | null>(null);
     let editData = $state<Record<string, any>>({});
+    let editFieldErrors = $state<Record<string, string>>({});
     let showCreateForm = $state(false);
     let createFieldErrors = $state<Record<string, string>>({});
     let deleteConfirmRow = $state<number | null>(null);
@@ -107,24 +108,32 @@
         editingRow = rowIndex;
         editData = { ...data[rowIndex] };
         actionError = null;
+        editFieldErrors = {};
     }
 
     function cancelEdit() {
         editingRow = null;
         editData = {};
         actionError = null;
+        editFieldErrors = {};
     }
 
     async function saveEdit() {
         if (editingRow === null || !url) return;
         saving = true;
         actionError = null;
+        editFieldErrors = {};
         isPermissionError = false;
         try {
-            const result = await saveRow(url, authConfig, editData, itemMode, arrayField, entityData, data, editingRow);
+            const result = await saveRow(url, authConfig, editData, itemMode, arrayField, entityData, data, editingRow, editableFields);
+            isPermissionError = result.isPermissionError;
+            editFieldErrors = result.fieldErrors;
             if (result.error) {
-                isPermissionError = result.isPermissionError;
                 throw new Error(result.error);
+            }
+            if (Object.keys(result.fieldErrors).length > 0) {
+                // Don't clear the edit mode - let user see and fix the errors
+                return;
             }
             await load();
             editingRow = null;
@@ -134,7 +143,7 @@
             if (isPermissionError) {
                 toastStore.warning("Access Denied", actionError ?? "You don't have permission to update items");
                 cancelEdit();
-            } else {
+            } else if (Object.keys(editFieldErrors).length === 0) {
                 toastStore.error("Update Failed", actionError);
             }
         } finally {
@@ -294,33 +303,38 @@
                                         {@const fieldName = column.name}
                                         {@const isReadonly = isFieldReadonly(fieldName)}
                                         <td class="px-3 py-2 border-b border-[color:var(--edge)]">
-                                            {#if isReadonly}
-                                                <span class="text-text/50">{formatValue(row[fieldName], column)}</span>
-                                            {:else if getColInputType(fieldName) === "checkbox"}
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editData[fieldName] || false}
-                                                    onchange={(e) => editData[fieldName] = e.currentTarget.checked}
-                                                    disabled={saving}
-                                                    class="edit-checkbox"
-                                                />
-                                            {:else if getColInputType(fieldName) === "number"}
-                                                <input
-                                                    type="number"
-                                                    value={editData[fieldName] ?? ""}
-                                                    oninput={(e) => editData[fieldName] = parseFloat(e.currentTarget.value) || 0}
-                                                    disabled={saving}
-                                                    class="edit-input"
-                                                />
-                                            {:else}
-                                                <input
-                                                    type="text"
-                                                    value={editData[fieldName] ?? ""}
-                                                    oninput={(e) => editData[fieldName] = e.currentTarget.value}
-                                                    disabled={saving}
-                                                    class="edit-input"
-                                                />
-                                            {/if}
+                                            <div class="edit-cell">
+                                                {#if isReadonly}
+                                                    <span class="text-text/50">{formatValue(row[fieldName], column)}</span>
+                                                {:else if getColInputType(fieldName) === "checkbox"}
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editData[fieldName] || false}
+                                                        onchange={(e) => editData[fieldName] = e.currentTarget.checked}
+                                                        disabled={saving}
+                                                        class="edit-checkbox"
+                                                    />
+                                                {:else if getColInputType(fieldName) === "number"}
+                                                    <input
+                                                        type="number"
+                                                        value={editData[fieldName] ?? ""}
+                                                        oninput={(e) => editData[fieldName] = parseFloat(e.currentTarget.value) || 0}
+                                                        disabled={saving}
+                                                        class={editFieldErrors[fieldName] ? "edit-input input-error" : "edit-input"}
+                                                    />
+                                                {:else}
+                                                    <input
+                                                        type="text"
+                                                        value={editData[fieldName] ?? ""}
+                                                        oninput={(e) => editData[fieldName] = e.currentTarget.value}
+                                                        disabled={saving}
+                                                        class={editFieldErrors[fieldName] ? "edit-input input-error" : "edit-input"}
+                                                    />
+                                                {/if}
+                                                {#if editFieldErrors[fieldName]}
+                                                    <span class="field-error-inline">{editFieldErrors[fieldName]}</span>
+                                                {/if}
+                                            </div>
                                         </td>
                                     {/each}
                                     <td class="px-3 py-2 border-b border-[color:var(--edge)] text-center">
@@ -403,7 +417,6 @@
 {#if showCreateForm}
     <CreateModal
         fields={editableFields}
-        columns={columns}
         saving={saving}
         actionError={actionError}
         isPermissionError={isPermissionError}
@@ -516,6 +529,13 @@
         color: white;
     }
 
+    /* Edit cell container */
+    .edit-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
     /* Edit input in table */
     .edit-input {
         width: 100%;
@@ -532,6 +552,21 @@
         outline: none;
         border-color: var(--accent);
         box-shadow: 0 0 0 2px var(--accent-subtle);
+    }
+
+    .edit-input.input-error {
+        border-color: var(--red-text);
+    }
+
+    .edit-input.input-error:focus {
+        border-color: var(--red-text);
+        box-shadow: 0 0 0 2px var(--red-subtle);
+    }
+
+    .field-error-inline {
+        font-size: 0.7rem;
+        color: var(--red-text);
+        font-family: "Approach Mono", ui-monospace, monospace;
     }
 
     .edit-checkbox {

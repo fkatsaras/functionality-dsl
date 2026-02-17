@@ -16,10 +16,10 @@ export interface LoadResult {
 export interface MutateResult {
     isPermissionError: boolean;
     error: string | null;
+    fieldErrors: Record<string, string>;
 }
 
 export interface CreateResult extends MutateResult {
-    fieldErrors: Record<string, string>;
     success: boolean;
 }
 
@@ -120,6 +120,7 @@ export async function saveRow(
     entityData: Record<string, any> | null,
     allData: any[],
     rowIndex: number,
+    editableFields: string[],
 ): Promise<MutateResult> {
     const { headers, fetchOptions } = buildAuthHeaders(auth);
     headers['Content-Type'] = 'application/json';
@@ -137,14 +138,43 @@ export async function saveRow(
 
     if (!response.ok) {
         const errBody = await response.json().catch(() => ({ detail: response.statusText }));
-        const errorDetail = parseErrorDetail(errBody.detail);
+
         if (response.status === 403) {
-            return { isPermissionError: true, error: errorDetail || "You don't have permission to update items" };
+            return {
+                isPermissionError: true,
+                error: parseErrorDetail(errBody.detail) || "You don't have permission to update items",
+                fieldErrors: {}
+            };
         }
-        return { isPermissionError: false, error: errorDetail || `HTTP ${response.status}` };
+
+        if (Array.isArray(errBody.detail)) {
+            const fieldErrs: Record<string, string> = {};
+            const formErrs: string[] = [];
+            for (const err of errBody.detail) {
+                const fieldKey = err.loc
+                    ? [...err.loc].reverse().find((s: any) => typeof s === 'string' && s !== 'body')
+                    : null;
+                if (fieldKey && editableFields.includes(fieldKey)) {
+                    fieldErrs[fieldKey] = err.msg ?? 'Invalid value';
+                } else {
+                    formErrs.push(err.msg ?? JSON.stringify(err));
+                }
+            }
+            return {
+                isPermissionError: false,
+                error: formErrs.length > 0 ? formErrs.join(', ') : null,
+                fieldErrors: fieldErrs,
+            };
+        }
+
+        return {
+            isPermissionError: false,
+            error: parseErrorDetail(errBody.detail) || `HTTP ${response.status}`,
+            fieldErrors: {}
+        };
     }
 
-    return { isPermissionError: false, error: null };
+    return { isPermissionError: false, error: null, fieldErrors: {} };
 }
 
 export async function createRow(
@@ -247,10 +277,10 @@ export async function deleteRow(
         const errBody = await response.json().catch(() => ({ detail: response.statusText }));
         const errorDetail = parseErrorDetail(errBody.detail);
         if (response.status === 403) {
-            return { isPermissionError: true, error: errorDetail || "You don't have permission to delete items" };
+            return { isPermissionError: true, error: errorDetail || "You don't have permission to delete items", fieldErrors: {} };
         }
-        return { isPermissionError: false, error: errorDetail || `HTTP ${response.status}` };
+        return { isPermissionError: false, error: errorDetail || `HTTP ${response.status}`, fieldErrors: {} };
     }
 
-    return { isPermissionError: false, error: null };
+    return { isPermissionError: false, error: null, fieldErrors: {} };
 }
