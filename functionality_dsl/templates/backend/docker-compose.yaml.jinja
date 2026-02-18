@@ -26,9 +26,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U {{ db_user }} -d {{ db_name }}"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - fdsl_net
 
@@ -47,6 +48,33 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    networks:
+      - fdsl_net
+
+{% endif %}
+{% if uses_default_db %}
+  # ===================== Backend Prestart (DB Init) =====================
+  prestart:
+    {% if server.env == 'dev' %}
+    image: python:3.11-slim
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://{{ db_user }}:{{ db_password }}@db:5432/{{ db_name }}
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "pip install --no-cache-dir .[dev] &&
+             python scripts/prestart.py"
+    {% else %}
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://{{ db_user }}:{{ db_password }}@db:5432/{{ db_name }}
+    command: python scripts/prestart.py
+    {% endif %}
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - fdsl_net
 
@@ -73,10 +101,18 @@ services:
       - "{{ server.port }}:{{ server.port }}"
     restart: unless-stopped
     tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:{{ server.port }}/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 {% if uses_default_db %}
     depends_on:
       db:
         condition: service_healthy
+      prestart:
+        condition: service_completed_successfully
 {% endif %}
     networks:
       - fdsl_net
@@ -89,10 +125,18 @@ services:
       - .env
     restart: unless-stopped
     tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:{{ server.port }}/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 {% if uses_default_db %}
     depends_on:
       db:
         condition: service_healthy
+      prestart:
+        condition: service_completed_successfully
 {% endif %}
     networks:
       - fdsl_net

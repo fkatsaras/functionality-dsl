@@ -184,6 +184,240 @@ def _extract_auth_configs(model):
     return auth_configs
 
 
+def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, exposure_map: dict, db_context: dict = None):
+    """
+    Generate test infrastructure including:
+    - tests/conftest.py (fixtures for auth, db, client)
+    - tests/api/test_{entity}.py for each entity
+    - CI/CD workflows (.github/workflows/)
+    - Pre-commit configuration
+    - Scripts (prestart.py, test.sh)
+
+    Args:
+        model: The parsed FDSL model
+        templates_dir: Path to templates directory
+        out_dir: Output directory
+        exposure_map: Entity exposure configuration
+        db_context: Database context (optional)
+    """
+    logger.info("[TEST] Generating test infrastructure...")
+
+    # Setup Jinja environment
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(disabled_extensions=("jinja",)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+    # Extract auth configuration for test fixtures
+    auth_configs = _extract_auth_configs(model)
+    has_auth = len(auth_configs) > 0
+    has_bearer_auth = any(c.get("scheme") == "bearer" for c in auth_configs.values() if c.get("auth_type") == "http")
+    has_basic_auth = any(c.get("scheme") == "basic" for c in auth_configs.values() if c.get("auth_type") == "http")
+    has_apikey_auth = any(c.get("auth_type") == "apikey" for c in auth_configs.values())
+
+    # Find admin role (first role in first auth config)
+    admin_role = None
+    default_role = None
+    apikey_header = "X-API-Key"
+
+    if auth_configs:
+        first_auth = next(iter(auth_configs.values()))
+        roles = first_auth.get("roles", [])
+        if roles:
+            admin_role = roles[0]
+            default_role = roles[0]
+
+        # Get API key header name
+        for auth_config in auth_configs.values():
+            if auth_config.get("auth_type") == "apikey":
+                apikey_header = auth_config.get("name", "X-API-Key")
+                break
+
+    # Get FDSL file name
+    fdsl_file = getattr(model, "_tx_filename", "unknown.fdsl")
+
+    test_context = {
+        "fdsl_file": fdsl_file,
+        "has_auth": has_auth,
+        "has_bearer_auth": has_bearer_auth,
+        "has_basic_auth": has_basic_auth,
+        "has_apikey_auth": has_apikey_auth,
+        "admin_role": admin_role,
+        "default_role": default_role,
+        "apikey_header": apikey_header,
+        "uses_default_db": db_context.get("uses_default_db", False) if db_context else False,
+        "db_user": db_context.get("db_user", "fdsl_user") if db_context else "fdsl_user",
+        "db_password": db_context.get("db_password", "fdsl_pass") if db_context else "fdsl_pass",
+        "db_name": db_context.get("db_name", "fdsl_db") if db_context else "fdsl_db",
+        "db_port": db_context.get("db_port", 5432) if db_context else 5432,
+    }
+
+    # 1. Generate tests/conftest.py
+    tests_dir = out_dir / "tests"
+    tests_api_dir = tests_dir / "api"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    tests_api_dir.mkdir(parents=True, exist_ok=True)
+
+    conftest_template = env.get_template("tests/conftest.py.jinja")
+    conftest_content = conftest_template.render(**test_context)
+    (tests_dir / "conftest.py").write_text(conftest_content, encoding="utf-8")
+    logger.debug("[TEST] Generated tests/conftest.py")
+
+    # Create __init__.py files
+    (tests_dir / "__init__.py").write_text('"""Tests for the generated FDSL application."""', encoding="utf-8")
+    (tests_api_dir / "__init__.py").write_text('"""API route tests."""', encoding="utf-8")
+
+    # 2. Generate test_{entity}.py for each entity
+    entity_test_template = env.get_template("tests/api/test_entity.py.jinja")
+
+    for entity_name, config in exposure_map.items():
+        # Get entity from model
+        entity = None
+        entities = get_children_of_type("Entity", model)
+        for e in entities:
+            if e.name == entity_name:
+                entity = e
+                break
+
+        if not entity:
+            continue
+
+        # Determine operations
+        operations = []
+        if config.get("rest_path"):
+            # REST entity - has CRUD operations
+            source = entity.source if hasattr(entity, "source") and entity.source else None
+            if source and hasattr(source, "operations") and source.operations:
+                # Handle SourceOperationsList - operations attribute contains the list
+                ops_list = getattr(source.operations, "operations", None)
+                if ops_list:
+                    # Operations can be strings or objects with .name
+                    operations = [op if isinstance(op, str) else (op.name if hasattr(op, "name") else str(op)) for op in ops_list]
+                else:
+                    logger.debug(f"  Could not extract operations from {type(source.operations)}")
+
+        # Parse access control
+        access_config = {
+            "read": "public",
+            "create": "public",
+            "update": "public",
+            "delete": "public",
+            "read_roles": [],
+            "create_roles": [],
+            "update_roles": [],
+            "delete_roles": [],
+        }
+
+        if hasattr(entity, "access") and entity.access:
+            access = entity.access
+            if isinstance(access, str):
+                # Simple access: public or AuthName
+                for op in ["read", "create", "update", "delete"]:
+                    access_config[op] = access
+            elif isinstance(access, list):
+                # List of roles
+                for op in ["read", "create", "update", "delete"]:
+                    access_config[f"{op}_roles"] = [r.name if hasattr(r, "name") else str(r) for r in access]
+            elif hasattr(access, "operations"):
+                # Per-operation access
+                for op_access in access.operations:
+                    op_name = op_access.operation
+                    if isinstance(op_access.access, list):
+                        access_config[f"{op_name}_roles"] = [r.name if hasattr(r, "name") else str(r) for r in op_access.access]
+                    else:
+                        access_config[op_name] = op_access.access
+
+        # Get attributes with test values
+        attributes = []
+        if hasattr(entity, "attributes") and entity.attributes:
+            for attr in entity.attributes:
+                # Generate test value based on type
+                attr_type = attr.type.name if hasattr(attr.type, "name") else str(attr.type)
+                test_value = _generate_test_value(attr_type)
+
+                attributes.append({
+                    "name": attr.name,
+                    "type": attr_type,
+                    "readonly": hasattr(attr, "modifiers") and "readonly" in [m.name for m in (attr.modifiers or [])],
+                    "optional": hasattr(attr, "modifiers") and "optional" in [m.name for m in (attr.modifiers or [])],
+                    "is_computed": hasattr(attr, "computed_expr") and attr.computed_expr is not None,
+                    "test_value": test_value,
+                })
+
+        entity_context = {
+            **test_context,
+            "entity": {
+                "name": entity_name,
+                "operations": operations,
+                "type": getattr(entity, "type", None),
+                "access": access_config,
+                "attributes": attributes,
+            },
+        }
+
+        test_content = entity_test_template.render(**entity_context)
+        test_file = tests_api_dir / f"test_{entity_name.lower()}.py"
+        test_file.write_text(test_content, encoding="utf-8")
+        logger.debug(f"[TEST] Generated tests/api/test_{entity_name.lower()}.py")
+
+    # 3. Generate CI/CD workflows
+    github_dir = out_dir / ".github" / "workflows"
+    github_dir.mkdir(parents=True, exist_ok=True)
+
+    # Test workflow
+    test_workflow_template = env.get_template(".github/workflows/test.yml.jinja")
+    test_workflow_content = test_workflow_template.render(**test_context)
+    (github_dir / "test.yml").write_text(test_workflow_content, encoding="utf-8")
+    logger.debug("[TEST] Generated .github/workflows/test.yml")
+
+    # Lint workflow
+    lint_workflow_template = env.get_template(".github/workflows/lint.yml.jinja")
+    lint_workflow_content = lint_workflow_template.render(**test_context)
+    (github_dir / "lint.yml").write_text(lint_workflow_content, encoding="utf-8")
+    logger.debug("[TEST] Generated .github/workflows/lint.yml")
+
+    # 4. Generate pre-commit configuration
+    precommit_template = env.get_template(".pre-commit-config.yaml.jinja")
+    precommit_content = precommit_template.render(**test_context)
+    (out_dir / ".pre-commit-config.yaml").write_text(precommit_content, encoding="utf-8")
+    logger.debug("[TEST] Generated .pre-commit-config.yaml")
+
+    # 5. Generate scripts
+    scripts_dir = out_dir / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy test.sh (static file)
+    test_sh_src = templates_dir / "scripts" / "test.sh"
+    if test_sh_src.exists():
+        shutil.copy2(test_sh_src, scripts_dir / "test.sh")
+        (scripts_dir / "test.sh").chmod(0o755)  # Make executable
+        logger.debug("[TEST] Generated scripts/test.sh")
+
+    # Generate prestart.py (if using database)
+    if test_context["uses_default_db"]:
+        prestart_template = env.get_template("scripts/prestart.py.jinja")
+        prestart_content = prestart_template.render(**test_context)
+        (scripts_dir / "prestart.py").write_text(prestart_content, encoding="utf-8")
+        logger.debug("[TEST] Generated scripts/prestart.py")
+
+    logger.info("[TEST] Test infrastructure generation complete!")
+
+
+def _generate_test_value(attr_type: str):
+    """Generate appropriate test value based on attribute type."""
+    test_values = {
+        "string": '"test_value"',
+        "integer": '42',
+        "number": '3.14',
+        "boolean": 'True',
+        "array": '[]',
+        "object": '{}',
+    }
+    return test_values.get(attr_type.lower(), '"test"')
+
+
 def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, db_context: dict = None, target: str = "all") -> Path:
     """
     Scaffold the complete backend structure from the model.

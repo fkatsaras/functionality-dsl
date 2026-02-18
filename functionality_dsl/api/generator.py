@@ -179,6 +179,22 @@ def render_domain_files(model, templates_dir: Path, out_dir: Path):
             generate_postman_collection(openapi_file, out_dir)
         else:
             logger.debug("  Skipping Postman collection (no OpenAPI spec found)")
+
+        # ======================================================================
+        # [3.8] GENERATE TEST INFRASTRUCTURE
+        # ======================================================================
+        logger.info("  [3.8] Generating test infrastructure...")
+        from .generators.core.infrastructure import generate_test_infrastructure
+
+        # Get database context if available
+        db_context = None
+        try:
+            from .generators.core.database_generator import _extract_db_config
+            db_context = _extract_db_config(model)
+        except Exception as e:
+            logger.debug(f"  Could not extract db context: {e}")
+
+        generate_test_infrastructure(model, templates_dir, out_dir, exposure_map, db_context)
     else:
         logger.info("  No exposed entities found")
 
