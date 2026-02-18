@@ -72,6 +72,7 @@ services:
       - DATABASE_URL=postgresql://{{ db_user }}:{{ db_password }}@db:5432/{{ db_name }}
     command: python scripts/prestart.py
     {% endif %}
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy

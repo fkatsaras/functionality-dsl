@@ -17,6 +17,9 @@ with open('pyproject.toml','rb') as f:
 PY
 
 COPY app ./app
+{% if has_auth or uses_default_db %}
+COPY scripts ./scripts
+{% endif %}
 
 EXPOSE {{ server.port }}
 

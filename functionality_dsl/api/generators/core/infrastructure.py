@@ -221,6 +221,7 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
     admin_role = None
     default_role = None
     apikey_header = "X-API-Key"
+    apikey_location = "header"  # header, query, or cookie
 
     if auth_configs:
         first_auth = next(iter(auth_configs.values()))
@@ -229,10 +230,11 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
             admin_role = roles[0]
             default_role = roles[0]
 
-        # Get API key header name
+        # Get API key header name and location
         for auth_config in auth_configs.values():
             if auth_config.get("auth_type") == "apikey":
                 apikey_header = auth_config.get("name", "X-API-Key")
+                apikey_location = auth_config.get("location", "header")
                 break
 
     # Get FDSL file name
@@ -247,6 +249,7 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
         "admin_role": admin_role,
         "default_role": default_role,
         "apikey_header": apikey_header,
+        "apikey_location": apikey_location,
         "uses_default_db": db_context.get("uses_default_db", False) if db_context else False,
         "db_user": db_context.get("db_user", "fdsl_user") if db_context else "fdsl_user",
         "db_password": db_context.get("db_password", "fdsl_pass") if db_context else "fdsl_pass",
@@ -286,8 +289,10 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
 
         # Determine operations
         operations = []
+        is_composite = False  # Entities without sources (derived/computed entities)
+
         if config.get("rest_path"):
-            # REST entity - has CRUD operations
+            # REST entity - check if it has a source
             source = entity.source if hasattr(entity, "source") and entity.source else None
             if source and hasattr(source, "operations") and source.operations:
                 # Handle SourceOperationsList - operations attribute contains the list
@@ -297,6 +302,10 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
                     operations = [op if isinstance(op, str) else (op.name if hasattr(op, "name") else str(op)) for op in ops_list]
                 else:
                     logger.debug(f"  Could not extract operations from {type(source.operations)}")
+            else:
+                # No source = composite/derived entity (only has read operation)
+                is_composite = True
+                operations = ['read']
 
         # Parse access control
         access_config = {
@@ -395,8 +404,9 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
         (scripts_dir / "test.sh").chmod(0o755)  # Make executable
         logger.debug("[TEST] Generated scripts/test.sh")
 
-    # Generate prestart.py (if using database)
-    if test_context["uses_default_db"]:
+    # Generate prestart.py (if using database OR has auth)
+    # Auth systems need DB initialization even if not using BYODB
+    if test_context["uses_default_db"] or test_context["has_auth"]:
         prestart_template = env.get_template("scripts/prestart.py.jinja")
         prestart_content = prestart_template.render(**test_context)
         (scripts_dir / "prestart.py").write_text(prestart_content, encoding="utf-8")
@@ -407,15 +417,49 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
 
 def _generate_test_value(attr_type: str):
     """Generate appropriate test value based on attribute type."""
-    test_values = {
+    # Handle complex types
+    attr_type_lower = attr_type.lower()
+
+    # Array types
+    if 'array' in attr_type_lower:
+        if '<' in attr_type:
+            # array<LineItem> -> realistic nested data
+            inner_type = attr_type.split('<')[1].split('>')[0]
+            if inner_type == 'LineItem':
+                return '[{"product_id": 1, "name": "Test Product", "price": 19.99, "quantity": 2}]'
+            elif inner_type in ['Product', 'ProductImage', 'ShippingOption', 'Order']:
+                return '[]'  # Empty array for complex types in tests
+            else:
+                return '[1, 2, 3]'  # Default array
+        return '[]'
+
+    # Object types
+    if 'object' in attr_type_lower:
+        if '<' in attr_type:
+            inner_type = attr_type.split('<')[1].split('>')[0]
+            if inner_type == 'Category':
+                return '{"id": 1, "name": "Electronics", "slug": "electronics"}'
+            elif inner_type == 'Address':
+                return '{"street": "123 Main St", "city": "Boston", "zip": "02101", "country": "USA"}'
+            else:
+                return '{}'
+        return '{}'
+
+    # Datetime/URI types
+    if 'datetime' in attr_type_lower:
+        return '"2024-01-15T10:30:00Z"'
+    if 'uri' in attr_type_lower:
+        return '"https://example.com/image.jpg"'
+
+    # Basic types
+    basic_types = {
         "string": '"test_value"',
         "integer": '42',
-        "number": '3.14',
+        "number": '19.99',
         "boolean": 'True',
-        "array": '[]',
-        "object": '{}',
     }
-    return test_values.get(attr_type.lower(), '"test"')
+
+    return basic_types.get(attr_type_lower, '"test"')
 
 
 def scaffold_backend_from_model(model, base_backend_dir: Path, templates_backend_dir: Path, out_dir: Path, jwt_secret_value: str = None, db_context: dict = None, target: str = "all") -> Path:

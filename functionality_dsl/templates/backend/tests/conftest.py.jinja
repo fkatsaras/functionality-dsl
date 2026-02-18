@@ -81,7 +81,7 @@ def test_user_token(client: TestClient, db: Session) -> str:
 
 
 @pytest.fixture(scope="module")
-def test_user_headers(test_user_token: str) -> dict[str, str]:
+def test_user_headers(test_user_token: str, db: Session) -> dict[str, str]:
     """Return headers with authentication token."""
     {% if has_bearer_auth %}
     return {"Authorization": f"Bearer {test_user_token}"}
@@ -90,8 +90,41 @@ def test_user_headers(test_user_token: str) -> dict[str, str]:
     credentials = base64.b64encode(b"test@example.com:" + test_user_token.encode()).decode()
     return {"Authorization": f"Basic {credentials}"}
     {% elif has_apikey_auth %}
-    # For API key, we need to get/create the key from the database
-    return {"{{ apikey_header }}": test_user_token}
+    # For cookie-based API key, create a session
+    from app.domain.models import User, APIKey
+    from sqlmodel import select
+    import secrets
+
+    # Get test user
+    statement = select(User).where(User.email == "test@example.com")
+    user = db.exec(statement).first()
+
+    if not user:
+        return {}
+
+    # Create or get API key for user
+    statement = select(APIKey).where(APIKey.user_id == user.id)
+    existing_key = db.exec(statement).first()
+
+    if existing_key:
+        key_value = existing_key.key
+    else:
+        key_value = secrets.token_urlsafe(32)
+        api_key = APIKey(user_id=user.id, key=key_value)
+        db.add(api_key)
+        db.commit()
+
+    # Return as header or cookie depending on location
+    {% if apikey_location == 'cookie' %}
+    # For cookies, use TestClient.cookies instead of headers
+    return {"Cookie": f"{{ apikey_header }}={key_value}"}
+    {% elif apikey_location == 'query' %}
+    # For query params, append to URL instead
+    return {}  # Query params handled in URL
+    {% else %}
+    # Header-based API key
+    return {"{{ apikey_header }}": key_value}
+    {% endif %}
     {% endif %}
 
 
@@ -133,7 +166,7 @@ def admin_user_token(client: TestClient, db: Session) -> str:
 
 
 @pytest.fixture(scope="module")
-def admin_user_headers(admin_user_token: str) -> dict[str, str]:
+def admin_user_headers(admin_user_token: str, db: Session) -> dict[str, str]:
     """Return headers with admin authentication token."""
     {% if has_bearer_auth %}
     return {"Authorization": f"Bearer {admin_user_token}"}
@@ -142,7 +175,37 @@ def admin_user_headers(admin_user_token: str) -> dict[str, str]:
     credentials = base64.b64encode(b"admin@example.com:" + admin_user_token.encode()).decode()
     return {"Authorization": f"Basic {credentials}"}
     {% elif has_apikey_auth %}
-    return {"{{ apikey_header }}": admin_user_token}
+    # For cookie-based API key, create a session
+    from app.domain.models import User, APIKey
+    from sqlmodel import select
+    import secrets
+
+    # Get admin user
+    statement = select(User).where(User.email == "admin@example.com")
+    user = db.exec(statement).first()
+
+    if not user:
+        return {}
+
+    # Create or get API key for admin
+    statement = select(APIKey).where(APIKey.user_id == user.id)
+    existing_key = db.exec(statement).first()
+
+    if existing_key:
+        key_value = existing_key.key
+    else:
+        key_value = secrets.token_urlsafe(32)
+        api_key = APIKey(user_id=user.id, key=key_value)
+        db.add(api_key)
+        db.commit()
+
+    {% if apikey_location == 'cookie' %}
+    return {"Cookie": f"{{ apikey_header }}={key_value}"}
+    {% elif apikey_location == 'query' %}
+    return {}  # Query params handled in URL
+    {% else %}
+    return {"{{ apikey_header }}": key_value}
+    {% endif %}
     {% endif %}
 {% endif %}
 {% endif %}
