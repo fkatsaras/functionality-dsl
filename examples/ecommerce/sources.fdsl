@@ -32,7 +32,7 @@ Role partner uses IntegrationAuth
 // Sources
 
 Source<REST> ProductsAPI
-  url: "http://dummy-ecomm-service:9001/products"
+  url: "http://ecomm-service:9001/products"
   params: [category, search]
   operations: [read, create, update, delete]
 end
