@@ -19,7 +19,21 @@ def test_read_{{ entity.name | lower }}(
     {%- endif %}
 ) -> None:
     """Test reading {{ entity.name }}."""
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    {% endif %}
+    {% if entity.source_has_auth %}
+    # Note: This endpoint calls an external API with source auth
+    # Tests may fail if the external service is unavailable or auth is misconfigured
+    {% endif %}
     response = client.get("/api/{{ entity.name | lower }}"
+        {%- if entity.required_params -%}
+        , params=params
+        {%- endif %}
         {%- if entity.access.read != 'public' and entity.access.read_roles -%}
         , headers=test_user_headers
         {%- endif -%}
@@ -45,7 +59,16 @@ def test_read_{{ entity.name | lower }}(
 {% if entity.access.read_roles %}
 def test_read_{{ entity.name | lower }}_unauthorized(client: TestClient) -> None:
     """Test that reading {{ entity.name }} without auth fails."""
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    response = client.get("/api/{{ entity.name | lower }}", params=params)
+    {% else %}
     response = client.get("/api/{{ entity.name | lower }}")
+    {% endif %}
     assert response.status_code in [401, 403]
 {% endif %}
 {% endif %}
@@ -67,9 +90,19 @@ def test_create_{{ entity.name | lower }}(
         {% endif %}
         {% endfor %}
     }
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    {% endif %}
     response = client.post(
         "/api/{{ entity.name | lower }}",
         json=data
+        {%- if entity.required_params -%}
+        , params=params
+        {%- endif %}
         {%- if entity.access.create != 'public' and entity.access.create_roles -%}
         , headers={% if 'admin' in entity.access.create_roles %}admin_user_headers{% else %}test_user_headers{% endif %}
         {%- endif %}
@@ -99,7 +132,16 @@ def test_create_{{ entity.name | lower }}_unauthorized(client: TestClient) -> No
         {% endif %}
         {% endfor %}
     }
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    response = client.post("/api/{{ entity.name | lower }}", json=data, params=params)
+    {% else %}
     response = client.post("/api/{{ entity.name | lower }}", json=data)
+    {% endif %}
     assert response.status_code in [401, 403]
 {% endif %}
 {% endif %}
@@ -121,9 +163,19 @@ def test_update_{{ entity.name | lower }}(
         {% endif %}
         {% endfor %}
     }
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    {% endif %}
     response = client.put(
         "/api/{{ entity.name | lower }}",
         json=data
+        {%- if entity.required_params -%}
+        , params=params
+        {%- endif %}
         {%- if entity.access.update != 'public' and entity.access.update_roles -%}
         , headers={% if 'admin' in entity.access.update_roles %}admin_user_headers{% else %}test_user_headers{% endif %}
         {%- endif %}
@@ -153,7 +205,16 @@ def test_update_{{ entity.name | lower }}_unauthorized(client: TestClient) -> No
         {% endif %}
         {% endfor %}
     }
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    response = client.put("/api/{{ entity.name | lower }}", json=data, params=params)
+    {% else %}
     response = client.put("/api/{{ entity.name | lower }}", json=data)
+    {% endif %}
     assert response.status_code in [401, 403]
 {% endif %}
 {% endif %}
@@ -168,16 +229,27 @@ def test_delete_{{ entity.name | lower }}(
     {%- endif %}
 ) -> None:
     """Test deleting {{ entity.name }}."""
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    {% endif %}
     response = client.delete(
         "/api/{{ entity.name | lower }}"
+        {%- if entity.required_params -%}
+        , params=params
+        {%- endif %}
         {%- if entity.access.delete != 'public' and entity.access.delete_roles -%}
         , headers={% if 'admin' in entity.access.delete_roles %}admin_user_headers{% else %}test_user_headers{% endif %}
         {%- endif %}
     )
     {% if entity.access.delete == 'public' or entity.access.delete_roles %}
-    assert response.status_code == 200
-    result = response.json()
-    assert "message" in result or "detail" in result
+    assert response.status_code in [200, 204]
+    if response.status_code == 200:
+        result = response.json()
+        assert "message" in result or "detail" in result
     {% else %}
     # Should require authentication
     assert response.status_code in [401, 403]
@@ -187,7 +259,16 @@ def test_delete_{{ entity.name | lower }}(
 {% if entity.access.delete_roles %}
 def test_delete_{{ entity.name | lower }}_unauthorized(client: TestClient) -> None:
     """Test that deleting {{ entity.name }} without auth fails."""
+    {% if entity.required_params %}
+    params = {
+        {% for param in entity.required_params %}
+        "{{ param.name }}": {{ param.test_value }},
+        {% endfor %}
+    }
+    response = client.delete("/api/{{ entity.name | lower }}", params=params)
+    {% else %}
     response = client.delete("/api/{{ entity.name | lower }}")
+    {% endif %}
     assert response.status_code in [401, 403]
 {% endif %}
 {% endif %}

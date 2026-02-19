@@ -10,10 +10,23 @@ Server JSONPlaceholder
 end
 
 
+Source<REST> PostsAPI
+  url: "https://jsonplaceholder.typicode.com/posts"
+  params: [userId, title]
+  operations: [read]
+end
+
 Source<REST> PostAPI
   url: "https://jsonplaceholder.typicode.com/posts/{post_id}"
-  params: [post_id, title, userId]
-  operations: [update, read, delete, create]
+  params: [post_id]
+  operations: [read, update, delete, create]
+end
+
+Entity Posts
+  source: PostsAPI
+  attributes:
+    - items: array @readonly;
+  access: public
 end
 
 Entity Post

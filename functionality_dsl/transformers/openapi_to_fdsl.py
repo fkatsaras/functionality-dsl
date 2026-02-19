@@ -507,6 +507,7 @@ class PathGrouper:
         Determine entity name from path or x-fdsl extension.
 
         /posts/{id} -> Post
+        /posts -> Posts (if returns array)
         /users/{userId}/posts -> UserPost (or custom via x-fdsl)
         """
         # Check for x-fdsl override
@@ -526,13 +527,35 @@ class PathGrouper:
             name_parts.append(seg)
 
         if name_parts:
-            # Convert to PascalCase and singularize
             name = name_parts[-1]
-            # Simple singularization
-            if name.endswith("ies"):
-                name = name[:-3] + "y"
-            elif name.endswith("s") and not name.endswith("ss"):
-                name = name[:-1]
+
+            # Check if any operation returns an array - if so, keep plural
+            returns_array = False
+            for method in ["get", "post", "put", "delete"]:
+                if method in path_item:
+                    operation = path_item[method]
+                    responses = operation.get("responses", {})
+                    for code in ["200", "201"]:
+                        if code in responses:
+                            content = responses[code].get("content", {})
+                            json_content = content.get("application/json", {})
+                            if "schema" in json_content:
+                                schema = json_content["schema"]
+                                resolved = self.parser.resolve_schema(schema)
+                                if resolved.get("type") == "array":
+                                    returns_array = True
+                                    break
+                    if returns_array:
+                        break
+
+            # Only singularize if doesn't return array
+            if not returns_array:
+                # Simple singularization
+                if name.endswith("ies"):
+                    name = name[:-3] + "y"
+                elif name.endswith("s") and not name.endswith("ss"):
+                    name = name[:-1]
+
             return name.capitalize()
 
         return "Resource"
@@ -602,6 +625,7 @@ class PathGrouper:
         paths = self.parser.get_paths()
         sources: Dict[str, FDSLSource] = {}
         entity_schemas: Dict[str, Dict[str, Any]] = {}
+        collection_to_single_ops: Dict[str, List[str]] = {}  # Track ops to transfer from collection to single-item sources
 
         # Sort paths so parameterized paths come after collection paths
         # This ensures /pet/{petId} is processed after /pet, allowing us to
@@ -727,6 +751,30 @@ class PathGrouper:
             if not operations:
                 continue
 
+            # Check if this will be a collection entity (returns array) with readonly items
+            # If so, filter to only read operations and transfer write ops to single-item entity
+            is_collection_entity = False
+            non_read_operations = []
+            if response_schema:
+                resolved = self.parser.resolve_schema(response_schema)
+                if resolved.get("type") == "array":
+                    # Check if request schema is NOT an array (readonly array)
+                    is_writable_array = False
+                    if request_schema:
+                        req_resolved = self.parser.resolve_schema(request_schema)
+                        if req_resolved.get("type") == "array":
+                            is_writable_array = True
+
+                    # If array is readonly, it's a collection entity - only allow read
+                    if not is_writable_array:
+                        is_collection_entity = True
+                        non_read_operations = [op for op in operations if op != "read"]
+                        operations = [op for op in operations if op == "read"]
+
+                        # Store non-read ops for transfer to single-item source
+                        if non_read_operations:
+                            collection_to_single_ops[source_name] = non_read_operations
+
             # Combine path params + query params
             all_params = path_params + list(all_query_params)
 
@@ -804,6 +852,20 @@ class PathGrouper:
                         existing_info["response_schema"] = response_schema
                     if not existing_info.get("request_schema") and request_schema:
                         existing_info["request_schema"] = request_schema
+
+        # Post-process: Transfer write operations from collection sources to single-item sources
+        # Collection sources (e.g., PostsAPI) should only have 'read'
+        # Write operations (create/update/delete) should go to single-item sources (e.g., PostAPI)
+        for collection_source_name, ops_to_transfer in collection_to_single_ops.items():
+            # Find corresponding single-item source by removing 's' from name
+            if collection_source_name.endswith("sAPI") and len(collection_source_name) > 4:
+                singular_name = collection_source_name[:-4] + "API"  # "PostsAPI" -> "PostAPI"
+                if singular_name in sources:
+                    single_source = sources[singular_name]
+                    # Transfer non-read operations to single-item source
+                    for op in ops_to_transfer:
+                        if op not in single_source.operations:
+                            single_source.operations.append(op)
 
         return list(sources.values()), entity_schemas
 

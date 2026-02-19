@@ -355,6 +355,36 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
                     "test_value": test_value,
                 })
 
+        # Extract required parameters from source
+        required_params = []
+        source_has_auth = False
+        if hasattr(entity, "source") and entity.source:
+            source = entity.source
+            # Check for params
+            if hasattr(source, "params") and source.params:
+                # SourceParamsList has a 'params' attribute containing the actual list
+                params_list = getattr(source.params, "params", None)
+                if params_list:
+                    for param in params_list:
+                        param_name = param if isinstance(param, str) else (param.name if hasattr(param, "name") else str(param))
+
+                        # Find matching attribute in entity to get type
+                        test_val = '"test_value"'  # Default fallback
+                        if hasattr(entity, "attributes") and entity.attributes:
+                            for attr in entity.attributes:
+                                if attr.name == param_name:
+                                    attr_type = attr.type.name if hasattr(attr.type, "name") else str(attr.type)
+                                    test_val = _generate_test_value(attr_type)
+                                    break
+
+                        required_params.append({
+                            "name": param_name,
+                            "test_value": test_val,
+                        })
+            # Check for source auth (external auth)
+            if hasattr(source, "auth") and source.auth:
+                source_has_auth = True
+
         entity_context = {
             **test_context,
             "entity": {
@@ -363,6 +393,8 @@ def generate_test_infrastructure(model, templates_dir: Path, out_dir: Path, expo
                 "type": getattr(entity, "type", None),
                 "access": access_config,
                 "attributes": attributes,
+                "required_params": required_params,
+                "source_has_auth": source_has_auth,
             },
         }
 
