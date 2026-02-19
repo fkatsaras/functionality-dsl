@@ -29,7 +29,10 @@
 //   AuthDB ShopUserStore
 //     connection: "MY_DB_URL"
 //     table: "shop_users"
-//     columns: id="email" password="password_hash" role="user_role"
+//     columns:
+//       id: "email"
+//       password: "password_hash"
+//       role: "user_role"
 //   end
 
 AuthDB:
@@ -43,9 +46,9 @@ AuthDB:
 // Column mappings for external user database
 // Maps FDSL auth fields to actual column names in your database
 AuthDBColumns:
-    'id' '=' id=STRING                       // Login identifier column (email, username, etc.)
-    'password' '=' password=STRING           // Password hash column (bcrypt)
-    'role' '=' role=STRING                   // Role column (stores role name)
+    'id:' id=STRING                       // Login identifier column (email, username, etc.)
+    'password:' password=STRING           // Password hash column (bcrypt)
+    'role:' role=STRING                   // Role column (stores role name)
 ;
 
 // =============================================================================

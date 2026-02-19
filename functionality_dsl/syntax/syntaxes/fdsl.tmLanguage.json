@@ -80,10 +80,10 @@
         },
         {
           "name": "meta.property.authdb-column.fdsl",
-          "match": "^\\s*(id|password|role)\\s*(=)\\s*(\"[^\"]*\")",
+          "match": "^\\s*(id|password|role)\\s*(:)\\s*(\"[^\"]*\")",
           "captures": {
             "1": {"name": "entity.name.tag.property.fdsl"},
-            "2": {"name": "keyword.operator.assignment.fdsl"},
+            "2": {"name": "punctuation.separator.key-value.fdsl"},
             "3": {"name": "string.quoted.double.fdsl"}
           }
         },

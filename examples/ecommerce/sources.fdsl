@@ -4,9 +4,9 @@ AuthDB ShopUserStore
   connection: "MY_ECOMM_DB_URL"
   table: "shop_users"
   columns:
-    id="email"
-    password="password_hash"
-    role="user_role"
+    id: "email"
+    password: "password_hash"
+    role: "user_role"
 end
 
 Auth<apikey> UserAuth

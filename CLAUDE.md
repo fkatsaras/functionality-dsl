@@ -205,9 +205,9 @@ AuthDB UserStore
   connection: "MY_DATABASE_URL"  // Environment variable name
   table: "users"                 // Your existing users table
   columns:
-    id="user_email"              // Login identifier column
-    password="pwd_hash"          // Password hash column (bcrypt)
-    role="user_role"             // Role column
+    id: "user_email"             // Login identifier column
+    password: "pwd_hash"         // Password hash column (bcrypt)
+    role: "user_role"            // Role column
 end
 
 Auth<http> MyAuth

@@ -195,6 +195,23 @@ viz-metamodel: ## Generate metamodel visualization (TextX grammar diagram, Plant
 	@echo "$(GREEN)Metamodel visualization generated!$(NC)"
 	@echo "PlantUML file: docs/model_metamodel.pu"
 
+.PHONY: transform
+transform: ## Transform OpenAPI/AsyncAPI spec to FDSL (usage: make transform SPEC=path/to/spec.yaml)
+	@if [ -z "$(SPEC)" ]; then \
+		echo "$(RED)Error: SPEC not specified$(NC)"; \
+		echo "Usage: make transform SPEC=examples/m2m/openapi/jsonplaceholder.yaml"; \
+		echo "       make transform SPEC=api.yaml OUT=generated.fdsl"; \
+		echo "       make transform SPEC=api.yaml SERVER=MyAPI PORT=3000"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Transforming OpenAPI/AsyncAPI spec: $(SPEC)...$(NC)"
+	@if [ -n "$(OUT)" ]; then \
+		$(FDSL) transform $(SPEC) --out $(OUT) $(if $(SERVER),--server-name $(SERVER)) $(if $(HOST),--host $(HOST)) $(if $(PORT),--port $(PORT)); \
+	else \
+		$(FDSL) transform $(SPEC) $(if $(SERVER),--server-name $(SERVER)) $(if $(HOST),--host $(HOST)) $(if $(PORT),--port $(PORT)); \
+	fi
+	@echo "$(GREEN)Transformation complete!$(NC)"
+
 # ==============================================================================
 # Testing
 # ==============================================================================
