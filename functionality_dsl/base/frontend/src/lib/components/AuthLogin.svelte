@@ -452,7 +452,7 @@
                         id="loginId"
                         type="text"
                         bind:value={loginId}
-                        placeholder={credentialAuthType === "basic" ? "Enter your username" : "Enter your login ID"}
+                        placeholder={credentialAuthType === "basic" ? "Username" : "User ID"}
                         class="form-input"
                         disabled={loading}
                     />
@@ -465,7 +465,7 @@
                         id="password"
                         type="password"
                         bind:value={password}
-                        placeholder={credentialMode === "register" ? "Create a password (min 8 chars)" : "Enter your password"}
+                        placeholder={credentialMode === "register" ? "Enter your password" : "Password"}
                         class="form-input"
                         disabled={loading}
                     />
@@ -479,7 +479,7 @@
                             id="confirmPassword"
                             type="password"
                             bind:value={confirmPassword}
-                            placeholder="Confirm your password"
+                            placeholder="Confirm Password"
                             class="form-input"
                             disabled={loading}
                         />
