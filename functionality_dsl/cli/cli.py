@@ -203,6 +203,13 @@ def _visualize_metamodel(context, grammar_path, output_dir, engine):
             png_file = out_dir / f"{base_name}_plant.png"
 
             metamodel_export(mm, str(pu_file), renderer=PlantUmlRenderer())
+
+            # Add left-to-right direction for horizontal layout
+            pu_content = pu_file.read_text()
+            if "left to right direction" not in pu_content:
+                pu_content = pu_content.replace("@startuml", "@startuml\nleft to right direction")
+                pu_file.write_text(pu_content)
+
             console.print(f"[{date.today().strftime('%Y-%m-%d')}] Rendering metamodel with PlantUML...", style="blue")
 
             exit_status = os.system(f"plantuml -Tsvg -o . {pu_file}")
