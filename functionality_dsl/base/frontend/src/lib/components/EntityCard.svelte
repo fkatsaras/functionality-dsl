@@ -47,11 +47,17 @@
     const initialAuth = authStore.getState();
     let authToken = $state<string | null>(initialAuth.token);
     let authType = $state<string>(initialAuth.authType);
+    let apiKey = $state<string | null>(initialAuth.apiKey);
+    let apiKeyHeader = $state<string | null>(initialAuth.apiKeyHeader);
+    let apiKeyLocation = $state<'header' | 'query' | 'cookie' | null>(initialAuth.apiKeyLocation);
 
     // Subscribe to auth store for updates
     authStore.subscribe((state) => {
         authToken = state.token;
         authType = state.authType;
+        apiKey = state.apiKey;
+        apiKeyHeader = state.apiKeyHeader;
+        apiKeyLocation = state.apiKeyLocation;
     });
 
     // Determine mode based on props
@@ -109,6 +115,13 @@
 
         if (authType === 'jwt' && authToken) {
             headers['Authorization'] = `Bearer ${authToken}`;
+        } else if (authType === 'apikey' && apiKey && apiKeyHeader) {
+            if (apiKeyLocation === 'header') {
+                headers[apiKeyHeader] = apiKey;
+            } else if (apiKeyLocation === 'cookie') {
+                fetchOptions.credentials = 'include';
+            }
+            // query param location handled by appending to URL
         } else if (authType === 'session') {
             fetchOptions.credentials = 'include';
         }
@@ -378,7 +391,6 @@
     {#if needsWsParams}
         <!-- WebSocket params form -->
         <div class="params-form">
-            <p class="params-hint">Enter parameters to connect:</p>
             {#if error}
                 <div class="edit-error">{error}</div>
             {/if}

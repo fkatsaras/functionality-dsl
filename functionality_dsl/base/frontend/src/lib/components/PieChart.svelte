@@ -118,7 +118,6 @@
     {:else}
         <div class="state-container">
             <EmptyState />
-            <p class="text-sm text-[var(--text-muted)]">No data available</p>
         </div>
     {/if}
 </Card>

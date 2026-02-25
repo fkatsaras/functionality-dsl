@@ -70,6 +70,7 @@ Entity Cart
     - updated_at: string<datetime> @readonly;
   access:
     read: [customer, admin]
+    create: [customer]
     update: [customer]
     delete: [customer]
 end
@@ -141,7 +142,7 @@ Entity Checkout(Cart, ShippingRates)
   attributes:
     - subtotal: number = round(sum(map(Cart.items, i => i["price"] * i["quantity"])), 2);
     - tax: number = round(Checkout.subtotal * 0.08, 2);
-    - cheapest_ship: number = min(map(ShippingRates.options, o => o["price"]));
+    - cheapest_ship: number = 0 if Checkout.subtotal == 0 else min(map(ShippingRates.options, o => o["price"]));
     - total: number = round(Checkout.subtotal + Checkout.tax + Checkout.cheapest_ship, 2);
     - can_checkout: boolean = len(Cart.items) > 0;
   access: [customer, admin]

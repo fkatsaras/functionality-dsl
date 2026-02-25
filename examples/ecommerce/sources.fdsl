@@ -39,7 +39,7 @@ end
 
 Source<REST> CartAPI
   url: "http://dummy-ecomm-service:9001/cart"
-  operations: [read, update, delete]
+  operations: [read, create, update, delete]
 end
 
 Source<REST> OrdersAPI

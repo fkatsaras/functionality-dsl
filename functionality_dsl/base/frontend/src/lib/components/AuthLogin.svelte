@@ -1,9 +1,8 @@
 <script lang="ts">
     import { authStore, type APIKeyLocation } from "$lib/stores/authStore";
+    import { toastStore } from "$lib/stores/toastStore";
     import Card from "$lib/primitives/Card.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
-    import ErrorIcon from "$lib/primitives/icons/ErrorIcon.svelte";
-    import CheckIcon from "$lib/primitives/icons/CheckIcon.svelte";
 
     /**
      * Auth mechanism configuration
@@ -76,8 +75,6 @@
     let apiKey = $state("");
 
     // Status
-    let error = $state<string | null>(null);
-    let success = $state<string | null>(null);
     let loading = $state(false);
 
     const apiBase = props.apiBase || "";
@@ -151,29 +148,22 @@
 
     function switchTab(tab: AuthTab) {
         activeTab = tab;
-        error = null;
-        success = null;
     }
 
     function switchCredentialMode(mode: CredentialMode) {
         credentialMode = mode;
-        error = null;
-        success = null;
         password = "";
         confirmPassword = "";
     }
 
     async function handleCredentialLogin() {
-        error = null;
-        success = null;
-
         if (!loginId.trim()) {
-            error = credentialAuthType === "basic" ? "Username is required" : "Login ID is required";
+            toastStore.error("Validation Error", credentialAuthType === "basic" ? "Username is required" : "Login ID is required");
             return;
         }
 
         if (!password) {
-            error = "Password is required";
+            toastStore.error("Validation Error", "Password is required");
             return;
         }
 
@@ -251,39 +241,38 @@
                 }
             }
 
+            toastStore.success("Login Successful", "Welcome back!");
+
         } catch (e: any) {
-            error = e.message || "Failed to login";
+            toastStore.error("Login Failed", e.message || "Failed to login");
         } finally {
             loading = false;
         }
     }
 
     async function handleCredentialRegister() {
-        error = null;
-        success = null;
-
         if (!loginId.trim()) {
-            error = "Login ID is required";
+            toastStore.error("Validation Error", "Login ID is required");
             return;
         }
 
         if (!password) {
-            error = "Password is required";
+            toastStore.error("Validation Error", "Password is required");
             return;
         }
 
         if (password.length < 8) {
-            error = "Password must be at least 8 characters";
+            toastStore.error("Validation Error", "Password must be at least 8 characters");
             return;
         }
 
         if (password !== confirmPassword) {
-            error = "Passwords do not match";
+            toastStore.error("Validation Error", "Passwords do not match");
             return;
         }
 
         if (!selectedRole) {
-            error = "Please select a role";
+            toastStore.error("Validation Error", "Please select a role");
             return;
         }
 
@@ -306,24 +295,21 @@
                 throw new Error(parseErrorDetail(errorData.detail) || `HTTP ${response.status}`);
             }
 
-            success = "Registration successful! You can now log in.";
+            toastStore.success("Registration Successful", "You can now log in");
             password = "";
             confirmPassword = "";
             credentialMode = "login";
 
         } catch (e: any) {
-            error = e.message || "Failed to register";
+            toastStore.error("Registration Failed", e.message || "Failed to register");
         } finally {
             loading = false;
         }
     }
 
     async function handleAPIKeyLogin() {
-        error = null;
-        success = null;
-
         if (!apiKey.trim()) {
-            error = "API Key is required";
+            toastStore.error("Validation Error", "API Key is required");
             return;
         }
 
@@ -368,8 +354,9 @@
             const userRoles = userData.role ? [userData.role] : [];
 
             authStore.loginAPIKey(apiKey.trim(), apiKeyHeader, userId, userRoles, apiKeyLocation as APIKeyLocation);
+            toastStore.success("Authentication Successful", "API key validated");
         } catch (e: any) {
-            error = e.message || "Failed to validate API key";
+            toastStore.error("Authentication Failed", e.message || "Failed to validate API key");
         } finally {
             loading = false;
         }
@@ -556,23 +543,6 @@
                     {loading ? "Validating..." : "Authenticate"}
                 </button>
             {/if}
-
-            <!-- Success Message -->
-            {#if success}
-                <div class="success-message">
-                    <CheckIcon size={18} />
-                    <span>{success}</span>
-                </div>
-            {/if}
-
-            <!-- Error Message -->
-            {#if error}
-                <div class="error-message">
-                    <ErrorIcon size={18} />
-                    <span>{error}</span>
-                </div>
-            {/if}
-
         </div>
     </Card>
     </div>
@@ -822,30 +792,6 @@
         font-size: 0.8rem;
         color: var(--text);
         font-weight: 500;
-    }
-
-    .success-message {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        background: var(--green-tint);
-        color: var(--green-text);
-        font-size: 0.8rem;
-        border: 2px solid var(--green-text);
-    }
-
-    .error-message {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        background: var(--red-tint);
-        color: var(--red-text);
-        font-size: 0.8rem;
-        border: 2px solid var(--red-text);
     }
 
     .submit-button {

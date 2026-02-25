@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type ToastType = 'error' | 'warning' | 'success' | 'info';
+export type ToastType = 'error' | 'warning' | 'success' | 'info' | 'authz';
 
 export interface Toast {
     id: number;
@@ -31,6 +31,7 @@ function createToastStore() {
         warning: (title: string, message: string) => add('warning', title, message),
         success: (title: string, message: string) => add('success', title, message),
         info: (title: string, message: string) => add('info', title, message),
+        authz: (title: string, message: string) => add('authz', title, message),
     };
 }
 

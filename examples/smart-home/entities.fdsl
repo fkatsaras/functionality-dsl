@@ -35,7 +35,10 @@ Entity Climate(Thermostat)
     - current_temp_c: number = round((Thermostat.current_temp_f - 32) * 5 / 9, 1);
     - target_temp_c: number = round((Thermostat.target_temp_f - 32) * 5 / 9, 1);
     - humidity: number = Thermostat.humidity_percent;
-    - is_comfortable: boolean = Thermostat.current_temp_f >= 68 and Thermostat.current_temp_f <= 76 and Thermostat.humidity_percent >= 30 and Thermostat.humidity_percent <= 60;
+    - is_comfortable: boolean = Thermostat.current_temp_f >= 68
+                                 and Thermostat.current_temp_f <= 76 
+                                 and Thermostat.humidity_percent >= 30
+                                 and Thermostat.humidity_percent <= 60;
     - comfort_status: string = "Comfortable" if Climate.is_comfortable else "Adjust settings";
   access: public
 end

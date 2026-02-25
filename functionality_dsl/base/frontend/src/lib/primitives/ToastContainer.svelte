@@ -1,6 +1,5 @@
 <script lang="ts">
     import { toastStore, type Toast } from "$lib/stores/toastStore";
-    import LockIcon from "$lib/primitives/icons/LockIcon.svelte";
 
     let toasts = $state<Toast[]>([]);
     toastStore.subscribe((v: Toast[]) => toasts = v);
@@ -12,7 +11,30 @@
             <div class="toast toast--{toast.type}">
                 <div class="toast-accent"></div>
                 <div class="toast-icon">
-                    <LockIcon />
+                    {#if toast.type === 'success'}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    {:else if toast.type === 'error'}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path stroke-linecap="round" d="M15 9l-6 6m0-6l6 6"/>
+                        </svg>
+                    {:else if toast.type === 'authz'}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                    {:else if toast.type === 'warning'}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                        </svg>
+                    {:else}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path stroke-linecap="round" d="M12 16v-4m0-4h.01"/>
+                        </svg>
+                    {/if}
                 </div>
                 <div class="toast-body">
                     <p class="toast-title">{toast.title}</p>
@@ -68,6 +90,7 @@
     .toast--error   .toast-accent { background: var(--red-text); }
     .toast--success .toast-accent { background: var(--green-text); }
     .toast--info    .toast-accent { background: var(--accent); }
+    .toast--authz   .toast-accent { background: var(--yellow-text); }
 
     .toast-icon {
         display: flex;
@@ -86,6 +109,7 @@
     .toast--error   .toast-icon { color: var(--red-text); }
     .toast--success .toast-icon { color: var(--green-text); }
     .toast--info    .toast-icon { color: var(--accent); }
+    .toast--authz   .toast-icon { color: var(--yellow-text); }
 
     .toast-body {
         flex: 1;

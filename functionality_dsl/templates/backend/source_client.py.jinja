@@ -22,7 +22,7 @@ logger = logging.getLogger("fdsl.source.{{ source_name }}")
 
 
 def _serialize_for_json(data: Any) -> Any:
-    """Recursively convert datetime objects to ISO format strings for JSON serialization."""
+    """Recursively convert datetime/Pydantic objects to JSON-serializable types."""
     if isinstance(data, datetime):
         return data.isoformat()
     elif isinstance(data, date):
@@ -33,6 +33,9 @@ def _serialize_for_json(data: Any) -> Any:
         return {k: _serialize_for_json(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [_serialize_for_json(item) for item in data]
+    elif hasattr(data, '__str__') and type(data).__module__.startswith('pydantic'):
+        # Handle Pydantic special types (HttpUrl, etc.) - convert to string
+        return str(data)
     return data
 
 

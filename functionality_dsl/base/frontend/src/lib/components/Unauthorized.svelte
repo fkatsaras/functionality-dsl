@@ -10,10 +10,7 @@
     }>();
 
     const displayMessage = $derived(
-        props.message ||
-        (props.requiredRoles && props.requiredRoles.length > 0
-            ? `Requires ${props.operation || 'access'} permission with one of: ${props.requiredRoles.join(", ")}`
-            : "Access denied")
+        props.message || "You do not have permission to view this"
     );
 </script>
 

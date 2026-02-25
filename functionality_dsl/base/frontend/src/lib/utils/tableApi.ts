@@ -3,6 +3,8 @@ import { parseErrorDetail } from './tableFormat';
 export interface AuthConfig {
     authType: string;
     authToken: string | null;
+    headerName?: string;
+    location?: 'header' | 'query' | 'cookie';
 }
 
 export interface LoadResult {
@@ -27,14 +29,26 @@ export function buildAuthHeaders(auth: AuthConfig): { headers: Record<string, st
     const headers: Record<string, string> = {};
     const fetchOptions: RequestInit = { headers };
 
+    console.log('[buildAuthHeaders] auth:', auth);
+
     if (auth.authType === 'jwt' && auth.authToken) {
         headers['Authorization'] = `Bearer ${auth.authToken}`;
     } else if (auth.authType === 'basic' && auth.authToken) {
         headers['Authorization'] = `Basic ${auth.authToken}`;
+    } else if (auth.authType === 'apikey' && auth.authToken && auth.headerName) {
+        console.log('[buildAuthHeaders] API key auth - location:', auth.location, 'headerName:', auth.headerName);
+        if (auth.location === 'header') {
+            headers[auth.headerName] = auth.authToken;
+            console.log('[buildAuthHeaders] Set header:', auth.headerName, '=', auth.authToken);
+        } else if (auth.location === 'cookie') {
+            fetchOptions.credentials = 'include';
+        }
+        // query param location handled by appending to URL, not in headers
     } else if (auth.authType === 'session') {
         fetchOptions.credentials = 'include';
     }
 
+    console.log('[buildAuthHeaders] final headers:', headers);
     return { headers, fetchOptions };
 }
 
@@ -129,7 +143,7 @@ export async function saveRow(
     if (itemMode && arrayField && entityData) {
         const updatedItems = [...allData];
         updatedItems[rowIndex] = editData;
-        payload = { ...entityData, [arrayField]: updatedItems };
+        payload = { [arrayField]: updatedItems };
     } else {
         payload = editData;
     }
@@ -194,7 +208,7 @@ export async function createRow(
     let payload: any;
 
     if (itemMode && arrayField && entityData) {
-        payload = { ...entityData, [arrayField]: [...allData, formData] };
+        payload = { [arrayField]: [...allData, formData] };
         method = 'PUT';
     } else {
         payload = formData;
@@ -264,7 +278,7 @@ export async function deleteRow(
 
     if (itemMode && arrayField && entityData) {
         const updatedItems = allData.filter((_, idx) => idx !== rowIndex);
-        payload = { ...entityData, [arrayField]: updatedItems };
+        payload = { [arrayField]: updatedItems };
         method = 'PUT';
     } else {
         payload = allData[rowIndex];

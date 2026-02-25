@@ -248,6 +248,27 @@ async def register(
     # Create API key for the user
     api_key = create_api_key_for_user(db, user, "Registration key")
 
+{% if role_to_auth_config %}
+    # Multi-auth system: determine auth mechanism based on user role
+    role_auth_config = {
+{% for role_name, auth_config in role_to_auth_config.items() %}
+        "{{ role_name }}": {"location": "{{ auth_config.location }}", "key_name": "{{ auth_config.key_name }}"},
+{% endfor %}
+    }
+
+    auth_config = role_auth_config.get(user.role, {"location": "{{ apikey_location }}", "key_name": "{{ apikey_name }}"})
+    response_location = auth_config["location"]
+    response_key_name = auth_config["key_name"]
+
+    # Set cookie if this role uses cookie-based auth
+    if response_location == "cookie" and response:
+        response.set_cookie(
+            key=response_key_name,
+            value=api_key.key,
+            httponly=True,
+            samesite="lax",
+        )
+{% else %}
 {% if apikey_location == "cookie" %}
     # Set the API key as a cookie
     if response:
@@ -258,12 +279,15 @@ async def register(
             samesite="lax",
         )
 {% endif %}
+    response_location = "{{ apikey_location }}"
+    response_key_name = "{{ apikey_name }}"
+{% endif %}
 
     return RegisterResponse(
         user=user_response,
         api_key=api_key.key,
-        location="{{ apikey_location }}",
-        key_name="{{ apikey_name }}",
+        location=response_location,
+        key_name=response_key_name,
     )
 {% elif auth_type == "basic" %}
     return RegisterResponse(
@@ -341,6 +365,27 @@ async def login(
     # Get or create API key for the user
     api_key = get_or_create_api_key(db, user)
 
+{% if role_to_auth_config %}
+    # Multi-auth system: determine auth mechanism based on user role
+    role_auth_config = {
+{% for role_name, auth_config in role_to_auth_config.items() %}
+        "{{ role_name }}": {"location": "{{ auth_config.location }}", "key_name": "{{ auth_config.key_name }}"},
+{% endfor %}
+    }
+
+    auth_config = role_auth_config.get(user.role, {"location": "{{ apikey_location }}", "key_name": "{{ apikey_name }}"})
+    response_location = auth_config["location"]
+    response_key_name = auth_config["key_name"]
+
+    # Set cookie if this role uses cookie-based auth
+    if response_location == "cookie" and response:
+        response.set_cookie(
+            key=response_key_name,
+            value=api_key.key,
+            httponly=True,
+            samesite="lax",
+        )
+{% else %}
 {% if apikey_location == "cookie" %}
     # Set the API key as a cookie
     if response:
@@ -351,11 +396,14 @@ async def login(
             samesite="lax",
         )
 {% endif %}
+    response_location = "{{ apikey_location }}"
+    response_key_name = "{{ apikey_name }}"
+{% endif %}
 
     return AuthResponse(
         api_key=api_key.key,
-        location="{{ apikey_location }}",
-        key_name="{{ apikey_name }}",
+        location=response_location,
+        key_name=response_key_name,
         user=UserResponse(
             id=user.id,
             login_id=user.login_id,

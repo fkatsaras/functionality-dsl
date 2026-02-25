@@ -60,9 +60,23 @@
     const initialAuth = authStore.getState();
     let authToken = $state<string | null>(initialAuth.token);
     let authType = $state<string>(initialAuth.authType);
-    authStore.subscribe((state) => { authToken = state.token; authType = state.authType; });
+    let apiKey = $state<string | null>(initialAuth.apiKey);
+    let apiKeyHeader = $state<string | null>(initialAuth.apiKeyHeader);
+    let apiKeyLocation = $state<'header' | 'query' | 'cookie' | null>(initialAuth.apiKeyLocation);
+    authStore.subscribe((state) => {
+        authToken = state.token;
+        authType = state.authType;
+        apiKey = state.apiKey;
+        apiKeyHeader = state.apiKeyHeader;
+        apiKeyLocation = state.apiKeyLocation;
+    });
 
-    const authConfig = $derived({ authType, authToken });
+    const authConfig = $derived({
+        authType,
+        authToken: authType === 'apikey' ? apiKey : authToken,
+        headerName: apiKeyHeader ?? undefined,
+        location: apiKeyLocation ?? undefined
+    });
 
     // Derived capabilities
     const canCreate = $derived(operations.includes("create"));
@@ -80,13 +94,14 @@
         loading = true;
         error = null;
         isPermissionError = false;
+        console.log('[Table] authConfig:', authConfig);
         try {
             const result = await loadTableData(url, authConfig, itemMode, arrayField);
             if (result.error) {
                 error = result.error;
                 isPermissionError = result.isPermissionError;
                 data = []; entityData = null; entityKeys = [];
-                if (isPermissionError) toastStore.warning("Access Denied", error);
+                if (isPermissionError) toastStore.authz("Access Denied", error);
             } else {
                 data = result.data;
                 entityData = result.entityData;
@@ -141,7 +156,7 @@
         } catch (err: any) {
             actionError = err?.message ?? "Failed to update";
             if (isPermissionError) {
-                toastStore.warning("Access Denied", actionError ?? "You don't have permission to update items");
+                toastStore.authz("Access Denied", actionError ?? "You don't have permission to update items");
                 cancelEdit();
             } else if (Object.keys(editFieldErrors).length === 0) {
                 toastStore.error("Update Failed", actionError);
@@ -183,10 +198,13 @@
             if (!result.success) return;
             await load();
             showCreateForm = false;
+            toastStore.success("Create Successful", "Item created successfully");
         } catch (err: any) {
             actionError = err?.message ?? "Failed to create";
             if (isPermissionError) {
-                toastStore.warning("Access Denied", actionError ?? "You don't have permission to create items");
+                toastStore.authz("Access Denied", actionError ?? "You don't have permission to create items");
+            } else if (Object.keys(createFieldErrors).length === 0) {
+                toastStore.error("Create Failed", actionError);
             }
         } finally {
             saving = false;
@@ -207,6 +225,18 @@
         actionError = null;
     }
 
+    let showClearConfirm = $state(false);
+
+    function confirmClearAll() {
+        showClearConfirm = true;
+        actionError = null;
+    }
+
+    function cancelClearAll() {
+        showClearConfirm = false;
+        actionError = null;
+    }
+
     async function executeDelete() {
         if (deleteConfirmRow === null || !url) return;
         saving = true;
@@ -220,11 +250,48 @@
             }
             await load();
             deleteConfirmRow = null;
+            toastStore.success("Delete Successful", "Item deleted successfully");
         } catch (err: any) {
             actionError = err?.message ?? "Failed to delete";
+            deleteConfirmRow = null;
             if (isPermissionError) {
-                toastStore.warning("Access Denied", actionError ?? "You don't have permission to delete items");
-                deleteConfirmRow = null;
+                toastStore.authz("Access Denied", actionError ?? "You don't have permission to delete items");
+            } else {
+                toastStore.error("Delete Failed", actionError);
+            }
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function executeClearAll() {
+        if (!url) return;
+        saving = true;
+        actionError = null;
+        isPermissionError = false;
+        try {
+            const { headers, fetchOptions } = (await import('$lib/utils/tableApi')).buildAuthHeaders(authConfig);
+            const response = await fetch(url, { ...fetchOptions, method: 'DELETE', headers });
+
+            if (!response.ok) {
+                if (response.status === 403) {
+                    isPermissionError = true;
+                    throw new Error("You don't have permission to clear this");
+                }
+                const errBody = await response.json().catch(() => ({ detail: response.statusText }));
+                throw new Error(errBody.detail || `HTTP ${response.status}`);
+            }
+
+            await load();
+            showClearConfirm = false;
+            toastStore.success("Clear Successful", "All items cleared successfully");
+        } catch (err: any) {
+            actionError = err?.message ?? "Failed to clear";
+            showClearConfirm = false;
+            if (isPermissionError) {
+                toastStore.authz("Access Denied", actionError ?? "You don't have permission to clear this");
+            } else {
+                toastStore.error("Clear Failed", actionError);
             }
         } finally {
             saving = false;
@@ -256,6 +323,16 @@
                         title="Create new"
                     >
                         <PlusIcon size={18} />
+                    </button>
+                {/if}
+                {#if canDelete}
+                    <button
+                        class="clear-btn"
+                        onclick={confirmClearAll}
+                        disabled={showCreateForm || editingRow !== null || data.length === 0}
+                        title="Clear all"
+                    >
+                        <DeleteIcon size={18} />
                     </button>
                 {/if}
                 {#if error && !isPermissionError}
@@ -437,6 +514,17 @@
     />
 {/if}
 
+<!-- Clear All Modal - rendered outside Card to avoid transform stacking context -->
+{#if showClearConfirm}
+    <DeleteModal
+        saving={saving}
+        actionError={actionError}
+        isPermissionError={isPermissionError}
+        onConfirm={executeClearAll}
+        onCancel={cancelClearAll}
+    />
+{/if}
+
 <style>
     table {
         width: 100%;
@@ -576,7 +664,8 @@
     }
 
     /* Create button */
-    .create-btn {
+    .create-btn,
+    .clear-btn {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -595,7 +684,14 @@
         transform: scale(1.05);
     }
 
-    .create-btn:disabled {
+    .clear-btn:hover:not(:disabled) {
+        background: var(--red-tint);
+        color: var(--red-text);
+        transform: scale(1.05);
+    }
+
+    .create-btn:disabled,
+    .clear-btn:disabled {
         opacity: 0.4;
         cursor: not-allowed;
     }

@@ -362,6 +362,36 @@ def _extract_auth_routes_config(model, auth_type: str) -> dict:
         config["apikey_location"] = getattr(auth, "location", "header")
         config["apikey_name"] = getattr(auth, "keyName", "X-API-Key")
 
+        # Build role-to-auth mapping for multi-auth systems
+        role_to_auth_config = {}
+        auth_configs = {}
+
+        # Collect all Auth blocks (access directly from model since Auth is a union type)
+        auth_blocks = getattr(model, "auth", []) or []
+        for auth_block in auth_blocks:
+            auth_kind = getattr(auth_block, "kind", None)
+            if auth_kind == "apikey":
+                auth_name = getattr(auth_block, "name", "")
+                auth_configs[auth_name] = {
+                    "location": getattr(auth_block, "location", "header"),
+                    "keyName": getattr(auth_block, "keyName", "X-API-Key"),
+                }
+
+        # Map roles to their auth mechanisms
+        for role_block in role_blocks:
+            role_name = role_block.name
+            auth_ref = getattr(role_block, "auth", None)
+            if auth_ref:
+                auth_name = auth_ref.name
+                if auth_name in auth_configs:
+                    role_to_auth_config[role_name] = {
+                        "auth_name": auth_name,
+                        "location": auth_configs[auth_name]["location"],
+                        "key_name": auth_configs[auth_name]["keyName"],
+                    }
+
+        config["role_to_auth_config"] = role_to_auth_config
+
     return config
 
 

@@ -153,12 +153,25 @@ def update_products():
 
 @app.route('/products', methods=['DELETE'])
 def delete_product():
-    product_id = request.args.get('id') or (request.get_json() or {}).get('id')
+    # Try to get ID from query params or JSON body (if provided)
+    product_id = request.args.get('id')
+    if not product_id:
+        try:
+            json_data = request.get_json(silent=True)
+            if json_data:
+                product_id = json_data.get('id')
+        except:
+            pass
 
     if product_id:
+        # Delete specific product by ID
         product_id = int(product_id)
         products_data["items"] = [p for p in products_data["items"] if p["id"] != product_id]
         products_data["total"] = len(products_data["items"])
+    else:
+        # No ID provided - clear all products
+        products_data["items"] = []
+        products_data["total"] = 0
 
     return jsonify(products_data)
 
