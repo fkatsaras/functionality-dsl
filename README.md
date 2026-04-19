@@ -41,6 +41,8 @@ end
 
 ## Installation
 
+**Requirements:** Python >= 3.9, Git
+
 ```bash
 git clone https://github.com/yourusername/functionality-dsl.git
 cd functionality-dsl
@@ -49,13 +51,23 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -e .
 ```
 
+**Linux/WSL only** — install system packages:
+```bash
+sudo apt-get install graphviz plantuml imagemagick
+```
+
+Verify:
+```bash
+fdsl validate examples/rest-basics/main.fdsl
+```
+
 ---
 
 ## Quick Start
 
-Create `my-api.fDSL`:
+Create `my-api.fdsl`:
 
-```fDSL
+```fdsl
 Server MyAPI
   host: "localhost"
   port: 8080
@@ -77,26 +89,46 @@ Entity Users
 end
 ```
 
-Generate and run:
+Generate:
 
 ```bash
-fDSL generate my-api.fDSL --out generated
+fdsl generate my-api.fdsl --out generated
+```
+
+---
+
+## Running Generated Apps
+
+### With Docker (recommended)
+
+```bash
 cd generated
-pip install -r requirements.txt
-uvicorn main:app --reload
+docker compose -p myapp up
+```
+
+### Without Docker
+
+```bash
+cd generated
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -e .
+uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --reload
 ```
 
 Visit http://localhost:8080/docs
+
+> **Note:** If your spec uses `Auth` (roles/database), the generated app requires a running PostgreSQL instance configured via `DATABASE_URL` in the `.env` file. Specs with no auth and only external REST sources have no database dependency.
 
 ---
 
 ## CLI Commands
 
 ```bash
-fDSL validate <file>                    # Validate syntax
-fDSL generate <file> --out <dir>        # Generate code
-fDSL from-openapi <file> --out <file>   # OpenAPI to fDSL
-fDSL from-asyncapi <file> --out <file>  # AsyncAPI to fDSL
+fdsl validate <file>                      # Validate syntax
+fdsl generate <file> --out <dir>          # Generate FastAPI backend
+fdsl visualize <file> --output <dir>      # Generate diagrams
+fdsl transform <spec> --out <file>        # OpenAPI/AsyncAPI to fDSL
 ```
 
 ---

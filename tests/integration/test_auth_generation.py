@@ -243,9 +243,9 @@ class TestAuthDBGeneration:
           connection: "MY_DATABASE_URL"
           table: "users"
           columns:
-            id="email"
-            password="pwd_hash"
-            role="user_role"
+            id: "email"
+            password: "pwd_hash"
+            role: "user_role"
         end
 
         Auth<http> BearerAuth
