@@ -6,13 +6,6 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 
 ## Core Concept
 
-**Command-based API composition** - not an ORM, not a database modeler. FDSL is an API orchestration layer where:
-
-- **Entities describe data shapes** (snapshots), not resources with identity
-- **Sources describe interaction capabilities**, not data stores
-- **Mutations are commands** sent to external systems, not local state changes
-- **Identity resolution** is delegated to backing services (via auth, headers, query params)
-
 **Key Components:**
 - **Entities** - Data snapshots with optional transformation logic (schema -> computed attributes)
 - **Sources** - Capability providers that define interaction contracts (read/create/update/delete)
@@ -23,31 +16,6 @@ FDSL is a Domain-Specific Language for declaratively defining REST/WebSocket API
 - **REST**: `External Source ↔ Entity (with transformations) ↔ REST API ↔ Client`
 - **WS Subscribe**: `External WS -> Entity -> Client`
 - **WS Publish**: `Client -> Entity -> External WS`
-
-### Philosophy: Snapshot-Based Mutations
-
-**Traditional REST (resource-oriented):**
-```
-PUT /users/{id}    # Update user with specific ID
-```
-
-**FDSL (command-oriented):**
-```
-PUT /users         # Send snapshot to update users based on context
-```
-
-The backing service decides which user(s) to update based on:
-- Auth claims (JWT user_id)
-- Request headers
-- Query parameters
-- Business rules
-
-This enables:
-- ✅ Singleton systems (config, device state)
-- ✅ Context-based mutations
-- ✅ WebSocket command channels
-- ✅ No database coupling
-
 ---
 
 ## 1. Authentication & Roles
@@ -783,44 +751,6 @@ end
 
 ---
 
-## 13. Migration Notes
-
-**Old Syntax -> New Syntax:**
-
-| Old | New |
-|-----|-----|
-| `access: true` | `access: public` |
-| `expose: operations: [read]` | Removed - operations from source |
-| `rest: "/api/path"` | Removed - paths auto-generated |
-| `@id` field | Removed - snapshot entities only |
-| `list` operation | Not supported - no collections |
-| `/{id}` paths | Not generated - snapshot resources |
-| `filters:` field | Not needed - no list endpoints |
-| `Role admin` | `Role admin uses AuthName` |
-| `Server ... auth: AuthName` | Removed - auth per-entity/per-op |
-
-**Auth Migration:**
-```fdsl
-// OLD (auth with type: field)
-Auth HomeAuth
-  type: jwt
-  secret: "JWT_SECRET"
-end
-Role admin
-Server SmartHome
-  auth: HomeAuth
-end
-
-// NEW (Auth<type> syntax, roles use 'uses', no auth in Server)
-Auth<http> HomeAuth
-  scheme: bearer
-end
-Role admin uses HomeAuth
-Server SmartHome
-  host: "localhost"
-  port: 8080
-end
-```
 
 **Remember:** FDSL is declarative - describe WHAT you want, not HOW. All entities are snapshots with fixed shapes - sources are called without IDs (`GET url`, `PUT url`, etc.).
 
