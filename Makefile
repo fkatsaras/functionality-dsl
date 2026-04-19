@@ -188,6 +188,42 @@ viz-no-components: ## Visualize without UI components (usage: make viz-no-compon
 	fi
 	$(FDSL) visualize $(FILE) --output docs --no-components
 
+.PHONY: viz-simple
+viz-simple: ## Visualize with simplified view (hide attributes, usage: make viz-simple FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		echo "Usage: make viz-simple FILE=examples/smart-home/main.fdsl"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Generating simplified model visualization for $(FILE)...$(NC)"
+	$(FDSL) visualize $(FILE) --output docs --simple
+	@echo "$(GREEN)Simplified visualization generated!$(NC)"
+	@echo "DOT file: docs/$$(basename $(FILE) .fdsl)_diagram.dot"
+	@if command -v dot > /dev/null 2>&1; then \
+		echo "PNG file: docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	else \
+		echo "$(YELLOW)Note: Install GraphViz to generate PNG files$(NC)"; \
+		echo "To convert: dot -Tpng docs/$$(basename $(FILE) .fdsl)_diagram.dot -o docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	fi
+
+.PHONY: viz-ultra-simple
+viz-ultra-simple: ## Visualize with minimal view (hide attributes and components, usage: make viz-ultra-simple FILE=path/to/file.fdsl)
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		echo "Usage: make viz-ultra-simple FILE=examples/smart-home/main.fdsl"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Generating ultra-simplified model visualization for $(FILE)...$(NC)"
+	$(FDSL) visualize $(FILE) --output docs --simple --no-components
+	@echo "$(GREEN)Ultra-simplified visualization generated!$(NC)"
+	@echo "DOT file: docs/$$(basename $(FILE) .fdsl)_diagram.dot"
+	@if command -v dot > /dev/null 2>&1; then \
+		echo "PNG file: docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	else \
+		echo "$(YELLOW)Note: Install GraphViz to generate PNG files$(NC)"; \
+		echo "To convert: dot -Tpng docs/$$(basename $(FILE) .fdsl)_diagram.dot -o docs/$$(basename $(FILE) .fdsl)_diagram.png"; \
+	fi
+
 .PHONY: viz-metamodel
 viz-metamodel: ## Generate metamodel visualization (TextX grammar diagram, PlantUML)
 	@echo "$(BLUE)Generating metamodel visualization...$(NC)"

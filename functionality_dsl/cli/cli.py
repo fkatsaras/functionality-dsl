@@ -351,9 +351,10 @@ def generate(context, model_path, target, out_dir, verbose, quiet):
 @click.argument("model_path")
 @click.option("--output", "-o", "output_dir", default="docs", help="Output directory for PNG/DOT files (default: docs)")
 @click.option("--no-components", "-nc", is_flag=True, help="Hide UI components from the diagram")
+@click.option("--simple", "-s", is_flag=True, help="Hide entity attributes from the diagram for reduced visual complexity")
 @click.option("--metamodel", is_flag=True, help="Visualize the grammar metamodel instead of an FDSL model (advanced)")
 @click.option("--engine", type=click.Choice(["dot", "plantuml"], case_sensitive=False), default="dot", help="Rendering engine for metamodel visualization")
-def visualize_cmd(context, model_path, output_dir, no_components, metamodel, engine):
+def visualize_cmd(context, model_path, output_dir, no_components, simple, metamodel, engine):
     """
     Build a GraphViz diagram of an FDSL model:
     - Server configuration
@@ -363,6 +364,7 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
     - Generated API endpoints
     - Components (use --no-components to hide)
 
+    Use --simple to hide entity attributes for a cleaner, less cluttered diagram.
     Use --metamodel to visualize the TextX grammar metamodel instead (advanced).
     """
     # Handle metamodel visualization (special case)
@@ -522,17 +524,21 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
             # Collect attributes and nested entity references
             attrs_lines = []
             nested_entity_refs = []  # Track for drawing edges
-            for a in e.attributes:
-                type_text = typespec_to_string(a.type)
-                # Escape angle brackets in type text for record shapes (e.g., integer<int64> -> integer\<int64\>)
-                type_text_escaped = safe_label(type_text, max_len=100, escape_angles=True)
-                if hasattr(a, "expr") and a.expr:
-                    expr_text = expr_to_string(a.expr, max_len=30)
-                    attrs_lines.append(f"+ {a.name}: {type_text_escaped} = {safe_label(expr_text, 30)}\\l")
-                else:
-                    attrs_lines.append(f"+ {a.name}: {type_text_escaped}\\l")
 
-                # Track nested entity refs for edges
+            # Only show attributes if --simple flag is NOT set
+            if not simple:
+                for a in e.attributes:
+                    type_text = typespec_to_string(a.type)
+                    # Escape angle brackets in type text for record shapes (e.g., integer<int64> -> integer\<int64\>)
+                    type_text_escaped = safe_label(type_text, max_len=100, escape_angles=True)
+                    if hasattr(a, "expr") and a.expr:
+                        expr_text = expr_to_string(a.expr, max_len=30)
+                        attrs_lines.append(f"+ {a.name}: {type_text_escaped} = {safe_label(expr_text, 30)}\\l")
+                    else:
+                        attrs_lines.append(f"+ {a.name}: {type_text_escaped}\\l")
+
+            # Always track nested entity refs for edges (even in simple mode)
+            for a in e.attributes:
                 type_spec = getattr(a, "type", None)
                 if type_spec:
                     item_entity = getattr(type_spec, "itemEntity", None)
@@ -626,7 +632,11 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
                 header = e.name
 
             # UML record label format: header|attributes|metadata (no outer braces for vertical)
-            label = f"{header}|{attrs}|access: {access_str}\\l"
+            # In simple mode, skip the attributes compartment entirely for cleaner boxes
+            if simple:
+                label = f"{header}|access: {access_str}\\l"
+            else:
+                label = f"{header}|{attrs}|access: {access_str}\\l"
 
             dot.node(f"entity_{e.name}", label=label,
                      shape="record", style="filled", fillcolor=fillcolor)
@@ -668,54 +678,58 @@ def visualize_cmd(context, model_path, output_dir, no_components, metamodel, eng
         # -------------------------------
         # Generated REST API Endpoints (UML Interface)
         # -------------------------------
-        for e in model.entities:
-            entity_source = getattr(e, "source", None)
-            if not entity_source:
-                continue
+        # Skip API blocks in simple mode for cleaner diagrams
+        if not simple:
+            for e in model.entities:
+                entity_source = getattr(e, "source", None)
+                if not entity_source:
+                    continue
 
-            # Check if source is REST
-            is_rest_source = any(s.name == entity_source.name for s in model.externalrest)
-            if not is_rest_source:
-                continue
+                # Check if source is REST
+                is_rest_source = any(s.name == entity_source.name for s in model.externalrest)
+                if not is_rest_source:
+                    continue
 
-            # Get operations from the source
-            ops = get_source_operations(entity_source)
-            if not ops:
-                continue
+                # Get operations from the source
+                ops = get_source_operations(entity_source)
+                if not ops:
+                    continue
 
-            # Create REST API endpoint node (UML interface style with record shape)
-            api_path = f"/api/{e.name.lower()}"
-            ops_str = ", ".join(ops)
-            # UML interface: «interface» stereotype with operations (vertical layout)
-            label = f"«interface»\\nREST API|{api_path}\\l|{ops_str}\\l"
-            dot.node(f"api_{e.name}", label=label,
-                     shape="record", style="filled", fillcolor="#ffe0b2")
+                # Create REST API endpoint node (UML interface style with record shape)
+                api_path = f"/api/{e.name.lower()}"
+                ops_str = ", ".join(ops)
+                # UML interface: «interface» stereotype with operations (vertical layout)
+                label = f"«interface»\\nREST API|{api_path}\\l|{ops_str}\\l"
+                dot.node(f"api_{e.name}", label=label,
+                         shape="record", style="filled", fillcolor="#ffe0b2")
 
-            # Edge: Entity -> REST API (UML realization - dashed with empty triangle)
-            dot.edge(f"entity_{e.name}", f"api_{e.name}",
-                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
+                # Edge: Entity -> REST API (UML realization - dashed with empty triangle)
+                dot.edge(f"entity_{e.name}", f"api_{e.name}",
+                         arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
 
         # -------------------------------
         # Generated WS Endpoints (UML Interface)
         # -------------------------------
-        for e in model.entities:
-            entity_type = getattr(e, "flow", None)
+        # Skip API blocks in simple mode for cleaner diagrams
+        if not simple:
+            for e in model.entities:
+                entity_type = getattr(e, "flow", None)
 
-            # WS entities need type: inbound or outbound
-            if entity_type not in ("inbound", "outbound"):
-                continue
+                # WS entities need type: inbound or outbound
+                if entity_type not in ("inbound", "outbound"):
+                    continue
 
-            # Create WS endpoint node (UML interface style)
-            ws_path = f"/ws/{e.name.lower()}"
-            direction = "subscribe" if entity_type == "inbound" else "publish"
-            # UML interface: «interface» stereotype with direction (vertical layout)
-            label = f"«interface»\\nWS API|{ws_path}\\l|{direction}\\l"
-            dot.node(f"ws_{e.name}", label=label,
-                     shape="record", style="filled", fillcolor="#ffccbc")
+                # Create WS endpoint node (UML interface style)
+                ws_path = f"/ws/{e.name.lower()}"
+                direction = "subscribe" if entity_type == "inbound" else "publish"
+                # UML interface: «interface» stereotype with direction (vertical layout)
+                label = f"«interface»\\nWS API|{ws_path}\\l|{direction}\\l"
+                dot.node(f"ws_{e.name}", label=label,
+                         shape="record", style="filled", fillcolor="#ffccbc")
 
-            # Edge: Entity -> WS API (UML realization - dashed with empty triangle)
-            dot.edge(f"entity_{e.name}", f"ws_{e.name}",
-                     arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
+                # Edge: Entity -> WS API (UML realization - dashed with empty triangle)
+                dot.edge(f"entity_{e.name}", f"ws_{e.name}",
+                         arrowtail="onormal", arrowhead="none", dir="back", style="dashed", color="#ff6f00")
 
         # -------------------------------
         # Components (UML Component notation)
