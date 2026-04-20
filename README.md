@@ -44,55 +44,11 @@ end
 **Requirements:** Python >= 3.9, Git
 
 ```bash
-git clone https://github.com/yourusername/functionality-dsl.git
+git clone https://github.com/fkatsaras/functionality-dsl.git
 cd functionality-dsl
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -e .
-```
-
-**Linux/WSL only** — install system packages:
-```bash
-sudo apt-get install graphviz plantuml imagemagick
-```
-
-Verify:
-```bash
-fdsl validate examples/rest-basics/main.fdsl
-```
-
----
-
-## Quick Start
-
-Create `my-api.fdsl`:
-
-```fdsl
-Server MyAPI
-  host: "localhost"
-  port: 8080
-  cors: "*"
-end
-
-Source<REST> UsersAPI
-  url: "https://jsonplaceholder.typicode.com/users"
-  operations: [read]
-end
-
-Entity Users
-  source: UsersAPI
-  attributes:
-    - id: integer;
-    - name: string;
-    - email: string<email>;
-  access: public
-end
-```
-
-Generate:
-
-```bash
-fdsl generate my-api.fdsl --out generated
 ```
 
 ---
@@ -140,7 +96,7 @@ The frontend dev server automatically proxies `/api`, `/auth`, and `/ws` to the 
 ```bash
 fdsl validate <file>                      # Validate syntax
 fdsl generate <file> --out <dir>          # Generate FastAPI backend
-fdsl visualize <file> --output <dir>      # Generate diagrams
+fdsl visualize <file> --output <dir>      # Generate diagrams (Linux/WSL: requires graphviz, plantuml, imagemagick)
 fdsl transform <spec> --out <file>        # OpenAPI/AsyncAPI to fDSL
 ```
 
