@@ -108,6 +108,9 @@ docker compose -p myapp up
 
 ### Without Docker
 
+Requires **Node.js >= 20** for the frontend.
+
+**Terminal 1 — backend:**
 ```bash
 cd generated
 python -m venv venv
@@ -116,7 +119,17 @@ pip install -e .
 uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --reload
 ```
 
-Visit http://localhost:8080/docs
+**Terminal 2 — frontend:**
+```bash
+cd generated/frontend
+npm install
+npm run dev
+```
+
+- Backend API + docs: `http://localhost:8080/docs`
+- Frontend UI: `http://localhost:5173`
+
+The frontend dev server automatically proxies `/api`, `/auth`, and `/ws` to the backend — no extra configuration needed.
 
 > **Note:** If your spec uses `Auth` (roles/database), the generated app requires a running PostgreSQL instance configured via `DATABASE_URL` in the `.env` file. Specs with no auth and only external REST sources have no database dependency.
 
